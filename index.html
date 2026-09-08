@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Codenotch</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- One always-max-size transparent window. Everything is drawn inside it;
+         `data-edge` turns the stack and nothing else knows the edge. -->
+    <div id="stage" data-edge="right" data-state="collapsed">
+      <!-- The card and its tail are one silhouette, so the tail is drawn as
+           part of the card's own background rather than as an element beside
+           it — there must be no seam between them. -->
+      <div id="tooltip" hidden>
+        <div class="card__body"></div>
+      </div>
+
+      <div id="notch">
+        <svg id="notch-svg" aria-hidden="true">
+          <g id="notch-group">
+            <path id="notch-path" />
+          </g>
+        </svg>
+        <!-- The orb lives *below* the notch, not inside it. At rest only an arc
+             of its edge is drawn, concentric with the notch's own end flare; on
+             hover the same circle fills in and takes a gear. One circle, two
+             states — which is why the arc is a segment of it rather than a
+             decorative stroke that happens to sit nearby. -->
+        <svg id="orb-svg" aria-hidden="true">
+          <path id="orb-arc" fill="none" stroke-linecap="round" />
+          <circle id="orb-disc" />
+          <path id="orb-gear" fill-rule="evenodd" />
+        </svg>
+        <div id="rings"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

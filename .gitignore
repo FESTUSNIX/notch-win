@@ -1,0 +1,31 @@
+# Rust / Tauri build output. `target/` reaches ~9 GB with a release build in it.
+/src-tauri/target/
+/src-tauri/gen/schemas/
+
+# Frontend build output and dependencies
+/node_modules/
+/dist/
+
+# Logs written by the dev server and the release build. Both are redirected to
+# these by hand (`pnpm tauri dev > dev.log`), so they are working files, never
+# artefacts worth keeping.
+*.log
+
+# Generated from the macOS app's GlyphOutline.swift by the script in the README.
+# Tracked deliberately — see AGENTS.md — so a checkout builds without needing
+# the sibling Swift repo. Listed here only to say that is a choice, not an
+# oversight.
+# /src/glyphs.ts
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Tauri signing keys, if updates are ever set up. These must never be committed:
+# the private key is what proves an update came from you.
+*.key
+!src-tauri/**/*.key.pub

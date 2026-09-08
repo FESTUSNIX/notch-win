@@ -1,0 +1,126 @@
+/* The same palette as the notch, so the panel reads as the same object opening
+   rather than as a dialogue the app happens to own. */
+:root {
+  --fill: #0a0a0a;
+  --raised: #151515;
+  --line: #262626;
+  --text: #ffffff;
+  --text-dim: #808080;
+  --accent: #00ff88;
+  --danger: #ff3f00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--fill);
+  color: var(--text);
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+#close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+#close:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+main {
+  padding: 14px 16px 18px;
+  overflow-y: auto;
+  height: calc(100% - 38px);
+}
+
+section {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+section.last {
+  border-bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+h2 {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.edges {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+button:hover {
+  border-color: #3a3a3a;
+}
+
+#autostart[aria-pressed="true"],
+.edges button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.wide {
+  width: 100%;
+}
+
+.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
