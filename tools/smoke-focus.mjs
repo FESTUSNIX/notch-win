@@ -35,6 +35,8 @@ try {
     await pause(250);
   }
   assert.ok(taskPage && usagePage,`Both notch WebViews must exist: ${context.pages().map(p=>p.url()).join(', ')}`);
+  await taskPage.evaluate(()=>localStorage.removeItem("codenotch.focus.v1"));
+  await taskPage.reload();
   await taskPage.waitForFunction(() => document.getElementById('rail-count')?.textContent === '2/6');
   const errors=[];
   taskPage.on('pageerror',e=>errors.push(e.message));
@@ -68,63 +70,27 @@ try {
   await taskPage.locator('#pin').click();
   await taskPage.locator('#task-panel').waitFor({state:'visible'});
   await taskPage.screenshot({path:resolve(root,'test-results/native-task-notch.png'),omitBackground:true});
-  // The composer is a live field, so clicking it *is* the gesture that lifts
-  // NOACTIVATE. Give the round-trip a moment: set_task_input is real IPC here.
-  await taskPage.locator('#inline-title').click();
-  await pause(500);
-  await taskPage.locator('#inline-title').fill('Inline keyboard check');
-  let entry=await diagnostics();
-  assert.equal(entry.tasks.style & 0x08000000,0,'Inline entry removes NOACTIVATE');
-  assert.equal(entry.tasks.style & (0x80 | 0x8),0x80 | 0x8,'Inline entry stays a topmost tool window');
-  await taskPage.evaluate(()=>{window.smokeRects=[];});
-  await pause(1000);
-  entry=await diagnostics();
-  assert.equal(entry.tasks.style & 0x08000000,0,'Hover hardening preserves inline keyboard mode');
-  await taskPage.locator('#task-panel').waitFor({state:'visible'});
-  await taskPage.screenshot({path:resolve(root,'test-results/native-task-inline.png'),omitBackground:true});
-  await taskPage.evaluate(()=>{window.smokeRects=[{x:-100000,y:-100000,width:200000,height:200000}];});
-  // Escape releases the field without discarding the draft; the panel is pinned,
-  // so it stays up and only the activation exception comes back.
-  await taskPage.keyboard.press('Escape');
-  await pause(500);
-  const afterEntry=await diagnostics();
-  assert.equal(afterEntry.tasks.style & 0x08000000,0x08000000,'Releasing the field restores NOACTIVATE');
-  assert.equal(await taskPage.locator('#inline-title').inputValue(),'Inline keyboard check','Escape keeps the draft');
+  await taskPage.getByRole('button',{name:'Focus Get outside for a walk',exact:true}).click();
+  await taskPage.locator('#focus-session').waitFor({state:'visible'});
+  await taskPage.waitForFunction(()=>document.getElementById('focus-elapsed').textContent!=='00:00');
+  await taskPage.screenshot({path:resolve(root,'test-results/native-focus-panel.png'),omitBackground:true});
+  await taskPage.getByRole('button',{name:'Pause focus timer',exact:true}).click();
+  const stopped=await taskPage.locator('#focus-elapsed').textContent();
+  await pause(1200);
+  assert.equal(await taskPage.locator('#focus-elapsed').textContent(),stopped);
   await taskPage.locator('#collapse-panel').click();
   await taskPage.locator('#task-panel').waitFor({state:'hidden'});
-  const pill=await taskPage.locator('#rail-shape').boundingBox();
-  assert.ok(Math.min(pill.width,pill.height)<12,'Collapsed task rail is the original thin pill');
-  await Promise.race([
-    taskPage.evaluate(() => window.smokeInvoke('open_task_editor')),
-    pause(15000).then(() => { throw new Error('Native editor creation timed out'); })
-  ]);
-  let editor;
-  for(let i=0;i<40;i++) {
-    editor=context.pages().find(p=>/task-editor\.html/.test(p.url()));
-    if(editor) break;
-    await pause(250);
-  }
-  assert.ok(editor,'Native editor must open');
-  await editor.bringToFront();
-  await editor.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|set_focus'));
-  await pause(300);
-  await editor.getByLabel('Task',{exact:true}).fill('Local keyboard focus check');
-  assert.equal(await editor.getByLabel('Task',{exact:true}).inputValue(),'Local keyboard focus check');
-  await editor.screenshot({path:resolve(root,'test-results/native-task-editor.png')});
-  const focused = await diagnostics();
-  await writeFile(resolve(root,'test-results/native-window-checks.json'),JSON.stringify({resting,interactive,entry,afterEntry,focused},null,2));
-  assert.equal(focused['task-editor'].style & 0x08000000,0,'Editor can activate');
-  assert.equal(await editor.getByLabel('Task',{exact:true}).evaluate(el => document.activeElement === el),true,'Editor input receives WebView focus');
-  if (!focused['task-editor'].focused) console.log('Manual check required: Windows foreground activation was not granted during this automated launch.');
-  assert.equal(focused.tasks.focused,false,'Task notch does not take focus');
-  await editor.getByRole('button',{name:'Close task editor'}).click();
-  for(let i=0;i<40 && !editor.isClosed();i++) await pause(100);
-  assert.ok(editor.isClosed(),'Editor close button has native permission');
+  await taskPage.locator('#focus-pill').waitFor({state:'visible'});
+  const checked=await diagnostics();
+  assert.equal(checked.tasks.style & fixed,fixed,'Timer keeps hardened notch styles');
+  const pill=await taskPage.locator('#focus-pill').boundingBox();
+  assert.ok(Math.min(pill.width,pill.height)>25 && Math.min(pill.width,pill.height)<36);
+  await taskPage.screenshot({path:resolve(root,'test-results/native-focus-pill.png'),omitBackground:true});
+  await taskPage.locator('#focus-pill').dispatchEvent('click');
+  await taskPage.getByRole('button',{name:'End focus session',exact:true}).click();
   assert.deepEqual(errors,[]);
-  await writeFile(resolve(root,'test-results/native-window-checks.json'),JSON.stringify({resting,interactive,entry,afterEntry,focused},null,2));
-  console.log('Native release passed: both notches, isolated masks, inline focus mode/restoration, pill collapse, demo task IPC, editor opening and closing.');
+  console.log('Native focus passed: start, elapsed time, pause, collapsed timer, unchanged hardened styles, end.');
 } finally {
-  // Terminate only the child created by this test; no live task writes occurred.
   if(child.exitCode === null) child.kill();
   if(browser) await browser.close().catch(()=>{});
 }

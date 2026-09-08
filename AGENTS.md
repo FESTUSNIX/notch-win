@@ -414,8 +414,13 @@ pages. Hover rectangles are keyed by window label, and dragging/sizing derive
 their target from Tauri's injected calling window. Never put those back into a
 single shared rectangle vector or address `notch` from task commands.
 
-- `tasks.ts`, `tasks.css`: the task notch, pinning and mask reporting.
+- `tasks.ts`, `tasks.css`: the task notch, its optimistic state, pinning and
+  mask reporting.
 - `task-editor.ts`: token setup, quick add, rename and task placement.
+- `task-day.ts`: the **Day Card** — the panel's list. Separate from
+  `task-list.ts` on purpose: that one draws the editor window, which is a
+  settings page (grouped by project, dense, rename pencil). Two surfaces, two
+  densities; do not merge them back into one renderer with a mode flag.
 - `task-model.ts`, `task-list.ts`: nested display and leaf-based progress.
 - `task-client.ts`, `task-demo.json`: native IPC plus explicit browser fixtures.
 - `src-tauri/src/tasks.rs`: official TickTick Open API, serialized polling and
@@ -454,14 +459,79 @@ the development server and produces blank/error WebViews when it is absent.
   import the same integrated Spring from src/motion.ts (0.42 / 0.78).
 - task-surface.ts owns animated geometry, per-frame masks, four-edge orientation,
   content-based panel height, pinning and the inline-entry focus lifecycle.
-- Quick add lives inside tasks.ts. Only account setup and optional task management
-  use task-editor. create_task accepts either task window; token commands remain
-  editor-only.
+- Only account setup and optional task management use task-editor. create_task
+  accepts either task window; token commands remain editor-only.
 - NOACTIVATE is the default, with an explicit exception while inline entry is
   active. task_window::set_task_input owns that temporary state; win::harden
-  must preserve it on every hover toggle. Cancel/save/collapse/blur restore the
+  must preserve it on every hover toggle. Release/save/collapse/blur restore the
   default. Restore the former foreground window only if the task notch still
   owns focus; never override an outside click.
-- Browser tests cover fold/reopen, retained drafts, inline create, all four edges,
-  compact lists and reduced motion. Native smoke checks the temporary style
-  change and restoration without writing to TickTick.
+- Browser tests cover fold/reopen, retained drafts, live-field capture, rename in
+  place, all four edges, compact lists, day-clear and reduced motion. Native
+  smoke checks the temporary style change and restoration without writing to
+  TickTick.
+
+### The Day Card (2026-09-08)
+
+One day as one list: no project headings, overdue badged in place instead of
+behind a tab, finished work sunk into one line, 52px rows, and a composer that is
+always a field. Nine chrome zones became three. Every item below is a trap that
+produces **no error**.
+
+1. **Progress is scored on `today`, never on `day`.** The `day` view exists so
+   the list can carry overdue work; the ring and the rail deliberately do not
+   count it. Score `day` and a backlog of twelve late tasks parks the ring at
+   2/15 for a week, so finishing something reads as no progress — which is the
+   opposite of what the whole surface is for.
+2. **Optimistic state is keyed on `taskId`, not `taskKey`.** `taskKey` folds
+   status in, so it changes at the exact moment the optimistic entry has to
+   survive. `taskId` is `projectId:id` and is stable across completion.
+3. **Optimistic entries are cleared by the arriving snapshot agreeing, never by
+   the mutation resolving.** `complete_task` refreshes and publishes *before* it
+   returns, so clearing on resolve blinks the row back to its old state in the
+   window between the two.
+4. **Completion must not set `busy`.** `busy` disables the list, and the reward
+   sequence runs for ~860 ms after the click. `mutate()` exists for writes that
+   show their result immediately; `action()` is only for commands with nothing to
+   show until they return (refresh, placement, opening the editor).
+5. **`pathLength` does not normalise the dash on nodes built with
+   `createElementNS`.** It works on `#ring-progress`, which is parsed from markup.
+   On the day-clear ring it did not: `stroke-dasharray: 1` resolved to one
+   *pixel* and the ring drew as a dotted line that reads as a dim grey circle,
+   with no error and correct-looking computed styles. The dash lengths in
+   `tasks.css` are the geometry's own — 2πr = 207.3 for the arc, 38.6 for the
+   mark, 17.1 for the check tick. Change a shape and change them with it; the
+   browser test polls `strokeDashoffset` to `0px` to catch the drift.
+6. **A `.slot` wraps exactly one `.slot-inner`.** `grid-template-rows: 1fr → 0fr`
+   collapses one track; a row and its children as two children of the slot leaves
+   the second track open and only half the row collapses.
+7. **`.gone` must be added a frame after the row exists**, or the transition has
+   nothing to travel from and the row vanishes instantly. `renderDay` does that
+   with `requestAnimationFrame`, so it works whether the node is fresh or not.
+8. **The composer lives outside `#task-list`, pinned above the footer.** Inside
+   the scroller it scrolled out of reach on a busy day, and inside
+   `#task-list-content` a redraw destroyed what was half-typed.
+9. **The rename field commits on blur only when it is still connected.** Any
+   redraw detaches it, which also fires `blur` — committing there files a
+   half-typed rename because a snapshot happened to land while someone was
+   typing. `editCaret` carries the caret across those redraws.
+10. **Sub-tasks open by default; a checklist does not.** A parent with children
+    cannot be completed here, so collapsed it is an inert row with a disabled
+    circle. A task with a checklist is completable on its own, so its steps are
+    detail. Two sets — `expanded` for rows that default closed, `collapsed` for
+    rows that default open.
+11. **One click is the floor for the composer**, and that is `WS_EX_NOACTIVATE`,
+    not a design choice: a keystroke cannot reach a window that is not focused.
+    What the live field buys is that the click lands *in* the field rather than
+    on a button that then produces one, and that Enter keeps the caret so the
+    second, third and fourth task cost nothing.
+12. **List colour falls back to a hash of the project id.** TickTick gives most
+    lists a colour and some none, and an index-based fallback re-colours every
+    list the day one is added.
+13. The overdue chip caps at `99+d`. It sits beside the title on a 373px panel,
+    and a task forgotten for two years must not be the widest thing in the row.
+
+### Focus timer
+`focus-timer.ts` persists a local timestamp-based session, updated only on start/pause/resume/end. `tasks.ts` paints the two clock labels once per second without redrawing task inputs. `task-surface.ts` uses FRAME.focusPillDepth/Length for the collapsed timer on all four edges. Focus is local and never writes task data by itself; Done uses the existing completion command. Keep the timer visible when the panel folds. The 25-minute mark is a visual cue, not an automatic completion or reset.
+
+Focus visual refinement: task-icons.ts renders the free Hugeicons package as local SVG; controls retain aria-label/title when text is removed. The focused task sits directly in the panel, with no nested card. The collapsed focus pill contains only a ~7 x 96 px fill bar; exact elapsed time is shown in the open panel and its accessible label. Bar orientation follows the screen edge. Paused fill dims; the 25-minute cue remains amber.

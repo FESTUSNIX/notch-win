@@ -101,13 +101,21 @@ export const FRAME = {
   // Height is capped to the monitor in the native size command.
   taskPanelWidth: 780,
   taskPanelHeight: 1100,
-  taskRowHeight: 72,
+  /* 108, not 72. The row carries the panel's only real interaction, and at 72
+   * (34px) it held a 14px hit target under 13px type. See docs — the day is
+   * about eight rows, so the room is there to spend. */
+  taskRowHeight: 108,
   taskIndent: 36,
   taskControlHeight: 68,
   // Compact task surface: minimum room for one row plus its header/actions.
   taskPanelMinHeight: 480,
   taskPanelInset: 32,
   taskPanelSlide: 28,
+  // Timer pill: slim ~31 x 157 CSS px; a ~7 x 96 px fill is the entire readout.
+  focusPillDepth: 80,
+  focusPillLength: 400,
+  focusBarLength: 244,
+  focusBarWidth: 18,
 } as const;
 
 /** Cap-height fraction of an em for the UI font. */

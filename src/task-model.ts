@@ -5,13 +5,21 @@ export interface Task {
   isAllDay?: boolean; content?: string; desc?: string; items?: ChecklistItem[];
   sortOrder?: number; priority?: number; repeatFlag?: string;
 }
-export interface Project { id: string; name: string; closed?: boolean; kind?: string }
+/** `color` is TickTick's own list colour, passed straight through by collect().
+ *  Absent on plenty of lists, so every consumer needs a fallback. */
+export interface Project { id: string; name: string; closed?: boolean; kind?: string; color?: string }
 export interface TaskSnapshot {
   demo?: boolean;
   connected: boolean; tasks: Task[]; projects: Project[]; updatedAt: string | null;
   day: string; error: string | null; historyComplete: boolean;
 }
-export type TaskView = "today" | "overdue" | "all";
+/** `day` is what the notch panel shows: today's work *and* whatever is late.
+ *
+ * ⚠️ It is deliberately not what the ring counts. Progress stays on `today`,
+ * so a backlog of twelve overdue tasks cannot park the day at 2/15 and make
+ * finishing something feel like no progress at all. Late work is listed and
+ * badged; it is not scored. */
+export type TaskView = "today" | "overdue" | "all" | "day";
 export interface TaskNode { key: string; task: Task; children: TaskNode[]; selected: boolean }
 export const emptySnapshot = (): TaskSnapshot => ({ connected: false, tasks: [], projects: [], updatedAt: null, day: "", error: null, historyComplete: false });
 
@@ -63,8 +71,11 @@ export function taskForest(tasks: Task[], view: TaskView, today = localDay()): T
     const done = node.task.status === 2;
     const { start, end } = schedule(node);
     const doneToday = done && dateDay(node.task.completedTime) === today;
-    node.selected = view === "all" ? !done || doneToday : view === "overdue" ?
-      !done && !!end && end < today : doneToday || (!done && !!start && !!end && start <= today && end >= today);
+    const scheduledToday = !done && !!start && !!end && start <= today && end >= today;
+    const late = !done && !!end && end < today;
+    node.selected = view === "all" ? !done || doneToday : view === "overdue" ? late :
+      view === "day" ? doneToday || scheduledToday || late :
+      doneToday || scheduledToday;
   }
   function retain(node: TaskNode): boolean { return node.selected || node.children.some(retain); }
   function sort(list: TaskNode[]) {
@@ -93,4 +104,32 @@ export function progress(nodes: TaskNode[]): { done: number; total: number } {
 
 export function visibleNode(node: TaskNode, hideDone: boolean): boolean {
   return (node.selected && (!hideDone || node.task.status !== 2)) || node.children.some(n => visibleNode(n, hideDone));
+}
+
+/** Identity that survives completion.
+ *
+ * ⚠️ Not `taskKey`, which folds status in so a reopened task redraws as a new
+ * row. Optimistic state has to outlive exactly that transition — it is keyed on
+ * the task itself, and only the arriving snapshot clears it. */
+export function taskId(task: Pick<Task, "projectId" | "id">): string {
+  return `${task.projectId}:${task.id}`;
+}
+
+/** How many whole days past its due day a task is, or 0 if it is not late.
+ *
+ * Days, not hours: the panel says "3d", and a task due last night at 23:00 is
+ * one day late all through today rather than flipping to two overnight. */
+export function overdueDays(task: Task, today = localDay()): number {
+  if (task.status === 2) return 0;
+  const zone = task.isAllDay ? task.timeZone : undefined;
+  const end = dateDay(task.dueDate, zone) || dateDay(task.startDate, zone);
+  if (!end || end >= today) return 0;
+  const ms = Date.parse(`${today}T00:00:00Z`) - Date.parse(`${end}T00:00:00Z`);
+  return Math.max(1, Math.round(ms / 86400000));
+}
+
+/** Every leaf under this node is finished — so the row can leave the day. */
+export function nodeDone(node: TaskNode): boolean {
+  const { done, total } = progress([node]);
+  return total > 0 && done === total;
 }

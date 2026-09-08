@@ -12,6 +12,8 @@ export class TaskSurface {
   open = false;
   pinned = false;
   editing = false;
+  private timing = false;
+  setTiming(active:boolean) {if(this.timing===active)return;this.timing=active;this.shell.classList.toggle("has-timer",active);this.paint();}
   private hovering = false;
   private suppressed = false;
   private timer = 0;
@@ -30,6 +32,8 @@ export class TaskSurface {
   private masks: {x:number;y:number;width:number;height:number}[] = [];
 
   constructor() {
+    document.documentElement.style.setProperty("--focus-bar-length",`${px(FRAME.focusBarLength)}px`);
+    document.documentElement.style.setProperty("--focus-bar-width",`${px(FRAME.focusBarWidth)}px`);
     document.documentElement.style.setProperty("--task-indent",`${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height",`${cpx(FRAME.taskRowHeight)}px`);
     this.panel.style.width = `${this.panelWidth}px`;
@@ -67,10 +71,14 @@ export class TaskSurface {
 
   measure() {
     if(native) this.shell.style.height=`${window.innerHeight}px`;
-    const content=document.getElementById("task-list-content")!;
+    // The scroller holds the rows and the done drawer; the composer is pinned
+    // outside it and counts as chrome. Sum the scroller's children rather than
+    // reading one of them — the drawer is a sibling of the rows, not inside.
+    const scroller=document.getElementById("task-list")!;
+    const content={offsetHeight:[...scroller.children].reduce((n,el)=>n+(el as HTMLElement).offsetHeight+parseFloat(getComputedStyle(el).marginTop||"0")+parseFloat(getComputedStyle(el).marginBottom||"0"),0)};
     const chrome=[...this.panel.children].filter(el=>el.id!=="task-list").reduce((n,el)=>n+(el as HTMLElement).offsetHeight,0);
     const available=this.shell.clientHeight-(isVertical(this.edge)?0:px(bodyDepth(this.edge))+this.gap);
-    this.height=Math.min(available,cpx(FRAME.taskPanelHeight),Math.max(cpx(FRAME.taskPanelMinHeight),chrome+content.offsetHeight+cpx(FRAME.cardPadding)));
+    this.height=Math.min(available,cpx(FRAME.taskPanelHeight),Math.max(cpx(FRAME.taskPanelMinHeight),chrome+content.offsetHeight+cpx(FRAME.cardPadding)+8));
     this.panel.style.height=`${this.height}px`;
     this.paint();
   }
@@ -127,7 +135,8 @@ export class TaskSurface {
   private paint() {
     const t=Math.max(0,Math.min(1.02,this.fold.value)), visible=Math.min(1,t);
     const vertical=isVertical(this.edge), sw=this.shell.clientWidth, sh=this.shell.clientHeight;
-    const d=lerp(FRAME.pillThin,bodyDepth(this.edge),t), l=lerp(FRAME.pillLong,shapeLength(1,this.edge),t);
+    const restingDepth=this.timing?FRAME.focusPillDepth:FRAME.pillThin;
+    const d=lerp(restingDepth,bodyDepth(this.edge),t), l=lerp(this.timing?FRAME.focusPillLength:FRAME.pillLong,shapeLength(1,this.edge),t);
     const depth=px(d), length=px(l), hot=Math.max(depth,px(FRAME.pillHotZone));
     const rw=vertical?hot:length,rh=vertical?length:hot;
     const rx=vertical?(this.edge==="left"?0:sw-rw):(sw-rw)/2;
@@ -137,8 +146,10 @@ export class TaskSurface {
     Object.assign(this.shape.style,{width:`${svgW}px`,height:`${svgH}px`,left:this.edge==="right"?`${rw-svgW}px`:"0px",top:this.edge==="bottom"?`${rh-svgH}px`:"0px"});
     this.shape.setAttribute("viewBox",`0 0 ${vertical?d:l} ${vertical?l:d}`);
     const path=this.shape.querySelector("path")!;
-    path.setAttribute("d",notchPath(d,l,lerp(FRAME.pillThin/2,FRAME.curlRadius,t)));
+    path.setAttribute("d",notchPath(d,l,lerp(restingDepth/2,FRAME.curlRadius,t)));
     path.setAttribute("transform",notchTransform(this.edge,d));
+    const timerPill=document.getElementById("focus-pill");
+    if(timerPill) {Object.assign(timerPill.style,{opacity:String(this.timing?1-visible:0),visibility:this.timing&&visible<1?"visible":"hidden",left:this.shape.style.left,top:this.shape.style.top,width:this.shape.style.width,height:this.shape.style.height});}
     this.ring.style.opacity=String(Math.max(0,(visible-.35)/.65));
     const expanded=px(bodyDepth(this.edge));
     const panelX=vertical?(this.edge==="left"?expanded+this.gap:0):(sw-this.panelWidth)/2;

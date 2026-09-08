@@ -20,10 +20,24 @@ same spring motion as the usage notch. Pin keeps it open; the close button or
 ring collapses it explicitly. Reduced-motion preferences are respected.
 Short lists use a shorter panel instead of an empty full-height card.
 
-**Add task** opens a composer inside the panel: enter a title, choose a list and
-optional day, then press Enter or the save arrow. Escape closes the composer;
-unsaved text stays available when reopened. While typing, the task notch briefly
-accepts keyboard focus. Cancel, save, collapse or an outside click restores its
+The panel shows **one day as one list** — today's work and anything overdue,
+which carries a small amber age badge in place rather than sitting behind a
+filter. There are no per-list headings; a task's list is the colour of its ring.
+Finished work collapses out of the day into a single **"N done today"** line,
+and clearing the last of it shows a **Day clear** mark.
+
+Completion is immediate: the tick, the strike-through and the progress rail all
+answer the click, and TickTick reconciles afterwards. A failed write puts the row
+back and says why. Nothing else on the list is disabled while a write is in
+flight.
+
+**Adding is a field, not a button.** A composer sits permanently above the sync
+line — click it and type; Enter files the task and leaves the caret ready for the
+next one. The chevron reveals the list and day, which otherwise default to your
+last list and today. Escape releases the field without discarding the draft, and
+a draft survives the panel folding. **Renaming happens in place**: click a task's
+title, type, press Enter. While any field is live the task notch briefly accepts
+keyboard focus; releasing it, saving, collapsing or an outside click restores its
 normal non-activating behavior. Account setup still has a separate window.
 
 Use the panel's **gear > Screen edge** controls for left, right, top or bottom.
@@ -36,12 +50,13 @@ Open **tray → Tasks & TickTick…** (also available from Settings) to connect:
    a personal token.
 2. Paste it into the task editor's connection form. The app checks access before
    saving it in **Windows Credential Manager**, under `codenotch-win/ticktick`.
-3. Add tasks to a TickTick list, optionally schedule a day, or use the task panel
-   to complete them. The same account provides phone sync; the existing Google
+3. Add tasks from the panel itself, from a TickTick list, or schedule a day. The same account provides phone sync; the existing Google
    Calendar/Samsung Calendar connection continues independently.
 
-The panel supports quick add; the separate editor also supports rename. The notch displays nested tasks and
-checklists, and checklist items can be checked or unchecked. Full-task reopening,
+The panel adds, completes and renames; the separate editor also lists everything
+by project. Sub-tasks are shown under their parent by default — a parent cannot
+be completed directly, so collapsed it would be an inert row — while a
+checklist stays behind its own "N of M done" line. Full-task reopening,
 indent/outdent, reminders and recurrence editing remain in TickTick. Parent
 tasks with children summarize progress; complete their children individually.
 
@@ -283,3 +298,8 @@ is Credential Manager, so that one still needs a `CredReadW`.
 | Cursor | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | inferred from VS Code |
 | Grok | `%USERPROFILE%\.grok\auth.json` | unverified |
 | OpenCode | `~/.local/share/opencode/auth.json` or `%APPDATA%\opencode` | unverified |
+
+### Focus timer
+Hover a task row and choose **Focus**. One task stays in view; other tasks are tucked away. Pause/resume, Done and End live in its small focus card. The collapsed notch grows to show elapsed time and a slim 25-minute progress rail. At 25 minutes it turns amber as a quiet break cue; it keeps counting until paused or ended. This is elapsed wall-clock time, including sleep/closed-app time while running, not activity tracking. The session persists on this PC; TickTick tasks retain their existing sync. No additional service is used.
+
+Focus controls now use [Hugeicons](https://hugeicons.com/docs) SVGs with tooltips and accessible labels. The collapsed indicator is a taller, text-free fill bar; open the panel for exact elapsed time.
