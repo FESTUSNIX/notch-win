@@ -35,7 +35,7 @@ pub struct CssRect {
 }
 
 #[derive(Default)]
-pub struct InteractiveRects(pub Mutex<Vec<CssRect>>);
+pub struct InteractiveRects(pub Mutex<std::collections::HashMap<String, Vec<CssRect>>>);
 
 /// `x`/`y` are CSS pixels relative to the window, so the web layer can work out
 /// which cell the pointer is over — the same job NotchWindowController's cursor
@@ -47,7 +47,7 @@ struct HoverPayload {
     y: f64,
 }
 
-pub fn spawn(app: AppHandle) {
+pub fn spawn(app: AppHandle, label: &'static str) {
     std::thread::spawn(move || {
         // ⚠️ `Option`, not `bool`, and that is load-bearing.
         //
@@ -68,9 +68,13 @@ pub fn spawn(app: AppHandle) {
         loop {
             std::thread::sleep(POLL);
 
-            let Some(window) = app.get_webview_window("notch") else {
+            let Some(window) = app.get_webview_window(label) else {
                 continue;
             };
+            if !window.is_visible().unwrap_or(false) {
+                was_hovering = None;
+                continue;
+            }
 
             // The taskbar moved, hid or came back: take the space, or give it
             // up. Never while a drag is in flight — re-placing then would fight
@@ -79,7 +83,7 @@ pub fn spawn(app: AppHandle) {
                 let key = (work.left, work.top, work.right, work.bottom);
                 if last_work != Some(key) && !crate::drag::is_dragging() {
                     last_work = Some(key);
-                    let (edge, along) = crate::drag::current(&app);
+                    let (edge, along) = crate::drag::current_for(&app, label);
                     win::place(&window, edge, along);
                 }
             }
@@ -96,7 +100,7 @@ pub fn spawn(app: AppHandle) {
             let rects = {
                 let guard = app.state::<InteractiveRects>();
                 let held = guard.0.lock().unwrap();
-                held.clone()
+                held.get(label).cloned().unwrap_or_default()
             };
 
             // CSS pixels relative to the window -> physical pixels on screen.
@@ -129,8 +133,13 @@ pub fn spawn(app: AppHandle) {
                 continue;
             }
 
-            let _ = app.emit(
-                "notch:hover",
+            let _ = app.emit_to(
+                label,
+                if label == "tasks" {
+                    "tasks:hover"
+                } else {
+                    "notch:hover"
+                },
                 HoverPayload {
                     hover: hovering,
                     x: (point.x as f64 - origin.x as f64) / scale,

@@ -39,7 +39,11 @@ fn left_button_down() -> bool {
 }
 
 #[tauri::command]
-pub fn drag_begin(app: AppHandle) {
+pub fn drag_begin(app: AppHandle, window: tauri::WebviewWindow) {
+    let label = window.label().to_string();
+    if label != "notch" && label != "tasks" {
+        return;
+    }
     if DRAGGING.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -47,13 +51,21 @@ pub fn drag_begin(app: AppHandle) {
     std::thread::spawn(move || {
         let finish = |app: &AppHandle, moved: bool| {
             DRAGGING.store(false, Ordering::SeqCst);
-            let _ = app.emit("notch:drag_end", moved);
+            let _ = app.emit_to(
+                label.as_str(),
+                if label == "tasks" {
+                    "tasks:drag_end"
+                } else {
+                    "notch:drag_end"
+                },
+                moved,
+            );
         };
 
-        let Some(window) = app.get_webview_window("notch") else {
+        let Some(window) = app.get_webview_window(&label) else {
             return finish(&app, false);
         };
-        let edge = app.state::<Settings>().0.lock().map(|c| c.edge).unwrap_or_default();
+        let edge = current_for(&app, &label).0;
 
         let (Ok(start_cursor), Ok(start_position), Ok(size), Some(work)) = (
             app.cursor_position(),
@@ -104,7 +116,11 @@ pub fn drag_begin(app: AppHandle) {
         if moved {
             if let Some(along) = win::along_ratio(&window, edge) {
                 if let Ok(mut config) = app.state::<Settings>().0.lock() {
-                    config.along = along;
+                    if label == "tasks" {
+                        config.task_along = along;
+                    } else {
+                        config.along = along;
+                    }
                     crate::config::save(&config);
                 }
             }
@@ -133,9 +149,19 @@ pub fn reset_position(app: AppHandle) {
 
 /// The edge to draw against, for whoever needs it without the lock ceremony.
 pub fn current(app: &AppHandle) -> (Edge, f64) {
+    current_for(app, "notch")
+}
+
+pub fn current_for(app: &AppHandle, label: &str) -> (Edge, f64) {
     app.state::<Settings>()
         .0
         .lock()
-        .map(|c| (c.edge, c.along))
+        .map(|c| {
+            if label == "tasks" {
+                (c.task_edge, c.task_along)
+            } else {
+                (c.edge, c.along)
+            }
+        })
         .unwrap_or((Edge::Right, 0.5))
 }

@@ -1,11 +1,14 @@
 mod autostart;
 mod config;
+mod credentials;
 mod drag;
 mod fixtures;
 mod hover;
 mod model;
 mod providers;
 mod sessions;
+mod task_window;
+mod tasks;
 mod win;
 
 use std::sync::Mutex;
@@ -27,9 +30,16 @@ const POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// The web layer measures its own chrome and reports it here every time the
 /// layout changes. Nothing else decides what is clickable.
 #[tauri::command]
-fn set_interactive_rects(rects: Vec<CssRect>, state: tauri::State<InteractiveRects>) {
+fn set_interactive_rects(
+    window: tauri::WebviewWindow,
+    rects: Vec<CssRect>,
+    state: tauri::State<InteractiveRects>,
+) {
+    if !matches!(window.label(), "notch" | "tasks") {
+        return;
+    }
     if let Ok(mut held) = state.0.lock() {
-        *held = rects;
+        held.insert(window.label().to_string(), rects);
     }
 }
 
@@ -147,12 +157,26 @@ fn debug_note(note: String) {
 /// makes. What does change it is the number of providers, and the room the
 /// tooltip needs beside them; the web layer knows both, so it asks.
 #[tauri::command]
-fn set_notch_size(app: AppHandle, width: f64, height: f64) {
-    let Some(window) = app.get_webview_window("notch") else {
+fn set_notch_size(app: AppHandle, window: tauri::WebviewWindow, width: f64, height: f64) {
+    if !matches!(window.label(), "notch" | "tasks")
+        || !width.is_finite()
+        || !height.is_finite()
+        || width < 1.0
+        || height < 1.0
+        || width > 2000.0
+        || height > 2000.0
+    {
         return;
-    };
+    }
     let current = window.outer_size().ok();
     let scale = window.scale_factor().unwrap_or(1.0);
+    let height = if window.label() == "tasks" {
+        win::work_area(&window)
+            .map(|r| height.min((r.bottom - r.top) as f64 / scale))
+            .unwrap_or(height)
+    } else {
+        height
+    };
     let wanted = tauri::PhysicalSize::new(
         (width * scale).round() as u32,
         (height * scale).round() as u32,
@@ -163,7 +187,7 @@ fn set_notch_size(app: AppHandle, width: f64, height: f64) {
     let _ = window.set_size(wanted);
     // Re-pin: growing a window on a screen edge would otherwise push it off,
     // and the drag ratio has to be honoured on every resize, not just at boot.
-    let (edge, along) = drag::current(&app);
+    let (edge, along) = drag::current_for(&app, window.label());
     win::place(&window, edge, along);
 }
 
@@ -240,8 +264,7 @@ async fn collect(
                     println!("[notch] claude rate limited, next attempt in {seconds:.0}s");
                     wait = wait.max(Duration::from_secs_f64(seconds));
                     if let Ok(mut config) = app.state::<Settings>().0.lock() {
-                        config.claude_backoff_until_ms =
-                            Some(now_ms + (seconds * 1000.0) as i64);
+                        config.claude_backoff_until_ms = Some(now_ms + (seconds * 1000.0) as i64);
                         config::save(&config);
                     }
                 } else {
@@ -283,7 +306,11 @@ fn spawn_polling(app: AppHandle) {
 
     tauri::async_runtime::spawn(async move {
         let client = reqwest::Client::builder()
-            .user_agent(concat!("codenotch/", env!("CARGO_PKG_VERSION"), " (Windows)"))
+            .user_agent(concat!(
+                "codenotch/",
+                env!("CARGO_PKG_VERSION"),
+                " (Windows)"
+            ))
             .build()
             .unwrap_or_default();
         let mut rate_limits: u32 = 0;
@@ -329,6 +356,7 @@ pub fn run() {
         .manage(Latest::default())
         .manage(History(Mutex::new(remembered)))
         .manage(Wake::default())
+        .manage(tasks::TaskState::new())
         .manage(sessions::Latest::default())
         .manage(Settings(Mutex::new(settings)))
         .invoke_handler(tauri::generate_handler![
@@ -345,7 +373,20 @@ pub fn run() {
             quit_app,
             drag::drag_begin,
             drag::reset_position,
-            debug_note
+            debug_note,
+            tasks::get_tasks,
+            tasks::refresh_tasks,
+            tasks::connect_ticktick,
+            tasks::disconnect_ticktick,
+            tasks::complete_task,
+            tasks::set_checklist_item,
+            tasks::create_task,
+            tasks::rename_task,
+            task_window::open_task_editor,
+            task_window::get_task_placement,
+            task_window::set_task_input,
+            task_window::set_task_placement,
+            task_window::task_window_diagnostics
         ])
         .setup(move |app| {
             let window = app
@@ -368,7 +409,10 @@ pub fn run() {
                 MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset", "Reset position", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Codenotch", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&refresh, &settings_item, &reset, &quit])?;
+            let task_item =
+                MenuItem::with_id(app, "tasks", "Tasks & TickTick…", true, None::<&str>)?;
+            let menu =
+                Menu::with_items(app, &[&task_item, &refresh, &settings_item, &reset, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -376,13 +420,22 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "refresh" => refresh_now(app.clone()),
                     "settings" => open_settings(app.clone()),
+                    "tasks" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = task_window::open_task_editor(handle).await;
+                        });
+                    }
                     "reset" => drag::reset_position(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
 
-            hover::spawn(app.handle().clone());
+            task_window::setup(app.handle())?;
+            hover::spawn(app.handle().clone(), "notch");
+            hover::spawn(app.handle().clone(), "tasks");
+            tasks::spawn(app.handle().clone());
             sessions::spawn(app.handle().clone());
             spawn_polling(app.handle().clone());
             Ok(())

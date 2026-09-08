@@ -14,6 +14,8 @@ export default defineConfig({
       input: {
         notch: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
+        tasks: resolve(__dirname, "tasks.html"),
+        taskEditor: resolve(__dirname, "task-editor.html"),
       },
     },
   },

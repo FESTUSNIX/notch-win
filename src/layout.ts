@@ -95,6 +95,19 @@ export const FRAME = {
      heads, in a card three lines tall. */
   capCardTitle: 21,
   capCardBody: 18,
+
+  // Task panel: a new design surface based on the supplied narrow task list.
+  // 780 frame px at card scale gives ~373 CSS px for readable nested rows.
+  // Height is capped to the monitor in the native size command.
+  taskPanelWidth: 780,
+  taskPanelHeight: 1100,
+  taskRowHeight: 72,
+  taskIndent: 36,
+  taskControlHeight: 68,
+  // Compact task surface: minimum room for one row plus its header/actions.
+  taskPanelMinHeight: 480,
+  taskPanelInset: 32,
+  taskPanelSlide: 28,
 } as const;
 
 /** Cap-height fraction of an em for the UI font. */

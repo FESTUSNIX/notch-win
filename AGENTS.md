@@ -405,3 +405,63 @@ Not built, roughly in the order worth doing:
   in for "unknown"; a dash and a reason, or a dimmed stale figure.
 - Comments explain *why*, especially where the reason is a trap above. The code
   says what it does; the comment says what it will cost you to change it.
+
+## 9. TickTick task sibling (2026-09-08)
+
+The `tasks` window is a separate four-edge notch; `task-editor` is its focusable
+editor. Both share the app/tray with `notch` and `settings`. Vite now builds four
+pages. Hover rectangles are keyed by window label, and dragging/sizing derive
+their target from Tauri's injected calling window. Never put those back into a
+single shared rectangle vector or address `notch` from task commands.
+
+- `tasks.ts`, `tasks.css`: the task notch, pinning and mask reporting.
+- `task-editor.ts`: token setup, quick add, rename and task placement.
+- `task-model.ts`, `task-list.ts`: nested display and leaf-based progress.
+- `task-client.ts`, `task-demo.json`: native IPC plus explicit browser fixtures.
+- `src-tauri/src/tasks.rs`: official TickTick Open API, serialized polling and
+  mutations, current-run snapshot and error state.
+- `credentials.rs`: Windows Credential Manager; never return the token to a
+  WebView or include it in error messages/logs. Demo mode cannot alter it.
+- `task_window.rs`: editor creation, task placement and demo-only diagnostics.
+
+WebView2 creation must run in an async command. Tray handlers spawn it onto
+Tauri's async runtime; building a WebView directly in a synchronous command or
+event handler deadlocks on Windows (verified by the native release test).
+
+TickTick full-task completion status is **2**; checklist completion is **1**.
+Fetch fresh checklist data before changing one item. A successful write followed
+by a failed refresh must be reported as **saved, refresh failed**, not as a failed
+create which the user might retry. Do not automatically retry writes. Guard
+recurring completion against a changed occurrence. Completion queries cap at
+200; do not display that partial history as an exact daily count.
+
+Tokens are in `codenotch-win/ticktick`; position/visibility use `task_edge`,
+`task_along`, `task_visible` in this app's existing config. Task content currently
+stays in memory and refetches after restart. Live sync requires a user-supplied
+token entered in the native editor. Do not ask for it in chat.
+
+`pnpm test`, `pnpm test:ui`, and `cargo test --lib` cover task behavior.
+`node tools/smoke-release.mjs` checks the **release** WebView2 windows using
+sample data and a temporary localhost debug endpoint. It does not exercise live
+TickTick writes or physical pointer dragging. See README for setup and limits.
+Use `pnpm tauri build` for production, or enable `--features tauri/custom-protocol`
+when building directly with Cargo. A plain `cargo build --release` still targets
+the development server and produces blank/error WebViews when it is absent.
+
+### Task interactions (follow-up)
+
+- The task rail now folds to the original pill and reveals on hover. Both notches
+  import the same integrated Spring from src/motion.ts (0.42 / 0.78).
+- task-surface.ts owns animated geometry, per-frame masks, four-edge orientation,
+  content-based panel height, pinning and the inline-entry focus lifecycle.
+- Quick add lives inside tasks.ts. Only account setup and optional task management
+  use task-editor. create_task accepts either task window; token commands remain
+  editor-only.
+- NOACTIVATE is the default, with an explicit exception while inline entry is
+  active. task_window::set_task_input owns that temporary state; win::harden
+  must preserve it on every hover toggle. Cancel/save/collapse/blur restore the
+  default. Restore the former foreground window only if the task notch still
+  owns focus; never override an outside click.
+- Browser tests cover fold/reopen, retained drafts, inline create, all four edges,
+  compact lists and reduced motion. Native smoke checks the temporary style
+  change and restoration without writing to TickTick.

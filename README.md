@@ -12,6 +12,86 @@ translate it line by line.
 Stack: Tauri 2 (Rust) + vanilla TypeScript. Rust owns the window, the Win32
 calls and the providers; the notch itself is HTML and CSS.
 
+## TickTick task notch
+
+A second notch starts on the **left** screen edge as a small resting pill.
+Hover to reveal the progress ring and task panel; move away to fold it with the
+same spring motion as the usage notch. Pin keeps it open; the close button or
+ring collapses it explicitly. Reduced-motion preferences are respected.
+Short lists use a shorter panel instead of an empty full-height card.
+
+**Add task** opens a composer inside the panel: enter a title, choose a list and
+optional day, then press Enter or the save arrow. Escape closes the composer;
+unsaved text stays available when reopened. While typing, the task notch briefly
+accepts keyboard focus. Cancel, save, collapse or an outside click restores its
+normal non-activating behavior. Account setup still has a separate window.
+
+Use the panel's **gear > Screen edge** controls for left, right, top or bottom.
+The content stays upright and the choice persists. Drag the ring along its edge.
+The usage notch retains its own edge and position.
+
+Open **tray → Tasks & TickTick…** (also available from Settings) to connect:
+
+1. In the TickTick web app, open **Settings → Account → API Token** and create
+   a personal token.
+2. Paste it into the task editor's connection form. The app checks access before
+   saving it in **Windows Credential Manager**, under `codenotch-win/ticktick`.
+3. Add tasks to a TickTick list, optionally schedule a day, or use the task panel
+   to complete them. The same account provides phone sync; the existing Google
+   Calendar/Samsung Calendar connection continues independently.
+
+The panel supports quick add; the separate editor also supports rename. The notch displays nested tasks and
+checklists, and checklist items can be checked or unchecked. Full-task reopening,
+indent/outdent, reminders and recurrence editing remain in TickTick. Parent
+tasks with children summarize progress; complete their children individually.
+
+**Progress:** actionable leaves count once, with checklist items counting as
+their task's work units. Today includes tasks scheduled across today and tasks
+completed today. Overdue work has its own view. Hiding completed rows does not
+change the denominator. The UI withholds the daily count if completion history
+hits the API's 200-result cap or belongs to a previous day.
+
+**Sync:** the app reads the task lists returned by TickTick's project endpoint
+every 60 seconds and after writes. Inbox coverage depends on whether that
+endpoint exposes it; use a regular TickTick list if Inbox is absent. Completion
+history uses the same list scope. Cached tasks remain visible after a transient
+failure during the current run; this first version fetches again after restart
+and does not provide an offline write queue. Failed writes are shown and are
+never automatically retried. No extra sync service or subscription is required
+by this implementation.
+
+Use the editor's position controls to show/hide the task notch, select any
+screen edge, or reset its position. Disconnect removes the saved token and clears the
+in-memory task snapshot; it does not delete anything in TickTick.
+
+### Task development and checks
+
+Requires Node 22.18+ (the model tests use Node's TypeScript stripping).
+
+```sh
+pnpm test                 # nested progress and local-day rules
+pnpm test:ui              # production frontend in headless Chrome
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+```
+
+The browser preview at `/tasks.html` and `/task-editor.html` uses sample data;
+`/tasks.html?empty` shows setup; `?single` shows a compact one-task fixture. Sample interactions are local to that page and
+do not persist. `CODENOTCH_DEMO=1` also supplies sample tasks in the native app,
+where they are read-only and credential changes are blocked.
+
+Build the standalone exe with `pnpm tauri build --no-bundle`, or run
+`pnpm build` followed by `cargo build --manifest-path src-tauri/Cargo.toml --release --offline --features tauri/custom-protocol`.
+A plain Cargo release build still loads the development URL.
+After building the release exe, `node tools/smoke-release.mjs` launches a
+temporary demo instance and tests both WebViews over a local debugging port.
+It checks independent cursor masks, native extended styles, task IPC, editor
+opening, text input and closing, and saves screenshots/check results under
+ignored `test-results/`. Native foreground focus is recorded separately: Windows
+may deny activation to the automated launch, so check keyboard focus manually.
+Quit any running Codenotch instance first. The script exits its own process;
+normal launches do not enable the debugging port. Physical dragging and live
+TickTick round trips should also be checked before distributing a release.
+
 ## Running it
 
 **Day to day — build once, then just run the exe:**

@@ -11,6 +11,11 @@ interface Snapshot {
 }
 
 const edges = document.getElementById("edges") as HTMLDivElement;
+document.getElementById("tasks")?.addEventListener("click", () => {
+  invoke("open_task_editor").catch((error) => {
+    document.getElementById("tasks")!.textContent = String(error);
+  });
+});
 
 function markEdge(active: Edge) {
   for (const button of edges.querySelectorAll<HTMLButtonElement>("button")) {

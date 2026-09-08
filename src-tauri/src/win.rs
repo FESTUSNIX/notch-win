@@ -62,7 +62,11 @@ pub fn harden(window: &WebviewWindow) {
 
     unsafe {
         let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        let next = current | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0;
+        let next = if window.label() == "tasks" && crate::task_window::input_active() {
+            (current | WS_EX_TOOLWINDOW.0) & !WS_EX_NOACTIVATE.0
+        } else {
+            current | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0
+        };
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next as isize);
 
         // Topmost is set through SetWindowPos rather than the style bit —

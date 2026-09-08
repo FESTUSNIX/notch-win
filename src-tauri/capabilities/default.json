@@ -4,7 +4,9 @@
   "description": "The notch window's own capabilities.",
   "windows": [
     "notch",
-    "settings"
+    "settings",
+    "tasks",
+    "task-editor"
   ],
   "permissions": [
     "core:default",
@@ -17,6 +19,7 @@
     "core:window:allow-outer-size",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "core:window:allow-close",
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:window:allow-start-dragging",

@@ -5,6 +5,8 @@
 # Frontend build output and dependencies
 /node_modules/
 /dist/
+/test-results/
+/playwright-report/
 
 # Logs written by the dev server and the release build. Both are redirected to
 # these by hand (`pnpm tauri dev > dev.log`), so they are working files, never

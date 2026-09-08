@@ -19,6 +19,9 @@ pub struct Config {
     /// back after a drag, and stored as a ratio rather than a pixel offset so
     /// it survives a resolution change or a different monitor.
     pub along: f64,
+    pub task_edge: Edge,
+    pub task_along: f64,
+    pub task_visible: bool,
     /// When Claude's endpoint may next be asked, as unix milliseconds.
     ///
     /// ⚠️ Persisted on purpose. The endpoint answers 429 with `Retry-After: 0`,
@@ -35,6 +38,9 @@ impl Default for Config {
         Self {
             edge: Edge::Right,
             along: 0.5,
+            task_edge: Edge::Left,
+            task_along: 0.5,
+            task_visible: true,
             claude_backoff_until_ms: None,
         }
     }

@@ -1,0 +1,21 @@
+{
+  "connected": true,
+  "demo": true,
+  "updatedAt": "$now",
+  "day": "$today",
+  "error": null,
+  "historyComplete": true,
+  "projects": [{"id":"work","name":"Codenotch"},{"id":"life","name":"Personal"}],
+  "tasks": [
+    {"id":"ship","projectId":"work","title":"Build a calmer workspace","status":0,"startDate":"$todayT12:00:00Z","sortOrder":1,"content":"Small steps, more space to focus."},
+    {"id":"read","parentId":"ship","projectId":"work","title":"Review the notch design","status":2,"startDate":"$todayT12:00:00Z","completedTime":"$todayT12:00:00Z","sortOrder":1},
+    {"id":"panel","parentId":"ship","projectId":"work","title":"Polish the task panel","status":0,"startDate":"$todayT12:00:00Z","sortOrder":2,"items":[
+      {"id":"a","title":"Define the layout","status":1},
+      {"id":"b","title":"Check nested tasks","status":0},
+      {"id":"c","title":"Try it on the desktop","status":0}
+    ]},
+    {"id":"walk","projectId":"life","title":"Get outside for a walk","status":0,"startDate":"$todayT12:00:00Z","sortOrder":3},
+    {"id":"book","projectId":"life","title":"Read a chapter","status":0,"startDate":"$todayT12:00:00Z","sortOrder":4},
+    {"id":"old","projectId":"life","title":"Book a haircut","status":0,"dueDate":"2025-01-01T12:00:00Z","sortOrder":5}
+  ]
+}
