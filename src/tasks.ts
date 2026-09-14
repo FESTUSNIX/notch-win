@@ -442,32 +442,6 @@ async function boot() {
      * whole acknowledgement. */
     await listen<string>("island:shelved", event => say("Shelved", event.payload));
 
-    /* A file dropped straight onto the window, which never reaches the web
-     * layer as a Tauri drag event — see dropfiles.rs. The shelf updates itself
-     * from `notch:shelf`; this is only the acknowledgement. */
-    await listen("island:dropped", () => {
-      say("Shelved", "dropped file");
-      show("shelf");
-      surface.pinFor(4000);
-    });
-    await listen<string>("island:shelved-failed", event => say("Nothing to shelf", event.payload));
-
-    await listen("island:capture", () => {
-      show("today");
-      surface.pinFor(4000);
-      void today.capture();
-    });
-
-    // Kept in step if the format is changed from another window.
-    // ⚠️ Inside the `native` guard with every other listener here. Outside it,
-    // `listen` rejects in the browser preview and takes the rest of boot()
-    // with it — no screens render at all, and the only symptom is an empty
-    // island with nothing in the console.
-    await listen<{ clock24: boolean }>("tasks:placement", event => {
-      clock24 = event.payload.clock24;
-      paintClockChoice();
-      paintPill();
-    });
   }
   try {
     const placement = await call<{ clock24: boolean }>("get_task_placement");

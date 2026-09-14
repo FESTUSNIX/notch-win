@@ -112,7 +112,7 @@ pub fn set_chrome_hidden(app: &AppHandle, hidden: bool) {
 /// foreground window's rect against the monitor — the obvious approach — calls
 /// a maximised editor fullscreen and hides the island all day.
 pub fn watch_presence(app: AppHandle) {
-    std::thread::spawn(move || loop {
+    crate::guard::spawn("fullscreen watch", move || loop {
         let busy = unsafe { SHQueryUserNotificationState() }
             .map(|s| matches!(s, QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE))
             .unwrap_or(false);

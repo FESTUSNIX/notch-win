@@ -9,7 +9,7 @@ mod fixtures;
 mod hover;
 mod media;
 mod dragout;
-mod dropfiles;
+mod guard;
 mod dropprobe;
 mod log;
 mod model;
@@ -645,11 +645,10 @@ pub fn run() {
             if let Err(message) = shortcuts::setup(app.handle()) {
                 eprintln!("global shortcuts: {message}");
             }
+            guard::install_hook();
             log::note(&format!("--- codenotch {} starting ---", env!("CARGO_PKG_VERSION")));
             snooze::load(app.handle());
             shelf::load(app.handle());
-            // Our own drop target: Tauri's never fires here. See dropfiles.rs.
-            dropfiles::accept(app.handle(), "tasks");
             runlog::load(app.handle());
             sessions::spawn(app.handle().clone());
             drag::watch_displays(app.handle().clone());

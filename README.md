@@ -444,6 +444,12 @@ whose features have stopped working.
 **Something went wrong?** Tray → **Open log**. It is a capped rolling file
 beside the config. (`println!` goes nowhere in a release build: no console.)
 
+Every panic is written there with its location, and the long-lived background
+loops — the hover poll, the session watcher, media, Bluetooth, app time, the
+display watch — say which of them died and try again three times before giving
+up. Before that, a panic in one of those ended the feature for the rest of the
+session with nothing to say so.
+
 ⚠️ **Quit the notch from its tray icon before building.** A running instance
 holds its own exe open, and cargo reports that as
 `failed to remove file … Access is denied (os error 5)` — which reads like a

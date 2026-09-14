@@ -172,7 +172,7 @@ pub fn get_app_time(app: AppHandle) -> AppTime {
 }
 
 pub fn spawn(app: AppHandle) {
-    std::thread::spawn(move || {
+    crate::guard::spawn("app time", move || {
         {
             let state = app.state::<AppTimeState>();
             *state.0.lock().unwrap() = load();

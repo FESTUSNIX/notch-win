@@ -231,7 +231,7 @@ pub fn next_display(app: &AppHandle, label: &str) -> Option<String> {
 /// with nothing to notice. Enumerating monitors is a handful of microseconds,
 /// so polling it is cheaper than it looks and needs no window procedure.
 pub fn watch_displays(app: AppHandle) {
-    std::thread::spawn(move || {
+    crate::guard::spawn("display watch", move || {
         let signature = || -> Vec<(String, (i32, i32, i32, i32))> {
             win::screens()
                 .into_iter()

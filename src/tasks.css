@@ -972,7 +972,6 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .shelf-clear { font-size:11px; color:#6a6a6a; padding:5px 9px; }
 .shelf-clear:hover { color:#ff6961; background:rgba(255,105,97,.1); }
 /* While a file is held over the island. */
-#island.is-dropping { box-shadow:inset 0 0 0 2px var(--accent); }
 
 /* ── Review ──────────────────────────────────────────────────────────────
    Four tiles, one per source, each a big number and the few rows behind it.

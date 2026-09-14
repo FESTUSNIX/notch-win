@@ -1531,3 +1531,38 @@ The two halves were the same fault.
      log. `returned HRESULT(0x00040100)` is `DRAGDROP_S_DROP`: the loop
      ended and gave the capture back. Verified on this machine, with
      `effect 1` — the drop was accepted, not just abandoned.
+
+### Surviving a panic (2026-09-14)
+
+149. ⚠️ **A panic in a background thread here was silent and
+     permanent.** Nineteen of them run forever and each one *is* a feature.
+     When one unwound, Rust printed to a stderr a windowed release build
+     does not have, the thread ended, and that feature stopped for the rest
+     of the session with nothing anywhere to say so. The app looked fine:
+     music stopped updating, or the notch stopped noticing hover, and the
+     only symptom was "it went weird".
+150. **Two halves, because they answer different questions.** A panic hook
+     writes every panic down with its location, wherever it happens —
+     including the main thread. `guard::spawn` catches the unwind, names
+     the feature, and restarts the loop.
+151. ⚠️ **Restarting is capped at three attempts with a widening gap.**
+     A panic that recurs immediately — a bad assumption about a data
+     shape, not a transient Win32 failure — would otherwise spin the CPU
+     retrying forever. Three tries turns a hiccup into a hiccup and leaves
+     a permanent fault permanent, but **logged**.
+152. **The hook is chained, not replaced**, so `cargo run` still prints the
+     usual message and backtrace.
+153. **Scope is deliberate and written down.** `guard::spawn` covers OS
+     threads. `tasks`, `calendar` and `weather` are tokio tasks, whose
+     panics go into a `JoinHandle` nobody awaits — just as silent, and now
+     covered by the hook but not restarted. The one-shot COM workers in
+     `audio`, `media` and `system` are left alone on purpose: they send a
+     result down a oneshot channel, and the receiving side already turns a
+     dropped sender into "the audio thread stopped".
+154. **`dropfiles.rs` is deleted.** `DragAcceptFiles` + `WM_DROPFILES` was
+     provable by posting the message by hand and fired **zero** times for a
+     real drag — WebView2's OLE target on its child window is found first
+     and the parent's shell registration is never consulted. The code is
+     gone; the reasoning moved to the top of `shelf.rs`, where the working
+     path lives. Three abandoned mechanisms are worth one paragraph and no
+     lines of code.

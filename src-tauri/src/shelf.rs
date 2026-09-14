@@ -12,7 +12,23 @@
 //! is checked before it is offered and shown as missing rather than failing
 //! when it is used.
 //!
-//! ⚠️ **Taking a file OUT is a clipboard copy, not a drag.** Dragging a real
+//! ⚠️ **Three drop mechanisms were tried before the one that works**, and the
+//! symptom that settled it was a **no-drop cursor**: the circle-slash means the
+//! window *is* being targeted and something is refusing, not that the shell is
+//! walking past it.
+//!
+//!   1. Tauri's `tauri://drag-*` events never fired once, for any real drag.
+//!   2. `DragAcceptFiles` + a `WM_DROPFILES` subclass on the window: provable
+//!      by posting the message by hand, and never reached by a real drag —
+//!      WebView2 registers an OLE drop target on its own **child** window, the
+//!      drag loop finds that first, and the parent's shell registration is
+//!      never consulted. That code is deleted; it fired zero times.
+//!   3. So WebView2 keeps it (`dragDropEnabled: false` on the tasks window)
+//!      and the page handles the drop. `preventDefault()` on **both**
+//!      `dragenter` and `dragover` is what turns the circle-slash into a copy
+//!      cursor and lets `drop` fire.
+//!
+//! ⚠️ **Taking a file OUT by CLIPBOARD, beside the drag.** Dragging a real
 //! file *out* of a WebView is not something HTML can do — the browser can only
 //! offer text or a URL, and Explorer wants a `CF_HDROP`. Doing it properly
 //! means becoming an OLE drag source: a hand-written `IDataObject` and

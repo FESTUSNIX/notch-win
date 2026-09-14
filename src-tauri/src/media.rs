@@ -208,7 +208,7 @@ fn current(manager: &SessionManager) -> Option<Session> {
 /// and the position still has to be sampled. One second of polling is a couple
 /// of local COM calls and is far less to get wrong.
 pub fn spawn(app: AppHandle) {
-    std::thread::spawn(move || {
+    crate::guard::spawn("media poll", move || {
         enter_apartment();
         let manager = match SessionManager::RequestAsync().and_then(block) {
             Ok(manager) => manager,

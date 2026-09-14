@@ -275,7 +275,7 @@ pub async fn set_brightness(level: i32) -> Result<(), String> {
 /// the panel; doing that every few seconds forever would be rude to the monitor
 /// and is the sort of thing that shows up as a stutter nobody can explain.
 pub fn spawn(app: AppHandle) {
-    std::thread::spawn(move || {
+    crate::guard::spawn("bluetooth watch", move || {
         enter_apartment();
         // Seed from the first read so everything already connected at launch is
         // not announced as if it had just arrived.

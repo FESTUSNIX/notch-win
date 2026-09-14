@@ -73,7 +73,8 @@ struct HoverPayload {
 }
 
 pub fn spawn(app: AppHandle, label: &'static str) {
-    std::thread::spawn(move || {
+    let name: &'static str = if label == "tasks" { "island hover" } else { "notch hover" };
+    crate::guard::spawn(name, move || {
         // ⚠️ `Option`, not `bool`, and that is load-bearing.
         //
         // Starting at `false` matches the initial not-hovering state, so the

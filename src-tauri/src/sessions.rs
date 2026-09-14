@@ -423,7 +423,7 @@ pub fn focus_session(pid: u32) -> bool {
 
 pub fn spawn(app: AppHandle) {
     crate::notify::register();
-    std::thread::spawn(move || {
+    crate::guard::spawn("agent watcher", move || {
         let mut watcher = Watcher::default();
         let mut last: Option<(Activity, u32)> = None;
         let mut last_views: Vec<SessionView> = Vec::new();
