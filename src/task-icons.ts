@@ -57,8 +57,25 @@ export function taskIcon(name: TaskIcon) {
   return svg;
 }
 
+/** Draw an icon into a host, and animate it in when it REPLACES another.
+ *
+ * ⚠️ Only on a change, never on the first paint. Animating the first one turns
+ * every screen switch into a field of thirty icons popping in at once, which is
+ * the entrance nobody asked for — the same reason `AnimatePresence` ships with
+ * `initial={false}`.
+ *
+ * The class is removed on the way out so the animation can run again; without
+ * that, an icon that swaps twice only ever animates once. */
 export function paintIcon(target: HTMLElement, name: TaskIcon) {
   if (target.dataset.icon === name) return;
+  const replacing = !!target.dataset.icon;
+  target.classList.remove("icon-swapped");
   target.replaceChildren(taskIcon(name));
   target.dataset.icon = name;
+  if (replacing) {
+    // Read back, so the class lands on a fresh element rather than being
+    // added and removed inside one frame.
+    void target.offsetWidth;
+    target.classList.add("icon-swapped");
+  }
 }

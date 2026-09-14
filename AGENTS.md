@@ -1741,3 +1741,45 @@ The two halves were the same fault.
      nowhere to show itself — a moved file, a stale shortcut and an exited
      session all did nothing and said nothing. Actions return their promise now
      and `Palette.pick` routes the throw to the pill.
+187. ⚠️ **The elevation recipe is FOUR parts and all four carry weight.**
+     `--hairline` (an inset ring, so the edge exists without a border eating a
+     pixel), `--gloss` (one lit top line, which is the whole of what gives the
+     light a direction), `--sheen` (a fall-off, always a background-*image* so
+     it layers over a colour instead of replacing it), and `--lift-*` — **two**
+     shadows: a tight contact one that reads as thickness and a wide soft one
+     that reads as distance. Drop either shadow and it flattens.
+188. ⚠️ **Anything that RECEIVES input is sunk; anything that IS an object
+     is raised.** One rule, and it is what keeps the surface legible once
+     everything has depth — the tab rail, the palette bar and every field go
+     below the panel; tiles, chips and the selected row go above it.
+189. ⚠️ **Elevation is spent, not sprinkled.** Only the selected palette row
+     is an object. Lifting all eight would flatten the hierarchy the lift exists
+     to create, which is the same mistake as giving every `button` a face — most
+     buttons in this app are text, not objects, which is why `.raised` is opt-in
+     rather than the base.
+190. ⚠️ **A coloured glow stops reading as light and starts reading as a
+     halo.** The accent button shipped at `0 8px 20px -8px rgba(0,255,136,.55)`
+     in the first pass and wore a green corona a third of its own width.
+     `--glow-accent` is a third of that. It says "this one is live"; it is not
+     meant to be seen on its own.
+191. ⚠️ **One press value across the surface.** It was `.92` on icon
+     buttons, `.92` on the transport, `.97` on a capsule and `.96` on the rest —
+     four different presses on one screen, which reads as "off" without being
+     nameable. `scale(.96)`, retimed to **90ms**: inheriting the 150ms hover
+     duration means the press lands after the finger has left.
+192. ⚠️ **`max-width: fit-content` alongside `flex: 1 1 auto` on the tab
+     rail.** The header is the flex line, so a sunk rail without the cap
+     stretches its trough across every empty pixel and reads as a wide grey bar
+     with the tabs at one end — while dropping the flex takes back the shrinking
+     that keeps `.panel-actions` inside the island on a vertical edge (trap 167).
+193. ⚠️ **`paintIcon` animates a REPLACEMENT, never a first paint.**
+     Animating the first one turns every screen switch into thirty icons popping
+     in at once. It is an enter (scale .25→1, opacity 0→1, blur 4px→0) rather
+     than a cross-fade on purpose: a true cross-fade needs both icons absolutely
+     positioned over each other, and every icon host in this app sizes itself
+     off its SVG.
+194. ⚠️ **The island's SHAPE is not part of any of this.** `notchPath()`
+     writes an SVG path every frame from one spring, and `#island` can carry no
+     drop shadow at all — a filter is applied before clipping, so it would be
+     drawn round the rectangle and then cut away. Elevation on this surface is
+     something the contents have, never the shape.
