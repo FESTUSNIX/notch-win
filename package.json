@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --test tests/task-model.test.mjs tests/media-format.test.mjs tests/pill-modules.test.mjs tests/agents.test.mjs",
+    "test": "node --test tests/task-model.test.mjs tests/media-format.test.mjs tests/pill-modules.test.mjs tests/agents.test.mjs tests/palette.test.mjs",
     "test:ui": "playwright test",
     "tauri": "tauri"
   },

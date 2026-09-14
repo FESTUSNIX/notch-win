@@ -475,6 +475,64 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await page.screenshot({path: "test-results/island-agents.png"});
 });
 
+test("the palette searches the island's own world and acts on it", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const field = page.locator(".palette-field");
+  await expect(field).toBeFocused();
+
+  /* Subsequence, not substring: three letters have to get you there, or the
+   * palette is a filter rather than a launcher. */
+  await field.fill("agt");
+  await expect(page.locator(".palette-row").first().locator(".palette-title")).toHaveText("Agents");
+  /* The characters that matched are lit, and they are the ones typed. ⚠️ The
+   * count of <b> elements is NOT the count of matched characters: consecutive
+   * hits are grouped into one run, so "agt" against "Agents" lights "Ag" and
+   * "t" — two elements, three letters. The text is what means something. */
+  expect((await page.locator(".palette-row").first().locator(".palette-title b").allTextContents()).join(""))
+    .toBe("Agt");
+
+  // It reaches things a general launcher cannot see: the live sessions.
+  await field.fill("akces");
+  const titles = await page.locator(".palette-row .palette-title").allTextContents();
+  expect(titles).toContain("akcesfonia");
+
+  // Arrow keys move one highlight, and only one.
+  await field.fill("");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".palette-row.is-at")).toHaveCount(1);
+  await expect(page.locator(".palette-row").nth(1)).toHaveClass(/is-at/);
+  // Wraps rather than running off the end.
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator(".palette-row").last()).toHaveClass(/is-at/);
+
+  /* Anything typed is offered as a task, but only past three characters:
+   * a "create" row on every stray keystroke turns a mistyped search into an
+   * accidental task. */
+  await field.fill("bu");
+  expect(await page.locator(".palette-row .palette-title").allTextContents())
+    .not.toContain('Add task "bu"');
+  await field.fill("buy milk");
+  expect(await page.locator(".palette-row .palette-title").allTextContents())
+    .toContain('Add task "buy milk"');
+
+  // Enter runs the selection and closes: a palette left over the result is
+  // something you have to dismiss to see what you asked for.
+  await field.fill("today");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".palette")).toBeHidden();
+  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+
+  // Escape closes without running anything.
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await expect(page.locator(".palette")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".palette")).toBeHidden();
+  await page.screenshot({path: "test-results/island-palette.png"});
+});
+
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);

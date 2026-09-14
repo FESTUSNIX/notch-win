@@ -39,7 +39,9 @@ document.getElementById("task-editor")!.innerHTML = `<main class="editor-wrap">
   <section class="settings-section"><h2>Shortcuts</h2>
     <p class="hint">Global, so they work while another app has focus. Windows will refuse a combination another app already owns.</p>
     <form id="shortcut-form">
-      <div class="form-row"><label class="field">Open the island<input id="sc-toggle" autocomplete="off" spellcheck="false" maxlength="60" required></label><label class="field">Hide everything<input id="sc-hide" autocomplete="off" spellcheck="false" maxlength="60" required></label></div>
+      <div class="form-row"><label class="field">Search &amp; commands<input id="sc-palette" autocomplete="off" spellcheck="false" maxlength="60" required></label><label class="field">Open the island<input id="sc-toggle" autocomplete="off" spellcheck="false" maxlength="60" required></label></div>
+      <div class="form-row"><label class="field">Add a task<input id="sc-capture" autocomplete="off" spellcheck="false" maxlength="60" required></label><label class="field">Shelve the clipboard<input id="sc-shelf" autocomplete="off" spellcheck="false" maxlength="60" required></label></div>
+      <div class="form-row"><label class="field">Next display<input id="sc-display" autocomplete="off" spellcheck="false" maxlength="60" required></label><label class="field">Hide everything<input id="sc-hide" autocomplete="off" spellcheck="false" maxlength="60" required></label></div>
       <div class="button-row"><button class="primary" type="submit">Save shortcuts</button></div>
     </form>
   </section>
@@ -141,19 +143,27 @@ get("google-disconnect").onclick = async () => {
 };
 
 /* ── Shortcuts ─────────────────────────────────────────────────────────── */
+/** ⚠️ Every field, every time. `set_shortcuts` takes the whole set and
+ *  registers them all or none — so a form that sends a subset does not save
+ *  part of it, it fails outright with a missing argument. This form sent only
+ *  two of six for a while, which meant saving a shortcut silently did nothing
+ *  at all. The list is the one place that has to match the Rust struct. */
+const KEYS = ["palette", "toggle", "capture", "shelf", "display", "hide"] as const;
+type Keys = Record<(typeof KEYS)[number], string>;
+
 get("shortcut-form").onsubmit = async e => {
   e.preventDefault();
-  const toggle = get<HTMLInputElement>("sc-toggle").value;
-  const hide = get<HTMLInputElement>("sc-hide").value;
-  if (await action("set_shortcuts", { toggle, hide })) message = "Shortcuts saved.";
-  else await paintShortcuts();   // a rejected pair rolls back; show what stuck
+  const sent = Object.fromEntries(
+    KEYS.map(key => [key, get<HTMLInputElement>(`sc-${key}`).value]),
+  ) as unknown as Keys;
+  if (await action("set_shortcuts", sent)) message = "Shortcuts saved.";
+  else await paintShortcuts();   // a rejected set rolls back; show what stuck
   render();
 };
 async function paintShortcuts() {
   try {
-    const current = await call<{ toggle: string; hide: string }>("get_shortcuts");
-    get<HTMLInputElement>("sc-toggle").value = current.toggle;
-    get<HTMLInputElement>("sc-hide").value = current.hide;
+    const current = await call<Keys>("get_shortcuts");
+    for (const key of KEYS) get<HTMLInputElement>(`sc-${key}`).value = current[key] ?? "";
   } catch { /* the plugin failed to start; the fields stay empty */ }
 }
 get("connect-form").onsubmit = async e => {

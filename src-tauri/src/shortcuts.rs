@@ -43,6 +43,10 @@ pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+N";
 pub const DEFAULT_DISPLAY: &str = "Ctrl+Alt+M";
 /// S for shelf. Whatever is on the clipboard, parked.
 pub const DEFAULT_SHELF: &str = "Ctrl+Alt+S";
+/// K for the palette. ⚠️ Not Alt+Space: Flow Launcher, PowerToys Run and
+/// half the launchers on Windows already claim that, and a shortcut that
+/// silently fails to register is worse than an unfamiliar one.
+pub const DEFAULT_PALETTE: &str = "Ctrl+Alt+K";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +61,8 @@ pub struct Shortcuts {
     pub display: String,
     /// Puts whatever is on the clipboard on the shelf.
     pub shelf: String,
+    /// Opens the command palette.
+    pub palette: String,
 }
 
 impl Default for Shortcuts {
@@ -67,6 +73,7 @@ impl Default for Shortcuts {
             capture: DEFAULT_CAPTURE.into(),
             display: DEFAULT_DISPLAY.into(),
             shelf: DEFAULT_SHELF.into(),
+            palette: DEFAULT_PALETTE.into(),
         }
     }
 }
@@ -151,6 +158,7 @@ pub fn set_shortcuts(
     capture: String,
     display: String,
     shelf: String,
+    palette: String,
 ) -> Result<(), String> {
     let next = Shortcuts {
         toggle: toggle.trim().into(),
@@ -158,8 +166,9 @@ pub fn set_shortcuts(
         capture: capture.trim().into(),
         display: display.trim().into(),
         shelf: shelf.trim().into(),
+        palette: palette.trim().into(),
     };
-    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf];
+    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf, &next.palette];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -180,6 +189,7 @@ pub fn set_shortcuts(
             config.shortcut_capture = next.capture;
             config.shortcut_display = next.display;
             config.shortcut_shelf = next.shelf;
+            config.shortcut_palette = next.palette;
             crate::config::save(&config);
             Ok(())
         }
@@ -199,6 +209,7 @@ fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
         ("Capture", &shortcuts.capture),
         ("Next display", &shortcuts.display),
         ("Shelf", &shortcuts.shelf),
+        ("Palette", &shortcuts.palette),
     ] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
@@ -217,6 +228,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         capture: config.shortcut_capture,
         display: config.shortcut_display,
         shelf: config.shortcut_shelf,
+        palette: config.shortcut_palette,
     };
 
     let handler = app.clone();
@@ -248,6 +260,13 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                         set_chrome_hidden(&handler, false);
                     }
                     let _ = handler.emit_to("tasks", "island:toggle", ());
+                } else if matches(&pressed, &current.palette) {
+                    /* Unlike the shelf shortcut, this one DOES bring the island
+                     * back: a palette you cannot see is not a palette. */
+                    if crate::config::load().chrome_hidden {
+                        set_chrome_hidden(&handler, false);
+                    }
+                    let _ = handler.emit_to("tasks", "island:palette", ());
                 } else if matches(&pressed, &current.shelf) {
                     /* Deliberately does NOT open the island. The point is to
                      * park something without leaving what you are in; showing

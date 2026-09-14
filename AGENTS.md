@@ -1566,3 +1566,55 @@ The two halves were the same fault.
      gone; the reasoning moved to the top of `shelf.rs`, where the working
      path lives. Three abandoned mechanisms are worth one paragraph and no
      lines of code.
+
+### The palette (2026-09-14)
+
+155. ⚠️ **It is not trying to be Flow Launcher, and should not.** Flow is
+     a general launcher and is better at that job; duplicating it badly
+     would be worse than having both. What this can do that Flow cannot is
+     search the island's **own** world — the shelf, the live agent
+     sessions, today's tasks, what is snoozed — and act on it in place.
+     Complementary, not competing.
+156. **Subsequence matching, not substring.** "agt" has to find "Agents" or
+     the palette is a filter rather than a launcher, and the whole reason
+     to type instead of clicking is that three letters get you there.
+     `palette-match.ts` is pure and separate because a *mediocre* ranking
+     still returns results — it never looks broken, it just quietly puts
+     the thing you wanted third every time.
+157. ⚠️ **The count of `<b>` elements is not the count of matched
+     characters.** Consecutive hits are grouped into one run, so "agt"
+     against "Agents" lights `Ag` and `t`: two elements, three letters. A
+     test asserting the count fails for a highlighter that is working.
+158. **The palette closes BEFORE the action runs.** Half of them open a
+     screen, move a window or raise a terminal, and a palette still sitting
+     over the result is something you have to dismiss to see what you asked
+     for.
+159. **The "add task" row needs three characters.** A create row on every
+     stray keystroke turns a mistyped search into an accidental task. And
+     it opens the composer with the words in rather than submitting: the
+     composer is where a task gets its list and its day.
+160. ⚠️ **The focus ring is suppressed on `.palette-field` and nowhere
+     else.** The global rule draws an accent outline on any focused input,
+     which is right for a form and wrong for a field that *is* the bar —
+     it boxes the whole palette in green.
+161. **Typing needs `surface.input(true)`, the same lift the composer uses.**
+     The island is `WS_EX_NOACTIVATE` so that glancing at it never steals
+     focus; a field takes that off for exactly as long as it holds the
+     caret. The palette also pins first, because a panel that folds when
+     the pointer wanders would take the caret with it.
+162. ⚠️ **Not `Alt+Space`.** Flow Launcher, PowerToys Run and half the
+     launchers on Windows claim it, and a global shortcut that silently
+     fails to register is worse than an unfamiliar one. `Ctrl+Alt+K`.
+163. ⚠️ **`set_shortcuts` takes the WHOLE set and registers all or
+     none.** The editor's form sent two of six for several commits, which
+     does not save part of it — the invoke fails outright on a missing
+     argument, so saving a shortcut silently did nothing at all. The `KEYS`
+     list in `task-editor.ts` is the one place that has to match the Rust
+     struct.
+164. ⚠️ **A slice-based deletion cut four listeners, not one.** Removing
+     the dead `island:dropped` block by slicing to the next `  }` swallowed
+     `island:shelved-failed`, `island:capture` and `tasks:placement` with
+     it, and it was committed — quick capture stopped working and nothing
+     failed. This is the same trap already recorded for `screen-media.ts`.
+     **Delete by matching the whole block, never by slicing to the next
+     closing brace.**

@@ -21,6 +21,7 @@ import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
+import { Palette, type Action } from "./palette";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
@@ -47,7 +48,7 @@ app.innerHTML = `<div id="notch-shell">
     <div id="island-expanded" inert>
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
-        <div class="panel-actions"><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Island settings" aria-expanded="false" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
+        <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Island settings" aria-expanded="false" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
       <div id="surface-options" hidden><span>Screen edge</span><div class="edge-choices" role="group" aria-label="Screen edge"><button type="button" data-task-edge="top" aria-pressed="false">Top</button><button type="button" data-task-edge="bottom" aria-pressed="false">Bottom</button><button type="button" data-task-edge="left" aria-pressed="false">Left</button><button type="button" data-task-edge="right" aria-pressed="false">Right</button></div><span>Clock</span><div class="edge-choices" role="group" aria-label="Clock format"><button type="button" data-clock="24" aria-pressed="true">24 h</button><button type="button" data-clock="12" aria-pressed="false">12 h</button></div><span>Tasks showing</span><div class="edge-choices" role="group" aria-label="Task view"><button type="button" data-view="day" aria-pressed="true">Today</button><button type="button" data-view="all" aria-pressed="false">All lists</button></div><p id="snoozed-line" class="options-hint" hidden></p><p id="shortcut-hint" class="options-hint"></p><button id="account-settings">Accounts &amp; connections &#8599;</button></div>
       <div class="screens">
@@ -78,6 +79,7 @@ function paintClockChoice() {
 }
 
 const surface = new IslandSurface(open => { if (open) render(); });
+paintIcon(get("open-palette"), "search");
 paintIcon(get("pin"), "pin");
 paintIcon(get("surface-settings"), "settings");
 paintIcon(get("collapse-panel"), "close");
@@ -88,6 +90,10 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render());
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
 const shelf = new ShelfScreen(get("shelf-body"), () => render());
+/* One surface over everything. See palette.ts on why it is not trying to be
+ * Flow Launcher: this searches the island's OWN world — the shelf, the live
+ * sessions, today's tasks — which a general launcher cannot see. */
+const palette = new Palette(surface, () => render());
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -320,6 +326,115 @@ function render() {
   surface.measure();
 }
 
+get("island-expanded").prepend(palette.element());
+/* Reachable without knowing the shortcut. ⚠️ Pinned first, for the same reason
+ * the shortcut pins: the palette is a thing you type into, and a panel that
+ * folds shut because the pointer wandered would take the caret with it. */
+get("open-palette").onclick = () => { surface.pin(); void palette.show(); };
+
+/* ── What the palette can do ──────────────────────────────────────────────
+ * Each provider answers with actions; the palette ranks across all of them.
+ * A new screen adds its commands by exporting a list, not by editing the
+ * palette. */
+
+palette.add(() => TABS.map(tab => ({
+  id: `go:${tab.name}`,
+  title: tab.label,
+  keywords: "go screen open",
+  hint: "Go",
+  icon: tab.icon,
+  run: () => { show(tab.name); surface.pinFor(6000); },
+})));
+
+palette.add(() => {
+  const acts: Action[] = [
+    { id: "cmd:capture", title: "Add a task", keywords: "new todo create capture",
+      icon: "plus", hint: "Do", run: () => { show("today"); surface.pinFor(6000); void today.capture(); } },
+    { id: "cmd:editor", title: "Accounts & connections", keywords: "settings ticktick google weather",
+      icon: "settings", hint: "Do", run: () => { void today.action("open_task_editor"); } },
+    { id: "cmd:log", title: "Open log", keywords: "debug diagnose trouble",
+      icon: "note", hint: "Do", run: () => { void call("open_log").catch(() => {}); } },
+    { id: "cmd:display", title: "Move to next display", keywords: "monitor screen",
+      icon: "system", hint: "Do", run: () => { void call("next_display", { label: "tasks" }).catch(() => {}); } },
+    { id: "cmd:hide", title: "Hide the chrome", keywords: "dismiss away present",
+      icon: "close", hint: "Do", run: () => { void call("toggle_chrome").catch(() => {}); } },
+    { id: "cmd:clock", title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock",
+      keywords: "time format", icon: "clock", hint: "Do",
+      run: () => {
+        clock24 = !clock24;
+        paintClockChoice();
+        paintPill();
+        void call("set_clock_format", { clock24 }).catch(() => {});
+      } },
+  ];
+  if (snooze.count()) {
+    acts.push({ id: "cmd:unsnooze", title: "Bring back what is snoozed",
+      note: `${snooze.count()} quiet`, keywords: "unmute wake",
+      icon: "snooze", hint: "Do", run: () => { void snooze.wake(); } });
+  }
+  return acts;
+});
+
+/* The island's own world, which is the part a general launcher cannot see. */
+palette.add(() => shelf.items.flatMap(item => {
+  const rows: Action[] = [{
+    id: `shelf:copy:${item.id}`,
+    title: item.name,
+    note: item.missing ? "moved or deleted" : "copy to the clipboard",
+    keywords: "shelf file paste",
+    icon: item.kind === "link" ? "link" : item.kind === "text" ? "note" : "file",
+    hint: "Shelf",
+    run: () => { void call(item.missing ? "shelf_remove" : "shelf_copy", { id: item.id }).catch(() => {}); },
+  }];
+  if (!item.missing) {
+    rows.push({
+      id: `shelf:open:${item.id}`, title: `Open ${item.name}`,
+      keywords: "shelf launch", icon: "open", hint: "Shelf",
+      run: () => { void call("shelf_open", { id: item.id }).catch(() => {}); },
+    });
+  }
+  return rows;
+}));
+
+palette.add(() => agentsScreen.sessions.map(session => ({
+  id: `agent:${session.id}`,
+  title: session.project,
+  note: session.state === "waiting" ? "waiting for you" : session.state,
+  keywords: `agent claude session ${session.branch ?? ""}`,
+  icon: "agent",
+  hint: "Agents",
+  run: () => { void call("focus_session", { pid: session.pid }).catch(() => {}); },
+})));
+
+palette.add(() => today.upNext(20).map(task => ({
+  id: `task:${task.projectId}:${task.id}`,
+  title: task.title || "Untitled task",
+  note: "complete",
+  keywords: "task todo done tick",
+  icon: "check",
+  hint: "Today",
+  run: () => { today.finish(task); },
+})));
+
+/* ⚠️ Last, and only when nothing else matched well: the palette is a way to
+ * reach things, and a "create" row that shows up for every stray keystroke
+ * turns every mistyped search into an accidental task. */
+palette.add(query => {
+  if (query.length < 3) return [];
+  return [{
+    id: "make:task",
+    title: `Add task "${query}"`,
+    keywords: "new create todo",
+    icon: "plus",
+    hint: "New",
+    run: () => {
+      show("today");
+      surface.pinFor(8000);
+      void today.capture(query);
+    },
+  }];
+});
+
 /* ── Controls ─────────────────────────────────────────────────────────── */
 get("pin").onclick = () => surface.pin();
 get("collapse-panel").onclick = () => { void surface.collapse(); };
@@ -397,6 +512,9 @@ get("island-expanded").addEventListener("wheel", event => {
 
 window.addEventListener("blur", () => { void surface.input(false).catch(() => {}); });
 document.addEventListener("keydown", event => {
+  // The palette owns its own keys while it is up and stops them there, so
+  // reaching here at all means it is closed.
+  if (palette.open) return;
   if (event.key === "Escape") {
     event.preventDefault();
     if (today.escape()) return;
@@ -441,7 +559,32 @@ async function boot() {
      * to park something without leaving what you are in. The pill is the
      * whole acknowledgement. */
     await listen<string>("island:shelved", event => say("Shelved", event.payload));
+    await listen<string>("island:shelved-failed", event => say("Nothing to shelf", event.payload));
 
+    await listen("island:capture", () => {
+      show("today");
+      surface.pinFor(4000);
+      void today.capture();
+    });
+
+    /* One surface over everything. Pinned first: the palette is a thing you
+     * type into, and a panel that folds shut because the pointer is elsewhere
+     * would take the caret with it. */
+    await listen("island:palette", () => {
+      if (!surface.open) surface.pin();
+      void palette.show();
+    });
+
+    // Kept in step if the format is changed from another window.
+    // ⚠️ Inside the `native` guard with every other listener here. Outside it,
+    // `listen` rejects in the browser preview and takes the rest of boot()
+    // with it — no screens render at all, and the only symptom is an empty
+    // island with nothing in the console.
+    await listen<{ clock24: boolean }>("tasks:placement", event => {
+      clock24 = event.payload.clock24;
+      paintClockChoice();
+      paintPill();
+    });
   }
   try {
     const placement = await call<{ clock24: boolean }>("get_task_placement");
@@ -623,9 +766,9 @@ async function boot() {
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   try {
-    const keys = await call<{ toggle: string; hide: string; capture: string }>("get_shortcuts");
+    const keys = await call<{ toggle: string; hide: string; capture: string; palette: string }>("get_shortcuts");
     get("shortcut-hint").textContent =
-      `${keys.toggle} opens · ${keys.capture} captures a task · ${keys.hide} hides`;
+      `${keys.palette} searches everything · ${keys.toggle} opens · ${keys.capture} adds a task · ${keys.hide} hides`;
   } catch { /* the plugin failed to start; the island still works */ }
   render();
   // One second, because the media position and the focus timer both move on

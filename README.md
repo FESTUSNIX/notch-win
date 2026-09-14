@@ -45,14 +45,34 @@ about to start beats a running focus timer, which beats something playing, which
 beats the day's tally. The screen that has something live raises a dot on its
 tab.
 
-### Four global shortcuts
+### Search and commands
+
+**`Ctrl+Alt+K`**, or the magnifier in the header. Type, arrow, Enter.
+
+One surface over the whole island: every screen, every command, every shelf
+item, every live agent session, today's tasks — and anything you type that
+matches nothing is offered as a new task. Matching is by subsequence, so `agt`
+finds Agents and `sif` finds Show in folder; three letters get you there.
+
+⚠️ **It is not trying to replace Flow Launcher or Raycast.** Those are general
+launchers and are better at that job. What this can do that they cannot is
+search the island's *own* world and act on it in place — copy a shelved file,
+raise the terminal of the session that is waiting for you, tick a task. It is
+meant to sit beside a launcher, not instead of one.
+
+### Five global shortcuts
 
 `Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+N` opens it with the
 caret already in the composer, so a thought reaches TickTick from anywhere.
 `Ctrl+Alt+H` takes it and the usage notch off screen — the island sits where an
 editor keeps its tab strip, so getting it out of the way had to be one key.
-`Ctrl+Alt+M` sends the island to the next display. All four are rebindable in
-the task editor, and the choice to hide survives a restart.
+`Ctrl+Alt+M` sends the island to the next display, and `Ctrl+Alt+S` parks the
+clipboard on the shelf. All of them are rebindable in the task editor, and the
+choice to hide survives a restart.
+
+⚠️ Deliberately not `Alt+Space` for the palette: Flow Launcher, PowerToys Run
+and half the launchers on Windows already claim it, and a global shortcut that
+silently fails to register is worse than an unfamiliar one.
 
 Hiding and showing **slide** out through the bezel rather than blinking, and the
 island **hides itself** whenever something is genuinely fullscreen — a game, a

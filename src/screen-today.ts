@@ -212,11 +212,20 @@ export class TodayScreen {
   }
 
   /** Put the caret in the composer from anywhere — the capture shortcut. */
-  async capture() {
+  /** Put the caret in the composer from anywhere.
+   *
+   *  `seed` pre-fills it — the palette's "Add task …" row hands over what was
+   *  already typed rather than making you type it twice. ⚠️ It does not
+   *  SUBMIT: the composer is where a task gets its list and its day, and a
+   *  palette that created tasks behind your back would be a different and
+   *  worse thing than one that takes you to the composer with the words in. */
+  async capture(seed = "") {
     try {
+      if (seed) this.title.value = seed;
       await this.surface.input(true);
       this.title.focus();
-      this.title.select();
+      if (seed) this.title.setSelectionRange(seed.length, seed.length);
+      else this.title.select();
     } catch (error) {
       this.actionError = String(error);
       this.changed();
