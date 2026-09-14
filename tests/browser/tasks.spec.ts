@@ -619,68 +619,92 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
   await page.screenshot({path: "test-results/island-palette-deep.png"});
 });
 
-test("results are banded: apps, then the island's own, then files", async ({page}) => {
+test("ranking prefers the thing you named, and a scope narrows it", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
   await page.getByRole("button", {name: "Search and commands"}).click();
   const field = page.locator(".palette-field");
   const rows = page.locator(".palette-row");
+  const titles = () => rows.locator(".palette-title").allTextContents();
 
-  /* `code` matches an application, a shelf item and a path, which is the only
-   * query that can show all three bands at once.
-   *
-   * ⚠️ A HARD order, not a nudge: an app outranks a file however well the file
-   * matched. The bands are ordered by how expensive it is to be wrong —
-   * launching the wrong app costs a window you close; failing to find the app
-   * you type five times a day costs the feature. */
-  await field.fill("code");
-  /* ⚠️ Polled, because the file rows are LATE — they come back from a search in
-   * another process and land after the list is already up. Reading the titles
-   * once would be reading them before the band being tested exists. */
-  const bands = async () => {
-    const titles = await rows.locator(".palette-title").allTextContents();
-    return {
-      app: titles.indexOf("Visual Studio Code"),
-      island: titles.findIndex(title => title.includes("Codenotch_0.1.0")),
-      file: titles.findIndex(title => title === "hero.png" || title === "hero"),
-    };
-  };
-  await expect.poll(async () => (await bands()).file).toBeGreaterThan(0);
-  const at = await bands();
-  await expect(rows.first().locator(".palette-title")).toHaveText("Visual Studio Code");
-  expect(at.app).toBe(0);
-  expect(at.island).toBeGreaterThan(at.app);
-  expect(at.file).toBeGreaterThan(at.island);
-
-  /* ⚠️ Apps answer NOTHING on an empty query. They outrank everything, so with
-   * the field blank they would bury the screens and the day under a hundred and
-   * fifty applications — and the blank field is where recency does its work. */
-  await field.fill("");
-  expect(await rows.locator(".palette-title").allTextContents())
-    .not.toContain("Visual Studio Code");
-
-  /* Different kinds of thing look different. A page of hits is a column of
-   * identical rows otherwise, and the icon is the only part of one you read
-   * without reading it. */
+  /* ⚠️ The case that broke the hard bands. `hero` used to put "Hide the
+   * chrome" — a real subsequence match, in a higher band — above a folder
+   * actually called `hero`, and nothing about match quality could get past the
+   * band. Bands are a preference now; an exact match is not. */
   await field.fill("hero");
-  // The file rows specifically: `hero` also finds "Hide the chrome", which is
-  // a fair subsequence match and lands in the island band above them.
-  const found = rows.filter({has: page.locator(".palette-note", {hasText: "C:/CODE"})});
-  await expect(found).toHaveCount(2);
-  const kinds = found.locator(".palette-icon svg");
-  expect(await kinds.nth(0).innerHTML()).not.toBe(await kinds.nth(1).innerHTML());
+  await expect.poll(async () => (await titles())[0]).toBe("hero");
 
-  /* Enter opens a file. ⚠️ It shelved at first, which is true about what the
-   * island has and wrong about what the keystroke means — so "Open" is no
-   * longer in the Tab menu, because Enter already is it. */
-  await expect(found.first().locator(".palette-more")).toHaveCount(1);
-  // Hovering moves the selection, which is what Tab then acts on.
-  await found.first().hover();
-  await expect(found.first()).toHaveClass(/is-at/);
+  /* And the band still decides between things that match about as well: `n`
+   * alone reaches an application before it reaches the disk. */
+  await field.fill("notion");
+  await expect(rows.first().locator(".palette-title")).toHaveText("Notion");
+
+  /* ⚠️ A row built out of the query cannot be ranked against the query.
+   * `Add task "agt"` contains `agt` verbatim, so it collected a substring bonus
+   * on every query it appeared for and outranked Agents for its own initials. */
+  await field.fill("agt");
+  await expect(rows.first().locator(".palette-title")).toHaveText("Agents");
+  expect(await titles()).toContain('Add task "agt"');
+
+  /* A typed prefix narrows to one band — the honest answer to "sometimes I
+   * want a strict filter": ask for it on one query, rather than make it a rule
+   * that applies whether or not you meant it. */
+  await field.fill("a ");
+  await expect(page.locator(".palette-crumb")).toHaveText("Apps");
+  // ⚠️ The prefix LEAVES the field: left in, every provider would see it and
+  // backspacing over it would change what the results mean with nothing having
+  // visibly moved.
+  await expect(field).toHaveValue("");
+  await field.fill("code");
+  await expect(rows.first().locator(".palette-title")).toHaveText("Visual Studio Code");
+  expect(await titles()).not.toContain("Agents");
+
+  // Backspace on an empty field sheds the scope, one level at a time.
+  await field.fill("");
+  await page.keyboard.press("Backspace");
+  await expect(page.locator(".palette-crumb")).toBeHidden();
+
+  await field.fill("f hero");
+  await expect(page.locator(".palette-crumb")).toHaveText("Files");
+  await expect.poll(async () => (await titles()).length).toBeGreaterThan(0);
+  expect(await titles()).not.toContain("Hide the chrome");
+  await page.screenshot({path: "test-results/island-palette-scope.png"});
+});
+
+test("a star keeps something, and keeps it in the empty list", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const field = page.locator(".palette-field");
+  const rows = page.locator(".palette-row");
+  const titles = () => rows.locator(".palette-title").allTextContents();
+
+  /* ⚠️ Starring a FOLDER is the point of the whole thing: once kept, it is two
+   * keystrokes away for ever, with no round trip to Everything and no need for
+   * it to be running. That only works because a star stores a snapshot of the
+   * row rather than an id — nothing enumerates the disk on an empty query. */
+  await field.fill("hero");
+  await expect.poll(async () => (await titles())[0]).toBe("hero");
   await page.keyboard.press("Tab");
-  const verbs = await rows.locator(".palette-title").allTextContents();
-  expect(verbs).toEqual(["Show in folder", "Put it on the shelf", "Copy the path"]);
-  await page.screenshot({path: "test-results/island-palette-bands.png"});
+  await expect(page.locator(".palette-crumb")).toHaveText("hero");
+  const verbs = await titles();
+  expect(verbs).toContain("Star this");
+  // The star is added by the palette, not by each provider, so a row with no
+  // verbs of its own still has a Tab menu.
+  await page.getByRole("option", {name: /Star this/}).click();
+  await expect(page.locator(".palette")).toBeHidden();
+
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  // Empty query: the kept thing is there, and marked.
+  await expect.poll(async () => (await titles()).includes("hero")).toBe(true);
+  const kept = rows.filter({hasText: "hero"}).first();
+  await expect(kept.locator(".palette-star")).toHaveCount(1);
+
+  // And it unstars from the same place.
+  await kept.hover();
+  await page.keyboard.press("Tab");
+  expect(await titles()).toContain("Remove the star");
+  await page.screenshot({path: "test-results/island-palette-star.png"});
 });
 
 test("the shelf parks things and hands them back", async ({page}) => {

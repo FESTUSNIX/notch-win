@@ -19,8 +19,13 @@ export interface Store {
 
 const KEY = "codenotch.palette.recent";
 /** Enough to cover a week of real use; past that the tail scores nothing
- *  anyway, and the ids of finished tasks and dead sessions pile up. */
-const KEEP = 40;
+ *  anyway, and the ids of finished tasks and dead sessions pile up.
+ *
+ * ⚠️ Raised from 40 when file hits started being learned from. A path is a
+ * perfectly stable id and "the file I opened yesterday" is exactly what this is
+ * for — but forty entries is an afternoon of them, and the screens and commands
+ * were being evicted by the files. */
+const KEEP = 120;
 const HALF_LIFE = 3 * 24 * 60 * 60 * 1000;
 /** ⚠️ Under WORD (45) in palette-match on purpose. Recency should decide
  *  between two things that match about as well; it must never drag a weak

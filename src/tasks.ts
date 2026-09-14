@@ -21,6 +21,7 @@ import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
+import * as stars from "./palette-stars";
 import { Palette, TIER, type Action } from "./palette";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
@@ -107,7 +108,13 @@ const shelf = new ShelfScreen(get("shelf-body"), () => render());
 /* One surface over everything. See palette.ts on why it is not trying to be
  * Flow Launcher: this searches the island's OWN world — the shelf, the live
  * sessions, today's tasks — which a general launcher cannot see. */
-const palette = new Palette(surface, () => render());
+/* ⚠️ The third argument is new and it matters: the palette closes BEFORE an
+ * action runs, so a failure has nowhere to show itself. Every action used to
+ * end in `.catch(() => {})` — a file that had moved, an app whose shortcut was
+ * stale, a session that had exited all did nothing and said nothing. They throw
+ * now, and this turns the throw into the pill's own notice. */
+const palette = new Palette(surface, () => render(),
+  (what, why) => say(`${what} failed`, why.replace(/^invoke error: /i, "").slice(0, 120)));
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -352,34 +359,45 @@ get("open-palette").onclick = () => { void palette.show(); };
  * A new screen adds its commands by exporting a list, not by editing the
  * palette. */
 
+/* ⚠️ `keep` is what makes a row starrable, and it carries enough to REBUILD
+ * the row from the stars file alone. A screen needs no rebuilding — this
+ * provider offers it on every query including the empty one — so its `kind` is
+ * blank and the stored copy is deduped away in favour of this live one. */
 palette.add(() => TABS.map(tab => ({
   id: `go:${tab.name}`,
   title: tab.label,
   keywords: "go screen open",
   hint: "Go",
   icon: tab.icon,
+  keep: { title: tab.label, note: "screen", icon: tab.icon, kind: "", path: "" },
   run: () => { show(tab.name); surface.pinFor(6000); },
 })));
 
 palette.add(() => {
   const acts: Action[] = [
     { id: "cmd:capture", title: "Add a task", keywords: "new todo create capture",
-      icon: "plus", hint: "Do", run: () => { show("today"); surface.pinFor(6000); void today.capture(); } },
+      icon: "plus", hint: "Do", keep: { title: "Add a task", note: "command", icon: "plus", kind: "", path: "" },
+      run: () => { show("today"); surface.pinFor(6000); void today.capture(); } },
     { id: "cmd:editor", title: "Accounts & connections", keywords: "settings ticktick google weather",
-      icon: "settings", hint: "Do", run: () => { void today.action("open_task_editor"); } },
+      icon: "settings", hint: "Do", keep: { title: "Accounts & connections", note: "command", icon: "settings", kind: "", path: "" },
+      run: () => { void today.action("open_task_editor"); } },
     { id: "cmd:log", title: "Open log", keywords: "debug diagnose trouble",
-      icon: "note", hint: "Do", run: () => { void call("open_log").catch(() => {}); } },
+      icon: "note", hint: "Do", keep: { title: "Open log", note: "command", icon: "note", kind: "", path: "" },
+      run: () => call("open_log") },
     { id: "cmd:display", title: "Move to next display", keywords: "monitor screen",
-      icon: "system", hint: "Do", run: () => { void call("next_display", { label: "tasks" }).catch(() => {}); } },
+      icon: "system", hint: "Do", keep: { title: "Move to next display", note: "command", icon: "system", kind: "", path: "" },
+      run: () => call("next_display", { label: "tasks" }) },
     { id: "cmd:hide", title: "Hide the chrome", keywords: "dismiss away present",
-      icon: "close", hint: "Do", run: () => { void call("toggle_chrome").catch(() => {}); } },
+      icon: "close", hint: "Do", keep: { title: "Hide the chrome", note: "command", icon: "close", kind: "", path: "" },
+      run: () => call("toggle_chrome") },
     { id: "cmd:clock", title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock",
       keywords: "time format", icon: "clock", hint: "Do",
+      keep: { title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock", note: "command", icon: "clock", kind: "", path: "" },
       run: () => {
         clock24 = !clock24;
         paintClockChoice();
         paintPill();
-        void call("set_clock_format", { clock24 }).catch(() => {});
+        call("set_clock_format", { clock24 });
       } },
   ];
   if (snooze.count()) {
@@ -403,25 +421,28 @@ palette.add(() => shelf.items.map(item => ({
   keywords: "shelf file paste",
   icon: item.kind === "link" ? "link" : item.kind === "text" ? "note" : "file",
   hint: "Shelf",
-  run: () => { void call(item.missing ? "shelf_remove" : "shelf_copy", { id: item.id }).catch(() => {}); },
+  keep: { title: item.name, note: "on the shelf",
+    icon: item.kind === "link" ? "link" : item.kind === "text" ? "note" : "file",
+    kind: "", path: "" },
+  run: () => call(item.missing ? "shelf_remove" : "shelf_copy", { id: item.id }),
   more: () => {
     const rows: Action[] = [];
     if (!item.missing) {
       rows.push(
         { id: `shelf:copy:${item.id}`, title: "Copy", keywords: "clipboard paste",
-          icon: "copy", run: () => { void call("shelf_copy", { id: item.id }).catch(() => {}); } },
+          icon: "copy", run: () => call("shelf_copy", { id: item.id }) },
         { id: `shelf:open:${item.id}`, title: "Open", keywords: "launch run",
-          icon: "open", run: () => { void call("shelf_open", { id: item.id }).catch(() => {}); } },
+          icon: "open", run: () => call("shelf_open", { id: item.id }) },
       );
       if (item.kind === "file") {
         rows.push({ id: `shelf:reveal:${item.id}`, title: "Show in folder",
           keywords: "explorer reveal locate", icon: "folder",
-          run: () => { void call("shelf_reveal", { id: item.id }).catch(() => {}); } });
+          run: () => call("shelf_reveal", { id: item.id }) });
       }
     }
     rows.push({ id: `shelf:remove:${item.id}`, title: "Take off the shelf",
       keywords: "delete remove clear", icon: "close",
-      run: () => { void call("shelf_remove", { id: item.id }).catch(() => {}); } });
+      run: () => call("shelf_remove", { id: item.id }) });
     return rows;
   },
 })));
@@ -433,14 +454,14 @@ palette.add(() => agentsScreen.sessions.map(session => ({
   keywords: `agent claude session ${session.branch ?? ""}`,
   icon: "agent",
   hint: "Agents",
-  run: () => { void call("focus_session", { pid: session.pid }).catch(() => {}); },
+  run: () => call("focus_session", { pid: session.pid }),
   more: () => [
     { id: `agent:raise:${session.id}`, title: "Raise the terminal",
       keywords: "focus window show", icon: "open",
-      run: () => { void call("focus_session", { pid: session.pid }).catch(() => {}); } },
+      run: () => call("focus_session", { pid: session.pid }) },
     { id: `agent:path:${session.id}`, title: "Copy the project name",
       keywords: "clipboard folder cd", icon: "copy",
-      run: () => { void call("copy_text", { text: session.project }).catch(() => {}); } },
+      run: () => call("copy_text", { text: session.project }) },
     /* The snooze the Agents screen already has, reachable without going there
      * — which is the whole argument for the palette. */
     snooze.isQuiet(`agent:${session.id}`)
@@ -465,10 +486,10 @@ palette.add(() => today.upNext(20).map(task => ({
     { id: `task:done:${task.id}`, title: "Complete", keywords: "finish tick done",
       icon: "check", run: () => { today.finish(task); } },
     { id: `task:copy:${task.id}`, title: "Copy the title", keywords: "clipboard text",
-      icon: "copy", run: () => { void call("copy_text", { text: task.title }).catch(() => {}); } },
+      icon: "copy", run: () => call("copy_text", { text: task.title }) },
     { id: `task:shelve:${task.id}`, title: "Park it on the shelf",
       keywords: "shelf note later", icon: "shelf",
-      run: () => { void call("shelf_add_text", { text: task.title }).catch(() => {}); } },
+      run: () => call("shelf_add_text", { text: task.title }) },
   ],
 })));
 
@@ -493,7 +514,7 @@ palette.add(query => {
     /* ⚠️ Copied through Rust, not `navigator.clipboard`. The palette hands
      * the caret back before an action runs, and the web clipboard API rejects
      * on an unfocused document — silently, in a promise nobody awaits. */
-    run: () => { void call("copy_text", { text: sum.value }).catch(() => {}); },
+    run: () => call("copy_text", { text: sum.value }),
   }];
 });
 
@@ -518,14 +539,18 @@ palette.add(query => {
     art: app.icon ?? undefined,
     hint: "App",
     tier: TIER.app,
-    run: () => { void call("launch_app", { path: app.path }).catch(() => {}); },
+    /* ⚠️ `kind: "app"` is what lets a starred application appear in the
+     * EMPTY palette. This provider answers nothing without a query, so without
+     * the record a starred app would sit in the file and show up nowhere. */
+    keep: { title: app.name, note: "application", icon: "app", kind: "app", path: app.path },
+    run: () => call("launch_app", { path: app.path }),
     more: () => [
       { id: `app:open:${app.path}`, title: "Open", keywords: "launch run start",
         icon: "open" as const, art: app.icon ?? undefined,
-        run: () => { void call("launch_app", { path: app.path }).catch(() => {}); } },
+        run: () => call("launch_app", { path: app.path }) },
       { id: `app:reveal:${app.path}`, title: "Show the shortcut",
         keywords: "explorer folder locate", icon: "folder" as const,
-        run: () => { void call("found_reveal", { path: app.path }).catch(() => {}); } },
+        run: () => call("found_reveal", { path: app.path }) },
     ],
   }));
 });
@@ -561,27 +586,68 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
         icon: iconFor(hit.name, hit.folder),
         hint: "Found",
         tier: TIER.file,
-        volatile: true,
+        /* Starring a path is the point of all this: once starred, a folder is
+         * two keystrokes away for ever, with no round trip to Everything and
+         * no need for it to be running. */
+        keep: { title: hit.name, note: hit.path, icon: iconFor(hit.name, hit.folder),
+          kind: "file", path: hit.full },
         /* ⚠️ OPEN. It shelved at first, on the argument that parking a
          * thing is what the island has and a launcher does not — which is true
          * about the island and wrong about the keystroke. Enter on a file means
          * open it; everything else is a Tab away. */
-        run: () => { void call("found_open", { path: hit.full }).catch(() => {}); },
+        run: () => call("found_open", { path: hit.full }),
         more: () => [
           { id: `found:reveal:${hit.full}`, title: "Show in folder",
             keywords: "explorer reveal locate", icon: "folder",
-            run: () => { void call("found_reveal", { path: hit.full }).catch(() => {}); } },
+            run: () => call("found_reveal", { path: hit.full }) },
           { id: `found:shelve:${hit.full}`, title: "Put it on the shelf",
             keywords: "park keep", icon: "shelf",
-            run: () => { void call("shelf_add_paths", { paths: [hit.full] }).catch(() => {}); } },
+            run: () => call("shelf_add_paths", { paths: [hit.full] }) },
           { id: `found:copy:${hit.full}`, title: "Copy the path",
             keywords: "clipboard", icon: "copy",
-            run: () => { void call("copy_text", { text: hit.full }).catch(() => {}); } },
+            run: () => call("copy_text", { text: hit.full }) },
         ],
       }))))
       .catch(() => resolve([]));
   }, 140);
 }));
+
+/* What you kept.
+ *
+ * ⚠️ Registered LAST, because the dedupe in `query()` keeps the FIRST row
+ * for an id — so a live provider that can still offer the real thing wins, and
+ * this only speaks for what nothing else can produce. That is the whole reason
+ * a star carries a snapshot: on an empty query nothing asks Everything and
+ * nothing enumerates the applications, so a starred folder or app would exist
+ * in the file and appear nowhere.
+ *
+ * ⚠️ A starred thing that has since gone throws rather than doing nothing.
+ * A star is deliberate, so its quiet disappearance is worth a sentence. */
+palette.add(() => stars.all().map(([id, star]) => ({
+  id,
+  title: star.title || id,
+  note: star.note,
+  keywords: `${star.path} starred favourite kept`,
+  icon: (star.icon || "star") as TaskIcon,
+  hint: "Starred",
+  tier: star.kind === "app" ? TIER.app : star.kind === "file" ? TIER.file : TIER.island,
+  keep: star,
+  run: () => {
+    if (star.kind === "app") return call("launch_app", { path: star.path });
+    if (star.kind === "file") return call("found_open", { path: star.path });
+    throw new Error("whatever this was is no longer here");
+  },
+  more: star.kind === "file" ? () => [
+    { id: `starred:reveal:${id}`, title: "Show in folder",
+      keywords: "explorer reveal locate", icon: "folder" as TaskIcon,
+      run: () => call("found_reveal", { path: star.path }) },
+    { id: `starred:shelve:${id}`, title: "Put it on the shelf",
+      keywords: "park keep", icon: "shelf" as TaskIcon,
+      run: () => call("shelf_add_paths", { paths: [star.path] }) },
+    { id: `starred:copy:${id}`, title: "Copy the path", keywords: "clipboard",
+      icon: "copy" as TaskIcon, run: () => call("copy_text", { text: star.path }) },
+  ] : undefined,
+})));
 
 /* ⚠️ Last, and only when nothing else matched well: the palette is a way to
  * reach things, and a "create" row that shows up for every stray keystroke
@@ -593,6 +659,7 @@ palette.add(query => {
     title: `Add task "${query}"`,
     keywords: "new create todo",
     icon: "plus",
+    tier: TIER.offer,
     hint: "New",
     run: () => {
       show("today");
@@ -723,6 +790,7 @@ async function boot() {
    * applications until it lands, which is the correct behaviour for the first
    * second of a run anyway. Awaiting it here would hold the island's first
    * paint behind a Start Menu walk. */
+  await stars.boot(() => render());
   void call<typeof installed>("list_apps")
     .then(list => { installed = list; })
     .catch(() => { /* no applications is a palette without apps, not an error */ });

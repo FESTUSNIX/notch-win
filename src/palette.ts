@@ -18,6 +18,7 @@ import { element } from "./task-list";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { search, type Match } from "./palette-match";
 import { Recent } from "./palette-recent";
+import * as stars from "./palette-stars";
 import { FRAME, cpx } from "./layout";
 import type { IslandSurface } from "./island-surface";
 
@@ -54,35 +55,50 @@ export interface Action {
    * to subsequence-match `= 909.401709402`, which it does not, so the answer
    * was filtered out of its own query and "Add task" took the top row. */
   pinned?: boolean;
+  /** What to write down if this row is starred. Absent means it cannot be
+   *  starred — the arithmetic line, and the rows inside a Tab menu, which are
+   *  verbs rather than things. */
+  keep?: stars.Star;
   /** Never learned from. Set on rows whose id is a one-off — the arithmetic
    *  line is a different id for every expression, and recording them would
    *  evict forty real entries in an afternoon. */
   volatile?: boolean;
 }
 
-/** Which band a row sits in. Bands are sorted before scores, so a band is a
- *  promise about position rather than a nudge.
+/** Which band a row sits in — a PREFERENCE, not a rule.
  *
- * ⚠️ This is a HARD order, and that is what was asked for: an app always
- * outranks a file however well the file matched. The cost is real — a
- * brilliantly-matching file can sit under a mediocre app — and it is worth it
- * because the bands are ordered by how expensive it is to be wrong. Launching
- * the wrong app costs a window you close; opening the wrong file costs nothing;
- * failing to find the app you type five times a day costs the feature.
+ * ⚠️ This was a hard sort key once, and it was wrong in a way you could
+ * see: typing `hero` put "Hide the chrome" above a folder actually called
+ * `hero`, because the island band outranked the file band and nothing about
+ * match quality could get past it. A band now adds points, and the quality
+ * signals in palette-match (EXACT 400, PREFIX 150, INITIALS 110) are large
+ * enough to cross one. So an app wins against a file that matched about as
+ * well, and loses to a file you named outright — which is the whole
+ * distinction.
  *
- * ⚠️ Apps and files answer nothing on an empty query, so with the field
- * blank the bands do not apply at all and the order is plain recency. */
+ * The order still tracks how expensive it is to be wrong: launching the wrong
+ * app costs a window you close; opening the wrong file costs nothing; failing
+ * to find the app you type five times a day costs the feature. */
 export const TIER = {
-  /** An answer, not a match — the arithmetic line. Always first. */
-  answer: 0,
+  /** An answer, not a match — the arithmetic line. Sits above all of it,
+   *  through `pinned` rather than through this number. */
+  answer: 90,
   /** Installed applications. What a launcher is opened for. */
-  app: 1,
+  app: 55,
   /** Everything the island itself owns: screens, commands, tasks, sessions,
    *  the shelf. The default, so a provider that says nothing lands here. */
-  island: 2,
-  /** Files and folders off the disk. Last: there are millions of them, and
-   *  they are the least likely thing to have been meant. */
-  file: 3,
+  island: 30,
+  /** Files and folders off the disk. There are millions of them. */
+  file: 0,
+  /** Not a match at all — a thing you can do with the text you typed, offered
+   *  when nothing better turns up.
+   *
+   * ⚠️ It has to SINK, and the reason is not obvious. `Add task "agt"`
+   * contains the query verbatim, so it collects RUNON (+80) on every query it
+   * ever appears for — which is how it came to outrank Agents for `agt` the
+   * moment match quality started counting for anything. A row built out of the
+   * query cannot be ranked against the query. */
+  offer: -150,
 } as const;
 
 export type Provider = (query: string) => Action[];
@@ -98,6 +114,25 @@ function storage() {
 
 /** How many rows fit before the list starts scrolling rather than growing. */
 const SHOWN = 8;
+
+/* A typed prefix narrows the palette to one band.
+ *
+ * ⚠️ This is the honest answer to "sometimes I want a strict filter": make it
+ * something you ask for on one query, rather than a rule that applies to every
+ * query whether or not you meant it. The bands are a preference now (see TIER);
+ * this is how you overrule them deliberately.
+ *
+ * ⚠️ `f ` and `a ` need the SPACE, and `>` does not. Without it every word
+ * beginning with f or a would be a scope, and the palette would stop being able
+ * to search for anything called "files" or "agents".
+ *
+ * ⚠️ The numbers are TIER's, written out. Referring to TIER here would be a
+ * use-before-definition at module scope. */
+const SCOPES: { match: RegExp; label: string; tier: number }[] = [
+  { match: /^>\s*/, label: "The island", tier: 30 },
+  { match: /^a\s+/i, label: "Apps", tier: 55 },
+  { match: /^f\s+/i, label: "Files", tier: 0 },
+];
 
 export class Palette {
   private host: HTMLElement;
@@ -116,15 +151,28 @@ export class Palette {
   private text = "";
   /** The row whose own actions are being shown, if any. */
   private inside: Action | null = null;
+  /** The band a typed prefix narrowed to, if any. */
+  private scope: { label: string; tier: number } | null = null;
   private recent = new Recent(storage());
   private shown: { action: Action; match: Match }[] = [];
   private at = 0;
+  /** Whether the highlight was put where it is on purpose. */
+  private moved = false;
   /** Installed on the document while the palette is up, and removed with it. */
   private keys = (event: KeyboardEvent) => this.key(event);
   private away = (event: PointerEvent) => this.outside(event);
   open = false;
 
-  constructor(private surface: IslandSurface, private onClose: () => void) {
+  constructor(
+    private surface: IslandSurface,
+    private onClose: () => void,
+    /* ⚠️ Every action used to swallow its own failure with
+     * `.catch(() => {})`, so a shortcut that would not register, a file that
+     * had moved or an app whose shortcut was stale did precisely nothing and
+     * said precisely nothing. The palette closes before the action runs, so
+     * there is nowhere left to show it — which is why this is handed in. */
+    private onTrouble: (what: string, why: string) => void = () => {},
+  ) {
     this.host = element("div", "palette");
     this.host.hidden = true;
 
@@ -181,6 +229,7 @@ export class Palette {
     this.host.hidden = false;
     this.field.value = "";
     this.inside = null;
+    this.scope = null;
     this.paintCrumb();
     /* Narrow while the palette is up. The panel is ~910px across, which is
      * right for eight screens of content and much too wide for a list of
@@ -232,6 +281,7 @@ export class Palette {
     this.host.hidden = true;
     this.field.value = "";
     this.inside = null;
+    this.scope = null;
     this.pool = [];
     this.late = [];
     this.gen++;
@@ -273,8 +323,11 @@ export class Palette {
       this.enter(this.at);
       return;
     }
+    /* Backspace on an empty field sheds one level — the sub-menu, then the
+     * scope. ⚠️ It has to test BOTH: with only `inside` here, a scope chip
+     * could be backspaced at for ever and nothing happened. */
     if ((event.key === "Tab" && event.shiftKey)
-      || (event.key === "Backspace" && !this.field.value && this.inside)) {
+      || (event.key === "Backspace" && !this.field.value && (this.inside || this.scope))) {
       event.preventDefault();
       this.leave();
       return;
@@ -282,6 +335,7 @@ export class Palette {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!this.shown.length) return;
+      this.moved = true;
       const step = event.key === "ArrowDown" ? 1 : -1;
       // Wraps, because a list you can run off the end of makes you look.
       this.at = (this.at + step + this.shown.length) % this.shown.length;
@@ -325,24 +379,59 @@ export class Palette {
     await this.hide();
     try {
       await chosen.action.run();
-    } catch { /* the action reports its own trouble on its own screen */ }
+    } catch (trouble) {
+      this.onTrouble(chosen.action.title, String((trouble as Error)?.message ?? trouble));
+    }
+  }
+
+  /** The Tab menu for a row: whatever it offers, plus the star.
+   *
+   * ⚠️ The star is added HERE rather than by each provider. It applies to
+   * every row that can be starred, so writing it six times would be six places
+   * to forget it — and it is what gives a row with no verbs of its own (a
+   * screen, a command) a Tab menu at all. */
+  private menu(action: Action): Action[] {
+    const rows = this.safely(() => action.more?.() ?? []);
+    if (!action.keep) return rows;
+    const on = stars.has(action.id);
+    rows.push({
+      id: `star:${action.id}`,
+      title: on ? "Remove the star" : "Star this",
+      note: on ? "it will stop coming first" : "keeps it near the top, and in the empty list",
+      keywords: "favourite favorite keep pin bookmark",
+      icon: "star",
+      run: async () => { await stars.toggle(action.id, action.keep!); },
+    });
+    return rows;
+  }
+
+  private starrable(action: Action): boolean {
+    return !!action.more || !!action.keep;
   }
 
   /** Into the highlighted row's own actions. */
   private enter(index: number) {
     const chosen = this.shown[index]?.action;
-    if (!chosen?.more) return;
+    if (!chosen || !this.starrable(chosen)) return;
     this.inside = chosen;
     this.field.value = "";
     this.paintCrumb();
     this.query();
   }
 
-  /** Back out of them. Returns whether there was anything to back out of, so
-   *  Escape can fall through to closing the palette. */
+  /** Back out one level. Returns whether there was anything to back out of, so
+   *  Escape can fall through to closing the palette.
+   *
+   *  A scope is shallower than a sub-menu, so it is shed second. */
   private leave(): boolean {
     const was = this.inside;
-    if (!was) return false;
+    if (!was) {
+      if (!this.scope) return false;
+      this.scope = null;
+      this.paintCrumb();
+      this.query();
+      return true;
+    }
     this.inside = null;
     this.field.value = "";
     this.paintCrumb();
@@ -356,9 +445,30 @@ export class Palette {
   }
 
   private paintCrumb() {
-    this.crumb.hidden = !this.inside;
-    this.crumb.textContent = this.inside?.title ?? "";
-    this.field.placeholder = this.inside ? "Do what with it…" : "Search the island…";
+    const label = this.inside?.title ?? this.scope?.label ?? "";
+    this.crumb.hidden = !label;
+    this.crumb.textContent = label;
+    this.field.placeholder = this.inside ? "Do what with it…"
+      : this.scope ? `Search ${this.scope.label.toLowerCase()}…`
+      : "Search the island…";
+  }
+
+  /** A typed prefix becomes a chip and leaves the field.
+   *
+   * ⚠️ Taken OUT of the text rather than merely ignored in it. Left in, the
+   * matcher would have to know to skip it, every provider would see it, and
+   * backspacing over it would silently change what the results mean with
+   * nothing on screen having moved. */
+  private takeScope() {
+    if (this.inside || this.scope) return;
+    for (const scope of SCOPES) {
+      const found = this.field.value.match(scope.match);
+      if (!found) continue;
+      this.scope = { label: scope.label, tier: scope.tier };
+      this.field.value = this.field.value.slice(found[0].length);
+      this.paintCrumb();
+      return;
+    }
   }
 
   private safely(ask: () => Action[]): Action[] {
@@ -367,14 +477,27 @@ export class Palette {
   }
 
   private query() {
+    this.takeScope();
     this.text = this.field.value.trim();
+    this.moved = false;
     const gen = ++this.gen;
     this.late = [];
-    this.pool = this.inside
-      ? this.safely(() => this.inside!.more!())
+    const raw = this.inside
+      ? this.menu(this.inside)
       : this.providers.flatMap(provider => this.safely(() => provider(this.text)));
+    /* ⚠️ One row per id, first one wins. The starred provider is registered
+     * last and re-emits things the live providers may already have offered —
+     * without this you get two Brave rows, and the stored one is the staler of
+     * the two. */
+    const seen = new Set<string>();
+    const band = this.scope?.tier;
+    this.pool = raw.filter(action =>
+      (band === undefined || (action.tier ?? TIER.island) === band)
+      && !seen.has(action.id) && seen.add(action.id));
     this.rank(false);
-    if (this.inside) return;
+    // No late answers inside a sub-menu, and none at all once the scope has
+    // said this query is not about files.
+    if (this.inside || (this.scope && this.scope.tier !== TIER.file)) return;
     for (const ask of this.live) {
       ask(this.text)
         .then(actions => {
@@ -388,28 +511,36 @@ export class Palette {
     }
   }
 
+  /** Everything that is true about a row regardless of what was typed: its
+   *  band, whether you kept it, and how recently you used it. */
+  private weight(action: Action): number {
+    return (action.tier ?? TIER.island)
+      + (stars.has(action.id) ? stars.STAR : 0)
+      + this.recent.boost(action.id);
+  }
+
   /** Sort what there is and draw it.
    *
    * `keep` holds the highlight on whatever row it was on, by id, which matters
    * only for the late pass: results appearing under the cursor while you are
    * about to press Enter is how a palette runs the wrong thing. On a keystroke
    * the best match is the right selection, so the highlight goes back to the
-   * top. */
+   * top.
+   *
+   * ⚠️ And only if the highlight was put there ON PURPOSE. Held
+   * unconditionally, a late file hit that ranks first leaves the selection on
+   * whatever the synchronous pass happened to put at the top — so `hero` is
+   * drawn first and Enter runs "Hide the chrome". That is the same class of
+   * wrongness the bands had, arriving by a different route. */
   private rank(keep: boolean) {
-    const held = keep ? this.shown[this.at]?.action.id : undefined;
+    const held = keep && this.moved ? this.shown[this.at]?.action.id : undefined;
     const all = [...this.pool, ...this.late];
     const pinned = all.filter(action => action.pinned);
     const rest = all.filter(action => !action.pinned);
-    /* ⚠️ Ranked WIDE, then banded, then cut. Cutting to the visible eight
-     * before the band sort would let a page of file hits push every app off
-     * the end, and the band would then be sorting a list the files had already
-     * won. */
-    const ranked = search(rest, this.text, SHOWN * 8, action => this.recent.boost(action.id));
-    // Stable, so score order survives inside a band.
-    ranked.sort((a, b) => (a.item.tier ?? TIER.island) - (b.item.tier ?? TIER.island));
+    const ranked = search(rest, this.text, SHOWN * 2, action => this.weight(action));
     this.shown = [
       ...pinned.map(action => ({ action, match: { score: 0, hits: [] as number[] } })),
-      ...ranked.slice(0, SHOWN * 2).map(hit => ({ action: hit.item, match: hit.match })),
+      ...ranked.map(hit => ({ action: hit.item, match: hit.match })),
     ];
     const again = held ? this.shown.findIndex(row => row.action.id === held) : -1;
     this.at = again >= 0 ? again : 0;
@@ -471,7 +602,12 @@ export class Palette {
       /* ⚠️ A static mark, not only a keystroke to know. Tab is invisible
        * until someone tells you about it, and a feature nobody can see is one
        * nobody uses. */
-      if (action.more) {
+      if (stars.has(action.id)) {
+        const mark = element("span", "palette-star");
+        paintIcon(mark, "star");
+        row.append(mark);
+      }
+      if (this.starrable(action)) {
         const deeper = element("span", "palette-more");
         deeper.append(element("b", "", "Tab"));
         // "down", turned a quarter: the set has no chevron of its own.
@@ -491,6 +627,7 @@ export class Palette {
       // so a mis-aimed click is visible rather than surprising.
       row.addEventListener("pointerenter", () => {
         if (this.at === index) return;
+        this.moved = true;
         this.at = index;
         this.paint();
       });

@@ -99,14 +99,31 @@ there is no `es.exe`, no HTTP server to enable and no SDK dll to ship. With
 Everything closed the palette simply has no file results and says nothing about
 it.
 
-**Results are banded, not just scored.** An answer (the arithmetic line) first,
-then applications, then everything the island itself owns, then files. ⚠️
-It is a **hard** order: an app outranks a file however well the file matched.
-The bands are ordered by how expensive it is to be wrong — launching the wrong
-app costs a window you close, opening the wrong file costs nothing, and failing
-to find the app you type five times a day costs the feature. Apps and files
-answer nothing on an empty query, so with the field blank the bands do not apply
-at all and the order is plain recency.
+**Ranking prefers the thing you named.** Match *quality* — an exact title, a
+prefix, the initials of a multi-word name, the query appearing whole — counts
+for more than which band a row is in, and bands (an answer, then apps, then the
+island's own world, then files) are a preference that decides between things
+matching about as well. ⚠️ They were a hard sort order once, and it was
+visibly wrong: typing `hero` put *"Hide the chrome"* above a folder actually
+called `hero`, and nothing about the match could get past the band.
+
+**A typed prefix narrows to one band** when you do want a strict filter:
+`>` for the island's own world, `a ` for apps, `f ` for files. The prefix leaves
+the field and becomes a chip; `Backspace` on an empty field sheds it.
+
+**`Tab` → Star this.** A star lifts something near the top and puts it in the
+**empty** palette, so the blank field is a short list of what you keep. Anything
+with a stable id can be starred, **including a file or a folder** — star
+`codenotch-win` once and it is two keystrokes away for ever, with no round trip
+to Everything and no need for it to be running. ⚠️ Stars live in
+`stars.json` beside the config, not in the WebView's storage: recency is a guess
+the palette makes and can afford to lose, a star is something you said.
+
+**Failures are said out loud.** Every palette action used to end in
+`.catch(() => {})` — a file that had moved, an app whose shortcut was stale, a
+session that had exited all did nothing and reported nothing. The palette closes
+before an action runs, so there is nowhere left to put an error; it goes to the
+pill's own notice instead.
 
 ### Six global shortcuts
 

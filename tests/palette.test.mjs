@@ -86,3 +86,37 @@ test('a boost decides between close matches and cannot rescue a weak one', () =>
   assert.equal(search(pair, 'open', 12, i => i.title.endsWith('shelf') ? 34 : 0)[0].item.title,
     'Open shelf');
 });
+
+test('an exact match wins, whatever band it is in', () => {
+  /* ⚠️ The case that broke the hard bands. Typing `hero` put "Hide the chrome"
+   * — a real subsequence match, in a higher band — above a folder actually
+   * called `hero`, and nothing about match quality could get past the band. */
+  const items = [
+    {title: 'Hide the chrome'},
+    {title: 'hero'},
+  ];
+  const band = item => item.title === 'Hide the chrome' ? 30 : 0;
+  assert.equal(search(items, 'hero', 12, band)[0].item.title, 'hero');
+});
+
+test('a prefix beats a scattered match in a higher band', () => {
+  const items = [{title: 'Brave'}, {title: 'Bluetooth: reconnect all devices'}];
+  const band = item => item.title.startsWith('Bluetooth') ? 30 : 0;
+  assert.equal(search(items, 'bra', 12, band)[0].item.title, 'Brave');
+});
+
+test('initials find an application the way people type one', () => {
+  // "vsc" is scattered across "Visual Studio Code", so a plain subsequence
+  // score buries it under anything shorter.
+  const items = [{title: 'Visual Studio Code'}, {title: 'Services'}];
+  assert.equal(search(items, 'vsc')[0].item.title, 'Visual Studio Code');
+  assert.equal(search(items, 'vs')[0].item.title, 'Visual Studio Code');
+  // ⚠️ One letter is not an acronym — every word would match every initial.
+  assert.ok(score('Services', 'v') === null || search(items, 's')[0].item.title === 'Services');
+});
+
+test('a band still decides between things that match about as well', () => {
+  const items = [{title: 'Notion'}, {title: 'Notion export.zip'}];
+  const band = item => item.title === 'Notion' ? 55 : 0;
+  assert.equal(search(items, 'notio', 12, band)[0].item.title, 'Notion');
+});

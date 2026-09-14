@@ -45,13 +45,16 @@ test('it survives a restart, and an unreadable store is simply an empty one', ()
   assert.equal(safe.boost('go:home'), 34);
 });
 
-test('it keeps 40 and drops the oldest, so dead ids do not pile up', () => {
+test('it keeps a bounded list and drops the oldest, so dead ids do not pile up', () => {
   let now = 1e12;
   const store = fake();
   const recent = new Recent(store, () => now);
-  for (let i = 0; i < 60; i++) { recent.record(`task:${i}`); now += 1000; }
-  assert.equal(Object.keys(JSON.parse(store.held.get('codenotch.palette.recent'))).length, 40);
+  for (let i = 0; i < 200; i++) { recent.record(`task:${i}`); now += 1000; }
+  // ⚠️ 120, raised from 40 once file hits started being learned from: a path is
+  // a stable id, and forty entries is an afternoon of them — the screens and
+  // commands were being evicted by the files.
+  assert.equal(Object.keys(JSON.parse(store.held.get('codenotch.palette.recent'))).length, 120);
   // The ids a finished task or a dead session left behind are the ones to lose.
   assert.equal(recent.boost('task:0'), 0);
-  assert.ok(recent.boost('task:59') > 30);
+  assert.ok(recent.boost('task:199') > 30);
 });

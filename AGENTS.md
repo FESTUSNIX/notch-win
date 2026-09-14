@@ -1705,3 +1705,39 @@ The two halves were the same fault.
 179. ⚠️ **Rank wide, band, then cut.** Cutting to the visible rows before
      the band sort lets a page of file hits push every app off the end — and
      the band is then sorting a list the files have already won.
+180. ⚠️ **A band must not be a sort key.** As a hard order it put "Hide
+     the chrome" above a folder actually called `hero`, because the island band
+     outranked the file band and nothing about match quality could get past it.
+     Bands add points now; the quality signals in `palette-match` (EXACT 400,
+     PREFIX 150, INITIALS 110, RUNON 80) are deliberately large enough to cross
+     one.
+181. ⚠️ **A row built out of the query cannot be RANKED against the
+     query.** `Add task "agt"` contains `agt` verbatim, so it collected the
+     substring bonus on every query it ever appeared for and outranked Agents
+     for its own initials. `TIER.offer` sinks it; the arithmetic line sidesteps
+     the same trap by being `pinned`.
+182. ⚠️ **Quality bonuses go on AFTER the length normalisation.** They say
+     what kind of match this is, and that does not become less true because the
+     title is long — diluting them is what let a short accidental match outrank
+     a deliberate one.
+183. ⚠️ **Hold the highlight only when it was moved on purpose.** Held
+     unconditionally across a late re-rank, a file hit that ranks first leaves
+     the selection on whatever the synchronous pass put at the top — so `hero`
+     is drawn first and Enter runs "Hide the chrome". Same wrongness as the
+     bands, by a different route.
+184. ⚠️ **A star stores a SNAPSHOT, not an id.** It has to appear in the
+     empty palette, and nothing enumerates the disk or the applications on an
+     empty query — with only an id there would be nothing to draw, and a
+     starred folder would sit in the file and show up nowhere. The snapshot is
+     also what makes a starred file survive Everything being closed. Dedupe by
+     id in `query()` keeps the live row when there is one; the starred provider
+     is registered LAST for exactly that.
+185. ⚠️ **A scope prefix must LEAVE the field.** Left in the text, the
+     matcher would have to know to skip it, every provider would see it, and
+     backspacing over it would silently change what the results mean with
+     nothing on screen having moved.
+186. ⚠️ **`.catch(() => {})` on a palette action swallows the only report
+     there is.** The palette closes before the action runs, so a failure has
+     nowhere to show itself — a moved file, a stale shortcut and an exited
+     session all did nothing and said nothing. Actions return their promise now
+     and `Palette.pick` routes the throw to the pill.

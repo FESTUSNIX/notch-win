@@ -60,6 +60,7 @@ let demo = new URLSearchParams(location.search).has("empty") ? emptySnapshot() :
 if(new URLSearchParams(location.search).has("single")) demo.tasks=demo.tasks.filter(t=>t.title==="Get outside for a walk");
 const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
+const demoStars: Record<string, Record<string, string>> = {};
 
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
@@ -86,6 +87,15 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     ].filter(hit => hit.full.toLowerCase().includes(wanted)) as T;
   }
   if (command === "launch_app" || command === "found_open" || command === "found_reveal") return undefined as T;
+  /* Stars in the preview live for the page's lifetime only — long enough to
+     exercise the round trip, short enough that one test cannot colour another. */
+  if (command === "get_stars") return structuredClone(demoStars) as T;
+  if (command === "set_star") {
+    const id = String(args.id ?? "");
+    if (args.star) demoStars[id] = args.star as Record<string, string>;
+    else delete demoStars[id];
+    return true as T;
+  }
   if (command === "copy_text") return undefined as T;
   if (command === "open_external") return undefined as T;
   if (command === "google_status") return true as T;

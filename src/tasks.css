@@ -1176,6 +1176,12 @@ html.dragging-files #island {
    fill reads as blur, not as an icon. */
 .palette-art { width:19px; height:19px; object-fit:contain; display:block; }
 
+/* Kept. ⚠️ Small and warm rather than large and bright: it marks a row, it is
+   not the row's subject, and at any real size a column of them reads as a
+   second list running down the middle of the first. */
+.palette-star { display:flex; align-items:center; flex-shrink:0; color:var(--accent); opacity:.75; }
+.palette-star svg { width:12px; height:12px; }
+
 /* A key you can press, not a label naming the provider. Shown on the selected
    row and on hover-through; dimmed elsewhere so nine of them are not shouting. */
 .palette-key { display:flex; align-items:center; gap:4px; flex-shrink:0;

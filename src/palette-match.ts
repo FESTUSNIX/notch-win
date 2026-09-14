@@ -22,9 +22,40 @@ const WORD = 45;     // a character right after a space, dash, dot or slash
 const RUN = 22;      // immediately after the previous match
 const CASE = 6;      // the typed case matched exactly
 
+/* ── How WELL it matched, as opposed to where ─────────────────────────────
+ *
+ * The four above describe the shape of a subsequence match and are diluted by
+ * length; these four describe the KIND of match and are not. They are big
+ * enough to cross a band (see TIER in palette.ts), and that is deliberate.
+ *
+ * ⚠️ This is what the bands got wrong on their own. Typing `hero` put
+ * "Hide the chrome" — a perfectly real subsequence match, in the island band —
+ * above a folder actually called `hero`, because the band was a sort key and
+ * nothing could outrank it. A band should be a preference between things that
+ * match about as well, never a reason to bury the thing you named. */
+const EXACT = 400;     // the title IS what you typed
+const PREFIX = 150;    // `bra` -> Brave
+const INITIALS = 110;  // `vsc` -> Visual Studio Code
+const RUNON = 80;      // the query appears whole, somewhere inside
+
 function boundary(before: string): boolean {
   return before === " " || before === "-" || before === "_" || before === "." ||
     before === "/" || before === "\\" || before === ":";
+}
+
+/** The first letter of each word: "Visual Studio Code" -> "vsc".
+ *
+ * ⚠️ How people actually type an application's name, and a plain
+ * subsequence match scores it terribly — the letters are scattered across the
+ * whole string, so length normalisation buries it under anything shorter. */
+function initials(text: string): string {
+  let out = "";
+  let fresh = true;
+  for (const char of text) {
+    if (boundary(char)) { fresh = true; continue; }
+    if (fresh) { out += char.toLowerCase(); fresh = false; }
+  }
+  return out;
 }
 
 /**
@@ -66,7 +97,18 @@ export function score(text: string, query: string): Match | null {
   /* Shorter is better when the score ties: "Media" should beat "Immediately"
    * for "med". Divided rather than subtracted so a long title with a genuinely
    * strong match still wins over a short weak one. */
-  return { score: total / (1 + text.length / 64), hits };
+  let out = total / (1 + text.length / 64);
+
+  /* ⚠️ Added AFTER the normalisation, on purpose. These say what kind of
+   * match this is, and that does not become less true because the title is
+   * long: `Visual Studio Code` is still exactly what was typed. Diluting them
+   * by length is what let a short accidental match outrank a deliberate one. */
+  if (lower === wanted) out += EXACT;
+  else if (lower.startsWith(wanted)) out += PREFIX;
+  if (wanted.length > 1 && initials(text).startsWith(wanted)) out += INITIALS;
+  if (lower.includes(wanted)) out += RUNON;
+
+  return { score: out, hits };
 }
 
 export interface Rankable {

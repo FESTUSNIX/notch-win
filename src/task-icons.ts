@@ -10,7 +10,7 @@ import {
   File01Icon, Note01Icon, Link01Icon, Copy01Icon, Folder01Icon,
   ArrowUpRight01Icon, InboxIcon, Analytics01Icon, AlarmClockIcon, Search01Icon,
   SourceCodeIcon, Image01Icon, Pdf01Icon, Zip01Icon, Txt01Icon, Doc01Icon,
-  Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon,
+  Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -41,7 +41,7 @@ const icons = {
   code: SourceCodeIcon, image: Image01Icon, pdf: Pdf01Icon, zip: Zip01Icon,
   text: Txt01Icon, doc: Doc01Icon, sheet: Xls01Icon, slides: Ppt01Icon,
   audio: Mp301Icon, video: Video01Icon, exe: ComputerTerminal01Icon,
-  app: Rocket01Icon,
+  app: Rocket01Icon, star: StarIcon,
 };
 export type TaskIcon = keyof typeof icons;
 
