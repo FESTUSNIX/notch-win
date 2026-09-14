@@ -373,6 +373,18 @@ test("all four edges keep the island upright and inside its window", async ({pag
       return island.left >= outer.left - 1 && island.right <= outer.right + 1
         && island.top >= outer.top - 1 && island.bottom <= outer.bottom + 1;
     })).toBe(true);
+    /* ⚠️ And the header controls stay inside it. On a vertical edge the
+     * panel is only ~388px wide; a tab strip that refused to shrink laid
+     * `.panel-actions` out past the island's right edge, where the clip
+     * erased them — pin, settings and collapse were simply absent, with
+     * nothing in the DOM saying so. */
+    await expect.poll(() => page.locator("#island").evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return [...el.querySelectorAll(".island-head *")].every(part => {
+        const r = part.getBoundingClientRect();
+        return !r.width || (r.left >= box.left - 1 && r.right <= box.right + 1);
+      });
+    })).toBe(true);
     await page.screenshot({path: `test-results/island-${edge}.png`});
   }
 });
@@ -530,7 +542,29 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await expect(page.locator(".palette")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".palette")).toBeHidden();
+
+  /* ⚠️ The pin is never touched. `surface.pin()` is a toggle on a
+   * user-facing latch, and three callers used to flip it around one open — so
+   * the island came back pinned and stayed open until it was unpinned by hand.
+   * Holding the panel while it has the caret is `editing`'s job. */
+  await expect(page.getByRole("button", {name: "Pin the island open", exact: true}))
+    .toHaveAttribute("aria-pressed", "false");
+
+  /* Narrower while it is up. The full panel is ~910px, which is right for a
+   * screen of content and reads as a window someone left open when all it
+   * holds is a list of one-line results. */
+  const full = (await page.locator("#island").boundingBox())!.width;
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await expect(page.locator(".palette")).toBeVisible();
+  await expect.poll(async () => (await page.locator("#island").boundingBox())!.width)
+    .toBeLessThan(full - 100);
   await page.screenshot({path: "test-results/island-palette.png"});
+
+  /* A click anywhere else closes it. It used to be closable only by RUNNING
+   * something: the keys were bound to the field, so with the caret not yet
+   * arrived Escape did nothing either. */
+  await page.mouse.click(12, 620);
+  await expect(page.locator(".palette")).toBeHidden();
 });
 
 test("the shelf parks things and hands them back", async ({page}) => {

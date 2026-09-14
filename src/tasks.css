@@ -72,8 +72,21 @@ h1 { margin:0; }
 
    ⚠️ No drop shadow. A filter is applied before clipping, so it would be drawn
    round the rectangle and then cut away by the clip — and the sibling notch
-   has none either. The shape carries the separation. */
-#island { position:absolute; overflow:hidden; background:#000;
+   has none either. The shape carries the separation.
+
+   ⚠️ `overflow: clip`, NOT `hidden`, and the difference is load-bearing.
+   `hidden` clips but still makes the element a SCROLL CONTAINER — one whose
+   content is permanently wider than its box, because the expanded panel is laid
+   out at full size behind the collapsed pill. Anything that scrolls a
+   descendant into view (a `focus()`, a `scrollIntoView`, or Chromium's own
+   scroll anchoring after the box is resized) then moves the pill sideways, and
+   nothing in the DOM says so: `left` still computes to `0px`, `offsetLeft` is
+   still `0`, and only `getBoundingClientRect` disagrees. It shipped as an
+   island whose collapsed content rendered 59px outside the shape on the left
+   and right edges — visibly empty, since the clip then cut it away.
+   `clip` does the same clipping without the scroll box, so the offset cannot
+   exist. */
+#island { position:absolute; overflow:clip; background:#000;
   clip-path:url(#island-clip); will-change:width,height,transform; }
 #island-defs { position:absolute; width:0; height:0; overflow:hidden; }
 /* Placed in pixels by island-surface.ts every frame — see the note there on
@@ -119,9 +132,22 @@ h1 { margin:0; }
 .island-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
   padding:9px 13px 5px; flex-shrink:0; cursor:grab; }
 .island-head:active { cursor:grabbing; }
-.island-tabs { display:flex; align-items:center; gap:2px; }
+/* ⚠️ The strip SCROLLS rather than pushing the header wider, and on the left
+   and right edges it has to. There the panel is capped by the shell's width
+   (~388px — see islandBodyDepth), while eight icon tabs plus the four action
+   buttons want ~460. Without `min-width: 0` the strip refuses to shrink, the
+   row overflows to the right, and the action buttons are laid out OUTSIDE the
+   island — where the clip erases them, so the pin, settings and collapse
+   controls simply are not there on a vertically docked island. Nothing errors
+   and nothing looks broken; the buttons are gone.
+
+   It grew one tab at a time (shelf, review) and one button at a time (search),
+   so there was never a change big enough to notice. */
+.island-tabs { display:flex; align-items:center; gap:2px; flex:1 1 auto; min-width:0;
+  overflow-x:auto; scrollbar-width:none; }
+.island-tabs::-webkit-scrollbar { display:none; }
 .island-tab { position:relative; display:flex; align-items:center; gap:7px; padding:5px 9px;
-  border-radius:8px; color:#5c5c5c; font-size:11.5px; }
+  border-radius:8px; color:#5c5c5c; font-size:11.5px; flex-shrink:0; }
 .island-tab svg { width:15px; height:15px; flex-shrink:0; }
 .island-tab span { display:none; }
 .island-tab:hover { color:#c4c4c4; background:#101010; }
@@ -1065,36 +1091,70 @@ html.dragging-files #island {
 
 /* ── The palette ─────────────────────────────────────────────────────────
    Over the screens, not beside them: it is a mode, and the panel behind it is
-   not something to look at while it is up. */
-.palette { position:absolute; inset:0; z-index:60; display:flex; flex-direction:column;
+   not something to look at while it is up.
+
+   ⚠️ **Concentric radii.** Outer = inner + padding. The island's corner is an
+   SVG clip path of cpx(FRAME.cornerRadius) ≈ 38px, not a border-radius, so the
+   number has to be restated here — `--island-r` — and every nested radius is
+   derived from it. Getting this wrong is the single most common reason an
+   interface reads as "off": a nearly-square highlight inside a very round box
+   looks like a mistake even when nothing is misaligned. */
+.palette { --island-r:38px; --pal-pad:12px;
+  position:absolute; inset:0; z-index:60; display:flex; flex-direction:column;
   border-radius:inherit; background:color-mix(in srgb, #0a0a0a 92%, transparent);
-  backdrop-filter:blur(14px); padding:10px;
+  backdrop-filter:blur(14px); padding:var(--pal-pad);
   animation:palette-in var(--duration-fast) var(--ease-smooth-out); }
 @keyframes palette-in { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 
-.palette-bar { display:flex; align-items:center; gap:11px; padding:8px 14px 11px;
-  border-bottom:1px solid var(--hair); flex-shrink:0; }
+/* The bar's own inset matches a row's, so the caret and the first title start
+   on the same vertical line. */
+/* ⚠️ Capped and centred, not full width. The island is ~970px across, and a
+   search laid edge to edge across it puts the title at one end and its key at
+   the other with a hand's width of nothing between — it reads as a toolbar,
+   not as a thing you are typing into. */
+.palette-bar, .palette-list { width:100%; max-width:640px; align-self:center; }
+.palette-bar { display:flex; align-items:center; gap:11px; flex-shrink:0;
+  padding:6px var(--row-pad) 12px; }
 .palette-mark { display:grid; place-items:center; color:#6a6a6a; flex-shrink:0; }
 .palette-mark svg { width:17px; height:17px; }
-/* ⚠️ The focus ring is suppressed here and only here. The global rule draws
-   an accent outline on any focused input, which is right for a form and wrong
-   for a field that IS the bar — it boxes the whole palette in green. What says
-   this has focus is that the palette is open at all. */
+/* ⚠️ The focus ring is suppressed here and only here. The global rule draws an
+   accent outline on any focused input, which is right for a form and wrong for
+   a field that IS the bar — it boxes the whole palette in green. What says this
+   has focus is that the palette is open at all. */
 .palette-field { flex:1; min-width:0; background:transparent; border:0;
-  color:#fff; font-size:17px; font-weight:500; letter-spacing:-.2px; padding:0; }
+  color:#fff; font-size:16.5px; font-weight:500; letter-spacing:-.2px; padding:0; }
 .palette-field:focus, .palette-field:focus-visible { outline:none; }
 .palette-field::placeholder { color:#4f4f4f; font-weight:400; }
 
-.palette-list { flex:1; min-height:0; overflow-y:auto; padding:8px 4px 2px;
-  display:flex; flex-direction:column; gap:1px;
+/* ⚠️ `scrollbar-gutter` both-edges, or the scrollbar's width shifts every row
+   left the moment the list overflows — and the list overflows as soon as you
+   stop typing, so the content moves while you read it. */
+.palette-list { flex:1; min-height:0; overflow-y:auto; scrollbar-gutter:stable both-edges;
+  display:flex; flex-direction:column; gap:2px; padding-bottom:2px;
   scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent; }
-.palette-row { display:flex; align-items:center; gap:11px; width:100%; text-align:left;
-  padding:7px 11px; border-radius:9px; background:transparent; }
+
+/* ⚠️ One padding value, used on all four sides. The icon, the title and the
+   gap above the first row all measure from the same number, so nothing needs
+   to be nudged to look even. */
+/* ⚠️ One padding value on all four sides, so the icon, the title and the gap
+   above the first row all measure from the same number and nothing has to be
+   nudged to look even.
+
+   ⚠️ And a DELIBERATE departure from the concentric rule for the row itself.
+   Outer = inner + padding would give 38 - 12 = 26px here, and 26px on a 46px
+   row is a stadium, not a row. The rule is about boxes that nest and share a
+   corner; this list scrolls, so a row never occupies the shape's corners. The
+   icon tile does sit in the row's corner, and that one IS derived. */
+.palette-row { --row-pad:10px;
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  padding:var(--row-pad); background:transparent; border-radius:16px; }
+.palette-bar { --row-pad:10px; }
 /* One highlight, driven by the keyboard. ⚠️ No :hover rule — the pointer sets
    the selection instead, so there is never a second row that looks chosen. */
 .palette-row.is-at { background:var(--tile-hi); }
 .palette-icon { display:grid; place-items:center; width:26px; height:26px; flex-shrink:0;
-  border-radius:8px; background:rgba(255,255,255,.05); color:#9a9a9a; }
+  border-radius:calc(16px - var(--row-pad));
+  background:rgba(255,255,255,.05); color:#9a9a9a; }
 .palette-row.is-at .palette-icon { color:#fff; background:rgba(255,255,255,.1); }
 .palette-icon svg { width:15px; height:15px; }
 .palette-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
@@ -1103,6 +1163,14 @@ html.dragging-files #island {
 .palette-title b { color:var(--accent); font-weight:600; }
 .palette-note { font-size:10.5px; color:#6a6a6a; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
-.palette-hint { font-size:10px; color:#4f4f4f; flex-shrink:0; letter-spacing:.04em;
-  text-transform:uppercase; }
+
+/* A key you can press, not a label naming the provider. Shown on the selected
+   row and on hover-through; dimmed elsewhere so nine of them are not shouting. */
+.palette-key { display:flex; align-items:center; gap:4px; flex-shrink:0;
+  font-size:10.5px; font-variant-numeric:tabular-nums; color:#5f5f5f;
+  padding:3px 7px; border-radius:7px; background:rgba(255,255,255,.04);
+  opacity:.55; transition:opacity var(--duration-quick) var(--ease-smooth-out); }
+.palette-key b { font-weight:500; font-size:9.5px; letter-spacing:.03em; color:#4a4a4a; }
+.palette-row.is-at .palette-key { opacity:1; color:#cfcfcf; background:rgba(255,255,255,.08); }
+.palette-row.is-at .palette-key b { color:#8a8a8a; }
 .palette-empty { margin:auto; font-size:12px; color:#5f5f5f; }

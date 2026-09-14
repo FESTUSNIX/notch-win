@@ -25,11 +25,28 @@ pub async fn set_task_input(window: tauri::WebviewWindow, active: bool) -> Resul
     // this explicit, temporary keyboard-entry mode.
     win::harden(&window);
     if active {
-        if let Err(error) = window.set_focus() {
+        /* ⚠️ NOT `window.set_focus()`. That is `SetForegroundWindow`, which
+         * Windows refuses — silently, returning false — for a process that does
+         * not already own the foreground. Clicking into the island works
+         * because the click gave it the foreground first; opening the palette
+         * from a GLOBAL SHORTCUT does not, so the caret never arrived and
+         * typing went to whatever app was in front. See win::force_foreground
+         * for the AttachThreadInput dance that gets past it. */
+        let raised = win::hwnd_of(&window).map(win::force_foreground).unwrap_or(false);
+        if !raised {
             INPUT_ACTIVE.store(false, Ordering::SeqCst);
             win::harden(&window);
-            return Err(error.to_string());
+            return Err("Windows would not give the island the keyboard.".into());
         }
+        /* ⚠️ And then INTO the WebView. Raising the top-level window activates
+         * it, but WebView2 lives in a child HWND that has to be told to take
+         * focus separately — without this the window is in front, the DOM
+         * reports the field as `activeElement`, and the keystrokes still go to
+         * whatever was there before. `set_focus` is the whole `SetForegroundWindow`
+         * dance again, which is why it is second: on its own it is refused
+         * silently for a process that does not already own the foreground, and
+         * by here we do. */
+        let _ = window.set_focus();
     } else if previous {
         let previous = HWND(PREVIOUS_WINDOW.swap(0, Ordering::SeqCst) as *mut std::ffi::c_void);
         // Restore only if we still own focus. An outside click has already

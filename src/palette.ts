@@ -17,6 +17,7 @@
 import { element } from "./task-list";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { search, type Match } from "./palette-match";
+import { FRAME, cpx } from "./layout";
 import type { IslandSurface } from "./island-surface";
 
 export interface Action {
@@ -27,7 +28,9 @@ export interface Action {
   keywords?: string;
   /** The quiet line under the title. */
   note?: string;
-  /** Right-aligned: which provider this came from, or a shortcut. */
+  /** ⚠️ No longer drawn: the right edge carries the Alt-number instead, which
+   *  is worth more than a label naming the provider. Kept on the type because
+   *  every provider sets it and it reads as documentation at the call site. */
   hint?: string;
   icon: TaskIcon;
   run: () => void | Promise<void>;
@@ -45,6 +48,9 @@ export class Palette {
   private providers: Provider[] = [];
   private shown: { action: Action; match: Match }[] = [];
   private at = 0;
+  /** Installed on the document while the palette is up, and removed with it. */
+  private keys = (event: KeyboardEvent) => this.key(event);
+  private away = (event: PointerEvent) => this.outside(event);
   open = false;
 
   constructor(private surface: IslandSurface, private onClose: () => void) {
@@ -67,7 +73,6 @@ export class Palette {
     this.host.append(bar, this.list);
 
     this.field.addEventListener("input", () => this.query());
-    this.field.addEventListener("keydown", event => this.key(event));
   }
 
   element(): HTMLElement { return this.host; }
@@ -83,17 +88,62 @@ export class Palette {
       this.field.select();
       return;
     }
+    /* ⚠️ The pin is NOT touched, and three earlier versions all touched it.
+     * `surface.pin()` is a TOGGLE that latches a user-facing control, and the
+     * palette had three callers pinning around it — the shortcut listener, the
+     * header button and this method — so opening it pinned twice, `wasPinned`
+     * read back `true`, and closing restored a pin the user never set. The
+     * island was then stuck open until it was unpinned by hand.
+     *
+     * Nothing here needs the pin anyway: `input(true)` sets `editing`, which
+     * blocks folding outright. `pinFor` only covers the gap before that lands,
+     * which is the same thing quick capture does. */
+    this.surface.pinFor(6000);
     this.open = true;
     this.host.hidden = false;
     this.field.value = "";
+    /* Narrow while the palette is up. The panel is ~910px across, which is
+     * right for eight screens of content and much too wide for a list of
+     * one-line results — it reads as a window rather than as a bar. */
+    this.surface.capBody(cpx(FRAME.islandPaletteLong));
     this.query();
+    document.addEventListener("keydown", this.keys, true);
+    document.addEventListener("pointerdown", this.away, true);
     /* ⚠️ The same lift the composer uses. The island is WS_EX_NOACTIVATE so
      * that glancing at it never steals focus from what you were doing; a field
      * you type into needs that off for exactly as long as it has the caret.
      * See task_window::set_task_input. */
     await this.surface.input(true).catch(() => {});
-    this.field.focus();
+    await this.grab();
     this.surface.measure();
+  }
+
+  /** Keep asking for the caret until it arrives.
+   *
+   * ⚠️ One `focus()` is not enough. The lift is a round trip through
+   * `set_task_input`, which clears `WS_EX_NOACTIVATE`, raises the window and
+   * moves focus into the WebView — and the DOM can get its turn before the
+   * native side has finished, in which case the call succeeds, `activeElement`
+   * is the field, and the keystrokes still go to the app that was in front.
+   *
+   * ⚠️ `preventScroll`, always. A plain `focus()` scrolls every scrollable
+   * ancestor to reveal the field, and the island was one of those until it
+   * became `overflow: clip` — which is what slid the collapsed pill 59px out of
+   * its own shape. */
+  private async grab() {
+    for (let tries = 0; tries < 15; tries++) {
+      this.field.focus({ preventScroll: true });
+      if (document.activeElement === this.field && document.hasFocus()) return;
+      await new Promise(frame => requestAnimationFrame(frame));
+    }
+  }
+
+  /** Anywhere but the palette closes it — including the island's own header,
+   *  because clicking a tab is already a decision to be somewhere else. */
+  private outside(event: PointerEvent) {
+    if (!this.open) return;
+    if (event.target instanceof Node && this.host.contains(event.target)) return;
+    void this.hide();
   }
 
   async hide() {
@@ -101,6 +151,9 @@ export class Palette {
     this.open = false;
     this.host.hidden = true;
     this.field.value = "";
+    document.removeEventListener("keydown", this.keys, true);
+    document.removeEventListener("pointerdown", this.away, true);
+    this.surface.capBody(0);
     await this.surface.input(false).catch(() => {});
     this.surface.measure();
     this.onClose();
@@ -108,7 +161,16 @@ export class Palette {
 
   /* ── Choosing ─────────────────────────────────────────────────────────── */
 
+  /* ⚠️ On the DOCUMENT, in the capture phase, not on the field.
+   *
+   * Bound to the field, every key here was dead until the caret had actually
+   * arrived — so on the one occasion it mattered, opening from a global
+   * shortcut with the window not yet foreground, Escape did not close the
+   * palette and the arrows did not move the selection. The only way out was to
+   * run something. Bound to the document it works whatever has focus, and
+   * capture is what puts it ahead of the island's own Escape handler. */
   private key(event: KeyboardEvent) {
+    if (!this.open) return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -127,6 +189,27 @@ export class Palette {
     if (event.key === "Enter") {
       event.preventDefault();
       void this.pick(this.at);
+      return;
+    }
+    /* Alt and a digit runs that row outright.
+     *
+     * ⚠️ Alt, not Ctrl+Alt. `Ctrl+Alt` IS `AltGr`, which types letters on a
+     * Polish layout — the same trap that had two of this app's global
+     * shortcuts quietly eating `ń` and `ś`. Digits are not AltGr-mapped, so
+     * plain Alt is both safe and shorter. */
+    if (event.altKey && !event.ctrlKey && event.code.startsWith("Digit")) {
+      const index = Number(event.code.slice(5)) - 1;
+      if (index >= 0 && index < Math.min(9, this.shown.length)) {
+        event.preventDefault();
+        void this.pick(index);
+      }
+      return;
+    }
+    /* A character typed before the caret landed belongs in the field. Focusing
+     * during `keydown` is early enough that the key itself still arrives. */
+    if (document.activeElement !== this.field && event.key.length === 1
+      && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      this.field.focus({ preventScroll: true });
     }
   }
 
@@ -201,7 +284,15 @@ export class Palette {
       copy.append(this.title(action, match));
       if (action.note) copy.append(element("span", "palette-note", action.note));
       row.append(mark, copy);
-      if (action.hint) row.append(element("span", "palette-hint", action.hint));
+      /* A number you can actually press, rather than a label saying which
+       * provider answered. The group was decoration: the icon already says
+       * what kind of thing this is, and the right edge is better spent on the
+       * one piece of information that does something. */
+      if (index < 9) {
+        const key = element("span", "palette-key");
+        key.append(element("b", "", "Alt"), document.createTextNode(String(index + 1)));
+        row.append(key);
+      }
       // Pointer, not click: the row has to win the selection before it runs,
       // so a mis-aimed click is visible rather than surprising.
       row.addEventListener("pointerenter", () => {

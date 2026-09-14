@@ -47,7 +47,10 @@ tab.
 
 ### Search and commands
 
-**`Ctrl+Alt+K`**, or the magnifier in the header. Type, arrow, Enter.
+**`Ctrl+Alt+K`**, or the magnifier in the header. Type, arrow, Enter — or
+`Alt`+the number beside a row to run it outright. `Escape` or a click anywhere
+else closes it, and the island narrows while it is up: a list of one-line
+results in a 910px panel reads as a window someone left open.
 
 One surface over the whole island: every screen, every command, every shelf
 item, every live agent session, today's tasks — and anything you type that
@@ -60,15 +63,24 @@ search the island's *own* world and act on it in place — copy a shelved file,
 raise the terminal of the session that is waiting for you, tick a task. It is
 meant to sit beside a launcher, not instead of one.
 
-### Five global shortcuts
+### Six global shortcuts
 
-`Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+N` opens it with the
-caret already in the composer, so a thought reaches TickTick from anywhere.
-`Ctrl+Alt+H` takes it and the usage notch off screen — the island sits where an
-editor keeps its tab strip, so getting it out of the way had to be one key.
-`Ctrl+Alt+M` sends the island to the next display, and `Ctrl+Alt+S` parks the
-clipboard on the shelf. All of them are rebindable in the task editor, and the
-choice to hide survives a restart.
+`Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+K` opens the palette.
+`Ctrl+Alt+T` opens the island with the caret already in the composer, so a
+thought reaches TickTick from anywhere. `Ctrl+Alt+H` takes it and the usage
+notch off screen — the island sits where an editor keeps its tab strip, so
+getting it out of the way had to be one key. `Ctrl+Alt+M` sends the island to
+the next display, and `Ctrl+Alt+V` parks the clipboard on the shelf. All of them
+are rebindable in the task editor, and the choice to hide survives a restart.
+
+⚠️ **Nine letters are unavailable, and the reason is not obvious.**
+`Ctrl+Alt` *is* `AltGr` on Windows, so a `Ctrl+Alt+N` hotkey and an `AltGr+N`
+keystroke are the same event — and registering the hotkey takes the letter away
+everywhere on the machine. Capture was `Ctrl+Alt+N` and the shelf was
+`Ctrl+Alt+S`; between them they ate `ń` and `ś`, which presents as a keyboard
+that has quietly stopped typing two characters. The Polish (programmers) layout
+maps AltGr to **A C E L N O S X Z**, and the editor now refuses all nine rather
+than letting you pick one back.
 
 ⚠️ Deliberately not `Alt+Space` for the palette: Flow Launcher, PowerToys Run
 and half the launchers on Windows already claim it, and a global shortcut that
@@ -110,7 +122,7 @@ life, and the screen says so.
 
 ### Shelf
 
-A place to put a thing down. Drop a file on the island, or press **`Ctrl+Alt+S`**
+A place to put a thing down. Drop a file on the island, or press **`Ctrl+Alt+V`**
 and whatever is on the clipboard parks there — a file, a link, a pasted note.
 Later you take it out again wherever you were going with it.
 

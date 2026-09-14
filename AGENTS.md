@@ -1618,3 +1618,32 @@ The two halves were the same fault.
      failed. This is the same trap already recorded for `screen-media.ts`.
      **Delete by matching the whole block, never by slicing to the next
      closing brace.**
+165. ⚠️ **`Ctrl+Alt` IS `AltGr`, and on a Polish layout that types
+     letters.** Windows implements AltGr as left-Ctrl plus right-Alt, so an
+     `AltGr+N` keystroke and a `Ctrl+Alt+N` hotkey are the same event — and
+     registering the hotkey **takes the letter away everywhere on the
+     machine**. `Ctrl+Alt+N` ate `ń` and `Ctrl+Alt+S` ate `ś`, with nothing
+     connecting the two: what you experience is a keyboard that has stopped
+     typing two characters. The Polish (programmers) layout maps AltGr to
+     **A C E L N O S X Z**; `shortcuts::eats_a_letter` refuses all nine, a
+     migration rewrites saved bindings off them, and the palette's row
+     shortcuts are plain `Alt`+digit for the same reason.
+166. ⚠️ **`overflow: hidden` on the island made it a SCROLL
+     CONTAINER.** Its content is permanently wider than its box — the
+     expanded panel is laid out at full size behind the collapsed pill — so
+     anything that scrolls a descendant into view (a `focus()`, a
+     `scrollIntoView`, Chromium's own scroll anchoring after a resize, or
+     Playwright's click) moved the pill sideways. **The DOM denies it**:
+     `left` still computes to `0px`, `offsetLeft` is still `0`, there is no
+     transform, and only `getBoundingClientRect` disagrees — which is what
+     made it take a day to find. `overflow: clip` clips identically without
+     the scroll box.
+167. ⚠️ **The island header does not fit on the left and right
+     edges, and the overflow is INVISIBLE.** There the panel is capped by
+     the shell's width (~388px, `islandBodyDepth`) while eight icon tabs
+     plus four action buttons want ~460. A `.island-tabs` that refused to
+     shrink pushed `.panel-actions` outside the island, where the clip
+     erased it: pin, settings and collapse were simply absent on a
+     vertically docked island. It arrived one tab and one button at a time,
+     so no single change was big enough to notice. The strip now carries
+     `flex: 1 1 auto; min-width: 0` and scrolls instead of pushing.

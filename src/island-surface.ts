@@ -47,6 +47,8 @@ export class IslandSurface {
   private expanded = document.getElementById("island-expanded")!;
   /** The straight body the content sits in; the flare is added on top. */
   private body = cpx(FRAME.islandBodyLong);
+  /** A narrower body something has asked for, or 0 for the full one. */
+  private cap = 0;
   private depth = cpx(FRAME.islandMinDepth);
   private clip = document.getElementById("island-clip-path") as unknown as SVGPathElement;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
@@ -156,6 +158,9 @@ export class IslandSurface {
       if (el.classList.contains("scrolls")) return kids.reduce((n, c) => n + c.offsetHeight, 0);
       return el.offsetHeight;
     };
+    this.body = this.cap && !isVertical(this.edge)
+      ? Math.min(cpx(FRAME.islandBodyLong), this.cap)
+      : cpx(FRAME.islandBodyLong);
     const screen = this.expanded.querySelector<HTMLElement>(".screen.active");
     const content = screen ? [...screen.children].reduce((n, el) => n + natural(el as HTMLElement), 0) : 0;
     const available = isVertical(this.edge) ? this.shell.clientWidth : this.shell.clientHeight;
@@ -248,6 +253,18 @@ export class IslandSurface {
     document.getElementById("pin")!.setAttribute("aria-pressed", String(this.pinned));
     if (this.pinned) this.show(true);
     else if (!this.hovering) this.show(false);
+  }
+
+  /** Narrow the panel while something needs it narrow — the palette — or 0
+   *  to give the width back.
+   *
+   * ⚠️ Horizontal edges only. On a left or right edge the body is the
+   * panel's HEIGHT, and capping that would cut the list short rather than make
+   * it narrower; the width there is the depth, which is already the shell's. */
+  capBody(px: number) {
+    if (this.cap === px) return;
+    this.cap = px;
+    this.measure();
   }
 
   async input(active: boolean) {

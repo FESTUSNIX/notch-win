@@ -130,6 +130,11 @@ export const FRAME = {
   /** Wider than it is tall, on purpose: the island is read at a glance across,
    *  and a tall narrow panel wastes the one dimension a top edge has to give. */
   islandBodyLong: 1900,
+  /** What the island narrows to while the palette is up. The full body is
+   *  ~910 CSS px, which is right for a screen of content and much too wide for
+   *  a list of one-line results — at that width it reads as a window someone
+   *  left open rather than as a bar you typed into. ~620 CSS px. */
+  islandPaletteLong: 1290,
   islandBodyDepth: 810,
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,

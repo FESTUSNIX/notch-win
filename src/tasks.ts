@@ -327,10 +327,11 @@ function render() {
 }
 
 get("island-expanded").prepend(palette.element());
-/* Reachable without knowing the shortcut. ⚠️ Pinned first, for the same reason
- * the shortcut pins: the palette is a thing you type into, and a panel that
- * folds shut because the pointer wandered would take the caret with it. */
-get("open-palette").onclick = () => { surface.pin(); void palette.show(); };
+/* Reachable without knowing the shortcut. ⚠️ It does NOT pin — see
+ * Palette.show: the pin is a user-facing latch, and three callers toggling it
+ * around one open left the island stuck open. Holding the panel is `editing`'s
+ * job. */
+get("open-palette").onclick = () => { void palette.show(); };
 
 /* ── What the palette can do ──────────────────────────────────────────────
  * Each provider answers with actions; the palette ranks across all of them.
@@ -567,13 +568,9 @@ async function boot() {
       void today.capture();
     });
 
-    /* One surface over everything. Pinned first: the palette is a thing you
-     * type into, and a panel that folds shut because the pointer is elsewhere
-     * would take the caret with it. */
-    await listen("island:palette", () => {
-      if (!surface.open) surface.pin();
-      void palette.show();
-    });
+    /* One surface over everything. ⚠️ No pin here either — this listener
+     * was the first of the three that latched it. */
+    await listen("island:palette", () => { void palette.show(); });
 
     // Kept in step if the format is changed from another window.
     // ⚠️ Inside the `native` guard with every other listener here. Outside it,

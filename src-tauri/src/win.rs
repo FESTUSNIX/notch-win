@@ -551,12 +551,6 @@ fn visible_windows() -> Vec<(HWND, u32)> {
 /// Terminal window hosts many sessions and there is no supported way to select
 /// one of its tabs from outside.
 pub fn raise_process(pid: u32) -> bool {
-    use windows::Win32::System::Threading::GetCurrentThreadId;
-    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SetForegroundWindow, ShowWindow,
-        SW_RESTORE,
-    };
 
     let windows = visible_windows();
     let tree = parents();
@@ -577,11 +571,40 @@ pub fn raise_process(pid: u32) -> bool {
     }
     let Some(window) = target else { return false };
 
+    force_foreground(window)
+}
+
+/// Bring a window to the front and give it the keyboard, past the rule that
+/// normally forbids it.
+///
+/// ⚠️ **`SetForegroundWindow` refuses silently.** It returns `FALSE`, with no
+/// error, for a process that does not already own the foreground — and this one
+/// never does: both windows are `WS_EX_NOACTIVATE` precisely so that glancing
+/// at them cannot steal focus. Attaching this thread's input queue to the
+/// current foreground thread for the duration of the call is the documented way
+/// around it.
+///
+/// This is why the palette could not be typed into. `WebviewWindow::set_focus`
+/// is `SetForegroundWindow` underneath, so opening the palette from a **global
+/// shortcut** — the one case where another app owns the foreground — quietly
+/// did nothing, while opening it by clicking the header worked. Two paths to
+/// the same surface, one of them broken, and no error on either.
+pub fn force_foreground(window: HWND) -> bool {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SetForegroundWindow, ShowWindow,
+        SW_RESTORE,
+    };
     unsafe {
         if IsIconic(window).as_bool() {
             let _ = ShowWindow(window, SW_RESTORE);
         }
         let foreground = GetForegroundWindow();
+        if foreground == window {
+            let _ = SetFocus(Some(window));
+            return true;
+        }
         let mine = GetCurrentThreadId();
         let theirs = GetWindowThreadProcessId(foreground, None);
         let attached = theirs != 0

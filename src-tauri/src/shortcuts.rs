@@ -36,13 +36,25 @@ static AUTO_HIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// Chosen to avoid what Windows and the usual editors already claim.
 /// Ctrl+Alt leaves Win+… to the shell and Ctrl+Shift+… to the editor.
+///
+/// ⚠️ **`Ctrl+Alt` IS `AltGr`, and on a Polish layout that types letters.**
+/// Windows implements AltGr as left-Ctrl plus right-Alt, so a `Ctrl+Alt+N`
+/// hotkey and an `AltGr+N` keystroke are the same event — and registering the
+/// hotkey **takes the letter away**. `Ctrl+Alt+N` ate `ń` and `Ctrl+Alt+S` ate
+/// `ś`, everywhere on the machine, with nothing to connect the two: the user
+/// experiences a keyboard that has stopped typing two characters.
+///
+/// The Polish (programmers) layout maps AltGr to **A C E L N O S X Z**. None of
+/// those may be used here. The letters below are chosen from what is left.
 pub const DEFAULT_TOGGLE: &str = "Ctrl+Alt+Space";
 pub const DEFAULT_HIDE: &str = "Ctrl+Alt+H";
-pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+N";
+/// ⚠️ Was `Ctrl+Alt+N`, which is `AltGr+N` — it ate `ń`. T for task.
+pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+T";
 /// M for monitor. Only does anything on a machine with more than one.
 pub const DEFAULT_DISPLAY: &str = "Ctrl+Alt+M";
-/// S for shelf. Whatever is on the clipboard, parked.
-pub const DEFAULT_SHELF: &str = "Ctrl+Alt+S";
+/// ⚠️ Was `Ctrl+Alt+S`, which is `AltGr+S` — it ate `ś`. V for the
+/// clipboard verb: this parks whatever is on it.
+pub const DEFAULT_SHELF: &str = "Ctrl+Alt+V";
 /// K for the palette. ⚠️ Not Alt+Space: Flow Launcher, PowerToys Run and
 /// half the launchers on Windows already claim that, and a shortcut that
 /// silently fails to register is worse than an unfamiliar one.
@@ -177,6 +189,12 @@ pub fn set_shortcuts(
             return Err("The shortcuts all have to differ.".into());
         }
     }
+    if let Some(bad) = all.iter().find(|value| eats_a_letter(value)) {
+        return Err(format!(
+            "{bad} is AltGr+{} on a Polish layout, so registering it would stop that              letter being typed anywhere. Pick a different key.",
+            bad.rsplit('+').next().unwrap_or("?")
+        ));
+    }
     let previous = app.state::<ShortcutState_>().0.lock().unwrap().clone();
     let manager = app.global_shortcut();
     let _ = manager.unregister_all();
@@ -201,6 +219,29 @@ pub fn set_shortcuts(
     }
 }
 
+/// The letters AltGr types on the Polish (programmers) layout.
+///
+/// ⚠️ Checked rather than trusted to the person picking, because the failure is
+/// invisible from inside the app: the shortcut works perfectly, and somewhere
+/// else on the machine a letter has quietly stopped existing.
+const ALTGR_LETTERS: [&str; 9] = ["A", "C", "E", "L", "N", "O", "S", "X", "Z"];
+
+pub fn eats_a_letter(binding: &str) -> bool {
+    let lower = binding.to_ascii_lowercase();
+    if !(lower.contains("ctrl") || lower.contains("control")) || !lower.contains("alt") {
+        return false;
+    }
+    // Shift+Ctrl+Alt is not AltGr; only the bare pair collides.
+    if lower.contains("shift") || lower.contains("super") || lower.contains("win") {
+        return false;
+    }
+    binding
+        .rsplit('+')
+        .next()
+        .map(|key| ALTGR_LETTERS.contains(&key.trim().to_ascii_uppercase().as_str()))
+        .unwrap_or(false)
+}
+
 fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
     let manager = app.global_shortcut();
     for (name, binding) in [
@@ -221,7 +262,32 @@ fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
 }
 
 pub fn setup(app: &AppHandle) -> Result<(), String> {
-    let config = crate::config::load();
+    let mut config = crate::config::load();
+    /* ⚠️ Migrated, not just re-defaulted. Changing `DEFAULT_CAPTURE` does
+     * nothing for anyone who already has a config — the old `Ctrl+Alt+N` is
+     * saved there and would go on eating `ń` for ever. A binding that would
+     * take a letter away is replaced by the current default and written back,
+     * because the person cannot be expected to connect "my keyboard stopped
+     * typing ś" to a hotkey they set weeks ago. */
+    let mut moved = Vec::new();
+    for (field, fallback, name) in [
+        (&mut config.shortcut_toggle, DEFAULT_TOGGLE, "open"),
+        (&mut config.shortcut_hide, DEFAULT_HIDE, "hide"),
+        (&mut config.shortcut_capture, DEFAULT_CAPTURE, "add a task"),
+        (&mut config.shortcut_display, DEFAULT_DISPLAY, "next display"),
+        (&mut config.shortcut_shelf, DEFAULT_SHELF, "shelf"),
+        (&mut config.shortcut_palette, DEFAULT_PALETTE, "search"),
+    ] {
+        if eats_a_letter(field) {
+            moved.push(format!("{name}: {field} -> {fallback}"));
+            *field = fallback.to_string();
+        }
+    }
+    if !moved.is_empty() {
+        crate::log::note(&format!("shortcuts moved off AltGr ({})", moved.join(", ")));
+        crate::config::save(&config);
+    }
+
     let shortcuts = Shortcuts {
         toggle: config.shortcut_toggle,
         hide: config.shortcut_hide,
@@ -321,4 +387,40 @@ fn matches(pressed: &str, configured: &str) -> bool {
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
         .map(|parsed| parsed.into_string().eq_ignore_ascii_case(pressed))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ⚠️ The check that stops a shortcut quietly removing a letter from the
+    /// keyboard. `Ctrl+Alt` IS `AltGr` on Windows, and the Polish layout maps
+    /// it to nine letters; `Ctrl+Alt+N` ate `ń` for several days before anyone
+    /// connected the two.
+    #[test]
+    fn a_shortcut_that_would_eat_a_polish_letter_is_refused() {
+        for eaten in ["Ctrl+Alt+N", "Ctrl+Alt+S", "ctrl+alt+e", "Control+Alt+Z", "Ctrl+Alt+X"] {
+            assert!(eats_a_letter(eaten), "{eaten}");
+        }
+        // The ones actually shipped.
+        for safe in ["Ctrl+Alt+Space", "Ctrl+Alt+H", "Ctrl+Alt+T", "Ctrl+Alt+V", "Ctrl+Alt+M", "Ctrl+Alt+K"] {
+            assert!(!eats_a_letter(safe), "{safe}");
+        }
+        // A third modifier is no longer AltGr.
+        assert!(!eats_a_letter("Ctrl+Shift+Alt+N"));
+        // And neither is Ctrl or Alt on its own.
+        assert!(!eats_a_letter("Ctrl+N"));
+        assert!(!eats_a_letter("Alt+N"));
+    }
+
+    #[test]
+    fn no_shipped_default_eats_a_letter() {
+        let defaults = Shortcuts::default();
+        for binding in [
+            &defaults.toggle, &defaults.hide, &defaults.capture,
+            &defaults.display, &defaults.shelf, &defaults.palette,
+        ] {
+            assert!(!eats_a_letter(binding), "{binding}");
+        }
+    }
 }
