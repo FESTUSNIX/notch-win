@@ -186,20 +186,67 @@ h1 { margin:0; }
      the tabs huddled at one end — while dropping the flex would take back the
      shrinking that keeps `.panel-actions` inside the island on a vertical
      edge. The cap bounds growth; min-width:0 still allows shrink. */
-  max-width:fit-content; }
+  max-width:fit-content;
+  /* The pill is positioned against this, and this scrolls — so the pill
+     scrolls with the tabs rather than sliding off them. */
+  position:relative; }
+
+/* ── The travelling pill ───────────────────────────────────────────
+   One element that MOVES, rather than a background appearing on one tab and
+   vanishing from another. The difference is what the gesture means: a
+   background that blinks from tab to tab says two separate things happened; a
+   pill that travels says the selection moved, which is what it did.
+
+   ⚠️ `transform` and `width`, never `left`. A transform is composited;
+   animating `left` re-lays out the strip on every frame of the travel.
+
+   ⚠️ Behind the tabs, so icons and labels keep their own colour and the pill
+   never covers them. `.island-tab` is `position:relative`, which is what puts
+   it on a later layer than a `z-index:0` sibling. */
+.tab-glide { position:absolute; z-index:0; top:3px; bottom:3px; left:0; width:0;
+  border-radius:var(--r-row); pointer-events:none;
+  background-color:var(--tile-hi); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:transform var(--duration-fast) var(--ease-smooth-out),
+    width var(--duration-fast) var(--ease-smooth-out); }
+/* Nothing to travel to before a tab has been chosen, and nothing to show. */
+.tab-glide:not(.is-placed) { opacity:0; }
+.island-tab { z-index:1; }
 .island-tabs::-webkit-scrollbar { display:none; }
 /* Concentric: the pill's radius is the rail's minus the rail's own padding. */
-.island-tab { position:relative; display:flex; align-items:center; gap:7px; padding:5px 9px;
+.island-tab { position:relative; display:flex; align-items:center; gap:0; padding:5px 9px;
   border-radius:var(--r-row); color:#5c5c5c; font-size:11.5px; flex-shrink:0; }
 .island-tab svg { width:15px; height:15px; flex-shrink:0; }
-.island-tab span { display:none; }
+/* ── The label, which is why this is a LAYOUT animation ───────────────────
+   Only the active tab is captioned — eight labels is a menu, one is a caption
+   for where you are — so the selected tab is wider than the rest and the whole
+   strip re-lays out on every switch.
+
+   ⚠️ `display:none` made that reflow instant, so the pill glided smoothly to
+   a position every other tab had already jumped away from. Growing `max-width`
+   lets the strip open at the same rate the pill travels, and the two read as
+   one movement.
+
+   ⚠️ The value is set in JS, per label, to that label's own width. A shared
+   `max-width` big enough for the longest caption means every shorter one
+   reaches its full size early and stops — the easing is truncated, and the
+   label lands before the pill does.
+
+   ⚠️ And the gap became a MARGIN. Flex `gap` applies to a zero-width item
+   just the same, so every icon-only tab would carry 7px it shows nothing in. */
+.island-tab span { display:inline-block; max-width:0; margin-left:0; opacity:0;
+  overflow:hidden; white-space:nowrap;
+  transition:max-width var(--duration-fast) var(--ease-smooth-out),
+    margin-left var(--duration-fast) var(--ease-smooth-out),
+    opacity var(--duration-quick) var(--ease-smooth-out); }
 .island-tab:hover { color:#c4c4c4; background:rgba(255,255,255,.05); box-shadow:none; }
-.island-tab[aria-selected=true] { color:#fff;
-  background-color:var(--tile-hi); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+/* ⚠️ The selected tab is NOT painted — the pill behind it is. Painting both
+   means the new tab lights up instantly while the pill is still on its way, so
+   there are two selections on screen for a quarter of a second, every switch. */
+.island-tab[aria-selected=true] { color:#fff; background:none; box-shadow:none; }
 /* The label appears only on the active tab: four labels is a menu, one is a
    caption for where you are. */
-.island-tab[aria-selected=true] span { display:inline; }
+.island-tab[aria-selected=true] span { margin-left:7px; opacity:1; }
 .island-tab.live::after { content:""; position:absolute; top:3px; right:4px; width:5px; height:5px;
   border-radius:50%; background:var(--accent); }
 .island-tab.live[aria-selected=true]::after { display:none; }
@@ -279,7 +326,7 @@ h1 { margin:0; }
 .slot.gone>.slot-inner { overflow:hidden; }
 
 .day-row { display:flex; align-items:center; gap:13px; min-height:var(--row-height); padding:7px 9px; border-radius:12px; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
-.day-row:hover { background:#0e0e0e; }
+.day-row:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
 .day-row.nested { min-height:0; padding:4px 9px; }
 .day-row.ghost { opacity:.5; }
 .check.placeholder { border:1.5px dashed #333; border-radius:50%; width:22px; height:22px; }
@@ -292,8 +339,12 @@ h1 { margin:0; }
 .day-sub { font-size:11px; color:#6a6a6a; padding:0; border-radius:4px; }
 .day-sub:hover { background:transparent; color:#a0a0a0; }
 .day-sub.muted { color:#565656; }
-.day-chip { font-size:10px; font-weight:600; color:#ff9f0a; border:1px solid rgba(255,159,10,.32); background:rgba(255,159,10,.09); border-radius:99px; padding:2px 7px; flex-shrink:0; font-variant-numeric:tabular-nums; }
-.day-chip.quiet { color:#7a7a7a; border-color:#262626; background:#141414; font-weight:500; }
+.day-chip { font-size:10px; font-weight:600; color:var(--warn); border:0;
+  background:rgba(255,159,10,.11);
+  box-shadow:inset 0 0 0 1px rgba(255,159,10,.28), var(--gloss);
+  border-radius:99px; padding:3px 8px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+.day-chip.quiet { color:#7a7a7a; border-color:transparent; background:var(--tile);
+  box-shadow:inset 0 0 0 1px var(--hair); font-weight:500; }
 .day-children { margin-left:31px; padding-left:var(--task-indent); border-left:1px solid #1c1c1c; }
 .day-step { display:flex; align-items:center; gap:11px; min-height:32px; padding:3px 9px 3px 0; }
 .day-step .check { --cs:16px; }
@@ -337,7 +388,8 @@ h1 { margin:0; }
 #task-done:empty { display:none; }
 #task-done { margin:4px 3px 2px; border-top:1px solid #161616; padding-top:5px; }
 .day-done-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:8px 9px; border-radius:10px; font-size:12px; color:#6e6e6e; }
-.day-done-toggle:hover { background:#0e0e0e; color:#9a9a9a; }
+.day-done-toggle:hover { background:var(--tile); color:#9a9a9a;
+  box-shadow:var(--hairline), var(--gloss); }
 .day-done-toggle .cv { display:inline-block; font-size:9px; transition:transform var(--duration-fast) var(--ease-smooth-out); }
 .day-done-toggle[aria-expanded=true] .cv { transform:rotate(90deg); }
 #task-done .day-row { min-height:38px; }
@@ -345,7 +397,8 @@ h1 { margin:0; }
 
 .task-footer { display:flex; padding:5px 11px 9px; flex-shrink:0; }
 #sync-line { font-size:10px; color:#6d6d6d; padding:4px 7px; }
-#sync-line:hover { color:#bdbdbd; background:#141414; }
+#sync-line:hover { color:#bdbdbd; background:var(--tile);
+  box-shadow:var(--hairline), var(--gloss); }
 
 /* ── Day clear ─────────────────────────────────────────────────────────── */
 .day-clear { display:flex; flex-direction:column; align-items:center; text-align:center; gap:3px; padding:32px 24px 28px; background:radial-gradient(58% 60% at 50% 38%,rgba(0,255,136,.10),rgba(0,0,0,0) 72%); }
@@ -374,7 +427,9 @@ button:active:not(:disabled) { background:var(--tile-on); }
 .eyebrow { color:var(--dim); font-size:11px; margin-bottom:5px; }
 .task-tabs { display:flex; gap:4px; margin:0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px; }
 .task-tabs button { font-size:12px; color:var(--dim); }
-.task-tabs button[aria-pressed=true] { color:#fff; background:#202020; }
+.task-tabs button[aria-pressed=true] { color:#fff;
+  background-color:var(--tile-hi); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .task-group { margin:0 0 16px; }
 .group-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:8px 0; }
 .group-heading h3 { font-size:12px; font-weight:600; margin:0; overflow-wrap:anywhere; }
@@ -579,7 +634,7 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .media-scrub { gap:0; }
 
 /* Home tasks carry the two things that were missing: which list, and how late. */
-.home-late { font-size:9.5px; font-weight:600; color:#ff9f0a; border:1px solid rgba(255,159,10,.3);
+.home-late { font-size:9.5px; font-weight:600; color:var(--warn); border:1px solid rgba(255,159,10,.3);
   background:rgba(255,159,10,.09); border-radius:99px; padding:1px 5px; flex-shrink:0;
   font-variant-numeric:tabular-nums; }
 .home-task.is-done .home-late { opacity:.4; }
@@ -604,7 +659,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
   display:flex; flex-direction:column; gap:1px; animation:bump var(--duration-fast) var(--ease-smooth-out); }
 .output-row { display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:8px;
   font-size:12px; color:#b4b4b4; text-align:left; }
-.output-row:hover { background:#1c1c1c; color:#fff; }
+.output-row:hover { background:var(--tile-hi); color:#fff;
+  box-shadow:var(--hairline), var(--gloss); }
 .output-row.is-default { color:#fff; }
 .output-tick { margin-left:auto; color:var(--accent); font-size:11px; }
 .screen-body { position:relative; }
@@ -751,27 +807,43 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .home-late { border-radius:var(--r-pip); }
 
 /* ── Calendar and Media, same grammar ──────────────────────────────────── */
-.cal-next { background:var(--tile); border-left:0; border-radius:var(--r-tile); padding:11px 14px;
+.cal-next { background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  border-left:0; border-radius:var(--r-tile); padding:11px 14px;
   box-shadow:inset 3px 0 0 var(--cal,var(--accent)); }
 .cal-row { border-radius:var(--r-row); }
 .cal-row:hover { background:var(--tile-hi); }
-.cal-wcol { background:var(--tile); border-radius:14px; }
-.cal-wcol.is-today { background:var(--tile-hi); }
+.cal-wcol { background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); border-radius:14px; }
+.cal-wcol.is-today { background-color:var(--tile-hi);
+  box-shadow:inset 0 0 0 1px rgba(0,255,136,.18), var(--gloss), var(--lift-1); }
 .cal-whead { border-bottom:1px solid var(--hair); }
-.cal-chip { background:rgba(255,255,255,.08); border-radius:8px; border-left-width:2.5px; }
+.cal-chip { background-color:rgba(255,255,255,.08); background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px var(--hair), var(--gloss);
+  border-radius:8px; border-left-width:2.5px; }
 .cal-view { background:var(--tile); border-radius:10px; }
 .cal-view:hover { background:var(--tile-hi); }
-.cal-view[aria-pressed=true] { background:var(--tile-on); }
+.cal-view[aria-pressed=true] { background:var(--tile-on);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .media-art { border-radius:18px; background:rgba(255,255,255,.06); }
-.media-button:hover:not(:disabled) { background:var(--tile-hi); }
-.day-row:hover { background:var(--tile); }
-.day-done-toggle:hover { background:var(--tile); }
+.media-button:hover:not(:disabled) { background:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss); }
+.day-row:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
+.day-done-toggle:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
 #inline-composer:hover { background:var(--tile); }
 #inline-composer:focus-within { background:var(--tile-hi); box-shadow:inset 0 0 0 1px rgba(0,255,136,.35); }
 #task-done { border-top:1px solid var(--hair); }
+/* ⚠️ The tab rules that sat here are GONE, and finding them cost an hour.
+   They were the iOS pass's own overrides — same specificity as the rules the
+   elevation pass wrote, several hundred lines further down, so they won on
+   order alone and the strip kept its flat look while everything around it
+   changed. Nothing errored and nothing looked broken; the tabs just quietly
+   stayed behind.
+
+   The lesson is the shape of the file, not these three lines: a second block
+   that re-states selectors an earlier block already owns is a cascade
+   collision waiting to happen. Style each thing once, where it is defined. */
 .island-tabs { border-top:0; }
-.island-tab:hover { background:var(--tile); }
-.island-tab[aria-selected=true] { background:var(--tile-on); }
 .small-icon:hover { background:var(--tile-hi); }
 .output-list { background:#141414; box-shadow:var(--lift-3), var(--hairline), var(--gloss); }
 
@@ -960,7 +1032,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
   position:relative; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
 .cal-row::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:2.5px;
   border-radius:2px; background:var(--cal); }
-.cal-row:hover { background:#0e0e0e; }
+.cal-row:hover { background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .cal-row.declined { opacity:.45; }
 .cal-row.declined .cal-title { text-decoration:line-through; }
 .cal-time { font-size:11.5px; color:#9a9a9a; font-variant-numeric:tabular-nums; white-space:nowrap;
@@ -971,7 +1044,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-join { width:28px; height:28px; padding:0; display:grid; place-items:center; border-radius:8px;
   color:#5f5f5f; flex-shrink:0; }
 .cal-join svg { width:16px; height:16px; }
-.cal-join:hover { color:var(--accent); background:#12291e; }
+.cal-join:hover { color:var(--accent); background:rgba(0,255,136,.12);
+  box-shadow:inset 0 0 0 1px rgba(0,255,136,.26), var(--gloss); }
 
 .options-hint { margin:12px 0 0; font-size:10.5px; color:#5f5f5f; line-height:1.55; }
 
@@ -1096,7 +1170,7 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
 .cal-wcol { min-width:0; display:flex; flex-direction:column; gap:4px; padding:6px 4px 8px;
   border-radius:10px; background:#0a0a0a; }
-.cal-wcol.is-today { background:#111; }
+
 .cal-whead { display:flex; flex-direction:column; align-items:center; gap:0; padding-bottom:3px;
   border-bottom:1px solid #1a1a1a; }
 .cal-wday { font-size:8.5px; text-transform:uppercase; letter-spacing:.08em; color:#5f5f5f; }
@@ -1117,12 +1191,17 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
    button because the useful thing to do with "akcesfonia is waiting" is to go
    there — see win::raise_process for what that costs on Windows. */
 .agent-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
-  padding:11px 13px; border-radius:var(--r-tile); background:var(--tile);
-  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+  padding:11px 13px; border-radius:var(--r-tile);
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-fast) var(--ease-smooth-out); }
 .agent-row+.agent-row { margin-top:7px; }
-.agent-row:hover { background:var(--tile-hi); }
+.agent-row:hover { background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
 .agent-mark { display:grid; place-items:center; width:30px; height:30px; flex-shrink:0;
-  border-radius:50%; background:rgba(255,255,255,.05); color:#8b8b8b; }
+  border-radius:50%; background-color:rgba(255,255,255,.05); background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px var(--hair), var(--gloss); color:#8b8b8b; }
 .agent-mark svg { width:16px; height:16px; }
 .agent-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .agent-head { display:flex; align-items:baseline; gap:8px; min-width:0; }
@@ -1137,9 +1216,14 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 
 /* Waiting is the only state that wants anything from you, so it is the only
    one that is coloured. Working is a fact; idle is furniture. */
-.agent-row.is-waiting .agent-mark { background:rgba(255,159,10,.14); color:#ff9f0a; }
-.agent-row.is-waiting .agent-word { color:#ff9f0a; font-weight:600; }
-.agent-row.is-working .agent-mark { color:var(--accent); background:rgba(0,255,136,.1); }
+/* ⚠️ The RING is tinted too, not just the fill. A coloured fill inside a
+   neutral ring reads as a sticker stuck on the tile; tinting the ring is what
+   makes the mark look lit from inside it. */
+.agent-row.is-waiting .agent-mark { color:var(--warn); background-color:rgba(255,159,10,.14);
+  box-shadow:inset 0 0 0 1px rgba(255,159,10,.28), var(--gloss); }
+.agent-row.is-waiting .agent-word { color:var(--warn); font-weight:600; }
+.agent-row.is-working .agent-mark { color:var(--accent); background-color:rgba(0,255,136,.1);
+  box-shadow:inset 0 0 0 1px rgba(0,255,136,.24), var(--gloss); }
 .agent-row.is-idle { opacity:.62; }
 .agent-note { margin:12px 2px 0; font-size:10px; color:#4f4f4f; line-height:1.5; }
 
@@ -1148,12 +1232,17 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
    depends on where you are going. Copy leads, because taking a file out IS a
    clipboard copy here — see shelf.rs on why it is not a drag. */
 .shelf-row { display:flex; align-items:center; gap:11px; padding:9px 12px;
-  border-radius:var(--r-tile); background:var(--tile);
-  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+  border-radius:var(--r-tile);
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-fast) var(--ease-smooth-out); }
 .shelf-row+.shelf-row { margin-top:6px; }
-.shelf-row:hover { background:var(--tile-hi); }
+.shelf-row:hover { background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
 .shelf-mark { display:grid; place-items:center; width:26px; height:26px; flex-shrink:0;
-  border-radius:8px; background:rgba(255,255,255,.05); color:#8b8b8b; }
+  border-radius:8px; background-color:rgba(255,255,255,.05); background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px var(--hair), var(--gloss); color:#8b8b8b; }
 .shelf-mark svg { width:15px; height:15px; }
 .shelf-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
 .shelf-name { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1171,7 +1260,7 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 /* A file that has gone is shown, not hidden: referencing rather than copying is
    what makes the shelf cheap, and being honest about it is the price. */
 .shelf-row.is-missing { opacity:.55; }
-.shelf-row.is-missing .shelf-note { color:#ff9f0a; }
+.shelf-row.is-missing .shelf-note { color:var(--warn); }
 .shelf-row.is-missing .shelf-actions { opacity:1; }
 .shelf-empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:6px; padding:26px 20px; text-align:center; }
@@ -1187,7 +1276,9 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .review-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
   gap:12px; padding:6px 16px 16px; align-content:start; align-items:stretch; }
 .review-tile { display:flex; flex-direction:column; gap:10px; min-width:0;
-  padding:14px 15px; background:var(--tile); border-radius:var(--r-tile); }
+  padding:14px 15px; border-radius:var(--r-tile);
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .review-head { margin:0; font-size:10px; font-weight:600; letter-spacing:.08em;
   text-transform:uppercase; color:#5f5f5f; }
 .review-figure { display:flex; flex-direction:column; gap:2px; }
@@ -1224,7 +1315,7 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
   display:grid; place-items:center; color:#5f5f5f; flex-shrink:0; }
 .agent-snooze svg { width:15px; height:15px; }
 .agent-snooze:hover { background:var(--tile-on); color:#fff; }
-.agent-snooze.is-on { color:#ff9f0a; }
+.agent-snooze.is-on { color:var(--warn); }
 .agent-row.is-quiet .agent-go { opacity:.5; }
 .snooze-clear { padding:0 3px; font-size:inherit; color:var(--accent); background:transparent; }
 .snooze-clear:hover { background:transparent; text-decoration:underline; }

@@ -1783,3 +1783,27 @@ The two halves were the same fault.
      drop shadow at all — a filter is applied before clipping, so it would be
      drawn round the rectangle and then cut away. Elevation on this surface is
      something the contents have, never the shape.
+195. ⚠️ **A second block that re-states selectors an earlier block owns is a
+     cascade collision waiting to happen.** The iOS pass kept its own
+     `.island-tab[aria-selected=true] { background: var(--tile-on) }` several
+     hundred lines below the tab rules — equal specificity, later in the file,
+     so it won on order alone and the strip kept its flat look while everything
+     round it changed. Nothing errored; the tabs just quietly stayed behind.
+     **Style each thing once, where it is defined.**
+196. ⚠️ **The tab pill TRAVELS, and its geometry is computed rather than
+     measured.** At the moment of a click every width on the strip is
+     mid-transition, so reading one gives a target that was true a frame ago —
+     the pill would still glide, just never quite onto anything. `tabWidth()`
+     derives it from the label's `scrollWidth`, which reports full text width
+     whatever the animated `max-width` is, and the position is summed from the
+     left because the tab being LEFT is shrinking as the placement runs.
+197. ⚠️ **Only the pill is painted, never the selected tab as well.**
+     Painting both lights the new tab instantly while the pill is still
+     travelling, so there are two selections on screen for a quarter of a
+     second on every switch.
+198. ⚠️ **The caption's `max-width` is set per label, in JS.** One shared
+     value big enough for the longest caption means every shorter one reaches
+     full size early and stops — the easing is truncated and the label lands
+     before the pill does. And the icon-to-caption gap is a `margin`, not flex
+     `gap`: gap applies to a zero-width item just the same, so every icon-only
+     tab would carry 7px it shows nothing in.

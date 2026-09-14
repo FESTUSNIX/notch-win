@@ -139,6 +139,70 @@ for (const tab of TABS) {
   tabRail.append(button);
 }
 
+/* The pill the selection rides on. A sibling of the tabs, not a child of one. */
+const tabGlide = document.createElement("span");
+tabGlide.className = "tab-glide";
+tabGlide.setAttribute("aria-hidden", "true");
+tabRail.append(tabGlide);
+
+/** The gap between a tab's icon and its caption, and between tabs. Both are in
+ *  the stylesheet; they are here because the geometry below is arithmetic. */
+const LABEL_GAP = 7;
+const TAB_GAP = 2;
+
+/** How wide a tab will be once it is captioned, or once it is not.
+ *
+ * ⚠️ Computed, never measured. At the moment of a click the labels are mid
+ * transition, so every width on screen is a width that is on its way somewhere
+ * — measuring one gives the pill a target that was true a frame ago. The
+ * label's `scrollWidth` reports its full text width whatever its animated
+ * `max-width` happens to be, which is what makes this knowable up front. */
+function tabWidth(tab: HTMLElement, captioned: boolean): number {
+  const label = tab.querySelector<HTMLElement>("span");
+  if (!label) return tab.offsetWidth;
+  const showing = label.offsetWidth + parseFloat(getComputedStyle(label).marginLeft || "0");
+  const wanted = captioned ? label.scrollWidth + LABEL_GAP : 0;
+  return tab.offsetWidth - showing + wanted;
+}
+
+/**
+ * Put the pill under the selected tab, and set each label to its own width.
+ *
+ * ⚠️ The position is summed from the left rather than read off the tab. A tab
+ * BEFORE the selected one is shrinking as this runs — that is the tab being
+ * left — so `offsetLeft` is measured against a strip that is still moving.
+ */
+function placeGlide(animate: boolean) {
+  const tabs = [...tabRail.querySelectorAll<HTMLElement>(".island-tab")];
+  const at = tabs.find(tab => tab.getAttribute("aria-selected") === "true");
+  if (!at) { tabGlide.classList.remove("is-placed"); return; }
+
+  for (const tab of tabs) {
+    const label = tab.querySelector<HTMLElement>("span");
+    if (label) label.style.maxWidth = tab === at ? `${label.scrollWidth}px` : "0px";
+  }
+
+  let x = tabs[0]?.offsetLeft ?? 0;
+  for (const tab of tabs) {
+    if (tab === at) break;
+    x += tabWidth(tab, false) + TAB_GAP;
+  }
+  if (!animate) tabGlide.style.transition = "none";
+  tabGlide.style.width = `${tabWidth(at, true)}px`;
+  tabGlide.style.transform = `translateX(${x - (tabs[0]?.offsetLeft ?? 0)}px)`;
+  tabGlide.style.left = `${tabs[0]?.offsetLeft ?? 0}px`;
+  tabGlide.classList.add("is-placed");
+  if (!animate) requestAnimationFrame(() => { tabGlide.style.transition = ""; });
+}
+
+/* ⚠️ Observed, not placed once. The strip's widths move for reasons this file
+ * cannot see — the font finishing loading, the island changing edge, the panel
+ * narrowing for the palette — and a pill left at a stale width after any of
+ * them is visibly wrong until the next click. */
+if (typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => placeGlide(false)).observe(tabRail);
+}
+
 function show(name: ScreenName) {
   screen = name;
   // Volume, brightness and the device lists are read when the screen is
@@ -153,6 +217,7 @@ function show(name: ScreenName) {
   for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
     button.setAttribute("aria-selected", String(button.dataset.tab === name));
   }
+  placeGlide(true);
   render();
 }
 

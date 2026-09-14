@@ -402,6 +402,48 @@ test("a short day uses a shorter island and reduced motion still folds", async (
   await expect(page.locator("#island-expanded")).toBeHidden();
 });
 
+test("the selection travels, and lands exactly where it is going", async ({page}) => {
+  await page.setViewportSize({width: 1060, height: 560});
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+
+  const sits = () => page.locator(".tab-glide").evaluate(glide => {
+    const pill = glide.getBoundingClientRect();
+    const tab = document.querySelector('.island-tab[aria-selected="true"]')!.getBoundingClientRect();
+    return Math.abs(pill.left - tab.left) < 1.5 && Math.abs(pill.width - tab.width) < 1.5;
+  });
+
+  /* ⚠️ The geometry is COMPUTED, not measured: at the moment of a click every
+   * width on the strip is mid-transition, so reading one gives a target that
+   * was true a frame ago. This is the assertion that catches that arithmetic
+   * going wrong — the pill would still glide, just never quite onto anything. */
+  for (const tab of ["shelf", "review", "today", "home"]) {
+    await page.locator(`[data-tab="${tab}"]`).click();
+    await expect.poll(sits).toBe(true);
+  }
+
+  /* ⚠️ And the selected tab paints no background of its OWN. Painting both
+   * lights the new tab instantly while the pill is still travelling, so there
+   * are two selections on screen for a quarter of a second, every switch.
+   *
+   * The pointer is moved off first: hover is a real state and does paint, which
+   * is correct — the claim here is about the selection, not the pointer. The
+   * island is pinned, so nothing folds. */
+  await page.mouse.move(520, 520);
+  expect(await page.locator('.island-tab[aria-selected="true"]')
+    .evaluate(tab => getComputedStyle(tab).backgroundColor))
+    .toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+
+  /* Only the tab you are on is captioned: eight labels is a menu, one is a
+   * caption for where you are. ⚠️ Polled — the label being left behind is
+   * shrinking rather than vanishing, which is the whole point of it, so for a
+   * quarter of a second there really are two. */
+  await expect.poll(() => page.locator(".island-tab span").evaluateAll(labels =>
+    labels.filter(label => label.getBoundingClientRect().width > 0).length)).toBe(1);
+  await page.screenshot({path: "test-results/island-tabs.png"});
+});
+
 test("Home gathers the other three onto one row, and opens into them", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
