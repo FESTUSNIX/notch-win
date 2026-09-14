@@ -1839,3 +1839,21 @@ The two halves were the same fault.
      in and before the first tool call the model is thinking and there is
      nothing to name — which is why the row falls back to the state word rather
      than showing an empty line. Confirmed against the real transcripts.
+206. ⚠️ **A run's cost is a DELTA, never the session's total.**
+     `Tracked.usage` climbs for the life of the session, so filing that against
+     one run counts every earlier run again — the day's total would grow
+     quadratically while looking entirely plausible. `usage_at_start` is taken
+     when the run begins rather than by subtracting the previous run
+     afterwards, because a session can be dropped and re-tracked between runs,
+     which resets the counter.
+207. ⚠️ **A project that spent nothing is DROPPED, not shown as zero.** Runs
+     recorded before tokens were counted carry neither field, and a fortnight of
+     those — named, ordered, every one reading `0` — looks like the feature is
+     broken rather than like the history predates it.
+208. ⚠️ **A bar whose width is `NaN%` renders at FULL width.** Dividing by a
+     zero total makes the emptiest possible day look like the busiest, in
+     silence. `spend.share()` returns 0 for an empty whole, and the bars have a
+     4% floor so a small share reads as "a little" rather than "nothing".
+209. ⚠️ **New fields on `runlog::Run` need `serde(default)`.** The file holds
+     two weeks of history and a parse error throws all of it away to add one
+     column.

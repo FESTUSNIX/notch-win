@@ -505,6 +505,36 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await expect(rows.nth(0)).not.toHaveClass(/is-quiet/);
   await page.screenshot({path: "test-results/island-agents.png"});
 });
+test("today's spend is broken down by project", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.locator('[data-tab="agents"]').click();
+
+  /* ⚠️ The usage notch says the window is going; nothing on the machine said
+   * what was eating it. That is the question you actually have when you look at
+   * that ring, and this app is the only thing already counting tokens per run
+   * per project. */
+  await expect(page.locator(".spend-title")).toHaveText("Spent today");
+  const projects = page.locator(".spend-project");
+  // Biggest spender first, whatever order the runs arrived in.
+  await expect(projects.nth(0)).toHaveText("codenotch-win");
+  await expect(projects.nth(1)).toHaveText("akcesfonia");
+
+  /* ⚠️ A project that spent NOTHING is dropped rather than listed as zero.
+   * Runs recorded before the count existed carry neither field, and a fortnight
+   * of those — named, ordered, every one reading 0 — looks like the feature is
+   * broken rather than like the history predates it. */
+  await expect(projects.filter({hasText: "esono"})).toHaveCount(0);
+
+  await expect(page.locator(".spend-total")).toContainText("tokens");
+  // ⚠️ A bar whose width is NaN% renders at FULL width, so a broken share makes
+  // the emptiest day look like the busiest.
+  const widths = await page.locator(".spend-rail i").evaluateAll(bars =>
+    bars.map(bar => (bar as HTMLElement).style.width));
+  expect(widths.every(width => /^[\d.]+%$/.test(width))).toBe(true);
+  await page.screenshot({path: "test-results/island-spend.png"});
+});
+
 test("a working session says what it is doing, not that it is working", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
@@ -796,8 +826,9 @@ test("Review looks backwards at four things nothing else joined", async ({page})
   await expect(tiles.nth(0).locator(".review-bar-name").first()).toHaveText("VS Code");
   await expect(page.locator(".sys-day")).toHaveCount(0);
 
-  // Agent runs, grouped by project and longest first.
-  await expect(tiles.nth(2).locator(".review-value")).toHaveText("3");
+  // Agent runs, grouped by project and longest first. Four, since the fixture
+  // carries one run from before tokens were counted — see the spend test.
+  await expect(tiles.nth(2).locator(".review-value")).toHaveText("4");
   await expect(tiles.nth(2).locator(".review-item-name").first()).toHaveText("codenotch-win");
 
   // Four tiles of different content, one height.

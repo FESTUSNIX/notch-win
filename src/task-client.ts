@@ -157,9 +157,16 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   ]) as T;
   if (command.startsWith("shelf_")) return undefined as T;
   if (command === "get_runs") return (quiet ? [] : [
-    {day:"", project:"akcesfonia", seconds:252, endedMs:Date.now()-3_600_000, waiting:true},
-    {day:"", project:"akcesfonia", seconds:96, endedMs:Date.now()-7_200_000, waiting:true},
-    {day:"", project:"codenotch-win", seconds:1_840, endedMs:Date.now()-1_800_000, waiting:true},
+    {day:"", project:"akcesfonia", seconds:252, endedMs:Date.now()-3_600_000, waiting:true,
+     input:1_284_000, output:38_200},
+    {day:"", project:"akcesfonia", seconds:96, endedMs:Date.now()-7_200_000, waiting:true,
+     input:412_000, output:9_100},
+    {day:"", project:"codenotch-win", seconds:1_840, endedMs:Date.now()-1_800_000, waiting:true,
+     input:2_960_000, output:74_500},
+    /* ⚠️ One run with no tokens at all, on purpose: runs recorded before the
+       count existed carry neither field, and the list must not grow a row named
+       after a project that reads `0`. */
+    {day:"", project:"esono", seconds:40, endedMs:Date.now()-9_000_000, waiting:false},
   ]) as T;
   if (command === "get_audio_devices") return structuredClone(demoDevices) as T;
   if (command === "set_audio_device") {

@@ -1268,6 +1268,31 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .agent-snooze:hover { background:var(--tile-on); color:#fff; }
 .agent-snooze.is-on { color:var(--warn); }
 .agent-row.is-quiet .agent-go { opacity:.5; }
+
+/* ── What today cost ─────────────────────────────────────────────────────
+   The usage notch says the window is going; this says what ate it. Under the
+   sessions rather than above them: the live ones are why you opened the
+   screen, and this is what you look at second. */
+.spend { margin-top:14px; padding:12px 13px; border-radius:var(--r-tile);
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.spend-head { display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; margin-bottom:9px; }
+.spend-title { margin:0; font-size:10px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; color:rgba(255,255,255,.42); }
+.spend-total { font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.spend-row { display:flex; align-items:center; gap:10px; padding:3px 0; }
+.spend-project { font-size:11.5px; min-width:86px; max-width:110px; flex-shrink:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.spend-rail { flex:1; height:5px; border-radius:999px; background:rgba(0,0,0,.3);
+  box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; }
+/* ⚠️ The accent, not a per-project colour. Five hues down one column would
+   be a legend to learn for an ordering the bar lengths already give. */
+.spend-rail i { display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, rgba(0,255,136,.55), var(--accent));
+  transition:width var(--duration-slow) var(--ease-smooth-out); }
+.spend-tokens { font-size:11px; color:var(--dim); min-width:42px; text-align:right;
+  font-variant-numeric:tabular-nums; flex-shrink:0; }
 .snooze-clear { padding:0 3px; font-size:inherit; color:var(--accent); background:transparent; }
 .snooze-clear:hover { background:transparent; text-decoration:underline; }
 

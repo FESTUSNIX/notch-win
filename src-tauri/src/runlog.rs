@@ -30,6 +30,15 @@ pub struct Run {
     /// Whether it ended waiting for you rather than simply stopping.
     #[serde(default)]
     pub waiting: bool,
+    /// What the run cost, in tokens, input and output.
+    ///
+    /// ⚠️ `serde(default)`, because runs written before this existed have
+    /// neither field — and a parse error here would throw away two weeks of
+    /// history to add a column to it.
+    #[serde(default)]
+    pub input: u64,
+    #[serde(default)]
+    pub output: u64,
 }
 
 #[derive(Default)]
@@ -55,7 +64,7 @@ pub fn load(app: &AppHandle) {
 }
 
 /// File one finished run.
-pub fn record(app: &AppHandle, project: &str, seconds: u64, waiting: bool) {
+pub fn record(app: &AppHandle, project: &str, seconds: u64, waiting: bool, input: u64, output: u64) {
     let snapshot = {
         let state = app.state::<Store>();
         let Ok(mut runs) = state.0.lock() else { return };
@@ -65,6 +74,8 @@ pub fn record(app: &AppHandle, project: &str, seconds: u64, waiting: bool) {
             seconds,
             ended_ms: chrono::Utc::now().timestamp_millis(),
             waiting,
+            input,
+            output,
         });
         let floor = cutoff();
         runs.retain(|run| run.day >= floor);

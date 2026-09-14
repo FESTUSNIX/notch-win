@@ -13,6 +13,8 @@ import { listen } from "@tauri-apps/api/event";
 import { element } from "./task-list";
 import { paintIcon } from "./task-icons";
 import { call, native } from "./task-client";
+import { byProject, share, short, sum, total } from "./spend";
+import type { Run } from "./screen-review";
 import { held, spoken, tokens } from "./media-format";
 import { hush, isQuiet, wake } from "./snooze";
 import type { Activity } from "./island-activity";
@@ -45,6 +47,8 @@ export class AgentsScreen {
   sessions: SessionView[] = [];
   /** Ticks with the shell so "waiting 40s" climbs without a re-render. */
   private clocks = new Map<string, HTMLElement>();
+  /** Today's finished runs, for the spend block. */
+  private runs: Run[] = [];
   error = "";
 
   constructor(private host: HTMLElement, private changed: () => void) {}
@@ -52,6 +56,10 @@ export class AgentsScreen {
   async boot() {
     try {
       this.sessions = await call<SessionView[]>("get_sessions");
+      /* ⚠️ Read here rather than polled. Runs only land when one ends, and the
+       * watcher already pushes an event then — see `boot` — so a timer would
+       * be re-reading a file to find it unchanged. */
+      this.runs = await call<Run[]>("get_runs", { day: "" });
     } catch { /* the watcher has not reported yet */ }
     if (native) {
       await listen<SessionView[]>("notch:sessions", event => {
@@ -161,6 +169,47 @@ export class AgentsScreen {
     return row;
   }
 
+  /** What today cost, and which project spent it.
+   *
+   * ⚠️ The usage notch says the window is going; nothing said what was eating
+   * it. That is the question you actually have when you look at the ring, and
+   * this app is the only thing on the machine already counting tokens per run
+   * per project.
+   *
+   * ⚠️ Returns null on a day with no spend rather than an empty panel. A
+   * heading over nothing is the hole this codebase keeps filling in.
+   */
+  private spendBlock(): HTMLElement | null {
+    const rows = byProject(this.runs);
+    if (!rows.length) return null;
+    const whole = sum(rows);
+
+    const block = element("section", "spend");
+    const head = element("div", "spend-head");
+    head.append(
+      element("h3", "spend-title", "Spent today"),
+      element("span", "spend-total", `${short(total(whole))} tokens \u00b7 ${whole.runs} runs`),
+    );
+    block.append(head);
+
+    for (const row of rows.slice(0, 5)) {
+      const line = element("div", "spend-row");
+      line.append(element("span", "spend-project", row.project));
+      const rail = element("div", "spend-rail");
+      const fill = element("i");
+      /* ⚠️ A floor, not the raw share. A project at 2% draws a bar you cannot
+       * see, which reads as "nothing" rather than as "a little" — and the
+       * number beside it then looks like it belongs to the row above. */
+      fill.style.width = `${Math.max(4, share(row, whole) * 100)}%`;
+      rail.append(fill);
+      line.append(rail, element("span", "spend-tokens", short(total(row))));
+      line.title = `${row.project}: ${short(row.input)} in, ${short(row.output)} out, `
+        + `${row.runs} run${row.runs === 1 ? "" : "s"}`;
+      block.append(line);
+    }
+    return block;
+  }
+
   render() {
     this.host.replaceChildren();
     this.clocks.clear();
@@ -169,6 +218,8 @@ export class AgentsScreen {
       return;
     }
     for (const session of this.sessions) this.host.append(this.row(session));
+    const spend = this.spendBlock();
+    if (spend) this.host.append(spend);
     /* ⚠️ Said once, at the foot, rather than per row. The totals are what this
      * app has watched, not the sessions' lifetimes: scanning every open
      * transcript's history at launch would read hundreds of megabytes to learn

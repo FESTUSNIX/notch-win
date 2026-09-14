@@ -76,6 +76,14 @@ pub struct Finished {
     /// two or three sessions open, which one finished is the whole message.
     pub project: String,
     pub seconds: u64,
+    /// What THIS run cost.
+    ///
+    /// ⚠️ A delta, not the session's running total. `Tracked.usage` climbs for
+    /// the life of the session, so filing that against one run would count
+    /// every earlier run again — and the day's total would grow quadratically
+    /// while looking entirely plausible.
+    pub input: u64,
+    pub output: u64,
 }
 
 fn claude_home() -> Option<PathBuf> {
@@ -252,6 +260,9 @@ struct Tracked {
     started: Option<Instant>,
     last_run: Duration,
     usage: crate::transcript::Usage,
+    /// `usage` as it stood when the current run began, so a run's own cost is
+    /// the difference. See `Finished::input`.
+    usage_at_start: crate::transcript::Usage,
     doing: Option<crate::transcript::Doing>,
     project: String,
     branch: Option<String>,
@@ -298,6 +309,7 @@ impl Watcher {
                         turn,
                         // Whatever the opening tail already showed it doing.
                         doing: opening.doing.clone(),
+                        usage_at_start: crate::transcript::Usage::default(),
                         state: state_of(turn),
                         since: Instant::now(),
                         // A session already working when it is first seen has
@@ -363,11 +375,20 @@ impl Watcher {
                     finished.push(Finished {
                         provider: "claude".to_string(),
                         project: entry.project.clone(),
+                        input: entry.usage.input.saturating_sub(entry.usage_at_start.input),
+                        output: entry.usage.output.saturating_sub(entry.usage_at_start.output),
                         seconds: ran.as_secs().max(1),
                         waiting: next == Activity::Waiting,
                     });
                 } else if next == Activity::Working {
                     entry.started = Some(Instant::now());
+                    /* ⚠️ The mark against which this run's cost is measured.
+                     * Taken when the run STARTS rather than subtracting the
+                     * previous run's total afterwards — a session can be
+                     * dropped and re-tracked between runs, which resets the
+                     * counter, and a subtraction against a stale total would
+                     * file a negative cost as a very large one. */
+                    entry.usage_at_start = entry.usage;
                 }
                 entry.state = next;
                 entry.since = Instant::now();
@@ -469,7 +490,7 @@ pub fn spawn(app: AppHandle) {
                 // A toast is gone in five seconds, and the whole point of this
                 // is the run you were not watching.
                 // Kept, so the Review screen can look backwards at all.
-                crate::runlog::record(&app, &run.project, run.seconds, run.waiting);
+                crate::runlog::record(&app, &run.project, run.seconds, run.waiting, run.input, run.output);
                 let _ = app.emit("notch:finished", run.clone());
             }
 

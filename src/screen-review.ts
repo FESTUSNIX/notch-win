@@ -31,6 +31,10 @@ export interface Run {
   seconds: number;
   endedMs: number;
   waiting: boolean;
+  /** What the run cost. ⚠️ Optional: runs recorded before tokens were counted
+   *  have neither field, and `serde(default)` writes them as absent. */
+  input?: number;
+  output?: number;
 }
 
 /** `3h 12m`, `48m`, `— `. One or two units, never three. */
