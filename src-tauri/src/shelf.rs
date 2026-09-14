@@ -275,6 +275,18 @@ fn find(app: &AppHandle, id: &str) -> Option<Item> {
 /// A file goes on as `CF_HDROP`, which is what Explorer, Slack, a browser
 /// upload field and every other paste target expects — so Ctrl+V pastes the
 /// file, not its name.
+/// Put a piece of text on the clipboard without parking it on the shelf.
+///
+/// ⚠️ Deliberately NOT `navigator.clipboard.writeText`. The island runs
+/// `WS_EX_NOACTIVATE` and the palette hands the caret back before an action
+/// runs, so by the time a copy happens the document is very often not focused —
+/// and the web clipboard API rejects on an unfocused document, silently, in a
+/// promise nobody is awaiting. The Win32 path does not care who has focus.
+#[tauri::command]
+pub fn copy_text(text: String) -> Result<(), String> {
+    clipboard::set_text(&text)
+}
+
 #[tauri::command]
 pub fn shelf_copy(app: AppHandle, id: String) -> Result<(), String> {
     let item = find(&app, &id).ok_or("That is no longer on the shelf.")?;

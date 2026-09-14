@@ -63,6 +63,33 @@ search the island's *own* world and act on it in place — copy a shelved file,
 raise the terminal of the session that is waiting for you, tick a task. It is
 meant to sit beside a launcher, not instead of one.
 
+**`Tab` goes a level deeper.** Every row that has more than one obvious verb
+carries the rest behind it: a shelf item offers copy, open, show in folder and
+take off the shelf; a session offers raise, copy the name and quiet for an hour;
+a found file offers open, reveal, shelve and copy the path. Enter still does the
+obvious thing, so nothing got slower. `Escape` backs out one level before it
+closes the palette.
+
+**It puts what you actually use first.** With nothing typed the order is by
+recency, halving every three days — not by how often, which never forgets and
+slowly turns the list into a record of what you used to do. Typing still wins:
+the lift is smaller than a word-boundary match, so it breaks ties rather than
+overruling them.
+
+**Arithmetic.** A line with a digit and an operator is answered rather than
+searched — `1900 * 56/117`, `90 + 15%`, `20% of 90` — and Enter copies the
+result. It is a parser, never `eval`, and it refuses anything that is not a sum
+so the row can never appear over what you were looking for.
+
+**Files, through Everything.** If [Everything](https://voidtools.com) is running
+its index is searched too, past three characters. ⚠️ **A hit goes on the
+shelf** — opening is one `Tab` away. That is the line this is drawn on:
+Everything and Flow already open files better than this could, and what the
+island has that they do not is somewhere to put the thing down. Nothing is
+installed for it: Everything answers over `WM_COPYDATA`, so there is no
+`es.exe`, no HTTP server to enable and no SDK dll to ship. With Everything
+closed the palette simply has no file results and says nothing about it.
+
 ### Six global shortcuts
 
 `Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+K` opens the palette.

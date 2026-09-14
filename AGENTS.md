@@ -1647,3 +1647,34 @@ The two halves were the same fault.
      vertically docked island. It arrived one tab and one button at a time,
      so no single change was big enough to notice. The strip now carries
      `flex: 1 1 auto; min-width: 0` and scrolls instead of pushing.
+168. ⚠️ **A row that IS the answer must not be RANKED.** The arithmetic
+     line was filtered out of its own query: `1900 * 56/117` has to
+     subsequence-match `= 909.401709402`, which it does not, so the sum
+     vanished and "Add task" took the top row. `Action.pinned` skips matching
+     and sits first.
+169. ⚠️ **Node strips TypeScript, it does not compile it.** A constructor
+     parameter property (`constructor(private store: Store)`) is a hard
+     `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` at import, and the whole test file
+     fails to load with an error naming the syntax rather than the reason.
+     `palette-calc.ts` and `palette-recent.ts` therefore write their fields
+     out; files only the bundler sees may keep using them.
+170. ⚠️ **`Path::join` on a bare drive is DRIVE-RELATIVE.** `Path::new("C:")
+     .join("x")` is `C:x` — "x in whatever the current directory on C: is" —
+     not `C:\x`. Everything reports the parent of a root-level item as exactly
+     `C:`, so this is not a corner case but every hit at the top of a drive,
+     and the two strings read identically. `everything::joined` puts the
+     separator back. The live `#[ignore]`d test is what caught it; the unit
+     tests could not have.
+171. ⚠️ **Everything not running is not an error.** `FindWindowW` returns
+     null and the search returns an empty list, because a row saying so in a
+     palette that is mostly about the island's own world is noise ninety-nine
+     times in a hundred.
+172. ⚠️ **A late provider needs a generation counter.** Everything answers
+     over IPC, so a reply for `no` can land after `notes` has been typed. The
+     palette bumps `gen` on every keystroke and drops any answer carrying an
+     old one — and holds the highlight by id across the late repaint, because
+     rows appearing under the cursor is how a palette runs the wrong thing.
+173. ⚠️ **`navigator.clipboard.writeText` does not work from the palette.**
+     The caret is handed back before an action runs, and the web clipboard API
+     rejects on an unfocused document — silently, in a promise nobody awaits.
+     `shelf::copy_text` goes through Win32, which does not care who has focus.

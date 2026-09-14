@@ -17,6 +17,7 @@
 import { element } from "./task-list";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { search, type Match } from "./palette-match";
+import { Recent } from "./palette-recent";
 import { FRAME, cpx } from "./layout";
 import type { IslandSurface } from "./island-surface";
 
@@ -34,9 +35,35 @@ export interface Action {
   hint?: string;
   icon: TaskIcon;
   run: () => void | Promise<void>;
+  /** The other things you can do to this one thing. `Tab` opens them.
+   *
+   * ⚠️ `run` stays the OBVIOUS verb — copy a shelf item, raise a session,
+   * finish a task — and this is the rest. A row whose Enter did nothing until
+   * you had gone a level deeper would be slower than the screen it replaced. */
+  more?: () => Action[];
+  /** Not searched, and always first.
+   *
+   * ⚠️ For a row that IS the answer rather than a thing that matches it —
+   * the arithmetic line. Ranking one of those is nonsense: `1900 * 56/117` has
+   * to subsequence-match `= 909.401709402`, which it does not, so the answer
+   * was filtered out of its own query and "Add task" took the top row. */
+  pinned?: boolean;
+  /** Never learned from. Set on rows whose id is a one-off — the arithmetic
+   *  line is a different id for every expression, and recording them would
+   *  evict forty real entries in an afternoon. */
+  volatile?: boolean;
 }
 
 export type Provider = (query: string) => Action[];
+/** Answers late. Everything's IPC is one, and it is the reason `rank` can run
+ *  again after the list is already on screen. */
+export type LiveProvider = (query: string) => Promise<Action[]>;
+
+/** ⚠️ Guarded: `localStorage` does not merely come back empty when site data
+ *  is blocked, the accessor itself throws. */
+function storage() {
+  try { return window.localStorage; } catch { return undefined; }
+}
 
 /** How many rows fit before the list starts scrolling rather than growing. */
 const SHOWN = 8;
@@ -45,7 +72,20 @@ export class Palette {
   private host: HTMLElement;
   private field: HTMLInputElement;
   private list: HTMLElement;
+  private crumb: HTMLElement;
   private providers: Provider[] = [];
+  private live: LiveProvider[] = [];
+  /** What the synchronous providers answered for the current text. */
+  private pool: Action[] = [];
+  /** What the late ones have answered so far, for the same text. */
+  private late: Action[] = [];
+  /** Bumped on every keystroke; a late answer carrying an old one is dropped.
+   *  Without it a slow reply for "no" lands on top of the results for "notes". */
+  private gen = 0;
+  private text = "";
+  /** The row whose own actions are being shown, if any. */
+  private inside: Action | null = null;
+  private recent = new Recent(storage());
   private shown: { action: Action; match: Match }[] = [];
   private at = 0;
   /** Installed on the document while the palette is up, and removed with it. */
@@ -66,7 +106,9 @@ export class Palette {
     this.field.spellcheck = false;
     this.field.placeholder = "Search the island…";
     this.field.setAttribute("aria-label", "Search the island");
-    bar.append(mark, this.field);
+    this.crumb = element("span", "palette-crumb");
+    this.crumb.hidden = true;
+    bar.append(mark, this.crumb, this.field);
 
     this.list = element("div", "palette-list");
     this.list.setAttribute("role", "listbox");
@@ -78,6 +120,11 @@ export class Palette {
   element(): HTMLElement { return this.host; }
 
   add(provider: Provider) { this.providers.push(provider); }
+
+  /** ⚠️ A late provider is asked ONLY at the top level. A sub-menu is the
+   *  fixed set of verbs for one thing; a file search arriving into the middle
+   *  of it would be results for a question nobody asked. */
+  addLive(provider: LiveProvider) { this.live.push(provider); }
 
   /* ── Opening ──────────────────────────────────────────────────────────── */
 
@@ -102,6 +149,8 @@ export class Palette {
     this.open = true;
     this.host.hidden = false;
     this.field.value = "";
+    this.inside = null;
+    this.paintCrumb();
     /* Narrow while the palette is up. The panel is ~910px across, which is
      * right for eight screens of content and much too wide for a list of
      * one-line results — it reads as a window rather than as a bar. */
@@ -151,6 +200,10 @@ export class Palette {
     this.open = false;
     this.host.hidden = true;
     this.field.value = "";
+    this.inside = null;
+    this.pool = [];
+    this.late = [];
+    this.gen++;
     document.removeEventListener("keydown", this.keys, true);
     document.removeEventListener("pointerdown", this.away, true);
     this.surface.capBody(0);
@@ -174,7 +227,25 @@ export class Palette {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      void this.hide();
+      // One level at a time: inside a row's actions, Escape is "back".
+      if (!this.leave()) void this.hide();
+      return;
+    }
+    /* Tab goes INTO the highlighted row's own actions.
+     *
+     * ⚠️ Tab, not ArrowRight. The right arrow has a job already — it moves
+     * the caret — and a key that sometimes edits your text and sometimes
+     * navigates is a key you stop trusting. Tab has nothing to move to here:
+     * the palette is one field and a list. */
+    if (event.key === "Tab" && !event.shiftKey) {
+      event.preventDefault();
+      this.enter(this.at);
+      return;
+    }
+    if ((event.key === "Tab" && event.shiftKey)
+      || (event.key === "Backspace" && !this.field.value && this.inside)) {
+      event.preventDefault();
+      this.leave();
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -216,6 +287,7 @@ export class Palette {
   private async pick(index: number) {
     const chosen = this.shown[index];
     if (!chosen) return;
+    if (!chosen.action.volatile) this.recent.record(chosen.action.id);
     // ⚠️ Closed BEFORE the action runs. Half of these open a screen, move a
     // window or raise a terminal, and a palette still sitting over the result
     // is something you have to dismiss to see what you asked for.
@@ -225,20 +297,86 @@ export class Palette {
     } catch { /* the action reports its own trouble on its own screen */ }
   }
 
+  /** Into the highlighted row's own actions. */
+  private enter(index: number) {
+    const chosen = this.shown[index]?.action;
+    if (!chosen?.more) return;
+    this.inside = chosen;
+    this.field.value = "";
+    this.paintCrumb();
+    this.query();
+  }
+
+  /** Back out of them. Returns whether there was anything to back out of, so
+   *  Escape can fall through to closing the palette. */
+  private leave(): boolean {
+    const was = this.inside;
+    if (!was) return false;
+    this.inside = null;
+    this.field.value = "";
+    this.paintCrumb();
+    this.query();
+    /* Put the highlight back on the row you came from. Landing on row one
+     * after backing out means the way out of a sub-menu opened by mistake
+     * also loses your place in the list. */
+    const back = this.shown.findIndex(row => row.action.id === was.id);
+    if (back > 0) { this.at = back; this.paint(); }
+    return true;
+  }
+
+  private paintCrumb() {
+    this.crumb.hidden = !this.inside;
+    this.crumb.textContent = this.inside?.title ?? "";
+    this.field.placeholder = this.inside ? "Do what with it…" : "Search the island…";
+  }
+
+  private safely(ask: () => Action[]): Action[] {
+    // One provider throwing must not empty the palette.
+    try { return ask(); } catch { return []; }
+  }
+
   private query() {
-    const text = this.field.value.trim();
-    const all = this.providers.flatMap(provider => {
-      try {
-        return provider(text);
-      } catch {
-        // One provider throwing must not empty the palette.
-        return [];
-      }
-    });
-    this.shown = search(all, text, SHOWN * 3)
-      .slice(0, SHOWN * 2)
-      .map(hit => ({ action: hit.item, match: hit.match }));
-    this.at = 0;
+    this.text = this.field.value.trim();
+    const gen = ++this.gen;
+    this.late = [];
+    this.pool = this.inside
+      ? this.safely(() => this.inside!.more!())
+      : this.providers.flatMap(provider => this.safely(() => provider(this.text)));
+    this.rank(false);
+    if (this.inside) return;
+    for (const ask of this.live) {
+      ask(this.text)
+        .then(actions => {
+          // ⚠️ The generation check is the whole safety of this: a reply for
+          // "no" arriving after "notes" was typed must be dropped, not merged.
+          if (gen !== this.gen || !actions.length) return;
+          this.late.push(...actions);
+          this.rank(true);
+        })
+        .catch(() => { /* a search that did not answer shows nothing */ });
+    }
+  }
+
+  /** Sort what there is and draw it.
+   *
+   * `keep` holds the highlight on whatever row it was on, by id, which matters
+   * only for the late pass: results appearing under the cursor while you are
+   * about to press Enter is how a palette runs the wrong thing. On a keystroke
+   * the best match is the right selection, so the highlight goes back to the
+   * top. */
+  private rank(keep: boolean) {
+    const held = keep ? this.shown[this.at]?.action.id : undefined;
+    const all = [...this.pool, ...this.late];
+    const pinned = all.filter(action => action.pinned);
+    const rest = all.filter(action => !action.pinned);
+    this.shown = [
+      ...pinned.map(action => ({ action, match: { score: 0, hits: [] as number[] } })),
+      ...search(rest, this.text, SHOWN * 3, action => this.recent.boost(action.id))
+        .slice(0, SHOWN * 2)
+        .map(hit => ({ action: hit.item, match: hit.match })),
+    ];
+    const again = held ? this.shown.findIndex(row => row.action.id === held) : -1;
+    this.at = again >= 0 ? again : 0;
     this.paint();
   }
 
@@ -284,6 +422,16 @@ export class Palette {
       copy.append(this.title(action, match));
       if (action.note) copy.append(element("span", "palette-note", action.note));
       row.append(mark, copy);
+      /* ⚠️ A static mark, not only a keystroke to know. Tab is invisible
+       * until someone tells you about it, and a feature nobody can see is one
+       * nobody uses. */
+      if (action.more) {
+        const deeper = element("span", "palette-more");
+        deeper.append(element("b", "", "Tab"));
+        // "down", turned a quarter: the set has no chevron of its own.
+        paintIcon(deeper, "down");
+        row.append(deeper);
+      }
       /* A number you can actually press, rather than a label saying which
        * provider answered. The group was decoration: the icon already says
        * what kind of thing this is, and the right edge is better spent on the

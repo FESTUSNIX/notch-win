@@ -87,13 +87,31 @@ export function rank<T extends Rankable>(item: T, query: string): { item: T; mat
   return alias ? { item, match: { score: alias.score / 2, hits: [] } } : null;
 }
 
-/** Everything that matches, best first. Stable within a score so a list does
- *  not reshuffle as you type a character that changes nothing. */
-export function search<T extends Rankable>(items: T[], query: string, limit = 12): { item: T; match: Match }[] {
-  if (!query.trim()) return items.slice(0, limit).map(item => ({ item, match: { score: 0, hits: [] } }));
+/**
+ * Everything that matches, best first. Stable within a score so a list does not
+ * reshuffle as you type a character that changes nothing.
+ *
+ * `boost` adds to each item's score — recency, in practice. It applies to the
+ * EMPTY query too, and that is the case it was added for: with nothing typed
+ * every score is zero, so the order was provider declaration order, which is
+ * the state the palette is in every time it opens and the one nobody designed.
+ */
+export function search<T extends Rankable>(
+  items: T[],
+  query: string,
+  limit = 12,
+  boost: (item: T) => number = () => 0,
+): { item: T; match: Match }[] {
+  if (!query.trim()) {
+    return items
+      .map(item => ({ item, match: { score: boost(item), hits: [] as number[] } }))
+      .sort((a, b) => b.match.score - a.match.score)
+      .slice(0, limit);
+  }
   return items
     .map(item => rank(item, query))
     .filter((hit): hit is { item: T; match: Match } => hit !== null)
+    .map(hit => ({ item: hit.item, match: { ...hit.match, score: hit.match.score + boost(hit.item) } }))
     .sort((a, b) => b.match.score - a.match.score)
     .slice(0, limit);
 }

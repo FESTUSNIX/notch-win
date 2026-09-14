@@ -22,6 +22,7 @@ import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
 import { Palette, type Action } from "./palette";
+import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
@@ -377,25 +378,40 @@ palette.add(() => {
 });
 
 /* The island's own world, which is the part a general launcher cannot see. */
-palette.add(() => shelf.items.flatMap(item => {
-  const rows: Action[] = [{
-    id: `shelf:copy:${item.id}`,
-    title: item.name,
-    note: item.missing ? "moved or deleted" : "copy to the clipboard",
-    keywords: "shelf file paste",
-    icon: item.kind === "link" ? "link" : item.kind === "text" ? "note" : "file",
-    hint: "Shelf",
-    run: () => { void call(item.missing ? "shelf_remove" : "shelf_copy", { id: item.id }).catch(() => {}); },
-  }];
-  if (!item.missing) {
-    rows.push({
-      id: `shelf:open:${item.id}`, title: `Open ${item.name}`,
-      keywords: "shelf launch", icon: "open", hint: "Shelf",
-      run: () => { void call("shelf_open", { id: item.id }).catch(() => {}); },
-    });
-  }
-  return rows;
-}));
+/* ⚠️ ONE row per shelf item, with the rest of the verbs behind `Tab`.
+ * It used to emit two — copy and open — and with eight things on the shelf
+ * that is sixteen rows competing with every screen, every command and every
+ * task for eight visible slots. A second row per item is how a palette stops
+ * being faster than the screen it replaced. */
+palette.add(() => shelf.items.map(item => ({
+  id: `shelf:${item.id}`,
+  title: item.name,
+  note: item.missing ? "moved or deleted" : "copy to the clipboard",
+  keywords: "shelf file paste",
+  icon: item.kind === "link" ? "link" : item.kind === "text" ? "note" : "file",
+  hint: "Shelf",
+  run: () => { void call(item.missing ? "shelf_remove" : "shelf_copy", { id: item.id }).catch(() => {}); },
+  more: () => {
+    const rows: Action[] = [];
+    if (!item.missing) {
+      rows.push(
+        { id: `shelf:copy:${item.id}`, title: "Copy", keywords: "clipboard paste",
+          icon: "copy", run: () => { void call("shelf_copy", { id: item.id }).catch(() => {}); } },
+        { id: `shelf:open:${item.id}`, title: "Open", keywords: "launch run",
+          icon: "open", run: () => { void call("shelf_open", { id: item.id }).catch(() => {}); } },
+      );
+      if (item.kind === "file") {
+        rows.push({ id: `shelf:reveal:${item.id}`, title: "Show in folder",
+          keywords: "explorer reveal locate", icon: "folder",
+          run: () => { void call("shelf_reveal", { id: item.id }).catch(() => {}); } });
+      }
+    }
+    rows.push({ id: `shelf:remove:${item.id}`, title: "Take off the shelf",
+      keywords: "delete remove clear", icon: "close",
+      run: () => { void call("shelf_remove", { id: item.id }).catch(() => {}); } });
+    return rows;
+  },
+})));
 
 palette.add(() => agentsScreen.sessions.map(session => ({
   id: `agent:${session.id}`,
@@ -405,6 +421,23 @@ palette.add(() => agentsScreen.sessions.map(session => ({
   icon: "agent",
   hint: "Agents",
   run: () => { void call("focus_session", { pid: session.pid }).catch(() => {}); },
+  more: () => [
+    { id: `agent:raise:${session.id}`, title: "Raise the terminal",
+      keywords: "focus window show", icon: "open",
+      run: () => { void call("focus_session", { pid: session.pid }).catch(() => {}); } },
+    { id: `agent:path:${session.id}`, title: "Copy the project name",
+      keywords: "clipboard folder cd", icon: "copy",
+      run: () => { void call("copy_text", { text: session.project }).catch(() => {}); } },
+    /* The snooze the Agents screen already has, reachable without going there
+     * — which is the whole argument for the palette. */
+    snooze.isQuiet(`agent:${session.id}`)
+      ? { id: `agent:wake:${session.id}`, title: "Let it ask again",
+          keywords: "unmute wake", icon: "snooze",
+          run: () => { void snooze.wake(`agent:${session.id}`); } }
+      : { id: `agent:hush:${session.id}`, title: "Quiet for an hour",
+          keywords: "snooze mute later", icon: "snooze",
+          run: () => { void snooze.hush(`agent:${session.id}`); } },
+  ],
 })));
 
 palette.add(() => today.upNext(20).map(task => ({
@@ -415,13 +448,97 @@ palette.add(() => today.upNext(20).map(task => ({
   icon: "check",
   hint: "Today",
   run: () => { today.finish(task); },
+  more: () => [
+    { id: `task:done:${task.id}`, title: "Complete", keywords: "finish tick done",
+      icon: "check", run: () => { today.finish(task); } },
+    { id: `task:copy:${task.id}`, title: "Copy the title", keywords: "clipboard text",
+      icon: "copy", run: () => { void call("copy_text", { text: task.title }).catch(() => {}); } },
+    { id: `task:shelve:${task.id}`, title: "Park it on the shelf",
+      keywords: "shelf note later", icon: "shelf",
+      run: () => { void call("shelf_add_text", { text: task.title }).catch(() => {}); } },
+  ],
 })));
+
+/* The arithmetic line. ⚠️ FIRST, because when a line is a sum it is never
+ * also a search — `calc` refuses anything without both a digit and an operator
+ * precisely so that this row cannot appear over something you were looking
+ * for. `volatile`, because the id carries the expression: learning from it
+ * would evict forty real entries in an afternoon. */
+palette.add(query => {
+  const sum = calc(query);
+  if (!sum) return [];
+  return [{
+    id: `calc:${sum.value}`,
+    title: `= ${sum.text}`,
+    note: "copy the result",
+    keywords: "calculator maths sum",
+    icon: "copy",
+    hint: "Sum",
+    pinned: true,
+    volatile: true,
+    /* ⚠️ Copied through Rust, not `navigator.clipboard`. The palette hands
+     * the caret back before an action runs, and the web clipboard API rejects
+     * on an unfocused document — silently, in a promise nobody awaits. */
+    run: () => { void call("copy_text", { text: sum.value }).catch(() => {}); },
+  }];
+});
+
+/* Everything, if it is running. ⚠️ A LATE provider: the answer is a round
+ * trip to another process, so it arrives after the list is already up rather
+ * than holding every keystroke for it.
+ *
+ * ⚠️ Debounced HERE rather than in the palette. The palette drops a stale
+ * answer, which keeps the list correct, but it would still have paid for one
+ * IPC round trip per keystroke — and "codenotch" is nine of them. */
+let asked = 0;
+palette.addLive(query => new Promise<Action[]>(resolve => {
+  /* Three characters, same threshold as the create-a-task row. Everything
+   * answers "e" with half the disk, and a palette that fills with system DLLs
+   * on the way to typing "editor" is worse than no file search. */
+  if (query.length < 3 || calc(query)) { resolve([]); return; }
+  const mine = ++asked;
+  window.setTimeout(() => {
+    if (mine !== asked) { resolve([]); return; }
+    call<{ name: string; path: string; full: string; folder: boolean }[]>(
+      "everything_search", { query, limit: 10 })
+      .then(hits => resolve(hits.map(hit => ({
+        id: `found:${hit.full}`,
+        title: hit.name,
+        note: hit.path,
+        /* The path is searched as well, at half weight, so `src pal` finds
+         * what `pal` alone would bury. */
+        keywords: `${hit.full} file find everything`,
+        icon: hit.folder ? "folder" : "file",
+        hint: "Found",
+        volatile: true,
+        /* ⚠️ Onto the SHELF, not opened. This is the line the palette is
+         * drawn on: Everything and Flow already open files better than this
+         * can, and what the island has that they do not is somewhere to put
+         * the thing down. Open is one Tab away. */
+        run: () => { void call("shelf_add_paths", { paths: [hit.full] }).catch(() => {}); },
+        more: () => [
+          { id: `found:open:${hit.full}`, title: "Open", keywords: "launch run",
+            icon: "open", run: () => { void call("found_open", { path: hit.full }).catch(() => {}); } },
+          { id: `found:reveal:${hit.full}`, title: "Show in folder",
+            keywords: "explorer reveal locate", icon: "folder",
+            run: () => { void call("found_reveal", { path: hit.full }).catch(() => {}); } },
+          { id: `found:shelve:${hit.full}`, title: "Put it on the shelf",
+            keywords: "park keep", icon: "shelf",
+            run: () => { void call("shelf_add_paths", { paths: [hit.full] }).catch(() => {}); } },
+          { id: `found:copy:${hit.full}`, title: "Copy the path",
+            keywords: "clipboard", icon: "copy",
+            run: () => { void call("copy_text", { text: hit.full }).catch(() => {}); } },
+        ],
+      }))))
+      .catch(() => resolve([]));
+  }, 140);
+}));
 
 /* ⚠️ Last, and only when nothing else matched well: the palette is a way to
  * reach things, and a "create" row that shows up for every stray keystroke
  * turns every mistyped search into an accidental task. */
 palette.add(query => {
-  if (query.length < 3) return [];
+  if (query.length < 3 || calc(query)) return [];
   return [{
     id: "make:task",
     title: `Add task "${query}"`,

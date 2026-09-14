@@ -63,3 +63,26 @@ test('the list is capped and stable', () => {
   // cursor is worse than one that is merely imperfect.
   assert.deepEqual(search(many, 'ta').map(h => h.item.title), search(many, 'ta').map(h => h.item.title));
 });
+
+test('a boost reorders the empty query, which is where the palette starts', () => {
+  const items = [{title: 'Home'}, {title: 'Today'}, {title: 'Agents'}];
+  const boost = item => item.title === 'Agents' ? 30 : 0;
+  // ⚠️ This is the case the boost exists for. With nothing typed every score is
+  // zero, so the order was provider declaration order — the state the palette
+  // is in every time it opens, and the one nobody had designed.
+  assert.deepEqual(search(items, '', 12, boost).map(h => h.item.title),
+    ['Agents', 'Home', 'Today']);
+  // Everything still comes back; it is an ordering, not a filter.
+  assert.equal(search(items, '', 12, boost).length, 3);
+});
+
+test('a boost decides between close matches and cannot rescue a weak one', () => {
+  const items = [{title: 'Media'}, {title: 'Move every display available'}];
+  const lift = item => item.title.startsWith('Move') ? 34 : 0;
+  // 34 is not enough to drag a scattered match over a consecutive run.
+  assert.equal(search(items, 'med', 12, lift)[0].item.title, 'Media');
+  // But between two equally good matches it is what breaks the tie.
+  const pair = [{title: 'Open log'}, {title: 'Open shelf'}];
+  assert.equal(search(pair, 'open', 12, i => i.title.endsWith('shelf') ? 34 : 0)[0].item.title,
+    'Open shelf');
+});

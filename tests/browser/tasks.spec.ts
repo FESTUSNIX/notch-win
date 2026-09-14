@@ -567,6 +567,58 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await expect(page.locator(".palette")).toBeHidden();
 });
 
+test("the palette does arithmetic, goes a level deeper, and learns", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const field = page.locator(".palette-field");
+  const rows = page.locator(".palette-row");
+
+  /* The one thing a launcher gets used for that has nothing to do with
+   * launching. ⚠️ It ranks FIRST: when a line is a sum it is never also a
+   * search, which is why `calc` insists on both a digit and an operator. */
+  await field.fill("1900 * 56/117");
+  await expect(rows.first().locator(".palette-title")).toHaveText("= 909.401709402");
+  await expect(rows.first().locator(".palette-note")).toHaveText("copy the result");
+  // And a line that is not arithmetic grows no such row.
+  await field.fill("today");
+  await expect(rows.first().locator(".palette-title")).not.toHaveText(/^=/);
+
+  /* Tab opens a row's own verbs. ⚠️ The mark is DRAWN as well as bound, since
+   * a key nobody can see is a feature nobody uses. */
+  await field.fill("setup");
+  await expect(rows.first().locator(".palette-title")).toHaveText(/setup/);
+  await expect(rows.first().locator(".palette-more")).toHaveCount(1);
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".palette-crumb")).toBeVisible();
+  const verbs = await rows.locator(".palette-title").allTextContents();
+  expect(verbs).toContain("Open");
+  expect(verbs).toContain("Show in folder");
+  expect(verbs).toContain("Take off the shelf");
+
+  /* ⚠️ Escape backs out one level before it closes anything. A sub-menu you
+   * can only leave by dismissing the whole palette is a trap. */
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".palette-crumb")).toBeHidden();
+  await expect(page.locator(".palette")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".palette")).toBeHidden();
+
+  /* What you actually use comes first. ⚠️ This is the EMPTY query — the state
+   * the palette is in every time it opens, and the one that had no opinion at
+   * all before: it listed the providers in declaration order for ever. */
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const before = await rows.first().locator(".palette-title").textContent();
+  expect(before).not.toBe("Review");
+  await field.fill("review");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".palette")).toBeHidden();
+
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await expect(rows.first().locator(".palette-title")).toHaveText("Review");
+  await page.screenshot({path: "test-results/island-palette-deep.png"});
+});
+
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);

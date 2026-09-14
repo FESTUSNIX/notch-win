@@ -5,6 +5,7 @@ mod calendar;
 mod config;
 mod credentials;
 mod drag;
+mod everything;
 mod fixtures;
 mod hover;
 mod media;
@@ -509,6 +510,7 @@ pub fn run() {
             dragout::shelf_drag,
             shelf::shelf_remove,
             shelf::shelf_copy,
+            shelf::copy_text,
             shelf::shelf_open,
             shelf::shelf_reveal,
             shelf::shelf_capture,
@@ -540,6 +542,10 @@ pub fn run() {
             calendar::open_external,
             shortcuts::get_shortcuts,
             shortcuts::set_shortcuts,
+            everything::everything_search,
+            everything::everything_running,
+            everything::found_open,
+            everything::found_reveal,
             shortcuts::get_chrome_hidden,
             shortcuts::toggle_chrome,
             get_displays,
