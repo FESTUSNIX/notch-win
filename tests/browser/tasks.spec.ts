@@ -619,6 +619,70 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
   await page.screenshot({path: "test-results/island-palette-deep.png"});
 });
 
+test("results are banded: apps, then the island's own, then files", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const field = page.locator(".palette-field");
+  const rows = page.locator(".palette-row");
+
+  /* `code` matches an application, a shelf item and a path, which is the only
+   * query that can show all three bands at once.
+   *
+   * ⚠️ A HARD order, not a nudge: an app outranks a file however well the file
+   * matched. The bands are ordered by how expensive it is to be wrong —
+   * launching the wrong app costs a window you close; failing to find the app
+   * you type five times a day costs the feature. */
+  await field.fill("code");
+  /* ⚠️ Polled, because the file rows are LATE — they come back from a search in
+   * another process and land after the list is already up. Reading the titles
+   * once would be reading them before the band being tested exists. */
+  const bands = async () => {
+    const titles = await rows.locator(".palette-title").allTextContents();
+    return {
+      app: titles.indexOf("Visual Studio Code"),
+      island: titles.findIndex(title => title.includes("Codenotch_0.1.0")),
+      file: titles.findIndex(title => title === "hero.png" || title === "hero"),
+    };
+  };
+  await expect.poll(async () => (await bands()).file).toBeGreaterThan(0);
+  const at = await bands();
+  await expect(rows.first().locator(".palette-title")).toHaveText("Visual Studio Code");
+  expect(at.app).toBe(0);
+  expect(at.island).toBeGreaterThan(at.app);
+  expect(at.file).toBeGreaterThan(at.island);
+
+  /* ⚠️ Apps answer NOTHING on an empty query. They outrank everything, so with
+   * the field blank they would bury the screens and the day under a hundred and
+   * fifty applications — and the blank field is where recency does its work. */
+  await field.fill("");
+  expect(await rows.locator(".palette-title").allTextContents())
+    .not.toContain("Visual Studio Code");
+
+  /* Different kinds of thing look different. A page of hits is a column of
+   * identical rows otherwise, and the icon is the only part of one you read
+   * without reading it. */
+  await field.fill("hero");
+  // The file rows specifically: `hero` also finds "Hide the chrome", which is
+  // a fair subsequence match and lands in the island band above them.
+  const found = rows.filter({has: page.locator(".palette-note", {hasText: "C:/CODE"})});
+  await expect(found).toHaveCount(2);
+  const kinds = found.locator(".palette-icon svg");
+  expect(await kinds.nth(0).innerHTML()).not.toBe(await kinds.nth(1).innerHTML());
+
+  /* Enter opens a file. ⚠️ It shelved at first, which is true about what the
+   * island has and wrong about what the keystroke means — so "Open" is no
+   * longer in the Tab menu, because Enter already is it. */
+  await expect(found.first().locator(".palette-more")).toHaveCount(1);
+  // Hovering moves the selection, which is what Tab then acts on.
+  await found.first().hover();
+  await expect(found.first()).toHaveClass(/is-at/);
+  await page.keyboard.press("Tab");
+  const verbs = await rows.locator(".palette-title").allTextContents();
+  expect(verbs).toEqual(["Show in folder", "Put it on the shelf", "Copy the path"]);
+  await page.screenshot({path: "test-results/island-palette-bands.png"});
+});
+
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);

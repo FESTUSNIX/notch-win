@@ -1161,8 +1161,20 @@ html.dragging-files #island {
 .palette-title { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* The characters you actually typed. */
 .palette-title b { color:var(--accent); font-weight:600; }
-.palette-note { font-size:10.5px; color:#6a6a6a; overflow:hidden; text-overflow:ellipsis;
+/* ⚠️ Brighter than it was (#6a6a6a), and it had to be. For a command the
+   note is a gloss you can ignore; for a file hit it is the PATH, which is the
+   only thing separating six folders all called `hero` — at the old weight the
+   rows were indistinguishable and the list read as one grey block. */
+.palette-note { font-size:10.5px; color:#8e8e8e; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
+/* The path reads right to left: the last two segments are what tell them apart,
+   so the start is what gets cut. */
+.palette-row.is-at .palette-note { color:#a8a8a8; }
+
+/* An application's own icon, in the same tile as a glyph would be. ⚠️ Not
+   stretched to the tile: these are 32px shell bitmaps and scaling one up to
+   fill reads as blur, not as an icon. */
+.palette-art { width:19px; height:19px; object-fit:contain; display:block; }
 
 /* A key you can press, not a label naming the provider. Shown on the selected
    row and on hover-through; dimmed elsewhere so nine of them are not shouting. */

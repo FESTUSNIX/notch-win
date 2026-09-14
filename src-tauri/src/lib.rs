@@ -5,6 +5,7 @@ mod calendar;
 mod config;
 mod credentials;
 mod drag;
+mod apps;
 mod everything;
 mod fixtures;
 mod hover;
@@ -390,6 +391,11 @@ fn spawn_polling(app: AppHandle) {
         return;
     }
 
+    /* ⚠️ The application list is built ONCE, here, off the UI thread. It is a
+     * shell call per shortcut — 152 of them and 1.7s on this machine — so the
+     * palette has to find it already made rather than ask for it. */
+    tauri::async_runtime::spawn_blocking(apps::warm);
+
     tauri::async_runtime::spawn(async move {
         let client = reqwest::Client::builder()
             .user_agent(concat!(
@@ -542,6 +548,8 @@ pub fn run() {
             calendar::open_external,
             shortcuts::get_shortcuts,
             shortcuts::set_shortcuts,
+            apps::list_apps,
+            apps::launch_app,
             everything::everything_search,
             everything::everything_running,
             everything::found_open,

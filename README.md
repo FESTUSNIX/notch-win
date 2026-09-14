@@ -81,14 +81,32 @@ searched — `1900 * 56/117`, `90 + 15%`, `20% of 90` — and Enter copies the
 result. It is a parser, never `eval`, and it refuses anything that is not a sum
 so the row can never appear over what you were looking for.
 
+**Applications.** Type `bra`, get Brave. The index is the **Start Menu** —
+Windows has no API that says "the installed applications", but it has two
+folders of shortcuts that every installer writes to, which is what the Start
+Menu itself lists. Each row carries the app's own icon, pulled off the shortcut
+by the shell. Built once in the background at start (152 apps and 287 KB of
+icons on this machine, about 1.7s) and cached, because apps do not appear while
+you are typing. ⚠️ "Uninstall X", "X Website" and "X Help" are filtered
+out — without that, `bra` offers to uninstall Brave as readily as to open it.
+
 **Files, through Everything.** If [Everything](https://voidtools.com) is running
-its index is searched too, past three characters. ⚠️ **A hit goes on the
-shelf** — opening is one `Tab` away. That is the line this is drawn on:
-Everything and Flow already open files better than this could, and what the
-island has that they do not is somewhere to put the thing down. Nothing is
-installed for it: Everything answers over `WM_COPYDATA`, so there is no
-`es.exe`, no HTTP server to enable and no SDK dll to ship. With Everything
-closed the palette simply has no file results and says nothing about it.
+its index is searched too, past three characters, and `Enter` opens the hit —
+shelving and revealing are a `Tab` away. Each row carries an icon for what the
+file actually is, because a page of hits is otherwise a column of identical
+rows. Nothing is installed for it: Everything answers over `WM_COPYDATA`, so
+there is no `es.exe`, no HTTP server to enable and no SDK dll to ship. With
+Everything closed the palette simply has no file results and says nothing about
+it.
+
+**Results are banded, not just scored.** An answer (the arithmetic line) first,
+then applications, then everything the island itself owns, then files. ⚠️
+It is a **hard** order: an app outranks a file however well the file matched.
+The bands are ordered by how expensive it is to be wrong — launching the wrong
+app costs a window you close, opening the wrong file costs nothing, and failing
+to find the app you type five times a day costs the feature. Apps and files
+answer nothing on an empty query, so with the field blank the bands do not apply
+at all and the order is plain recency.
 
 ### Six global shortcuts
 

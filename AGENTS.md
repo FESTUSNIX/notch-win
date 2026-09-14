@@ -1678,3 +1678,30 @@ The two halves were the same fault.
      The caret is handed back before an action runs, and the web clipboard API
      rejects on an unfocused document — silently, in a promise nobody awaits.
      `shelf::copy_text` goes through Win32, which does not care who has focus.
+174. ⚠️ **A fold has to close the palette.** The palette held the panel
+     open through `editing`, which `input(true)` sets — but `input` can fail
+     (Windows refuses the foreground) and `pinFor`'s timer expires either way.
+     So the island could fold with the palette still `open`: the host was never
+     hidden, the shortcut hit `show()`'s "already open" branch and did nothing,
+     and hovering the island brought back a palette that had never been given
+     the caret — visible, and impossible to type in or click. The fold callback
+     is the one signal that covers every route into that state.
+175. ⚠️ **The Start Menu IS the list of applications.** Windows has no API
+     for it. Registry uninstall keys are a different set (they include things
+     with no UI) and Store apps live somewhere else again; two `read_dir` walks
+     of the Start Menu give the list a person would recognise. ⚠️ Filter the
+     noise: every vendor ships "Uninstall X", "X Website" and "X Help" beside
+     the thing you wanted.
+176. ⚠️ **`biHeight` must be NEGATIVE when reading an icon's pixels.** A DIB
+     is bottom-up by default, so a positive height hands back an upside-down
+     icon — and it reads as a rendering bug three files away from the cause.
+177. ⚠️ **An old icon's 32-bit DIB carries no alpha at all.** Every pixel
+     comes back fully transparent and the row draws blank. The AND mask is what
+     says which pixels are there (1 means transparent); `apps::art::alpha_from`
+     rebuilds the channel from it.
+178. ⚠️ **Both Start Menus carry the same shortcut** for anything installed
+     for all users, so without a dedupe every such app is offered twice and the
+     two rows are indistinguishable.
+179. ⚠️ **Rank wide, band, then cut.** Cutting to the visible rows before
+     the band sort lets a page of file hits push every app off the end — and
+     the band is then sorting a list the files have already won.

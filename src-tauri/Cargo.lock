@@ -486,6 +486,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "dirs 7.0.0",
+ "png 0.18.1",
  "rand",
  "reqwest",
  "serde",

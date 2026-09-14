@@ -69,6 +69,24 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "get_calendar") return structuredClone(demoCalendar) as T;
   if (command === "get_shortcuts") return {toggle:"Ctrl+Alt+Space",hide:"Ctrl+Alt+H",capture:"Ctrl+Alt+N"} as T;
   if (command === "get_chrome_hidden") return false as T;
+  /* ⚠️ Apps and file hits are stubbed here so the BANDING is exercised by
+     the real code path rather than argued about. The names share a stem on
+     purpose: `code` matches an application, a shelf item and a path, which is
+     the only way to see that the three land in that order. */
+  if (command === "list_apps") return [
+    {name:"Brave", path:"C:/Start/Brave.lnk", icon:null},
+    {name:"Visual Studio Code", path:"C:/Start/Code.lnk", icon:null},
+    {name:"Notion", path:"C:/Start/Notion.lnk", icon:null},
+  ] as T;
+  if (command === "everything_search") {
+    const wanted = String(args.query ?? "").toLowerCase();
+    return [
+      {name:"hero.png", path:"C:/CODE/site/public", full:"C:/CODE/site/public/hero.png", folder:false},
+      {name:"hero", path:"C:/CODE/site/src/components", full:"C:/CODE/site/src/components/hero", folder:true},
+    ].filter(hit => hit.full.toLowerCase().includes(wanted)) as T;
+  }
+  if (command === "launch_app" || command === "found_open" || command === "found_reveal") return undefined as T;
+  if (command === "copy_text") return undefined as T;
   if (command === "open_external") return undefined as T;
   if (command === "google_status") return true as T;
   if (command === "get_app_time") return {day:localDay(), total:16_800, apps:[

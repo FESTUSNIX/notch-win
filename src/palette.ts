@@ -34,6 +34,10 @@ export interface Action {
    *  every provider sets it and it reads as documentation at the call site. */
   hint?: string;
   icon: TaskIcon;
+  /** A real image to draw instead of the glyph — an application's own icon,
+   *  as a data URI. ⚠️ `icon` is still required and still used as the
+   *  fallback: the shell does not always give one up. */
+  art?: string;
   run: () => void | Promise<void>;
   /** The other things you can do to this one thing. `Tab` opens them.
    *
@@ -41,6 +45,8 @@ export interface Action {
    * finish a task — and this is the rest. A row whose Enter did nothing until
    * you had gone a level deeper would be slower than the screen it replaced. */
   more?: () => Action[];
+  /** Which band this sits in. Defaults to `TIER.island`. */
+  tier?: number;
   /** Not searched, and always first.
    *
    * ⚠️ For a row that IS the answer rather than a thing that matches it —
@@ -53,6 +59,31 @@ export interface Action {
    *  evict forty real entries in an afternoon. */
   volatile?: boolean;
 }
+
+/** Which band a row sits in. Bands are sorted before scores, so a band is a
+ *  promise about position rather than a nudge.
+ *
+ * ⚠️ This is a HARD order, and that is what was asked for: an app always
+ * outranks a file however well the file matched. The cost is real — a
+ * brilliantly-matching file can sit under a mediocre app — and it is worth it
+ * because the bands are ordered by how expensive it is to be wrong. Launching
+ * the wrong app costs a window you close; opening the wrong file costs nothing;
+ * failing to find the app you type five times a day costs the feature.
+ *
+ * ⚠️ Apps and files answer nothing on an empty query, so with the field
+ * blank the bands do not apply at all and the order is plain recency. */
+export const TIER = {
+  /** An answer, not a match — the arithmetic line. Always first. */
+  answer: 0,
+  /** Installed applications. What a launcher is opened for. */
+  app: 1,
+  /** Everything the island itself owns: screens, commands, tasks, sessions,
+   *  the shelf. The default, so a provider that says nothing lands here. */
+  island: 2,
+  /** Files and folders off the disk. Last: there are millions of them, and
+   *  they are the least likely thing to have been meant. */
+  file: 3,
+} as const;
 
 export type Provider = (query: string) => Action[];
 /** Answers late. Everything's IPC is one, and it is the reason `rank` can run
@@ -369,11 +400,16 @@ export class Palette {
     const all = [...this.pool, ...this.late];
     const pinned = all.filter(action => action.pinned);
     const rest = all.filter(action => !action.pinned);
+    /* ⚠️ Ranked WIDE, then banded, then cut. Cutting to the visible eight
+     * before the band sort would let a page of file hits push every app off
+     * the end, and the band would then be sorting a list the files had already
+     * won. */
+    const ranked = search(rest, this.text, SHOWN * 8, action => this.recent.boost(action.id));
+    // Stable, so score order survives inside a band.
+    ranked.sort((a, b) => (a.item.tier ?? TIER.island) - (b.item.tier ?? TIER.island));
     this.shown = [
       ...pinned.map(action => ({ action, match: { score: 0, hits: [] as number[] } })),
-      ...search(rest, this.text, SHOWN * 3, action => this.recent.boost(action.id))
-        .slice(0, SHOWN * 2)
-        .map(hit => ({ action: hit.item, match: hit.match })),
+      ...ranked.slice(0, SHOWN * 2).map(hit => ({ action: hit.item, match: hit.match })),
     ];
     const again = held ? this.shown.findIndex(row => row.action.id === held) : -1;
     this.at = again >= 0 ? again : 0;
@@ -417,7 +453,17 @@ export class Palette {
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", String(index === this.at));
       const mark = element("span", "palette-icon");
-      paintIcon(mark, action.icon);
+      if (action.art) {
+        const picture = element("img", "palette-art") as HTMLImageElement;
+        picture.src = action.art;
+        picture.alt = "";
+        /* ⚠️ If the data URI is bad the row must not show a broken-image
+         * glyph, which is worse than no icon at all. */
+        picture.onerror = () => { picture.remove(); paintIcon(mark, action.icon); };
+        mark.append(picture);
+      } else {
+        paintIcon(mark, action.icon);
+      }
       const copy = element("div", "palette-copy");
       copy.append(this.title(action, match));
       if (action.note) copy.append(element("span", "palette-note", action.note));

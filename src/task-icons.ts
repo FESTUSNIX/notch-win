@@ -9,6 +9,8 @@ import {
   CloudBigRainIcon, CloudSnowIcon, CloudLightningIcon,
   File01Icon, Note01Icon, Link01Icon, Copy01Icon, Folder01Icon,
   ArrowUpRight01Icon, InboxIcon, Analytics01Icon, AlarmClockIcon, Search01Icon,
+  SourceCodeIcon, Image01Icon, Pdf01Icon, Zip01Icon, Txt01Icon, Doc01Icon,
+  Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -33,6 +35,13 @@ const icons = {
   file: File01Icon, note: Note01Icon, link: Link01Icon, copy: Copy01Icon,
   folder: Folder01Icon, open: ArrowUpRight01Icon, shelf: InboxIcon,
   review: Analytics01Icon, snooze: AlarmClockIcon, search: Search01Icon,
+  /* What a file IS, at a glance. ⚠️ The point is not decoration: a list of
+     Everything hits is a column of identical rows, and the icon is the only
+     part of a row you read without reading it. See file-kind.ts for the map. */
+  code: SourceCodeIcon, image: Image01Icon, pdf: Pdf01Icon, zip: Zip01Icon,
+  text: Txt01Icon, doc: Doc01Icon, sheet: Xls01Icon, slides: Ppt01Icon,
+  audio: Mp301Icon, video: Video01Icon, exe: ComputerTerminal01Icon,
+  app: Rocket01Icon,
 };
 export type TaskIcon = keyof typeof icons;
 

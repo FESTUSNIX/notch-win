@@ -21,7 +21,8 @@ import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
-import { Palette, type Action } from "./palette";
+import { Palette, TIER, type Action } from "./palette";
+import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
@@ -79,7 +80,19 @@ function paintClockChoice() {
   }
 }
 
-const surface = new IslandSurface(open => { if (open) render(); });
+/* ⚠️ A FOLD CLOSES THE PALETTE, and it has to.
+ *
+ * The palette held the panel open through `editing`, which `input(true)` sets —
+ * but `input` can fail (Windows refuses the foreground), and `pinFor`'s timer
+ * expires either way. So the island could fold with the palette still `open`:
+ * the host was never hidden, the shortcut hit `show()`'s "already open" branch
+ * and did nothing, and hovering the island brought back a palette that had
+ * never been given the caret — visible, and impossible to type in or click.
+ * Folding is the one signal that covers every route into that state. */
+const surface = new IslandSurface(open => {
+  if (open) render();
+  else if (palette.open) void palette.hide();
+});
 paintIcon(get("open-palette"), "search");
 paintIcon(get("pin"), "pin");
 paintIcon(get("surface-settings"), "settings");
@@ -474,6 +487,7 @@ palette.add(query => {
     keywords: "calculator maths sum",
     icon: "copy",
     hint: "Sum",
+    tier: TIER.answer,
     pinned: true,
     volatile: true,
     /* ⚠️ Copied through Rust, not `navigator.clipboard`. The palette hands
@@ -481,6 +495,39 @@ palette.add(query => {
      * on an unfocused document — silently, in a promise nobody awaits. */
     run: () => { void call("copy_text", { text: sum.value }).catch(() => {}); },
   }];
+});
+
+/* The applications. ⚠️ Fetched ONCE and searched in here, not asked per
+ * keystroke: the list is a shell call per shortcut to build and it does not
+ * change while you are typing. The array starts empty, so the provider simply
+ * answers nothing until the first fetch lands.
+ *
+ * ⚠️ Nothing on an empty query. Apps outrank everything except an answer
+ * (see TIER), so offering them with the field blank would bury the screens and
+ * the day under a hundred and fifty applications you did not ask for — and the
+ * blank field is where recency does its work. */
+let installed: { name: string; path: string; icon: string | null }[] = [];
+palette.add(query => {
+  if (!query) return [];
+  return installed.map(app => ({
+    id: `app:${app.path}`,
+    title: app.name,
+    note: "application",
+    keywords: "app open launch program",
+    icon: "app" as const,
+    art: app.icon ?? undefined,
+    hint: "App",
+    tier: TIER.app,
+    run: () => { void call("launch_app", { path: app.path }).catch(() => {}); },
+    more: () => [
+      { id: `app:open:${app.path}`, title: "Open", keywords: "launch run start",
+        icon: "open" as const, art: app.icon ?? undefined,
+        run: () => { void call("launch_app", { path: app.path }).catch(() => {}); } },
+      { id: `app:reveal:${app.path}`, title: "Show the shortcut",
+        keywords: "explorer folder locate", icon: "folder" as const,
+        run: () => { void call("found_reveal", { path: app.path }).catch(() => {}); } },
+    ],
+  }));
 });
 
 /* Everything, if it is running. ⚠️ A LATE provider: the answer is a round
@@ -508,17 +555,19 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
         /* The path is searched as well, at half weight, so `src pal` finds
          * what `pal` alone would bury. */
         keywords: `${hit.full} file find everything`,
-        icon: hit.folder ? "folder" : "file",
+        /* ⚠️ What it IS, not just that it is a file. A page of hits is a
+         * column of identical rows, and the icon is the only part of one you
+         * read without reading it. See file-kind.ts. */
+        icon: iconFor(hit.name, hit.folder),
         hint: "Found",
+        tier: TIER.file,
         volatile: true,
-        /* ⚠️ Onto the SHELF, not opened. This is the line the palette is
-         * drawn on: Everything and Flow already open files better than this
-         * can, and what the island has that they do not is somewhere to put
-         * the thing down. Open is one Tab away. */
-        run: () => { void call("shelf_add_paths", { paths: [hit.full] }).catch(() => {}); },
+        /* ⚠️ OPEN. It shelved at first, on the argument that parking a
+         * thing is what the island has and a launcher does not — which is true
+         * about the island and wrong about the keystroke. Enter on a file means
+         * open it; everything else is a Tab away. */
+        run: () => { void call("found_open", { path: hit.full }).catch(() => {}); },
         more: () => [
-          { id: `found:open:${hit.full}`, title: "Open", keywords: "launch run",
-            icon: "open", run: () => { void call("found_open", { path: hit.full }).catch(() => {}); } },
           { id: `found:reveal:${hit.full}`, title: "Show in folder",
             keywords: "explorer reveal locate", icon: "folder",
             run: () => { void call("found_reveal", { path: hit.full }).catch(() => {}); } },
@@ -669,6 +718,14 @@ window.addEventListener("pointerup", () => { dragStart = null; });
 
 async function boot() {
   await surface.boot();
+  /* ⚠️ Not awaited. The list takes a second or so to build on the Rust side
+   * and nothing on screen depends on it — the palette simply has no
+   * applications until it lands, which is the correct behaviour for the first
+   * second of a run anyway. Awaiting it here would hold the island's first
+   * paint behind a Start Menu walk. */
+  void call<typeof installed>("list_apps")
+    .then(list => { installed = list; })
+    .catch(() => { /* no applications is a palette without apps, not an error */ });
   if (native) {
     // Which display it landed on, said by the pill itself.
     await listen<string>("island:moved", event => say("Moved to", event.payload));

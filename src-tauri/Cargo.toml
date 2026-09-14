@@ -26,6 +26,9 @@ tokio = { version = "1.53.1", features = ["macros", "sync", "time"] }
 # Windows. native-tls is schannel here — already present, nothing to install.
 reqwest = { version = "0.13", default-features = false, features = ["json", "http2", "charset", "native-tls", "form"] }
 base64 = "0.23.1"
+# Application icons come out of the shell as raw pixels; PNG is about
+# sevenfold smaller than sending two hundred of them as RGBA.
+png = "0.18"
 windows-registry = "0.6.1"
 # ⚠️ Must track the version `windows` itself depends on (0.62.2 → 0.3.2), or
 # IAsyncOperation here is a different type from the one its APIs return.
