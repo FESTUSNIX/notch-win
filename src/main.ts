@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { GLYPHS } from "./glyphs";
+import { spoken } from "./media-format";
 import {
   arcPath,
   DPX,
@@ -55,8 +56,17 @@ interface ProviderActivity {
   state: Activity;
 }
 
+/** A run that has just ended. Rust emits this once, on the tick it happens. */
+interface Finished {
+  provider: string;
+  project: string;
+  seconds: number;
+}
+
 let snapshots: Snapshot[] = [];
 let activity = new Map<string, Activity>();
+/** The last run to finish, until it has been looked at. */
+let finished: Finished | null = null;
 /** Which way each window's reading last moved, so the card can animate it in
  *  the direction it went. Rebuilt when readings land, not when the card is
  *  re-rendered — a hover moving between cells must not replay the animation. */
@@ -515,6 +525,7 @@ function paintShape() {
 
 function render() {
   stage.dataset.edge = edge;
+  paintPip();
 
   const ringHost = document.getElementById("rings") as HTMLDivElement;
   ringHost.innerHTML = snapshots.map(cellHTML).join("");
@@ -615,6 +626,26 @@ function reportRects() {
   invoke("set_interactive_rects", { rects }).catch(() => {});
 }
 
+/* ------------------------------------------------------------------- pip */
+
+/** What the collapsed pill says.
+ *
+ *  Three states and no more: the shape is 83 x 10 CSS pixels and there is room
+ *  for one fact. `done` outranks `working` on purpose — a second session
+ *  starting does not un-finish the first one, and the finish is the news. */
+function paintPip() {
+  const pip = document.getElementById("pip");
+  if (!pip) return;
+  const working = [...activity.values()].includes("working");
+  const state = finished ? "done" : working ? "working" : "idle";
+  if (pip.dataset.state !== state) pip.dataset.state = state;
+  pip.title = finished
+    ? `${finished.project} finished in ${spoken(finished.seconds)}`
+    : working
+      ? "Working"
+      : "";
+}
+
 /* ----------------------------------------------------------------- hover */
 
 /** Folding shut waits; opening does not. Unfolding is a bigger movement than
@@ -655,6 +686,13 @@ function onHover(hover: boolean, x: number, y: number) {
   const apply = () => {
     const changed = expanded !== hover;
     expanded = hover;
+    // Opening the notch *is* the acknowledgement. There is no dismiss control
+    // on a 10px pill, and asking for one would mean a second gesture to clear
+    // something you have already read.
+    if (hover && finished) {
+      finished = null;
+      paintPip();
+    }
     stage.dataset.state = hover ? "expanded" : "collapsed";
     fold.setTarget(hover ? 1 : 0);
     if (!hover) hoveredIndex = -1;
@@ -699,6 +737,12 @@ function onHover(hover: boolean, x: number, y: number) {
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
+  // Hidden together with the island, and animated the same way — the class
+  // drives a transform on #stage, which nothing else writes to.
+  await listen<boolean>("chrome:hidden", event => {
+    document.documentElement.classList.toggle("chrome-hidden", event.payload);
+  });
+
   stage.dataset.state = "collapsed";
   fold.snap(0);
 
@@ -763,6 +807,11 @@ async function boot() {
   await listen<ProviderActivity[]>("notch:activity", (event) => {
     activity = new Map(event.payload.map((a) => [a.provider, a.state]));
     render();
+  });
+
+  await listen<Finished>("notch:finished", (event) => {
+    finished = event.payload;
+    paintPip();
   });
 
   // The first poll answers before this listener exists, so the event alone

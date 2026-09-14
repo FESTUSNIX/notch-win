@@ -22,6 +22,27 @@ pub struct Config {
     pub task_edge: Edge,
     pub task_along: f64,
     pub task_visible: bool,
+    /// 24-hour clock on the resting pill. Default true: the app is written in
+    /// a place that reads 14:32, and the platform locale is not a safe proxy
+    /// (a Polish install of Windows set to en-US reports a 12-hour preference
+    /// for someone who has never used one).
+    pub clock_24h: bool,
+    /// Where the resting pill's weather module reports for. Empty means the
+    /// module is off and nothing is ever requested -- see weather.rs on why
+    /// this is typed rather than resolved from the IP address.
+    pub weather_place: String,
+    /// Resolved once from `weather_place` and kept, so the ordinary case is one
+    /// request every half hour to one host rather than two.
+    pub weather_lat: Option<f64>,
+    pub weather_lon: Option<f64>,
+    /// Which display each window is welded to, as `win::Screen::id`.
+    ///
+    /// `None` means "wherever it already is", which is what every install had
+    /// before this existed and what a single-monitor machine should keep — a
+    /// recorded id that later goes missing is a display that is merely off, and
+    /// placement falls back rather than clearing it.
+    pub monitor: Option<String>,
+    pub task_monitor: Option<String>,
     /// When Claude's endpoint may next be asked, as unix milliseconds.
     ///
     /// ⚠️ Persisted on purpose. The endpoint answers 429 with `Retry-After: 0`,
@@ -31,6 +52,14 @@ pub struct Config {
     /// how a development session digs itself into a rate limit it cannot get
     /// out of. This is `UsageArchive.saveBackoffUntil` in the macOS app.
     pub claude_backoff_until_ms: Option<i64>,
+    /// Both notches taken off screen by the hide shortcut. Persisted so the
+    /// choice survives a restart — someone who hid the chrome to present or to
+    /// record did not ask for it back the next time the app launches.
+    pub chrome_hidden: bool,
+    pub shortcut_toggle: String,
+    pub shortcut_hide: String,
+    pub shortcut_capture: String,
+    pub shortcut_display: String,
 }
 
 impl Default for Config {
@@ -38,10 +67,23 @@ impl Default for Config {
         Self {
             edge: Edge::Right,
             along: 0.5,
-            task_edge: Edge::Left,
+            // The island is designed for the top edge; the usage notch keeps
+            // the right. An existing config keeps whatever it already chose.
+            task_edge: Edge::Top,
             task_along: 0.5,
             task_visible: true,
+            clock_24h: true,
+            weather_place: String::new(),
+            weather_lat: None,
+            weather_lon: None,
+            monitor: None,
+            task_monitor: None,
             claude_backoff_until_ms: None,
+            chrome_hidden: false,
+            shortcut_toggle: crate::shortcuts::DEFAULT_TOGGLE.into(),
+            shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
+            shortcut_capture: crate::shortcuts::DEFAULT_CAPTURE.into(),
+            shortcut_display: crate::shortcuts::DEFAULT_DISPLAY.into(),
         }
     }
 }

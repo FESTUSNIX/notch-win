@@ -44,7 +44,7 @@ impl TaskState {
                 .replace("$now", &Utc::now().to_rfc3339());
             snapshot = serde_json::from_str(&fixture).expect("bundled task fixture");
         } else {
-            match credentials::read() {
+            match credentials::read(credentials::TICKTICK) {
                 Ok(token) => snapshot.connected = token.is_some(),
                 Err(e) => snapshot.error = Some(e),
             }
@@ -245,7 +245,7 @@ async fn refresh_locked(app: &AppHandle, state: &TaskState) -> Result<(), String
     if crate::fixtures::enabled() {
         return Ok(());
     }
-    match credentials::read()? {
+    match credentials::read(credentials::TICKTICK)? {
         Some(token) => match collect(state, &token).await {
             Ok(snapshot) => {
                 publish(app, state, snapshot);
@@ -299,7 +299,7 @@ pub async fn connect_ticktick(
     // Validate before replacing a working account. No token ever crosses back
     // to either page, even when the API or Credential Manager fails.
     let snapshot = collect(&state, token).await?;
-    credentials::write(token)?;
+    credentials::write(credentials::TICKTICK, token)?;
     publish(&app, &state, snapshot);
     Ok(())
 }
@@ -312,7 +312,7 @@ pub async fn disconnect_ticktick(app: AppHandle, window: WebviewWindow) -> Resul
     }
     let state = app.state::<TaskState>();
     let _guard = state.gate.lock().await;
-    credentials::delete()?;
+    credentials::delete(credentials::TICKTICK)?;
     publish(&app, &state, TaskSnapshot::default());
     Ok(())
 }
@@ -321,7 +321,7 @@ fn token() -> Result<String, String> {
     if crate::fixtures::enabled() {
         return Err("Demo tasks are read-only in the native app.".into());
     }
-    credentials::read()?.ok_or_else(|| "Connect TickTick first.".into())
+    credentials::read(credentials::TICKTICK)?.ok_or_else(|| "Connect TickTick first.".into())
 }
 
 async fn fresh(

@@ -83,8 +83,7 @@ pub fn spawn(app: AppHandle, label: &'static str) {
                 let key = (work.left, work.top, work.right, work.bottom);
                 if last_work != Some(key) && !crate::drag::is_dragging() {
                     last_work = Some(key);
-                    let (edge, along) = crate::drag::current_for(&app, label);
-                    win::place(&window, edge, along);
+                    crate::drag::place_now(&app, &window);
                 }
             }
 

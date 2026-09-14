@@ -47,6 +47,10 @@ pub async fn set_task_input(window: tauri::WebviewWindow, active: bool) -> Resul
 pub struct Placement {
     edge: Edge,
     visible: bool,
+    /// Carried on the placement rather than as its own command: the island
+    /// already makes this round-trip at boot, and the pill needs the answer
+    /// before its first paint or it renders once in the wrong format.
+    clock24: bool,
 }
 
 #[tauri::command]
@@ -56,7 +60,24 @@ pub fn get_task_placement(app: AppHandle) -> Placement {
     Placement {
         edge: c.task_edge,
         visible: c.task_visible,
+        clock24: c.clock_24h,
     }
+}
+
+/// Twelve- or twenty-four-hour clock on the resting pill.
+#[tauri::command]
+pub fn set_clock_format(app: AppHandle, clock24: bool) -> Result<(), String> {
+    {
+        let state = app.state::<Settings>();
+        let mut c = state.0.lock().map_err(|_| "Settings are locked.")?;
+        if c.clock_24h == clock24 {
+            return Ok(());
+        }
+        c.clock_24h = clock24;
+        config::save(&c);
+    }
+    app.emit("tasks:placement", get_task_placement(app.clone()))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -66,7 +87,7 @@ pub fn set_task_placement(
     visible: bool,
     reset: bool,
 ) -> Result<(), String> {
-    let along = {
+    {
         let state = app.state::<Settings>();
         let mut c = state.0.lock().unwrap();
         c.task_edge = edge;
@@ -75,10 +96,9 @@ pub fn set_task_placement(
             c.task_along = 0.5;
         }
         config::save(&c);
-        c.task_along
-    };
+    }
     if let Some(window) = app.get_webview_window("tasks") {
-        win::place(&window, edge, along);
+        crate::drag::place_now(&app, &window);
         if visible {
             window.show()
         } else {
@@ -119,8 +139,7 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = app
         .get_webview_window("tasks")
         .expect("tasks declared in config");
-    let (edge, along) = crate::drag::current_for(app, "tasks");
-    win::place(&window, edge, along);
+    crate::drag::place_now(app, &window);
     window.set_ignore_cursor_events(true)?;
     if get_task_placement(app.clone()).visible {
         window.show()?;

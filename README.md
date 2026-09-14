@@ -12,13 +12,212 @@ translate it line by line.
 Stack: Tauri 2 (Rust) + vanilla TypeScript. Rust owns the window, the Win32
 calls and the providers; the notch itself is HTML and CSS.
 
-## TickTick task notch
+## The island
 
-A second notch starts on the **left** screen edge as a small resting pill.
-Hover to reveal the progress ring and task panel; move away to fold it with the
-same spring motion as the usage notch. Pin keeps it open; the close button or
-ring collapses it explicitly. Reduced-motion preferences are respected.
-Short lists use a shorter panel instead of an empty full-height card.
+A second surface starts at the **top** edge as a small pill. Hover to grow it
+into a panel; move away and it folds back with the same spring as the usage
+notch. Pin keeps it open, the close button collapses it, and reduced-motion
+preferences are respected. It is one shape throughout — the panel *is* the pill,
+grown — and it sizes itself to whatever screen is showing.
+
+It is a **wide, shallow bar** — about 970 x 160 — and it flares back out into
+the bezel at each end the way the usage notch does, so it reads as part of the
+screen edge rather than a panel parked against it. The tabs sit at the top-left
+and the window controls at the top-right, on one strip.
+
+Four screens, switched from the rail along the bottom — or by **scrolling
+anywhere in the panel** that is not a scrollable list:
+
+| screen | what it holds |
+|---|---|
+| **Home** | the default: now playing, the week ahead and the next couple of tasks, on one row |
+| **Today** | the Day Card — tasks, the composer, the focus timer |
+| **Media** | whatever is playing, with artwork, position and transport controls |
+| **Calendar** | Google Calendar as an **agenda** or a **seven-day grid** |
+| **System** | volume, screen brightness, audio output, and what is connected over Bluetooth |
+
+On Home every column is a live, stripped view of the screen it names: the
+transport controls work, tasks can be ticked off, and each column heading opens
+the full screen behind it.
+
+**Collapsed, the island shows one thing: whatever is most live.** A meeting
+about to start beats a running focus timer, which beats something playing, which
+beats the day's tally. The screen that has something live raises a dot on its
+tab.
+
+### Four global shortcuts
+
+`Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+N` opens it with the
+caret already in the composer, so a thought reaches TickTick from anywhere.
+`Ctrl+Alt+H` takes it and the usage notch off screen — the island sits where an
+editor keeps its tab strip, so getting it out of the way had to be one key.
+`Ctrl+Alt+M` sends the island to the next display. All four are rebindable in
+the task editor, and the choice to hide survives a restart.
+
+Hiding and showing **slide** out through the bezel rather than blinking, and the
+island **hides itself** whenever something is genuinely fullscreen — a game, a
+presentation, a shared screen. That uses the same signal Windows uses to decide
+whether a notification may appear, so a merely maximised editor does not count.
+
+However it got hidden, **hovering the screen edge brings it back** for as long
+as the pointer stays there, the way an auto-hiding taskbar does. It leaves a few
+pixels of hot strip behind for exactly that.
+
+### When a run finishes
+
+The usage notch is a separate window from the island on purpose: it is
+click-through chrome reporting on something running elsewhere, while the island
+is a surface you type into.
+
+Collapsed it is an 83 × 10px pill with room for exactly one fact, and it
+carries the one worth having. A **breathing white dot** means an agent is
+working. A **green dot** means a run has just finished — and it stays there
+until you open the notch, because the whole point is the run nobody was
+watching. Windows also raises a toast naming the project and how long it took
+(`akcesfonia finished · Claude Code ran for 4m 12s.`).
+
+A finish is a session that stopped writing its transcript while its process is
+still alive. Closing a terminal mid-run raises nothing.
+
+### Displays
+
+On more than one monitor, the island and the usage notch each remember which
+screen they are welded to — by the panel's own hardware id, not by
+`\\.\DISPLAY1`, which is an adapter slot that renumbers when you unplug
+something. Displays are named from their EDID, so the picker in Settings says
+**DELL U2724D** and **MSI G24C4** rather than "Generic PnP Monitor" twice.
+
+`Ctrl+Alt+M` moves the island across; the tray moves either window; Settings has
+a picker for each. A screen that is asleep or on another input is *absent*, not
+gone: placement falls back to where the window already is and keeps the setting,
+so it comes home when the display does. Plugging a monitor in or waking from
+sleep re-places both windows within three seconds.
+
+### System
+
+A bento of tiles: volume and screen brightness on Control-Centre-style capsules
+you can grab anywhere rather than aiming at a thumb, the audio output and the
+Bluetooth devices, **CPU, memory, disk, network and uptime**, and the day's app
+time. There is a lock button. When something connects over Bluetooth, the island
+says so for a few seconds.
+
+Device lists show **what is in use** and put the rest behind one press, so the
+screen is the same size with three outputs or thirty — opening a list grows the
+island rather than being clipped by it. The meters turn amber past 80% and red
+past 92%.
+
+Two honest limits. Brightness goes over **DDC/CI** to the monitor, which plenty
+of desktop panels simply refuse — you get a plain sentence instead of a dead
+slider. And Windows has never published an API for changing the default audio
+output, so that half goes through the same undocumented interface every other
+switcher uses; failures are reported rather than swallowed. The Bluetooth list
+is a **readout**: there is no supported way to connect or disconnect a device
+from another process.
+
+### Where the day went
+
+The System screen shows a breakdown of the applications you have actually been
+in today — a stacked bar with the top few named. It is **local only**, records
+nothing but the process name (never window titles), and **stops counting when
+you stop typing**, so a machine left on overnight does not claim fourteen hours
+of work.
+
+### At rest, it is a clock
+
+Collapsed, the island shows whatever is most live — a track, a running timer, a
+meeting within half an hour. When nothing is, it settles into a clock, and a
+player left **paused for 30 seconds** hands the pill back to it.
+
+At rest it is three slots:
+
+```
+[ 14 ]      14:53      [ ☁ 17° ]
+[ SEP ]
+```
+
+The date is the numeral over the month — the number is what you are looking for,
+and stacked it costs a third of the width "Mon, Sep 14" did. The time is
+**24-hour by default**, switchable to 12 in the island's own settings (the gear,
+then **Clock**), and the choice is saved.
+
+⚠️ The clock sits **dead centre whatever the sides weigh**. A clock that slides
+as the third slot changes is one the eye has to find before it can read.
+
+### The third slot
+
+One module at a time, chosen by what is true right now. Each answers a single
+question and says nothing the rest of the time, so the slot is empty on a quiet
+afternoon and busy when something is happening.
+
+A glyph and one number — never a sentence. After a week you are reading the
+icon and the colour; the sentence is on the module's own screen, one hover away.
+
+| Module | Says | When |
+|---|---|---|
+| Disk | `97%` in red | past 92% |
+| CPU / Memory | `94%` in amber | past 90% |
+| Agents | `2` | Claude Code is writing |
+| Next event | `1h` | 30 minutes to 3 hours out |
+| Tasks | `4` | there is a day to report |
+| Weather | `17°` | a place is configured |
+
+**News holds the slot; everything else rotates**, six seconds each. But
+severity only decides whether something *can* hold the strip — **time decides
+how long**. A reading owns it for two minutes, then drops into the rotation,
+where it still leads the cycle.
+
+That second half matters more than it sounds. A disk sitting at 96% until you
+buy a new one is a fact about the machine, not an alert; without the decay the
+strip carries a permanent red warning and nothing else is ever seen, which is
+the definition of a warning you stop reading. It re-arms if the figure gets
+materially worse — five points, not one, because one point is the disk
+creeping.
+
+Two thresholds are deliberately higher than the System screen's own meters: CPU
+and memory speak at **90%**, not the 80% that turns a meter amber. A developer's
+machine sits at 80% with an editor and a browser open and is perfectly well; a
+pill that says so all day is one that is ignored on the day it matters.
+
+Weather is **off until you type a place** (task editor → Weather). Nothing is
+requested while the field is empty. It uses Open-Meteo, which needs no key and no
+account, and the place is geocoded once into coordinates that are then cached —
+so the ordinary case is one request every half hour. Resolving the location from
+your IP instead would mean telling a third party where this machine is on every
+launch, to save one text field.
+
+When a digit changes it rises into place through a soft blur — only the digits
+that actually moved, so 14:32 to 14:33 animates one character rather than
+re-popping the whole clock once a minute.
+
+### Media
+
+Read from Windows' own transport controls, the same ones the media keys drive,
+so **Spotify, a YouTube tab, VLC and anything else** appear without an account,
+an API key or a premium tier. Artwork on the left, everything else beside it.
+Play/pause answers immediately, and the progress bar is drawn as a **waveform**
+you can click to seek — where the player allows it.
+
+That waveform is **synthetic**: Windows hands over metadata, never audio, so
+there is nothing to analyse. It is generated from the track's own title and
+artist, so the shape is stable and different tracks look different rather than
+being noise redrawn every second. It only appears at all when the player
+actually reports a timeline.
+
+### Calendar
+
+Read-only Google Calendar. Setting it up is a one-time job in the task editor:
+
+1. In Google Cloud Console, enable the **Google Calendar API** and create an
+   OAuth client of type **Desktop app**.
+2. Paste its client ID and secret into **tray → Tasks & TickTick… → Google
+   Calendar** and press Connect. Your normal browser opens to sign in; Codenotch
+   asks only for read access and never sees your password.
+3. Credentials go into Windows Credential Manager beside the TickTick token.
+
+Events refresh every five minutes across every calendar you have selected, up to
+eight. A meeting with a Meet, Zoom or Teams link gets a Join button.
+
+Short lists use a shorter island instead of an empty full-height panel.
 
 The panel shows **one day as one list** — today's work and anything overdue,
 which carries a small amber age badge in place rather than sitting behind a
@@ -123,6 +322,14 @@ That produces two things under `src-tauri/target/release/`:
 | `codenotch.exe` | the app itself. Double-click it; that is the whole install. |
 | `bundle/nsis/Codenotch_0.1.0_x64-setup.exe` | an installer, if you would rather have Start-menu and uninstall entries. |
 
+⚠️ **`cargo build --release` is not a shortcut for that**, however much it
+looks like one. There is no `custom-protocol` feature in `Cargo.toml`, which is
+what the Tauri CLI passes to switch a build from the dev server to the embedded
+frontend — so building with cargo alone produces an exe that still points at
+`http://localhost:1420`. With no vite server running, both windows land on
+`chrome-error://chromewebdata/` and the app is two blank rectangles. Nothing
+reports an error; it just looks like the frontend broke.
+
 Then turn on **Settings → Start with Windows** and you never launch it by hand
 again. It writes one `Run` key under `HKCU`, pointing at wherever the exe
 actually is — so if you move the exe, toggle it off and on.
@@ -205,6 +412,11 @@ the last 8 seconds means it is working. Nothing of yours has to be configured.
 What that cannot distinguish is a session **blocked on you** from one that has
 simply finished — both stop writing. That needs Claude Code's hooks, which is
 why the other port ships a separate hook executable, and it is not built here.
+
+It *can* see a run **end**, which is the transition from writing to quiet on a
+session whose process is still alive, and that is what the green dot and the
+toast report. The duration subtracts the 8-second window, or every run would be
+reported eight seconds longer than it was.
 
 One good thing the Windows file does carry: `procStart`, the process's own
 creation FILETIME. That makes the pid-reuse check exact against
@@ -292,7 +504,7 @@ is Credential Manager, so that one still needs a `CredReadW`.
 | Provider | Windows | verified |
 |---|---|---|
 | Claude | `%USERPROFILE%\.claude\.credentials.json` | ✅ |
-| Claude sessions | `%USERPROFILE%\.claude\sessions\<pid>.json` | ✅ same shape as macOS |
+| Claude sessions | `%USERPROFILE%\.claude\sessions\<pid>.json` | ✅ `cwd` names the project on a finish |
 | Codex | `%USERPROFILE%\.codex\auth.json` | ✅ |
 | Antigravity | `%APPDATA%\Antigravity\User\globalStorage\state.vscdb` | ✅ |
 | Cursor | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | inferred from VS Code |

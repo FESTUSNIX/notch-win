@@ -1,4 +1,50 @@
 :root { color-scheme: dark; font-family:"Segoe UI Variable", "Segoe UI",system-ui,sans-serif; color:#fff; --accent:#00ff88; --dim:#969696; --line:#262626; --task-indent:17px; --row-height:52px; }
+
+/* ── Motion tokens (transitions.dev) ─────────────────────────────────────
+   One scale for the whole surface. Every duration and easing below is chosen
+   by what the motion *does*, not by what number looked right in isolation:
+   a thing opening is slower than the same thing closing, hover-in is quicker
+   than hover-out, and anything that moves once a minute all day gets the
+   gentlest treatment on the scale. */
+:root {
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+
+  --distance-micro: 4px;
+  --distance-small: 6px;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+  --distance-large: 30px;
+
+  --scale-large: 0.96;
+  --scale-medium: 0.97;
+  --scale-small: 0.98;
+  --scale-tiny: 0.99;
+
+  --blur-small: 2px;
+  --blur-medium: 3px;
+  --blur-large: 8px;
+
+  /* Number pop-in, tuned for a clock rather than for a balance: the stock
+     8px/500ms rise is a lot of travel for one digit that moves once a minute
+     and sits in the corner of your eye the rest of the time. */
+  --digit-dur: var(--duration-slow);
+  --digit-distance: var(--distance-small);
+  --digit-blur: var(--blur-small);
+  --digit-ease: var(--ease-bounce);
+}
 * { box-sizing:border-box; }
 html,body { margin:0; background:transparent; overflow:hidden; font-size:13px; }
 button,input,select { font:inherit; }
@@ -11,42 +57,98 @@ input[type=checkbox] { accent-color:var(--accent); width:14px; height:14px; marg
 input:disabled { cursor:default; }
 h1 { margin:0; }
 #notch-shell { position:relative; user-select:none; }
-#task-panel { position:absolute; border:1px solid #202020; border-radius:20px; background:#000; display:flex; flex-direction:column; overflow:hidden; opacity:0; visibility:hidden; }
-.edge-right #task-panel { left:0; }
-.edge-left #task-panel { right:0; transform:translateX(-6px); }
-.is-open #task-panel { opacity:1; visibility:visible; transform:translateX(0); }
-#task-rail { position:absolute; }
-.edge-right #task-rail { right:0; }
-.edge-left #task-rail { left:0; }
-#rail-shape { position:absolute; fill:#000; pointer-events:none; }
-.edge-left #rail-shape { transform:scaleX(-1); }
-#focus-ring { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:5px; padding:0; background:transparent; touch-action:none; }
-#focus-ring svg { width:46px; height:46px; overflow:visible; }
-.ring-track { fill:none; stroke:#303030; stroke-width:7; }
-/* The ring sweeps rather than jumps: the same beat as the panel's own rail, so
-   the payoff is visible with the panel closed. */
-#ring-progress { fill:none; stroke:var(--accent); stroke-width:4; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; stroke-dasharray:0 100; transition:stroke-dasharray 460ms cubic-bezier(.22,.68,.24,1); }
-.target { fill:none; stroke:white; stroke-width:2; }
-.target-dot { fill:white; }
-#rail-count { font-weight:700; font-size:17px; font-variant-numeric:tabular-nums; }
-.rail-caption { color:var(--dim); font-size:10px; }
-.stale #ring-progress { opacity:.4; }
 #notch-shell [hidden] { display:none!important; }
 
-/* ── Header ──────────────────────────────────────────────────────────────
-   Three lines, all thin: title + controls, a meta line carrying the date and
-   what is left, and the progress rail. The panel's only progress readout. */
-.day-head { padding:17px 15px 0; flex-shrink:0; }
-.day-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-#day-title { font-size:21px; font-weight:600; letter-spacing:-.45px; line-height:1.15; }
-.panel-actions { display:flex; align-items:center; gap:1px; }
+/* ── The island ──────────────────────────────────────────────────────────
+   One rectangle. Width, height and corner radius are written every frame by
+   island-surface.ts from a single spring; the two content layers cross-fade
+   inside it and `overflow: hidden` does the rest. Nothing here positions the
+   layers relative to the animating box — they are pinned to the edge the
+   island is welded to, so the content stays still while the shape grows. */
+/* The shape is a clip path, not a border radius — the island flares back OUT
+   to the bezel at each end the way the usage notch does, which no radius can
+   describe. island-surface.ts writes the path every frame; `overflow: hidden`
+   still clips the layers to the box, and the clip then takes the corners.
+
+   ⚠️ No drop shadow. A filter is applied before clipping, so it would be drawn
+   round the rectangle and then cut away by the clip — and the sibling notch
+   has none either. The shape carries the separation. */
+#island { position:absolute; overflow:hidden; background:#000;
+  clip-path:url(#island-clip); will-change:width,height,transform; }
+#island-defs { position:absolute; width:0; height:0; overflow:hidden; }
+/* Placed in pixels by island-surface.ts every frame — see the note there on
+   why neither layer is anchored with a percentage. */
+#island-collapsed, #island-expanded { position:absolute; left:0; top:0; }
+#island-expanded { display:flex; flex-direction:column; opacity:0; visibility:hidden; }
+
+/* ── Collapsed: the live activity ──────────────────────────────────────── */
+#island-collapsed { display:flex; align-items:center; gap:10px; padding:0 14px; cursor:pointer; }
+/* A vertical island's pill is ~35px across: there is no room for a line of
+   text, and `align-items: center` in a column lets the copy size to its own
+   max-content and hang out of the shape. The glyph carries the activity there;
+   the label is what the expanded panel is for. */
+[data-edge=left] #island-collapsed, [data-edge=right] #island-collapsed { flex-direction:column; padding:14px 0; justify-content:center; }
+[data-edge=left] .pill-copy, [data-edge=right] .pill-copy,
+[data-edge=left] .pill-eq, [data-edge=right] .pill-eq { display:none; }
+[data-edge=left] .pill-lead, [data-edge=right] .pill-lead { width:26px; height:26px; }
+.pill-lead { display:grid; place-items:center; width:24px; height:24px; flex-shrink:0; color:#c9c9c9; }
+.pill-lead svg { width:18px; height:18px; }
+.pill-art { width:24px; height:24px; border-radius:6px; object-fit:cover; }
+.pill-ring { width:24px; height:24px; }
+.pill-ring .trk { fill:none; stroke:#2a2a2a; stroke-width:3.5; }
+.pill-ring .arc { fill:none; stroke-width:3.5; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center;
+  transition:stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out); }
+.pill-copy { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; line-height:1.2; }
+.pill-label { font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pill-label.muted { color:#6a6a6a; font-weight:400; }
+.pill-value { font-size:10.5px; color:#7d7d7d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  font-variant-numeric:tabular-nums; }
+/* Only animates while something is genuinely playing; a frozen equaliser
+   would say "playing" about a paused track. */
+.pill-eq { display:flex; align-items:flex-end; gap:2px; height:13px; flex-shrink:0; }
+.pill-eq i { width:2.5px; height:4px; border-radius:2px; background:#4a4a4a; }
+.pill-eq.on i { background:var(--accent); animation:eq 900ms ease-in-out infinite; }
+.pill-eq.on i:nth-child(2) { animation-delay:-300ms; }
+.pill-eq.on i:nth-child(3) { animation-delay:-600ms; }
+@keyframes eq { 0%,100% { height:4px; } 50% { height:12px; } }
+
+/* ── Expanded ─────────────────────────────────────────────
+   One thin strip of chrome, not two: the tabs sit at the top-left and the
+   window controls at the top-right, which is ~50px of height back and puts
+   where-you-are and where-you-can-go on the same line. */
+.island-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:9px 13px 5px; flex-shrink:0; cursor:grab; }
+.island-head:active { cursor:grabbing; }
+.island-tabs { display:flex; align-items:center; gap:2px; }
+.island-tab { position:relative; display:flex; align-items:center; gap:7px; padding:5px 9px;
+  border-radius:8px; color:#5c5c5c; font-size:11.5px; }
+.island-tab svg { width:15px; height:15px; flex-shrink:0; }
+.island-tab span { display:none; }
+.island-tab:hover { color:#c4c4c4; background:#101010; }
+.island-tab[aria-selected=true] { color:#fff; background:#181818; }
+/* The label appears only on the active tab: four labels is a menu, one is a
+   caption for where you are. */
+.island-tab[aria-selected=true] span { display:inline; }
+.island-tab.live::after { content:""; position:absolute; top:3px; right:4px; width:5px; height:5px;
+  border-radius:50%; background:var(--accent); }
+.island-tab.live[aria-selected=true]::after { display:none; }
+.panel-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; }
 .small-icon { width:26px; height:26px; padding:0; color:#565656; font-size:15px; line-height:1; }
 .small-icon:hover { color:#fff; background:#1a1a1a; }
-.day-meta { display:flex; gap:7px; font-size:11px; color:var(--dim); margin-top:2px; font-variant-numeric:tabular-nums; }
+.day-rail { height:2px; border-radius:2px; background:#1a1a1a; overflow:hidden; margin:10px 14px 0; flex-shrink:0; }
+.day-rail i { display:block; height:100%; width:0; border-radius:2px; background:var(--accent); transition:width var(--duration-very-slow) var(--ease-smooth-out); }
+.day-meta { display:flex; gap:7px; font-size:11px; color:var(--dim); padding:0 15px;
+  font-variant-numeric:tabular-nums; flex-shrink:0; }
 .day-meta span:empty { display:none; }
 .day-meta span+span:not(:empty)::before { content:"·"; margin-right:7px; color:#4a4a4a; }
-.day-rail { height:2px; border-radius:2px; background:#1a1a1a; overflow:hidden; margin-top:13px; }
-.day-rail i { display:block; height:100%; width:0; border-radius:2px; background:var(--accent); transition:width 460ms cubic-bezier(.22,.68,.24,1); }
+
+.screens { flex:1; min-height:0; display:flex; flex-direction:column; }
+.screen { flex:1; min-height:0; display:none; flex-direction:column; }
+.screen.active { display:flex; }
+.screen-body { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:8px 14px 12px;
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
+.screen-error { margin:10px 0 0; font-size:11px; color:#ffab83; line-height:1.5; }
+
 
 #surface-options { padding:10px 15px 10px; font-size:11px; color:var(--dim); flex-shrink:0; }
 #surface-options>span { display:block; }
@@ -66,10 +168,10 @@ h1 { margin:0; }
    keeps the label, the keyboard and the accessibility tree for free. */
 .check { position:relative; display:grid; place-items:center; width:var(--cs,22px); height:var(--cs,22px); border-radius:50%; flex-shrink:0; cursor:pointer; }
 .check input[type=checkbox] { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; border-radius:50%; }
-.check .disc { position:absolute; inset:0; border-radius:50%; border:1.8px solid var(--list,#565656); transition:border-color 200ms; pointer-events:none; }
-.check .fill { position:absolute; inset:0; border-radius:50%; background:var(--list,var(--accent)); transform:scale(0); transition:transform 300ms cubic-bezier(.34,1.58,.6,1); pointer-events:none; }
+.check .disc { position:absolute; inset:0; border-radius:50%; border:1.8px solid var(--list,#565656); transition:border-color var(--duration-quick) var(--ease-smooth-out); pointer-events:none; }
+.check .fill { position:absolute; inset:0; border-radius:50%; background:var(--list,var(--accent)); transform:scale(0); transition:transform var(--duration-fast) var(--ease-bounce); pointer-events:none; }
 .check svg { position:relative; width:62%; height:62%; overflow:visible; pointer-events:none; }
-.check svg path { fill:none; stroke:#04120b; stroke-width:3.1; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:18; stroke-dashoffset:18; transition:stroke-dashoffset 240ms cubic-bezier(.3,.75,.35,1) 70ms; }
+.check svg path { fill:none; stroke:#04120b; stroke-width:3.1; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:18; stroke-dashoffset:18; transition:stroke-dashoffset var(--duration-fast) var(--ease-smooth-out) var(--duration-micro); }
 .check .pulse { position:absolute; inset:-3px; border-radius:50%; border:2px solid var(--list,var(--accent)); opacity:0; pointer-events:none; }
 .check:hover .disc { border-color:var(--list,#8a8a8a); }
 .check:has(input:disabled) { cursor:default; }
@@ -77,21 +179,21 @@ h1 { margin:0; }
 .is-done .check .fill { transform:scale(1); }
 .is-done .check svg path { stroke-dashoffset:0; }
 .is-done .check .disc { border-color:var(--list,var(--accent)); }
-.is-done .check .pulse { animation:pulse 560ms cubic-bezier(.2,.7,.3,1); }
+.is-done .check .pulse { animation:pulse var(--duration-very-slow) var(--ease-smooth-out); }
 @keyframes pulse { from { transform:scale(.78); opacity:.85; } to { transform:scale(2.2); opacity:0; } }
 
 /* The line draws itself across the title, left to right, and follows a wrap. */
-.strike { background-image:linear-gradient(currentColor,currentColor); background-repeat:no-repeat; background-position:0 61%; background-size:0% 1.2px; transition:background-size 300ms cubic-bezier(.25,.7,.3,1),color 300ms; }
+.strike { background-image:linear-gradient(currentColor,currentColor); background-repeat:no-repeat; background-position:0 61%; background-size:0% 1.2px; transition:background-size var(--duration-fast) var(--ease-smooth-out),color var(--duration-fast) var(--ease-smooth-out); }
 .is-done .strike { background-size:100% 1.2px; color:#6e6e6e; }
 
 /* A finished row is held, then collapses out of the day. */
-.slot { display:grid; grid-template-rows:1fr; transition:grid-template-rows 340ms cubic-bezier(.25,.7,.3,1),opacity 200ms linear; }
+.slot { display:grid; grid-template-rows:1fr; transition:grid-template-rows var(--duration-medium) var(--ease-smooth-out),opacity var(--duration-quick) var(--ease-linear); }
 .slot>.slot-inner { min-height:0; }
 .slot.gone { grid-template-rows:0fr; opacity:0; }
 /* Only while collapsing — the completion pulse has to escape the row. */
 .slot.gone>.slot-inner { overflow:hidden; }
 
-.day-row { display:flex; align-items:center; gap:13px; min-height:var(--row-height); padding:7px 9px; border-radius:12px; transition:background-color 130ms; }
+.day-row { display:flex; align-items:center; gap:13px; min-height:var(--row-height); padding:7px 9px; border-radius:12px; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
 .day-row:hover { background:#0e0e0e; }
 .day-row.nested { min-height:0; padding:4px 9px; }
 .day-row.ghost { opacity:.5; }
@@ -119,18 +221,18 @@ h1 { margin:0; }
    #task-list-content so a redraw cannot destroy a half-typed task. */
 /* Pinned above the footer, never inside the scroller: a field you have to
    scroll to find is not a field that is ready. */
-#inline-composer { display:flex; align-items:center; gap:13px; min-height:var(--row-height); margin:0 7px; padding:7px 9px; border-radius:12px; background:transparent; flex-shrink:0; border-top:1px solid #161616; border-top-left-radius:0; border-top-right-radius:0; transition:background-color 160ms ease,box-shadow 200ms ease; }
+#inline-composer { display:flex; align-items:center; gap:13px; min-height:var(--row-height); margin:0 7px; padding:7px 9px; border-radius:12px; background:transparent; flex-shrink:0; border-top:1px solid #161616; border-top-left-radius:0; border-top-right-radius:0; transition:background-color var(--duration-quick) var(--ease-smooth-out),box-shadow var(--duration-quick) var(--ease-smooth-out); }
 #inline-composer:hover { background:#0b0b0b; }
 #inline-composer:focus-within { background:#0c0c0c; box-shadow:inset 0 0 0 1px #24523c; }
-#inline-composer .plus { width:22px; height:22px; border-radius:50%; border:1.5px dashed #333; display:grid; place-items:center; font-size:14px; line-height:1; color:#4f4f4f; flex-shrink:0; transition:border-color 180ms,color 180ms,transform 240ms cubic-bezier(.34,1.5,.6,1); }
+#inline-composer .plus { width:22px; height:22px; border-radius:50%; border:1.5px dashed #333; display:grid; place-items:center; font-size:14px; line-height:1; color:#4f4f4f; flex-shrink:0; transition:border-color var(--duration-quick) var(--ease-smooth-out),color var(--duration-quick) var(--ease-smooth-out),transform var(--duration-fast) var(--ease-bounce); }
 #inline-composer:hover .plus { border-color:#414141; color:#6b6b6b; }
 #inline-composer:focus-within .plus { border-color:var(--accent); color:var(--accent); border-style:solid; transform:rotate(90deg); }
 #inline-title { flex:1; min-width:0; background:transparent; border:0; color:#fff; font-size:15px; padding:0; }
 #inline-title:focus-visible { outline:none; }
 #inline-title::placeholder { color:#494949; }
-.enter-hint { font-size:10px; color:#4d7a63; border:1px solid #24523c; border-radius:6px; padding:1px 5px; line-height:1.4; flex-shrink:0; opacity:0; transform:translateX(4px); transition:opacity 180ms ease,transform 180ms cubic-bezier(.25,.7,.3,1); }
+.enter-hint { font-size:10px; color:#4d7a63; border:1px solid #24523c; border-radius:6px; padding:1px 5px; line-height:1.4; flex-shrink:0; opacity:0; transform:translateX(4px); transition:opacity var(--duration-quick) var(--ease-smooth-out),transform var(--duration-quick) var(--ease-smooth-out); }
 #inline-composer:focus-within .enter-hint { opacity:1; transform:none; }
-#composer-options { opacity:0; font-size:12px; width:22px; height:22px; transition:opacity 160ms; }
+#composer-options { opacity:0; font-size:12px; width:22px; height:22px; transition:opacity var(--duration-quick) var(--ease-smooth-out); }
 #inline-composer:hover #composer-options,#inline-composer:focus-within #composer-options { opacity:1; }
 #composer-fields { display:flex; gap:6px; padding:0 16px 8px 51px; flex-shrink:0; }
 #composer-fields select,#composer-fields input { flex:1; min-width:0; background:#111; border:1px solid #262626; border-radius:7px; color:#ccc; font-size:11px; padding:5px 7px; }
@@ -141,7 +243,7 @@ h1 { margin:0; }
 #task-done { margin:4px 3px 2px; border-top:1px solid #161616; padding-top:5px; }
 .day-done-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:8px 9px; border-radius:10px; font-size:12px; color:#6e6e6e; }
 .day-done-toggle:hover { background:#0e0e0e; color:#9a9a9a; }
-.day-done-toggle .cv { display:inline-block; font-size:9px; transition:transform 200ms cubic-bezier(.25,.7,.3,1); }
+.day-done-toggle .cv { display:inline-block; font-size:9px; transition:transform var(--duration-fast) var(--ease-smooth-out); }
 .day-done-toggle[aria-expanded=true] .cv { transform:rotate(90deg); }
 #task-done .day-row { min-height:38px; }
 #task-done .day-row .task-title { font-size:13px; }
@@ -157,15 +259,17 @@ h1 { margin:0; }
 .clear-ring .trk { stroke:#1c1c1c; }
 .clear-ring .arc { stroke:var(--accent); stroke-linecap:round; stroke-dasharray:208; stroke-dashoffset:208; transform:rotate(-90deg); transform-origin:center; }
 .clear-ring .mark { fill:none; stroke:var(--accent); stroke-width:5.6; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:39; stroke-dashoffset:39; }
-.day-clear.played .arc { stroke-dashoffset:0; transition:stroke-dashoffset 760ms cubic-bezier(.3,.72,.28,1) 100ms; }
-.day-clear.played .mark { stroke-dashoffset:0; transition:stroke-dashoffset 420ms cubic-bezier(.3,.75,.35,1) 700ms; }
+.day-clear.played .arc { stroke-dashoffset:0; transition:stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out) var(--duration-micro); }
+/* Starts while the ring is still closing, not after it has stopped: the
+   overlap is what makes the two strokes read as one gesture. */
+.day-clear.played .mark { stroke-dashoffset:0; transition:stroke-dashoffset var(--duration-fast) var(--ease-smooth-out) calc(var(--duration-slow) + var(--duration-micro)); }
 .day-clear h3 { margin:0; font-size:18px; font-weight:600; letter-spacing:-.3px; }
 .day-clear p { margin:0; font-size:12px; color:#7d7d7d; font-variant-numeric:tabular-nums; }
 .day-empty { text-align:center; padding:40px 24px; }
 .day-empty h3 { margin:0 0 6px; font-size:15px; font-weight:500; }
 .day-empty p { margin:0; font-size:12px; color:var(--dim); line-height:1.6; max-width:240px; margin-inline:auto; }
 
-button { transition:background-color 120ms,color 120ms; }
+button { transition:background-color var(--duration-quick) var(--ease-smooth-out),color var(--duration-quick) var(--ease-smooth-out); }
 button:active:not(:disabled) { background:#2c2c2c; }
 .day-row .task-title:active,.day-sub:active,#sync-line:active { background:transparent; }
 
@@ -198,9 +302,11 @@ button:active:not(:disabled) { background:#2c2c2c; }
 .empty-mark { font-size:36px; color:var(--accent); margin-bottom:15px; }
 .empty-state h3 { margin:0 0 8px; font-size:15px; font-weight:500; }
 .empty-state p { font-size:12px; color:var(--dim); line-height:1.6; max-width:240px; margin:0 auto; }
-.revealing .task-children { animation:task-reveal 160ms ease-out; }
+.revealing .task-children { animation:task-reveal var(--duration-quick) var(--ease-out); }
 @keyframes task-reveal { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
-.preview { background:radial-gradient(ellipse at top left,#28333a,#11181e); min-height:100vh; padding:40px 0; display:flex; justify-content:flex-end; align-items:center; }
+/* The browser preview stages the island where it actually lives: top-centre,
+   hugging the edge. */
+.preview { background:radial-gradient(ellipse at 50% -10%,#28333a,#11181e); min-height:100vh; display:flex; justify-content:center; align-items:flex-start; }
 .editor-page { background:#0a0a0a; height:100vh; overflow:auto; }
 .editor-wrap { max-width:600px; margin:auto; padding:24px; }
 .editor-wrap>header { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
@@ -222,6 +328,344 @@ button:active:not(:disabled) { background:#2c2c2c; }
 .editor-wrap [hidden] { display:none!important; }
 .editor-wrap .toggle-label { display:flex; gap:9px; align-items:center; font-size:12px; margin:12px 0; }
 .editor-wrap details summary { color:var(--dim); font-size:12px; cursor:pointer; padding:10px 0; }
+
+/* ── Leaving and arriving ────────────────────────────────────────────────
+   Hiding slides the shape out through the bezel it is welded to and back in
+   again. Rust waits out the animation before it really hides the window, so
+   the two halves are the same gesture rather than a fade followed by a pop.
+
+   ⚠️ Neither #island nor #stage is ever given a transform by its paint loop —
+   they are positioned with left/top — so a transition here cannot be fought
+   frame by frame. Anything that starts writing transform to them must move
+   this to a wrapper. */
+#island, #stage { transition:transform var(--duration-medium) var(--ease-smooth-out), opacity var(--duration-quick) var(--ease-in-out) var(--duration-stagger); }
+html.chrome-hidden #island, html.chrome-hidden #stage { opacity:0; pointer-events:none; }
+html.chrome-hidden #island[data-edge=top], html.chrome-hidden #stage[data-edge=top] { transform:translateY(-118%); }
+html.chrome-hidden #island[data-edge=bottom], html.chrome-hidden #stage[data-edge=bottom] { transform:translateY(118%); }
+html.chrome-hidden #island[data-edge=left], html.chrome-hidden #stage[data-edge=left] { transform:translateX(-118%); }
+html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge=right] { transform:translateX(118%); }
+
+/* A number that changed, rather than a number that was replaced. */
+@keyframes bump { from { opacity:0; transform:translateY(calc(var(--distance-micro) * -1)); } to { opacity:1; transform:none; } }
+.bumped { animation:bump var(--duration-fast) var(--ease-smooth-out); }
+
+/* ── The resting pill: date, clock, module ───────────────────────────────
+
+   ⚠️ `1fr auto 1fr`, never `auto auto auto`. The two sides are allowed to be
+   different widths; the **middle is not allowed to move**. With auto columns
+   the clock slides left and right as the module changes from "22°" to
+   "3 tasks left", and a clock that is not always in the same place is one the
+   eye has to find before it can read — which is the whole job it has. */
+#island-collapsed.is-clock { display:grid; grid-template-columns:1fr auto 1fr;
+  align-items:center; gap:14px; padding:0 20px; }
+
+.pill-clock { justify-self:center; display:inline-flex; align-items:baseline;
+  font-size:19px; font-weight:600; letter-spacing:-.4px; line-height:1;
+  font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }
+
+/* The date: the numeral over the month. The number is what you are looking
+   for; the month is what stops a lone "14" reading as a count of something. */
+.pill-date { justify-self:start; display:flex; flex-direction:column; align-items:center;
+  line-height:1; }
+.pill-date-day { font-size:15px; font-weight:600; letter-spacing:-.3px;
+  font-variant-numeric:tabular-nums; }
+.pill-date-month { margin-top:2px; font-size:8px; font-weight:600; letter-spacing:.1em;
+  color:#7d7d7d; }
+
+/* The module slot. Empty is a legitimate state and takes no room of its own:
+   `:empty` on the mark is what collapses it rather than leaving a gap where a
+   warning used to be. */
+/* A glyph and a token, on one line. The sentence that used to be under it is
+   on the module's own screen, which is one hover away. */
+.pill-module { justify-self:end; display:flex; align-items:center; gap:6px;
+  min-width:0; color:#c9c9c9; }
+.pill-module-mark { display:grid; place-items:center; flex-shrink:0; color:#8b8b8b; }
+.pill-module-mark:empty { display:none; }
+.pill-module-mark svg { width:15px; height:15px; }
+.pill-module-copy { display:flex; align-items:center; line-height:1; }
+.pill-module-text { font-size:12px; font-weight:600; white-space:nowrap;
+  font-variant-numeric:tabular-nums; letter-spacing:-.2px; }
+
+/* A warning must not look like the weather. */
+.pill-module[data-tone=warn] { color:#ff9f0a; }
+.pill-module[data-tone=warn] .pill-module-mark { color:#ff9f0a; }
+.pill-module[data-tone=hot] { color:#ff6961; }
+.pill-module[data-tone=hot] .pill-module-mark { color:#ff6961; }
+
+/* transitions.dev text-states-swap: the module's subject changes by rising
+   into place as the old one lifts away, both through a short blur. */
+.t-text-swap { transform:translateY(0); filter:blur(0); opacity:1;
+  transition:transform var(--duration-quick) var(--ease-in-out),
+             filter var(--duration-quick) var(--ease-in-out),
+             opacity var(--duration-quick) var(--ease-in-out);
+  will-change:transform, filter, opacity; }
+.t-text-swap.is-exit { transform:translateY(calc(var(--distance-micro) * -1));
+  filter:blur(var(--blur-small)); opacity:0; }
+.t-text-swap.is-enter-start { transform:translateY(var(--distance-micro));
+  filter:blur(var(--blur-small)); opacity:0; transition:none; }
+@media (prefers-reduced-motion: reduce) { .t-text-swap { transition:none !important; } }
+
+/* ⚠️ On a vertical edge the shape is 35px wide and there is room for one thing.
+   The time is that thing. Hiding the sides is the honest degradation: a date
+   stacked into 35px is unreadable, and a module clipped to a glyph is a mystery
+   rather than a summary. */
+[data-edge=left] #island-collapsed.is-clock,
+[data-edge=right] #island-collapsed.is-clock { grid-template-columns:1fr; gap:0; }
+[data-edge=left] .pill-date, [data-edge=right] .pill-date,
+[data-edge=left] .pill-module, [data-edge=right] .pill-module { display:none; }
+[data-edge=left] .pill-clock, [data-edge=right] .pill-clock { font-size:12px; letter-spacing:-.2px; }
+
+/* transitions.dev number pop-in. `will-change` is on the digit, not the group:
+   the group is the thing holding still. */
+@keyframes t-digit-pop-in {
+  0%   { transform:translateY(var(--digit-distance)); opacity:0; filter:blur(var(--digit-blur)); }
+  100% { transform:translateY(0); opacity:1; filter:blur(0); }
+}
+.t-digit { display:inline-block; will-change:transform, opacity, filter; }
+/* ⚠️ `[data-pop]`, not every child. setDigits marks only the characters that
+   actually changed, so 14:32 -> 14:33 moves one digit; animating the group
+   would re-pop the whole clock every minute, which is the twitch-in-the-corner
+   problem the "no seconds" rule already solved once. The colon never gets the
+   attribute at all — a separator that wobbles between two still numbers reads
+   as a fault. */
+.t-digit-group.is-animating .t-digit[data-pop] {
+  animation:t-digit-pop-in var(--digit-dur) var(--digit-ease) both;
+  animation-delay:var(--digit-delay, 0ms);
+}
+
+#island-collapsed { transition:background-color var(--duration-quick) var(--ease-smooth-out); border-radius:inherit; }
+#island-collapsed:hover .pill-lead { transform:scale(1.06); }
+.pill-lead { transition:transform var(--duration-fast) var(--ease-bounce); }
+.pill-ring .arc { transition:stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out), stroke var(--duration-medium) var(--ease-in-out); }
+
+/* Hover, everywhere it means something. One duration for arriving at a thing
+   and leaving it; the press is the only motion here quick enough to read as
+   mechanical rather than as a surface responding. */
+.home-task { border-radius:8px; padding:2px 4px; margin:-2px -4px;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.home-day { transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.home-day:hover:not(.is-today) { background:var(--tile-hi); }
+.media-button, .home-button { transition:background-color var(--duration-quick) var(--ease-smooth-out),
+  color var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-bounce); }
+.media-button:active:not(:disabled), .home-button:active:not(:disabled) { transform:scale(.92); }
+.island-tab { transition:background-color var(--duration-quick) var(--ease-smooth-out),
+  color var(--duration-quick) var(--ease-smooth-out); }
+.home-go { transition:opacity var(--duration-quick) var(--ease-smooth-out),
+  color var(--duration-quick) var(--ease-smooth-out); }
+
+
+/* Media, compacted: title, artist·app, wave, then the transport sharing a row
+   with the two timestamps. Six rows became four. */
+.media-foot { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.media-time { font-size:10.5px; color:#6d6d6d; font-variant-numeric:tabular-nums; min-width:38px; }
+.media-foot .media-time:last-child { text-align:right; }
+.media-scrub { gap:0; }
+
+/* Home tasks carry the two things that were missing: which list, and how late. */
+.home-late { font-size:9.5px; font-weight:600; color:#ff9f0a; border:1px solid rgba(255,159,10,.3);
+  background:rgba(255,159,10,.09); border-radius:99px; padding:1px 5px; flex-shrink:0;
+  font-variant-numeric:tabular-nums; }
+.home-task.is-done .home-late { opacity:.4; }
+
+
+/* ── Output picker ───────────────────────────────────────────────────────
+   Top-right of the media screen so it costs no row. ⚠️ Switching goes through
+   IPolicyConfig, which is undocumented — see audio.rs. The chip is optimistic
+   and the real list comes back to confirm or correct it. */
+.media-output { position:absolute; top:10px; right:16px; z-index:2; }
+.output-chip { display:flex; align-items:center; gap:7px; padding:5px 10px; border-radius:9px;
+  font-size:11px; color:#7d7d7d; background:#101010; max-width:210px; }
+.output-chip:hover { color:#e2e2e2; background:#181818; }
+.output-chip[aria-expanded=true] { color:#fff; background:#1e1e1e; }
+.output-mark { display:grid; place-items:center; flex-shrink:0; }
+.output-mark svg { width:14px; height:14px; }
+.output-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.output-list { position:absolute; top:calc(100% + 6px); right:0; min-width:230px; padding:5px;
+  border-radius:12px; background:#111; box-shadow:0 14px 34px -14px rgba(0,0,0,.9), inset 0 0 0 1px #202020;
+  display:flex; flex-direction:column; gap:1px; animation:bump var(--duration-fast) var(--ease-smooth-out); }
+.output-row { display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:8px;
+  font-size:12px; color:#b4b4b4; text-align:left; }
+.output-row:hover { background:#1c1c1c; color:#fff; }
+.output-row.is-default { color:#fff; }
+.output-tick { margin-left:auto; color:var(--accent); font-size:11px; }
+.screen-body { position:relative; }
+
+
+/* ── The iOS pass ────────────────────────────────────────────────────────
+   Control Centre's grammar: content lives in translucent rounded tiles on a
+   dark ground, separated by gaps rather than hairlines, with generous radii and
+   controls big enough to hit without aiming.
+
+   ⚠️ "Frosted" is painted, not blurred. `backdrop-filter` on a child of #island
+   would sample the island's own opaque black, not the desktop behind the
+   window — the island is what the transparency stops at. Translucent white over
+   black is what iOS-on-dark actually looks like anyway. */
+:root {
+  --tile: rgba(255,255,255,.055);
+  --tile-hi: rgba(255,255,255,.10);
+  --tile-on: rgba(255,255,255,.16);
+  --hair: rgba(255,255,255,.07);
+  --r-tile: 18px;
+  --r-row: 12px;
+  --r-pip: 999px;
+}
+
+.tile { background:var(--tile); border-radius:var(--r-tile); padding:12px 13px;
+  display:flex; flex-direction:column; gap:7px; min-width:0;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.tile-head { margin:0 0 1px; font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+  color:rgba(255,255,255,.42); font-weight:600; }
+.tile-note { margin:2px 0 0; font-size:11px; color:rgba(255,255,255,.35); line-height:1.45; }
+
+/* ── The capsule ─────────────────────────────────────────────────────────
+   The whole shape is the control, filled from the bottom. */
+.cap-row { display:flex; align-items:stretch; gap:9px; }
+.cap { position:relative; width:52px; min-height:88px; flex:0 0 auto; border-radius:16px;
+  overflow:hidden; background:var(--tile-hi); cursor:pointer; touch-action:none;
+  transition:transform var(--duration-fast) var(--ease-bounce), background-color var(--duration-quick) var(--ease-smooth-out); }
+.cap:hover { background:var(--tile-on); }
+.cap:active { transform:scale(.97); }
+.cap:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.cap-fill { position:absolute; left:0; right:0; bottom:0; background:#fff;
+  transition:height var(--duration-quick) var(--ease-smooth-out); }
+.cap.is-muted .cap-fill { background:rgba(255,255,255,.4); }
+/* ⚠️ difference, not a colour swap: the glyph sits at the bottom where the fill
+   usually is, but at a low value the fill is beneath it. Blending inverts it
+   against whatever it happens to be over, with no state to keep in step. */
+.cap-icon { position:absolute; left:0; right:0; bottom:9px; display:grid; place-items:center;
+  color:#fff; mix-blend-mode:difference; pointer-events:none; }
+.cap-icon svg { width:19px; height:19px; }
+.cap-readout { position:absolute; left:0; right:0; top:9px; text-align:center; font-size:10px;
+  color:#fff; mix-blend-mode:difference; font-variant-numeric:tabular-nums; pointer-events:none; }
+
+/* A round toggle, the Control Centre kind. */
+.pip { width:40px; height:40px; align-self:flex-end; padding:0; border-radius:var(--r-pip);
+  display:grid; place-items:center; background:var(--tile-hi); color:#fff;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-bounce); }
+.pip svg { width:18px; height:18px; }
+.pip:hover { background:var(--tile-on); }
+.pip:active { transform:scale(.92); }
+.pip.is-on { background:#ff9f0a; color:#1a1200; }
+
+.sys-row { display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:var(--r-row);
+  font-size:12px; color:rgba(255,255,255,.62); text-align:left; width:100%;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out); }
+.sys-row:not(.static):hover { background:var(--tile-hi); color:#fff; }
+.sys-row.is-on { color:#fff; }
+.sys-row.static { cursor:default; }
+.sys-mark { display:grid; place-items:center; flex-shrink:0; width:20px; height:20px;
+  color:rgba(255,255,255,.55); }
+.sys-mark svg { width:16px; height:16px; }
+.sys-row.is-on .sys-mark { color:#fff; }
+.sys-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sys-tick { color:var(--accent); font-size:11px; }
+.sys-state { font-size:9.5px; color:rgba(255,255,255,.3); text-transform:uppercase; letter-spacing:.06em; }
+.sys-row.is-on .sys-state { color:var(--accent); }
+
+.apptime { display:flex; align-items:center; gap:13px; }
+.apptime-total { font-size:15px; font-weight:600; letter-spacing:-.3px;
+  font-variant-numeric:tabular-nums; flex-shrink:0; }
+.apptime-bar { flex:1; min-width:0; display:flex; height:9px; border-radius:var(--r-pip);
+  overflow:hidden; background:rgba(255,255,255,.08); }
+.apptime-bar i { height:100%; transition:width var(--duration-very-slow) var(--ease-smooth-out); }
+.apptime-keys { display:flex; gap:14px; flex-wrap:wrap; }
+.apptime-key { display:flex; align-items:center; gap:6px; font-size:10.5px; color:rgba(255,255,255,.62); }
+.apptime-key b { width:7px; height:7px; border-radius:3px; flex-shrink:0; }
+
+/* Home's own tokens live with Home, below. */
+.home-art { border-radius:14px; background:rgba(255,255,255,.06); }
+.home-day.is-today { background:rgba(255,255,255,.14); border-radius:10px; }
+.home-task:hover { background:var(--tile-hi); }
+.home-late { border-radius:var(--r-pip); }
+
+/* ── Calendar and Media, same grammar ──────────────────────────────────── */
+.cal-next { background:var(--tile); border-left:0; border-radius:var(--r-tile); padding:11px 14px;
+  box-shadow:inset 3px 0 0 var(--cal,var(--accent)); }
+.cal-row { border-radius:var(--r-row); }
+.cal-row:hover { background:var(--tile-hi); }
+.cal-wcol { background:var(--tile); border-radius:14px; }
+.cal-wcol.is-today { background:var(--tile-hi); }
+.cal-whead { border-bottom:1px solid var(--hair); }
+.cal-chip { background:rgba(255,255,255,.08); border-radius:8px; border-left-width:2.5px; }
+.cal-view { background:var(--tile); border-radius:10px; }
+.cal-view:hover { background:var(--tile-hi); }
+.cal-view[aria-pressed=true] { background:var(--tile-on); }
+.media-art { border-radius:18px; background:rgba(255,255,255,.06); }
+.media-button:hover:not(:disabled) { background:var(--tile-hi); }
+.day-row:hover { background:var(--tile); }
+.day-done-toggle:hover { background:var(--tile); }
+#inline-composer:hover { background:var(--tile); }
+#inline-composer:focus-within { background:var(--tile-hi); box-shadow:inset 0 0 0 1px rgba(0,255,136,.35); }
+#task-done { border-top:1px solid var(--hair); }
+.island-tabs { border-top:0; }
+.island-tab:hover { background:var(--tile); }
+.island-tab[aria-selected=true] { background:var(--tile-on); }
+.small-icon:hover { background:var(--tile-hi); }
+.output-list { background:#141414; box-shadow:0 14px 34px -14px rgba(0,0,0,.9), inset 0 0 0 1px var(--hair); }
+
+/* ── System, as a bento ──────────────────────────────────────────────────
+   ⚠️ Fixed shape, not a set of columns that grow. Seven audio endpoints — and
+   a developer's machine has Steam's two virtual ones, every monitor and the
+   real speakers — made a column taller than the island can be, and the tile
+   underneath was cut off with nothing to scroll. Every tile here holds what is
+   *in use*; the rest is one press away, so the screen is the same height with
+   three devices or thirty. */
+.sys-grid { display:grid; gap:10px; padding:4px 16px 14px; overflow:visible;
+  grid-template-columns:158px repeat(3, minmax(0,1fr));
+  /* The day tile runs under the three narrow tiles rather than beside the
+     capsules — spanning the capsules down a second short row left a tile two
+     thirds empty, which is exactly the space the redesign was about. */
+  grid-template-areas:
+    "caps output bt   machine"
+    "day  day    day  machine";
+  align-content:start; }
+.sys-controls { grid-area:caps; }
+.sys-output   { grid-area:output; }
+.sys-bluetooth{ grid-area:bt; }
+.sys-machine  { grid-area:machine; }
+.sys-day      { grid-area:day; }
+.tile { position:relative; }
+
+.cap-row { display:flex; align-items:stretch; gap:8px; }
+.pip-col { display:flex; flex-direction:column; justify-content:flex-end; gap:6px; }
+.pip { width:34px; height:34px; }
+.pip svg { width:16px; height:16px; }
+
+/* A tile's lead row: the thing in use, larger than the list behind it. */
+.sys-row.lead { padding:4px 6px; font-size:13px; color:#fff; }
+.sys-row.lead .sys-mark { color:#fff; }
+.tile-more { align-self:flex-start; margin-top:1px; padding:4px 9px; border-radius:999px;
+  font-size:10.5px; color:rgba(255,255,255,.55); background:var(--tile-hi);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out); }
+.tile-more:hover { background:var(--tile-on); color:#fff; }
+.tile-more[aria-expanded=true] { background:var(--tile-on); color:#fff; }
+
+/* The sheet: the full list, over the panel rather than inside the tile. */
+.sheet { position:absolute; top:calc(100% - 4px); left:0; right:0; z-index:5;
+  max-height:190px; overflow-y:auto; padding:5px; border-radius:16px; background:#161616;
+  box-shadow:0 18px 40px -14px rgba(0,0,0,.95), inset 0 0 0 1px var(--hair);
+  display:flex; flex-direction:column; gap:1px;
+  scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent;
+  animation:sheet-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes sheet-in { from { opacity:0; transform:translateY(-6px) scale(.98); } to { opacity:1; transform:none; } }
+
+/* ── Meters ──────────────────────────────────────────────────────────────
+   Amber past 80, red past 92 — a disk at 97% is the one fact on this screen
+   that is actually urgent, and it should not look like the others. */
+.meter { display:flex; flex-direction:column; gap:4px; }
+.meter-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.meter-label { font-size:11px; color:rgba(255,255,255,.66); }
+.meter-note { font-size:10px; color:rgba(255,255,255,.4); font-variant-numeric:tabular-nums; }
+.meter-rail { height:5px; border-radius:999px; background:rgba(255,255,255,.09); overflow:hidden; }
+.meter-rail i { display:block; height:100%; border-radius:999px; background:rgba(255,255,255,.75);
+  transition:width var(--duration-very-slow) var(--ease-smooth-out), background-color var(--duration-medium) var(--ease-in-out); }
+.meter-rail i.warm { background:#ff9f0a; }
+.meter-rail i.hot { background:#ff6961; }
+.sys-facts { display:flex; gap:12px; flex-wrap:wrap; margin-top:1px; }
+.sys-fact { display:flex; align-items:center; gap:5px; font-size:10.5px; color:rgba(255,255,255,.45); }
+.sys-fact b { color:#30d158; font-size:8px; line-height:1; }
+
+
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; animation:none!important; } }
 .day-connect { margin-top:14px; background:var(--accent); color:#001e10; font-weight:600; font-size:12px; padding:8px 14px; border-radius:9px; }
 .day-connect:hover { background:#2bffa0; }
@@ -246,7 +690,6 @@ button:active:not(:disabled) { background:#2c2c2c; }
 #focus-finish {color:var(--accent);}
 #focus-finish:hover {background:#12291e;color:var(--accent);}
 #focus-others[aria-expanded=true] {color:#fff;background:#191919;}
-#notch-shell [hidden] {display:none!important;}
 .small-icon {display:grid;place-items:center;}
 .small-icon svg {width:15px;height:15px;}
 .task-focus {width:28px;height:28px;padding:5px;display:grid;place-items:center;}
@@ -254,14 +697,209 @@ button:active:not(:disabled) { background:#2c2c2c; }
 #inline-composer .plus {border:0;}
 #inline-composer .plus svg {width:18px;height:18px;}
 #inline-composer:focus-within .plus {transform:none;}
-#focus-pill {position:absolute;z-index:2;padding:0;display:grid;place-items:center;background:transparent;visibility:hidden;touch-action:none;}
-#focus-pill:hover {background:transparent;}
-.pill-track {height:var(--focus-bar-length);width:var(--focus-bar-width);background:#202824;border-radius:99px;overflow:hidden;display:flex;align-items:flex-end;}
-#pill-fill {width:100%;height:max(3px,calc(var(--focus-progress,0) * 100%));background:var(--accent);border-radius:99px;}
-[data-edge=top] .pill-track,[data-edge=bottom] .pill-track {width:var(--focus-bar-length);height:var(--focus-bar-width);align-items:stretch;}
-[data-edge=top] #pill-fill,[data-edge=bottom] #pill-fill {height:100%;width:max(3px,calc(var(--focus-progress,0) * 100%));}
-.focus-paused #pill-fill {opacity:.45;}
-.focus-break #pill-fill {background:#ffb454;}
 .focus-break #focus-elapsed {color:#ffb454;}
-.has-timer .day-rail {display:none;}
 .sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;}
+
+/* ── Media ───────────────────────────────────────────────────────────────
+   Art left, everything else right. A centred column put the artwork in the
+   middle of a bar three times as wide as it is tall and pushed the transport
+   off the bottom edge entirely. */
+.media-row { display:flex; align-items:center; gap:24px; padding:2px 6px 4px; }
+.media-art { width:150px; height:150px; flex-shrink:0; border-radius:16px; overflow:hidden;
+  background:#0e0e0e; display:grid; place-items:center; }
+.media-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.media-art.blank { color:#3a3a3a; }
+.media-art.blank svg { width:44px; height:44px; }
+.media-side { flex:1; min-width:0; display:flex; flex-direction:column; gap:13px; }
+.media-copy { min-width:0; }
+.media-title { margin:0; font-size:18px; font-weight:600; letter-spacing:-.35px; line-height:1.28;
+  overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.media-artist { margin:5px 0 0; font-size:13px; color:#a5a5a5; overflow-wrap:anywhere; }
+.media-source { margin:3px 0 0; font-size:10px; color:#5f5f5f; letter-spacing:.09em; text-transform:uppercase; }
+
+/* The scrubber is a waveform, and the waveform is the progress bar.
+   ⚠️ Synthetic — see `waveform()` in screen-media.ts. Windows' transport
+   controls give metadata, never samples, so there is no audio to analyse. It is
+   seeded from the track so the shape is stable and per-track rather than noise
+   redrawn every frame. */
+.media-scrub { display:flex; flex-direction:column; gap:7px; }
+.wave { display:flex; align-items:flex-end; gap:2px; height:42px; border-radius:4px; }
+.wave i { flex:1; min-width:2px; background:#272727; border-radius:2px; transform-origin:bottom;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.wave i.on { background:#9a9a9a; }
+/* Only the few bars at the playhead move. Animating the whole played region
+   would say "this audio is playing again", which is not what it means. */
+.wave.playing i.head { background:var(--accent); animation:wave-head 1.15s ease-in-out infinite; }
+@keyframes wave-head { 0%,100% { transform:scaleY(1); } 50% { transform:scaleY(.6); } }
+.wave i.head { background:var(--accent); }
+.media-scrub.seekable .wave { cursor:pointer; }
+.media-scrub.seekable .wave:hover i:not(.on) { background:#333; }
+.wave:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.media-controls { display:flex; align-items:center; gap:14px; }
+.media-button { width:38px; height:38px; border-radius:50%; display:grid; place-items:center; color:#c9c9c9; padding:0; }
+.media-button svg { width:19px; height:19px; }
+.media-button:hover:not(:disabled) { background:#181818; color:#fff; }
+.media-button.primary { width:48px; height:48px; background:#fff; color:#000; }
+.media-button.primary svg { width:22px; height:22px; }
+.media-button.primary:hover:not(:disabled) { background:#fff; color:#000; transform:scale(1.04); }
+.media-button:disabled { opacity:.28; }
+
+/* ── Calendar ──────────────────────────────────────────────────────────── */
+.cal-next { display:flex; flex-direction:column; gap:2px; padding:11px 13px; margin-bottom:12px;
+  border-radius:12px; background:#0d0d0d; border-left:3px solid var(--cal,var(--accent)); }
+.cal-next-when { font-size:11px; font-weight:600; color:var(--cal,var(--accent)); letter-spacing:.02em; }
+.cal-next-title { font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
+.cal-day { margin:16px 0 6px; font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:#5f5f5f; font-weight:600; }
+.cal-day:first-child { margin-top:2px; }
+.cal-row { display:flex; align-items:flex-start; gap:11px; padding:8px 8px 8px 10px; border-radius:10px;
+  position:relative; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.cal-row::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:2.5px;
+  border-radius:2px; background:var(--cal); }
+.cal-row:hover { background:#0e0e0e; }
+.cal-row.declined { opacity:.45; }
+.cal-row.declined .cal-title { text-decoration:line-through; }
+.cal-time { font-size:11.5px; color:#9a9a9a; font-variant-numeric:tabular-nums; white-space:nowrap;
+  padding-top:1px; min-width:44px; }
+.cal-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.cal-title { font-size:13.5px; line-height:1.35; overflow-wrap:anywhere; }
+.cal-detail { font-size:10.5px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-join { width:28px; height:28px; padding:0; display:grid; place-items:center; border-radius:8px;
+  color:#5f5f5f; flex-shrink:0; }
+.cal-join svg { width:16px; height:16px; }
+.cal-join:hover { color:var(--accent); background:#12291e; }
+
+.options-hint { margin:12px 0 0; font-size:10.5px; color:#5f5f5f; line-height:1.55; }
+
+/* ── Home ────────────────────────────────────────────────────────────────
+   Three tiles on one row: what is playing, the week, the day's next few tasks.
+   Everything laid across rather than stacked — a column that piles art over
+   text over controls is a panel, and a panel welded to a screen edge is not
+   glanceable. No section headings either: three uppercase labels across a
+   strip this size were most of what made the first version read as cluttered.
+
+   ⚠️ **This is the only place Home is styled, and it has to stay that way.**
+   It had grown three passes — an original hairline-column pass, a tile pass,
+   and a "stretch, not centre" pass — and because later rules simply win, the
+   tile padding written in the second was overwritten by `padding: 0 18px`
+   from the first, and `align-items: stretch` from the third by
+   `align-items: center`. The result on screen was exactly what the two later
+   passes had been written to prevent: ragged tiles with their content pressed
+   against the top and bottom edges. Nothing was wrong with any of the three
+   rules; there were just three of them. */
+.home-grid { display:grid;
+  grid-template-columns:minmax(0,300px) minmax(0,1fr) minmax(0,310px);
+  /* One row with a floor. Without it a quiet day — nothing playing, nothing
+     scheduled — collapses all three tiles to the height of one line of text,
+     and the strip reads as a loading state rather than as an empty day. */
+  grid-template-rows:minmax(96px, auto);
+  /* ⚠️ `align-content:start` is what makes `align-items:stretch` safe here, and
+     without it the two together are a feedback loop. `.home-grid` is a
+     `.screen-body`, so flex gives it the panel's whole height; a row left to
+     fill that height stretches the tiles, measure() reads the taller tiles,
+     the panel grows to hold them, and round again — the island ballooned to
+     357px and ran off the side of its own window. Starting the content sizes
+     the row from the tiles instead, and stretch then only equalises them
+     against each other. Same rule as `.sys-grid`. */
+  align-content:start; align-items:stretch;
+  gap:12px; padding:6px 16px 16px; overflow:visible; }
+
+/* Stretch puts every tile on the tallest one's height; the content then
+   centres inside whatever that turns out to be, so a one-line tile and a
+   three-row tile sit on the same baseline grid instead of drifting apart. */
+.home-sec { position:relative; display:flex; align-items:center; justify-content:center;
+  gap:14px; min-width:0; padding:14px 16px;
+  background:var(--tile); border-radius:var(--r-tile);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.home-sec:hover { background:var(--tile-hi); }
+.home-sec+.home-sec { border-left:0; }
+/* Inside the tile's own padding, not hanging over its corner. */
+.home-go { position:absolute; top:6px; right:8px; opacity:0; color:#4a4a4a; font-size:15px;
+  line-height:1; padding:2px 6px; border-radius:6px; }
+.home-sec:hover .home-go { opacity:1; }
+.home-go:hover { color:#fff; background:var(--tile-on); }
+/* `auto`, not 0: a tile whose whole content is "Nothing playing" should say so
+   in the middle of itself. It works in both directions, so the same rule
+   centres the empty line inside the task column as well as inside a row. */
+.home-empty { margin:auto; font-size:12px; color:#585858; }
+
+.home-art { width:68px; height:68px; flex-shrink:0; border-radius:11px; overflow:hidden;
+  background:#0e0e0e; display:grid; place-items:center; }
+.home-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.home-art.blank { color:#3a3a3a; }
+.home-art.blank svg { width:26px; height:26px; }
+.home-media-copy { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.home-track-title { font-size:13.5px; font-weight:600; line-height:1.32; overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.home-track-artist { font-size:11px; color:#7d7d7d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.home-controls { display:flex; align-items:center; gap:2px; margin:6px 0 0 -6px; }
+.home-button { width:27px; height:27px; padding:0; border-radius:50%; display:grid; place-items:center; color:#c4c4c4; }
+.home-button svg { width:15px; height:15px; }
+.home-button:hover:not(:disabled) { background:#181818; color:#fff; }
+.home-button:disabled { opacity:.3; }
+
+.home-media { justify-content:flex-start; }
+.home-cal { flex-direction:column; align-items:stretch; justify-content:center; gap:10px; }
+.home-strip { display:flex; align-items:center; gap:13px; }
+.home-month { font-size:23px; font-weight:700; letter-spacing:-.6px; color:#f0f0f0; }
+.home-days { display:flex; gap:2px; flex:1; min-width:0; }
+.home-day { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
+  padding:1px 0 5px; border-radius:8px; position:relative; }
+.home-day-name { font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; color:#565656; }
+.home-day-num { font-size:13px; color:#b0b0b0; font-variant-numeric:tabular-nums; line-height:1.25; }
+/* Weekends read differently in every wall calendar; the strip should too. */
+.home-day.weekend .home-day-num { color:#b5716b; }
+.home-day.is-today .home-day-name { color:var(--accent); }
+.home-day.is-today .home-day-num { color:var(--accent); font-weight:700; font-size:15px; }
+/* A dot, not a fill: the strip's job is only "which days have something". */
+.home-day.busy::after { content:""; position:absolute; bottom:0; width:3px; height:3px;
+  border-radius:50%; background:#5a5a5a; }
+.home-day.is-today.busy::after { background:var(--accent); }
+.home-next { display:flex; align-items:center; justify-content:center; gap:8px; min-width:0; }
+.home-next-mark { display:grid; place-items:center; color:#4e4e4e; }
+.home-next-mark svg { width:14px; height:14px; }
+.home-next-when { font-size:11px; font-weight:600; color:var(--cal,var(--accent));
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.home-next-title { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.home-next-day { font-size:10px; color:#5f5f5f; white-space:nowrap; }
+
+.home-today { gap:13px; align-items:center; }
+.home-tally { display:flex; align-items:center; gap:9px; flex-shrink:0; }
+.home-ring { width:40px; height:40px; }
+.home-ring .trk { fill:none; stroke:#1e1e1e; stroke-width:4; }
+.home-ring .arc { fill:none; stroke:var(--accent); stroke-width:4; stroke-linecap:round;
+  transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out); }
+.home-tally-count { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.3px; }
+.home-tasks { display:flex; flex-direction:column; justify-content:center; gap:7px;
+  min-width:0; flex:1; }
+.home-task { display:flex; align-items:center; gap:9px; min-width:0; }
+.home-task .check { --cs:16px; }
+.home-task-title { font-size:12px; line-height:1.3; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.home-task.is-done .home-task-title { color:#6e6e6e; }
+
+/* ── Calendar views ──────────────────────────────────────────────────────
+   Both read the same seven-day fetch: agenda answers "what is next", the
+   week grid answers "how is the week shaped". */
+.cal-views { display:flex; gap:4px; margin-bottom:10px; }
+.cal-view { display:flex; align-items:center; gap:6px; font-size:11px; color:#6d6d6d;
+  background:#101010; padding:5px 10px; border-radius:8px; }
+.cal-view svg { width:14px; height:14px; }
+.cal-view:hover { color:#c9c9c9; background:#161616; }
+.cal-view[aria-pressed=true] { color:#fff; background:#1e1e1e; }
+.cal-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
+.cal-wcol { min-width:0; display:flex; flex-direction:column; gap:4px; padding:6px 4px 8px;
+  border-radius:10px; background:#0a0a0a; }
+.cal-wcol.is-today { background:#111; }
+.cal-whead { display:flex; flex-direction:column; align-items:center; gap:0; padding-bottom:3px;
+  border-bottom:1px solid #1a1a1a; }
+.cal-wday { font-size:8.5px; text-transform:uppercase; letter-spacing:.08em; color:#5f5f5f; }
+.cal-wnum { font-size:13px; font-variant-numeric:tabular-nums; color:#c4c4c4; }
+.cal-wcol.is-today .cal-wnum { color:var(--accent); font-weight:600; }
+.cal-wnone { text-align:center; font-size:11px; color:#333; padding-top:4px; }
+.cal-chip { display:flex; flex-direction:column; gap:1px; padding:4px 5px; border-radius:6px;
+  background:#141414; border-left:2px solid var(--cal,#5ac8fa); min-width:0; }
+.cal-chip[onclick],.cal-chip:hover { cursor:default; }
+.cal-chip.declined { opacity:.45; }
+.cal-chip-time { font-size:8.5px; color:var(--cal,#5ac8fa); font-variant-numeric:tabular-nums; font-weight:600; }
+.cal-chip-title { font-size:10.5px; line-height:1.25; overflow:hidden; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#c8c8c8; }
+.home-task.is-done .home-task-title { color:#6e6e6e; }

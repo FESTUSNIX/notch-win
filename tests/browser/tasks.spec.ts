@@ -1,167 +1,555 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
-test("day panel: overdue in place, nesting, and a completion that settles into the drawer", async ({page}) => {
+/** Hovering the pill is how the island opens; the surface reports its own rect
+ *  as the hot zone, so aim at the shape rather than at a fixed point. */
+async function open(page: Page) {
+  const pill = await page.locator("#island").boundingBox();
+  await page.mouse.move(pill!.x + pill!.width / 2, pill!.y + pill!.height / 2);
+  await expect(page.locator("#island-expanded")).toBeVisible();
+}
+
+/** The island opens on Home now, so the day screen has to be asked for. */
+async function openToday(page: Page) {
+  await open(page);
+  await page.locator('[data-tab="today"]').click();
+  await expect(page.locator("#inline-composer")).toBeVisible();
+}
+
+/** ⚠️ Scope day assertions to the Today screen. Home lists the same tasks, so
+ *  a bare getByText matches twice and Playwright refuses in strict mode. */
+const day = (page: Page) => page.locator('[data-screen="today"]');
+
+test("the island morphs from one pill into one panel, and the tabs switch screens", async ({page}) => {
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
   await page.goto("/tasks.html");
-  await page.locator("#task-rail").hover();
-  await expect(page.locator("#task-panel")).toBeVisible();
-  await expect(page.locator("#rail-count")).toHaveText("2/6");
 
-  // Overdue work is in the day, badged in place. There is no tab to leave.
-  await expect(page.getByText("Book a haircut",{exact:true})).toBeVisible();
-  // Capped, so a task forgotten for two years cannot be the widest thing in the row.
+  // Collapsed: one shape, short, hugging the top edge.
+  const pill = await page.locator("#island").boundingBox();
+  expect(pill!.y).toBeLessThanOrEqual(1);
+  expect(pill!.height).toBeLessThan(50);
+  await expect(page.locator("#island-expanded")).toBeHidden();
+
+  await open(page);
+  // Polled: the spring is still travelling when the layer first shows. It is a
+  // BAR — wide and shallow — so the threshold is deliberately low.
+  await expect.poll(() => page.locator("#island").evaluate(el => el.getBoundingClientRect().height))
+    .toBeGreaterThan(120);
+  const panel = await page.locator("#island").boundingBox();
+  expect(panel!.y).toBeLessThanOrEqual(1);        // still welded to the edge
+  // The panel is the island, not a second box floating beside it.
+  expect(await page.locator("#task-panel").count()).toBe(0);
+  expect(await page.locator("#task-rail").count()).toBe(0);
+
+  // The expanded layer is centred in the shape, not half a width off it.
+  const layer = await page.locator("#island-expanded").boundingBox();
+  expect(Math.abs((layer!.x + layer!.width / 2) - (panel!.x + panel!.width / 2))).toBeLessThan(2);
+
+  // The date line separator is a real middle dot, not a mangled CSS escape.
+  await page.locator('[data-tab="today"]').click();
+  await expect(page.locator("#day-date")).toHaveText(/\w/);
+  await expect(page.locator(".day-meta")).not.toContainText("00b7");
+  await page.locator('[data-tab="home"]').click();
+  // Home is the default: three sections on one row, one per other screen.
+  await expect(page.locator(".home-sec")).toHaveCount(3);
+  await expect(page.locator(".home-month")).toBeVisible();
+  await page.locator('[data-tab="media"]').click();
+  await expect(page.locator(".media-title")).toBeVisible();
+  await page.locator('[data-tab="calendar"]').click();
+  await expect(page.locator(".cal-next")).toBeVisible();
+  await page.locator('[data-tab="today"]').click();
+  await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeVisible();
+  expect(errors).toEqual([]);
+  await page.screenshot({path: "test-results/island-today.png"});
+});
+
+test("the collapsed pill shows whatever is most live, and opens that screen", async ({page}) => {
+  await page.goto("/tasks.html");
+  // Something playing outranks the day's tally.
+  await expect(page.locator(".pill-label")).toHaveText(/potion shop/);
+  await expect(page.locator(".pill-eq.on")).toBeVisible();
+  // The pill can only name one thing; the other screens raise a dot instead.
+  await expect(page.locator('[data-tab="media"]')).toHaveClass(/live/);
+  await expect(page.locator('[data-tab="today"]')).not.toHaveClass(/live/);
+  await page.locator("#island-collapsed").click();
+  await expect(page.locator("#island-expanded")).toBeVisible();
+
+  // With nothing live the pill is a clock, and ONLY a clock. This is the state
+  // it sits in for most of the day, so everything that is not the time was
+  // taken off it: no ring, no date, no tally.
+  await page.goto("/tasks.html?quiet");
+  await expect(page.locator("#island-collapsed")).toHaveClass(/is-clock/);
+  await expect(page.locator(".pill-clock")).toHaveText(/^\d{1,2}:\d{2}$/);
+  for (const gone of [".pill-ring", ".pill-value", ".pill-label", ".pill-lead", ".pill-eq"]) {
+    await expect(page.locator(gone)).toHaveCount(0);
+  }
+});
+
+test("at rest the pill is a date, a centred clock, and one module", async ({page}) => {
+  await page.clock.install({time: new Date("2026-09-14T14:53:00")});
+  await page.goto("/tasks.html?quiet");
+  await expect(page.locator("#island-collapsed")).toHaveClass(/is-clock/);
+  await expect(page.locator(".pill-date-day")).toHaveText("14");
+  await expect(page.locator(".pill-date-month")).toHaveText("SEP");
+
+  /* ⚠️ The clock must sit dead centre of the pill whatever the two sides
+   * weigh. A clock that slides as the module changes from "22°" to "3 tasks
+   * left" is one the eye has to find before it can read, which is the whole
+   * job it has. This is the assertion that catches `auto auto auto`. */
+  const pill = (await page.locator("#island-collapsed").boundingBox())!;
+  const clock = (await page.locator(".pill-clock").boundingBox())!;
+  expect(Math.abs((clock.x + clock.width / 2) - (pill.x + pill.width / 2))).toBeLessThan(2);
+
+  /* A glyph and one token, never a sentence. The strip is on screen all day;
+   * after a week you are reading the icon and the colour, and the words are
+   * only costing width. The demo machine reports a disk at 97%. */
+  const slot = page.locator(".pill-module");
+  await expect(slot).toHaveAttribute("data-module", "disk");
+  await expect(slot).toHaveAttribute("data-tone", "hot");
+  await expect(slot.locator(".pill-module-text")).toHaveText("97%");
+  await expect(slot.locator(".pill-module-mark svg")).toHaveCount(1);
+  await expect(page.locator(".pill-module-note")).toHaveCount(0);
+
+  // News holds the slot rather than taking its turn behind the weather...
+  await page.clock.fastForward(30_000);
+  await expect(slot).toHaveAttribute("data-module", "disk");
+  /* ...but a STANDING condition rejoins the rotation. A disk at 97% until
+   * someone buys a new one is a fact about the machine, not an alert, and a
+   * permanent red warning is exactly the warning you stop seeing. */
+  await page.clock.fastForward(150_000);
+  await expect(slot).not.toHaveAttribute("data-module", "disk");
+
+  // The whole pill stays narrow: a notch, not a toolbar someone left open.
+  expect(pill.width).toBeLessThan(300);
+});
+
+test("the clock is 24-hour by default, switches to 12, and pops only the digits that moved", async ({page}) => {
+  await page.clock.install({time: new Date("2026-09-14T14:32:00")});
+  await page.goto("/tasks.html?quiet");
+  const clock = page.locator(".pill-clock");
+  await expect(clock).toHaveText("14:32");
+
+  // A minute later only the units digit is new, so only it carries the pop.
+  // Re-animating all five characters once a minute is the twitch-in-the-corner
+  // problem the "no seconds" rule already solved once.
+  await page.clock.fastForward(60_000);
+  await expect(clock).toHaveText("14:33");
+  expect(await clock.locator("[data-pop]").allTextContents()).toEqual(["3"]);
+
+  // An hour rollover moves three of them, and the colon is never one of them.
+  await page.clock.setFixedTime(new Date("2026-09-14T15:00:00"));
+  await expect(clock).toHaveText("15:00");
+  expect(await clock.locator("[data-pop]").allTextContents()).toEqual(["5", "0", "0"]);
+
+  await open(page);
+  await page.getByRole("button", {name: "Island settings", exact: true}).click();
+  await page.getByRole("button", {name: "12 h", exact: true}).click();
+  // 3 PM, not 15:00 and not 03 PM: the 12-hour cycle drops the leading zero in
+  // every engine, so the two formats are different lengths.
+  await expect(clock).toHaveText(/^3:00\s?[AaPp]\.?[Mm]\.?$/);
+  await page.getByRole("button", {name: "24 h", exact: true}).click();
+  await expect(clock).toHaveText("15:00");
+});
+
+test("a player left paused hands the pill back to the clock", async ({page}) => {
+  // nocal, not quiet: the demo meeting is 18 minutes out and a *paused* player
+  // ranks below an imminent one, so it would win this contest legitimately.
+  await page.goto("/tasks.html?nocal");
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
+  await open(page);
+  await page.locator('[data-tab="media"]').click();
+  await page.getByRole("button", {name: "Pause", exact: true}).click();
+  // Paused is still a claim at first — the controls stay one glance away.
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
+  // ...but not for long. 30s in the app; the clock is what it falls back to.
+  await page.clock.install();
+  await page.clock.fastForward(35_000);
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "clock");
+});
+
+test("media controls answer at once and the scrubber reads the real timeline", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.locator('[data-tab="media"]').click();
+  await expect(page.locator(".media-title")).toHaveText(/potion shop/);
+  // Artist and app share one line now: six rows of chrome became four.
+  await expect(page.locator(".media-artist")).toHaveText("Real Civil Engineer  ·  Brave");
+  await expect(page.locator(".media-time").first()).toHaveText(/^\d+:\d{2}$/);
+  const pause = page.getByRole("button", {name: "Pause"});
+  await expect(pause).toBeVisible();
+  await pause.click();
+  // Optimistic: the button flips without waiting for Windows to answer.
+  await expect(page.getByRole("button", {name: "Play"})).toBeVisible();
+  await expect(page.locator(".pill-eq.on")).toHaveCount(0);
+  await page.screenshot({path: "test-results/island-media.png"});
+});
+
+test("the waveform is the progress bar, is per-track, and seeks", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.locator('[data-tab="media"]').click();
+
+  // Art beside the copy, not above it: one row.
+  const art = await page.locator(".media-art").boundingBox();
+  const side = await page.locator(".media-side").boundingBox();
+  expect(side!.x).toBeGreaterThan(art!.x + art!.width - 1);
+
+  const bars = page.locator(".wave i");
+  await expect(bars).toHaveCount(72);
+  // The demo track is 4:26 into 31:18, so roughly the first eighth is played.
+  const played = await page.locator(".wave i.on").count();
+  expect(played).toBeGreaterThan(4);
+  expect(played).toBeLessThan(20);
+
+  /* ⚠️ Synthetic, but deterministic — the same track must always draw the same
+   * shape. Random bars would be a lie that also flickers on every render. */
+  const shape = () => page.locator(".wave").evaluate(w =>
+    [...w.querySelectorAll("i")].map(b => (b as HTMLElement).style.height).join(","));
+  const first = await shape();
+  await page.locator('[data-tab="home"]').click();
+  await page.locator('[data-tab="media"]').click();
+  expect(await shape()).toBe(first);
+
+  // Clicking it moves the playhead, and the played run grows with it.
+  const box = await page.locator(".wave").boundingBox();
+  await page.mouse.click(box!.x + box!.width * 0.75, box!.y + box!.height / 2);
+  await expect.poll(() => page.locator(".wave i.on").count()).toBeGreaterThan(48);
+  await page.screenshot({path: "test-results/island-media.png"});
+});
+
+test("the agenda groups by day and offers a link only where there is one", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.locator('[data-tab="calendar"]').click();
+  await expect(page.locator(".cal-next-title")).toHaveText("Design review");
+  await expect(page.locator(".cal-next-when")).toHaveText(/^(now|in \d+ (min|h|d))$/);
+  // Not asserted as "Today": the demo's next event is minutes away, which after
+  // 23:40 is tomorrow. That a heading is printed is the point, not which one.
+  await expect(page.locator(".cal-day").first()).toHaveText(/\S/);
+  // Two of the three demo events are calls; the lunch is not.
+  await expect(page.locator(".cal-join")).toHaveCount(2);
+  await expect(page.getByText("Cafe Mistral")).toBeVisible();
+  await page.screenshot({path: "test-results/island-calendar.png"});
+});
+
+test("day screen: overdue in place, nesting, and a completion that settles into the drawer", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await openToday(page);
+  /* ⚠️ The count is read off the day screen, not off the pill. The resting
+   * pill carries the time and nothing else now — see the clock test above — so
+   * `#day-left` is the live readout these completions have to move. */
+  await expect(page.locator("#day-left")).toHaveText("4 left");
+
+  await expect(day(page).getByText("Book a haircut", {exact: true})).toBeVisible();
+  // Capped, so a task forgotten for two years is not the widest thing in the row.
   await expect(page.locator(".day-chip").first()).toHaveText(/^(\d{1,2}|99\+)d$/);
 
-  // Sub-tasks open by default; a checklist is detail, one click away.
-  await expect(page.getByText("Polish the task panel",{exact:true})).toBeVisible();
-  await expect(page.getByLabel("Check nested tasks",{exact:true})).toBeHidden();
+  await expect(day(page).getByText("Polish the task panel", {exact: true})).toBeVisible();
+  await expect(page.getByLabel("Check nested tasks", {exact: true})).toBeHidden();
   await page.getByLabel("Expand Polish the task panel").click();
-  await page.getByLabel("Check nested tasks",{exact:true}).check();
-  await expect(page.locator("#rail-count")).toHaveText("3/6");
+  await page.getByLabel("Check nested tasks", {exact: true}).check();
+  await expect(page.locator("#day-left")).toHaveText("3 left");
   await page.getByLabel("Collapse Build a calmer workspace").click();
-  await expect(page.getByText("Polish the task panel",{exact:true})).toBeHidden();
+  await expect(day(page).getByText("Polish the task panel", {exact: true})).toBeHidden();
   await page.getByLabel("Expand Build a calmer workspace").click();
 
-  // A completion answers at once, is held, then sinks into one line.
-  await page.getByLabel("Complete Get outside for a walk",{exact:true}).check();
-  await expect(page.locator("#rail-count")).toHaveText("4/6");
-  await expect(page.getByRole("button",{name:"1 done today"})).toBeVisible();
-  await expect(page.getByText("Get outside for a walk",{exact:true})).toBeHidden();
-  await page.getByRole("button",{name:"1 done today"}).click();
-  await expect(page.getByText("Get outside for a walk",{exact:true})).toBeVisible();
-  expect(errors).toEqual([]);
-  await page.screenshot({path:"test-results/task-notch.png"});
+  await day(page).getByLabel("Complete Get outside for a walk", {exact: true}).check();
+  await expect(page.locator("#day-left")).toHaveText("2 left");
+  await expect(page.getByRole("button", {name: "1 done today"})).toBeVisible();
+  await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeHidden();
 });
 
 test("the composer is a live field: no reveal, and Enter leaves it ready for the next", async ({page}) => {
-  await page.goto("/tasks.html");
-  await page.locator("#task-rail").hover();
-  const field = page.getByRole("textbox",{name:"Task name"});
-  // Present and typeable without anything being opened first.
+  await page.goto("/tasks.html?quiet");
+  await openToday(page);
+  const field = page.getByRole("textbox", {name: "Task name"});
   await expect(field).toBeVisible();
   await field.click();
   await field.fill("Write a quiet interface");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Write a quiet interface",{exact:true})).toBeVisible();
-  await expect(page.locator("#rail-count")).toHaveText("2/7");
-  // Still there, still empty, still focused — the next one is typed, not clicked.
+  await expect(day(page).getByText("Write a quiet interface", {exact: true})).toBeVisible();
+  await expect(page.locator("#day-left")).toHaveText("5 left");
   await expect(field).toHaveValue("");
   await expect(field).toBeFocused();
   await field.fill("And then a second");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("And then a second",{exact:true})).toBeVisible();
-  await expect(page.locator("#rail-count")).toHaveText("2/8");
+  await expect(page.locator("#day-left")).toHaveText("6 left");
   expect(page.context().pages()).toHaveLength(1);
 });
 
-test("a draft survives the panel folding, and renaming happens in place", async ({page}) => {
-  await page.goto("/tasks.html");
-  await expect(page.locator("#task-panel")).toBeHidden();
-  const pill = await page.locator("#rail-shape").boundingBox();
-  expect(Math.min(pill!.width,pill!.height)).toBeLessThan(12);
-  await page.locator("#task-rail").hover();
-  await expect(page.locator("#task-panel")).toBeVisible();
-
-  const field = page.getByRole("textbox",{name:"Task name"});
+test("a draft survives the island folding, and renaming happens in place", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await openToday(page);
+  const field = page.getByRole("textbox", {name: "Task name"});
   await field.click();
   await field.fill("Half a thought");
-  await page.mouse.move(0,0);
-  await expect(field).toBeVisible();          // a live field holds the panel open
-  await page.keyboard.press("Escape");        // releases the field, keeps the draft
-  await expect(page.locator("#task-panel")).toBeHidden();
-  await page.locator("#task-rail").hover();
+  await page.mouse.move(0, 400);
+  await expect(field).toBeVisible();            // a live field holds it open
+  await page.keyboard.press("Escape");          // releases the field, keeps the draft
+  await expect(page.locator("#island-expanded")).toBeHidden();
+  await open(page);
   await expect(field).toHaveValue("Half a thought");
 
-  // Rename without leaving the panel: click the title, type, Enter.
-  await page.getByRole("button",{name:"Rename Get outside for a walk"}).click();
+  await day(page).getByRole("button", {name: "Rename Get outside for a walk"}).click();
   const rename = page.locator(".day-field");
   await expect(rename).toBeFocused();
   await rename.fill("Get outside twice");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Get outside twice",{exact:true})).toBeVisible();
-  await expect(page.getByText("Get outside for a walk",{exact:true})).toBeHidden();
+  await expect(day(page).getByText("Get outside twice", {exact: true})).toBeVisible();
 
-  await page.getByRole("button",{name:"Collapse task panel",exact:true}).click();
-  await expect(page.locator("#task-panel")).toBeHidden();
+  await page.getByRole("button", {name: "Collapse the island", exact: true}).click();
+  await expect(page.locator("#island-expanded")).toBeHidden();
 });
 
 test("finishing the last task clears the day", async ({page}) => {
-  await page.goto("/tasks.html?single");
-  await page.locator("#task-rail").hover();
-  await expect(page.locator("#rail-count")).toHaveText("0/1");
-  await page.getByLabel("Complete Get outside for a walk",{exact:true}).check();
-  await expect(page.locator("#rail-count")).toHaveText("1/1");
-  await expect(page.getByRole("heading",{name:"Day clear"})).toBeVisible();
-  await expect(page.getByText("1 done · nothing left")).toBeVisible();
-  // The ring draws itself and the mark follows it. Both start from a full dash
-  // offset, so this also catches the day the geometry and the dash lengths in
-  // the stylesheet stop agreeing — the ring then never leaves its hidden state.
+  await page.goto("/tasks.html?single&quiet");
+  await openToday(page);
+  await expect(page.locator("#day-left")).toHaveText("1 left");
+  await day(page).getByLabel("Complete Get outside for a walk", {exact: true}).check();
+  await expect(page.locator("#day-left")).toHaveText("all done");
+  await expect(page.getByRole("heading", {name: "Day clear"})).toBeVisible();
+  // Both parts of the mark draw themselves; this catches the day the dash
+  // lengths in the stylesheet stop matching the geometry.
   for (const part of [".arc", ".mark"]) {
     await expect.poll(() => page.locator(`.clear-ring ${part}`)
       .evaluate(el => getComputedStyle(el).strokeDashoffset)).toBe("0px");
   }
-  await page.screenshot({path:"test-results/task-clear.png"});
+  await page.screenshot({path: "test-results/island-clear.png"});
 });
 
 test("editor: safe quick add, rename, schedule and empty connection state", async ({page}) => {
-  await page.setViewportSize({width:460,height:690});
+  await page.setViewportSize({width: 460, height: 690});
   await page.goto("/task-editor.html");
-  await page.getByLabel("Task",{exact:true}).fill('<img src=x onerror="alert(1)"> Review');
-  await page.getByRole("button",{name:"Add task",exact:true}).click();
-  await expect(page.getByText('<img src=x onerror="alert(1)"> Review',{exact:true})).toBeVisible();
+  await page.getByLabel("Task", {exact: true}).fill('<img src=x onerror="alert(1)"> Review');
+  await page.getByRole("button", {name: "Add task", exact: true}).click();
+  await expect(page.getByText('<img src=x onerror="alert(1)"> Review', {exact: true})).toBeVisible();
   await expect(page.locator("#editor-list img")).toHaveCount(0);
-  await page.getByRole("button",{name:'Rename <img src=x onerror="alert(1)"> Review',exact:true}).click();
-  await page.getByLabel("Task",{exact:true}).fill("Review the release");
-  await page.getByRole("button",{name:"Save name",exact:true}).click();
-  await expect(page.getByText("Review the release",{exact:true})).toBeVisible();
-  await page.getByText("Review the release",{exact:true}).scrollIntoViewIfNeeded();
-  await page.screenshot({path:"test-results/task-editor-list.png"});
-  await page.getByRole("heading",{name:"Your tasks",exact:true}).scrollIntoViewIfNeeded();
-  await page.screenshot({path:"test-results/task-editor.png"});
-  await page.goto("/tasks.html?empty");
-  await page.locator("#task-rail").hover();
-  await expect(page.getByRole("button",{name:"Connect TickTick",exact:true})).toBeVisible();
-  await expect(page.locator("#rail-count")).toHaveText("—");
+  await page.getByRole("button", {name: 'Rename <img src=x onerror="alert(1)"> Review', exact: true}).click();
+  await page.getByLabel("Task", {exact: true}).fill("Review the release");
+  await page.getByRole("button", {name: "Save name", exact: true}).click();
+  await expect(page.getByText("Review the release", {exact: true})).toBeVisible();
+  // The island's two new connections are configured here, never in the notch.
+  await expect(page.getByLabel("Client secret")).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Open the island")).toHaveValue("Ctrl+Alt+Space");
+  await expect(page.getByLabel("Hide everything")).toHaveValue("Ctrl+Alt+H");
+  await page.screenshot({path: "test-results/task-editor.png"});
+
+  // Back to a normal viewport: the island is ~970px wide and does not fit the
+  // narrow one this test used for the editor page.
+  await page.setViewportSize({width: 1200, height: 700});
+  await page.goto("/tasks.html?empty&quiet");
+  await open(page);
+  await page.locator('[data-tab="today"]').click();
+  await expect(page.getByRole("button", {name: "Connect TickTick", exact: true})).toBeVisible();
+  // Nothing connected means nothing countable: the line is empty rather than
+  // claiming a zero it cannot stand behind.
+  await expect(page.locator("#day-left")).toHaveText("");
 });
 
-test("long nested titles remain within the task panel", async ({page}) => {
-  await page.goto("/tasks.html");
-  await page.locator("#task-rail").hover();
-  await expect(page.locator("#task-panel")).toBeVisible();
-  await page.locator(".task-title").first().evaluate(label => { label.textContent = "A very long nested task title ".repeat(12); });
-  const overflow = await page.locator("#task-panel").evaluate(panel => panel.scrollWidth > panel.clientWidth);
-  expect(overflow).toBe(false);
+test("long titles stay inside the island", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await openToday(page);
+  await day(page).locator(".task-title").first().evaluate(label => {
+    label.textContent = "A very long nested task title ".repeat(12);
+  });
+  // Polled: the island is still springing to its new height when the title
+  // changes, and a plain expect on an evaluate result does not retry.
+  await expect.poll(() => page.locator("#island")
+    .evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
 });
 
-test("all four edges keep content upright and within the surface", async ({page}) => {
-  await page.setViewportSize({width:1000,height:850});
-  await page.goto("/tasks.html");
-  await page.locator("#task-rail").hover();
-  await page.getByRole("button",{name:"Pin task panel",exact:true}).click();
-  await page.getByRole("button",{name:"Notch settings",exact:true}).click();
-  for(const edge of ["left","top","bottom","right"]) {
+test("all four edges keep the island upright and inside its window", async ({page}) => {
+  await page.setViewportSize({width: 1000, height: 850});
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  await page.getByRole("button", {name: "Island settings", exact: true}).click();
+  for (const edge of ["left", "top", "bottom", "right"]) {
     await page.locator(`[data-task-edge="${edge}"]`).click();
-    await expect(page.locator("#notch-shell")).toHaveAttribute("data-edge",edge);
-    const fits=await page.locator("#notch-shell").evaluate(shell=>{
-      const outer=shell.getBoundingClientRect(),panel=document.getElementById("task-panel")!.getBoundingClientRect();
-      return panel.left>=outer.left-1 && panel.right<=outer.right+1 && panel.top>=outer.top-1 && panel.bottom<=outer.bottom+1;
-    });
-    expect(fits).toBe(true);
-    await page.screenshot({path:`test-results/task-${edge}.png`});
+    await expect(page.locator("#notch-shell")).toHaveAttribute("data-edge", edge);
+    await expect.poll(() => page.locator("#notch-shell").evaluate(shell => {
+      const outer = shell.getBoundingClientRect();
+      const island = document.getElementById("island")!.getBoundingClientRect();
+      return island.left >= outer.left - 1 && island.right <= outer.right + 1
+        && island.top >= outer.top - 1 && island.bottom <= outer.bottom + 1;
+    })).toBe(true);
+    await page.screenshot({path: `test-results/island-${edge}.png`});
   }
-  await page.getByRole("textbox",{name:"Task name"}).fill("A small next step");
-  await page.screenshot({path:"test-results/task-inline.png"});
 });
 
-test("a short daily list uses a compact panel and reduced motion still folds", async ({page}) => {
-  await page.emulateMedia({reducedMotion:"reduce"});
-  await page.goto("/tasks.html?single");
-  await page.locator("#task-rail").hover();
-  await expect(page.locator("#rail-count")).toHaveText("0/1");
-  const panel=await page.locator("#task-panel").boundingBox();
-  expect(panel!.height).toBeLessThan(300);
-  await page.screenshot({path:"test-results/task-compact.png"});
-  await page.mouse.move(0,0);
-  await expect(page.locator("#task-panel")).toBeHidden();
+test("a short day uses a shorter island and reduced motion still folds", async ({page}) => {
+  await page.emulateMedia({reducedMotion: "reduce"});
+  await page.goto("/tasks.html?single&quiet");
+  await open(page);
+  await page.locator('[data-tab="today"]').click();
+  await expect(page.locator("#task-list .task-title")).toHaveCount(1);
+  // A one-task day is markedly shorter than the 527px the island can reach.
+  const island = await page.locator("#island").boundingBox();
+  expect(island!.height).toBeLessThan(360);
+  await page.mouse.move(0, 400);
+  await expect(page.locator("#island-expanded")).toBeHidden();
+});
+
+test("Home gathers the other three onto one row, and opens into them", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  // Media: the track and working transport, without leaving Home.
+  await expect(page.locator(".home-track-title")).toHaveText(/potion shop/);
+  // exact: the column heading "Open Now playing" also contains "Play".
+  await page.getByRole("button", {name: "Pause", exact: true}).click();
+  await expect(page.getByRole("button", {name: "Play", exact: true})).toBeVisible();
+  // Calendar: a date strip with today marked, and what is next.
+  await expect(page.locator(".home-day.is-today .home-day-num")).toHaveText(String(new Date().getDate()));
+  await expect(page.locator(".home-next-when")).toHaveText(/^(All day|now|in \d+ (min|h|d))$/);
+  /* Today: the next few tasks, completable in place. ⚠️ No progress ring here
+   * any more — it cost a third of the section to say "1/1", which the resting
+   * pill already says and the Today screen says properly. */
+  await expect(page.locator(".home-tally")).toHaveCount(0);
+  await expect(page.locator(".home-task")).toHaveCount(3);
+  const late = page.locator(".home-task").filter({hasText: "Book a haircut"});
+  // click(), not check(): the row is disabled the instant it is completed, and
+  // check() waits for a checkbox it can still toggle.
+  await late.getByLabel("Complete Book a haircut", {exact: true}).click();
+  // It stays a moment, struck through, before it leaves — the same settle beat
+  // as the day screen, so the tick is seen rather than the row just vanishing.
+  await expect(late).toHaveClass(/is-done/);
+  /* The tally is not asserted here: the pill is showing the meeting 18 minutes
+   * away, which outranks the clock that carries it. The day screen's own test
+   * covers the counting, under `?quiet`. */
+  // The island is a BAR: one row, wider than it is tall.
+  const bar = await page.locator("#island").boundingBox();
+  expect(bar!.width).toBeGreaterThan(bar!.height * 3);
+  // Each section opens the screen it summarises.
+  await page.getByRole("button", {name: "Open Calendar"}).click();
+  await expect(page.locator('[data-tab="calendar"]')).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({path: "test-results/island-home.png"});
+});
+
+test("the calendar has a week grid as well as an agenda", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.locator('[data-tab="calendar"]').click();
+  await expect(page.locator(".cal-row").first()).toBeVisible();
+  await page.getByRole("button", {name: "Week"}).click();
+  await expect(page.locator(".cal-wcol")).toHaveCount(7);
+  await expect(page.locator(".cal-wcol.is-today .cal-wnum")).toHaveText(String(new Date().getDate()));
+  await expect(page.locator(".cal-chip").first()).toBeVisible();
+  await expect(page.locator(".cal-row")).toHaveCount(0);
+  await page.getByRole("button", {name: "Agenda"}).click();
+  await expect(page.locator(".cal-row").first()).toBeVisible();
+});
+
+test("a wheel changes screens unless the thing under it can scroll", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator(".island-tabs").hover();
+  await page.mouse.wheel(0, 120);
+  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+  // Past the cooldown: one flick must not run through every tab, so a second
+  // wheel inside 260ms is deliberately ignored. The pointer is NOT re-aimed —
+  // the rail has moved out from under it, and the gesture must survive that.
+  await page.waitForTimeout(320);
+  await page.mouse.wheel(0, -120);
+  await expect(page.locator('[data-tab="home"]')).toHaveAttribute("aria-selected", "true");
+
+  // Vertical scrolling over a list must stay with the list.
+  await page.locator('[data-tab="today"]').click();
+  const list = await page.locator("#task-list").boundingBox();
+  await page.mouse.move(list!.x + list!.width / 2, list!.y + 20);
+  await page.mouse.wheel(0, 200);
+  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+  // A horizontal swipe there does change screens.
+  await page.waitForTimeout(320);
+  await page.mouse.wheel(200, 0);
+  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "false");
+});
+
+test("the System screen carries the machine's own controls", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator('[data-tab="system"]').click();
+
+  /* Volume and brightness are capsules, not range inputs — the whole shape is
+   * the target. They keep role=slider and the arrow keys, so nothing is lost
+   * by leaving the native control behind. */
+  const volume = page.getByLabel("Volume");
+  await expect(volume).toHaveAttribute("role", "slider");
+  await expect(volume).toHaveAttribute("aria-valuenow", "51");
+  await expect(page.getByLabel("Brightness")).toHaveAttribute("aria-valuenow", "14");
+  await volume.focus();
+  await volume.press("ArrowUp");
+  await expect(volume).toHaveAttribute("aria-valuenow", "56");
+  await expect(volume.locator(".cap-readout")).toHaveText("56%");
+  // The fill grows from the bottom, so its height is the value.
+  await expect(volume.locator(".cap-fill")).toHaveAttribute("style", /height:\s*56%/);
+
+  // The machine reads itself, and an alarming figure looks alarming.
+  const machine = page.locator(".sys-machine");
+  await expect(machine).toContainText("Ethernet");
+  await expect(machine).toContainText("7.6 GB free");
+  await expect(machine.locator(".meter-rail i.hot")).toHaveCount(1);   // disk at 97%
+  await page.screenshot({path: "test-results/island-system.png"});
+});
+
+test("a long device list stays behind one press instead of growing the panel", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator('[data-tab="system"]').click();
+
+  /* ⚠️ The point of the whole tile shape: seven endpoints used to make a column
+   * taller than the island can be, and the tile underneath was cut off with
+   * nothing to scroll. Closed, the tile shows only what is in use. */
+  const output = page.locator(".sys-output");
+  await expect(output.locator(".sys-row")).toHaveCount(1);
+  await expect(output.locator(".sys-row")).toContainText("Mateusz's Buds3 Pro");
+  await expect(output.locator(".tile-more")).toHaveText("6 more");
+  const closed = (await page.locator("#island").boundingBox())!.height;
+
+  await output.locator(".tile-more").click();
+  const sheet = output.locator(".sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator(".sys-row")).toHaveCount(7);
+
+  // Opening it GROWS the island rather than being clipped by it.
+  await expect.poll(() => page.locator("#island").evaluate(el => el.getBoundingClientRect().height))
+    .toBeGreaterThan(closed);
+  const box = await sheet.boundingBox();
+  const island = await page.locator("#island").boundingBox();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(island!.y + island!.height + 1);
+
+  // Choosing from it switches and closes.
+  await sheet.locator(".sys-row").nth(1).click();
+  await expect(output.locator(".sheet")).toHaveCount(0);
+  await expect(output.locator(".sys-row")).toContainText("DELL U2724D");
+
+  /* Bluetooth is a readout, not a control: Windows exposes no supported way to
+   * connect or disconnect a device from another process. */
+  const bt = page.locator(".sys-bluetooth");
+  await expect(bt.locator(".sys-row")).toHaveCount(2);           // the connected ones
+  await expect(bt.locator(".sys-row").first()).toHaveClass(/static/);
+  await bt.locator(".tile-more").click();
+  await expect(bt.locator(".sheet .sys-row")).toHaveCount(4);    // everything paired
+});
+
+test("the day's app time lives on System, and the panel grows to hold it", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator('[data-tab="system"]').click();
+
+  const strip = page.locator(".sys-day");
+  await expect(strip).toBeVisible();
+  await expect(strip.locator(".apptime-total")).toHaveText("4h 40m");
+  // Four named apps plus a slice for everything else, so the bar is a whole day.
+  await expect(strip.locator(".apptime-bar i")).toHaveCount(5);
+  await expect(strip.locator(".apptime-key").first()).toContainText("VS Code 2h 30m");
+
+  /* ⚠️ The tile sits on a second grid row. Measuring a grid by its tallest
+   * child was right only while there was one row, and clipped this one. */
+  const island = await page.locator("#island").boundingBox();
+  const tile = await strip.boundingBox();
+  expect(tile!.y + tile!.height).toBeLessThanOrEqual(island!.y + island!.height);
+
+  // It is not on Today any more.
+  await page.locator('[data-tab="today"]').click();
+  await expect(page.locator("#apptime")).toHaveCount(0);
 });

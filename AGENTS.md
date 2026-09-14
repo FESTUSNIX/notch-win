@@ -535,3 +535,631 @@ produces **no error**.
 `focus-timer.ts` persists a local timestamp-based session, updated only on start/pause/resume/end. `tasks.ts` paints the two clock labels once per second without redrawing task inputs. `task-surface.ts` uses FRAME.focusPillDepth/Length for the collapsed timer on all four edges. Focus is local and never writes task data by itself; Done uses the existing completion command. Keep the timer visible when the panel folds. The 25-minute mark is a visual cue, not an automatic completion or reset.
 
 Focus visual refinement: task-icons.ts renders the free Hugeicons package as local SVG; controls retain aria-label/title when text is removed. The focused task sits directly in the panel, with no nested card. The collapsed focus pill contains only a ~7 x 96 px fill bar; exact elapsed time is shown in the open panel and its accessible label. Bar orientation follows the screen edge. Paused fill dims; the 25-minute cue remains amber.
+
+## 10. The island (2026-09-08)
+
+The task notch became a **Dynamic-Island-style surface**: one rounded rectangle
+welded to a screen edge that shows the most live thing going on and grows into a
+panel of screens — **Today · Media · Calendar**. The pill-plus-detached-card
+design is gone, and so is `task-surface.ts`.
+
+- `island-surface.ts`: the shape. One spring drives width, height and corner
+  radius; the two content layers cross-fade inside `overflow: hidden`.
+- `island-activity.ts`: what the collapsed pill says, and the claim contest.
+- `tasks.ts`: the shell — header, tab rail, which screen is showing.
+- `screen-today.ts` / `screen-media.ts` / `screen-calendar.ts`: the screens.
+  Each owns its body, supplies a subtitle, and returns an `Activity` claim.
+- `src-tauri/src/media.rs`: Windows' GlobalSystemMediaTransportControls.
+- `src-tauri/src/calendar.rs`: Google Calendar, read-only, OAuth PKCE loopback.
+- `src-tauri/src/shortcuts.rs`: the two global keys.
+
+The window keeps the label **`tasks`** and the config keys keep their
+`task_*` names. Renaming them is pure churn with a config migration attached and
+no user-visible benefit; the code calls the thing an island regardless.
+
+### The collapsed pill is a contest, not three slots
+
+It is ~200 x 35px: one glyph and one line. Every screen returns a claim or null
+and the highest wins, so the pill can never show a placeholder while something
+real is happening one screen over. The order, and the reasons:
+
+| claim | priority | why there |
+|---|---|---|
+| meeting in ≤ 5 min | 50 | the only claim with a deadline attached |
+| focus session running | 45 | you started it deliberately; music is ambient |
+| something playing | 40 | it changes under you |
+| meeting in ≤ 30 min | 25 | information, not an event |
+| player paused | 15 | keeps the controls reachable, claims almost nothing |
+| the day's tally | 5 | the resting state |
+
+⚠️ **A meeting only claims the pill inside 30 minutes.** A four o'clock meeting
+is not news at nine, and without the cutoff it would sit on the day's progress
+all day.
+
+⚠️ **Opening the island does NOT jump to the claim's screen.** Hover opens it
+before any click can land, so that navigation would fire on a pointer merely
+crossing the pill — and with music playing all afternoon the claim is Media all
+afternoon, so the task list would never be what opening it showed. The live
+screen raises a **dot on its tab** instead; the tabs do the moving.
+
+### Traps, all of which produce no error
+
+1. **`windows` 0.62 dropped `IAsyncOperation::get()`.** The crate offers only
+   `IntoFuture` now. `media.rs` spins on `Status()` / `GetResults()` with a
+   two-second deadline rather than standing a Tokio runtime up inside a COM
+   apartment for a sub-millisecond local call.
+2. **`windows-future` must track the version `windows` itself depends on**
+   (0.62.2 → 0.3.2). `windows` re-exports `windows_core` as `windows::core` but
+   *not* this crate, so it is a direct dependency here; a different minor version
+   makes `IAsyncOperation` a different type from the one the APIs return.
+3. **Every WinRT thread needs `CoInitializeEx` first.** Without it the first
+   activation fails with `CO_E_NOTINITIALIZED` and every reading is empty.
+4. **SMTC is polled, not subscribed.** Handlers have to be attached per session
+   and torn down when the current session changes, and the position still has to
+   be sampled. One second of polling is two local COM calls.
+5. **Album art is only re-read when the track changes.** It is a few hundred KB
+   over IPC; polling it would decode a JPEG a second.
+6. **Google requires `client_secret` even for a Desktop client with PKCE**, and
+   returns a **refresh token only with `access_type=offline` + `prompt=consent`**.
+   Without both, the connection silently lasts one hour.
+7. **`open_external` is scheme-checked.** The URL comes from an event body that
+   anyone who can put a meeting in your calendar can write, and `cmd /c start`
+   would take `file:` or a UNC path.
+8. **Neither island layer is anchored with a percentage.** Two separate bugs
+   came from that: `paint()` writing `transform: translateY(...)` replaced the
+   CSS centring transform and the panel landed half its own width off to the
+   side; and a layer laid out at `left: 50%` counts as layout overflow of the
+   island whatever the transform does, so `scrollWidth` reported an overflow
+   with nothing visibly out of place. Both layers are placed in pixels every
+   frame.
+9. **`measure()` must not use `scrollHeight` on the scroller.** A `flex: 1`
+   scroller whose content is shorter than its box reports the box, so the
+   measurement feeds the panel's height back into itself and a one-task day
+   stays as tall as a full one. Sum the scroller's children instead.
+10. **The island's hairline is an inset box-shadow, not a border.** A border sits
+    outside the content box, so a layer sized to the island's width is two pixels
+    wider than the box can hold and the island reports itself as overflowing
+    while looking perfectly fine.
+11. **A vertical island's pill hides its text.** It is ~35px across, and
+    `align-items: center` in a column lets the copy size to its own max-content
+    and hang out of the shape. The glyph carries the activity there.
+12. **The shortcut handler must check `ShortcutState::Pressed`.** Otherwise press
+    and release both run the action and every toggle is a no-op.
+13. **`show()` drops the hardened ex-styles**, the same tao trap `win::harden`
+    exists for. The hide shortcut re-hardens on the way back.
+14. **Browser tests must poll anything measured mid-morph.** `expect()` on an
+    `evaluate` result does not retry, and three tests failed purely on the spring
+    not having settled.
+
+### Preview and tests
+
+`?quiet` puts the browser preview in its **resting** state — nothing playing and
+nothing imminent in the calendar. Both outrank the day on the pill, so any test
+that wants to read the day's own tally needs it. `?single`, `?empty` unchanged.
+`pnpm test`, `pnpm test:ui` and `cargo test --lib` all pass; the live SMTC probe
+is `cargo test --lib media -- --ignored --nocapture`, which prints whatever is
+playing on this machine.
+
+### Shape and screens (2026-09-09)
+
+The island is **wider than it is tall** (699 x up to 388 CSS px) and its default
+screen is **Home**: three columns, one per other screen. Tabs are Home · Today ·
+Media · Calendar.
+
+1. **The shape is `notchPath`, applied as an SVG `clipPath`.** The island flares
+   back *out* to the bezel at each end exactly as the usage notch does, which no
+   `border-radius` can describe. Reusing the existing generator rather than
+   re-deriving it: the arc sweep flags and the corner/flare clamping are the
+   parts that are easy to get subtly wrong, and they are already right there.
+   ⚠️ It is generated in CSS pixels, so `cornerRadius` has to be passed in —
+   `FRAME.cornerRadius` is a frame measurement and means nothing in that space.
+2. **Lengths in FRAME are the BODY, not the element.** The flare is added on
+   top, so the island always measures `body + 2 * curl` along its edge, and the
+   content layers are sized to the body. Laying content into the flare puts it
+   under the curve.
+3. **No drop shadow.** A CSS filter is applied *before* clipping, so it would be
+   drawn around the rectangle and then cut away by the clip. The sibling notch
+   has none either; the shape carries the separation.
+4. **`measure()` has three modes, and a grid needs its own.** `spans` takes the
+   tallest child plus padding — a grid's natural height is its tallest column,
+   and summing its children asks for three stacked columns' worth of panel and
+   clips the real one. `scrolls` sums children (never `scrollHeight`, see §10).
+   Everything else is `offsetHeight`.
+5. **Home owns no data.** Every column reads another screen's state and calls
+   its methods, so there is one optimistic task layer, one media session and one
+   agenda. Its column headings are the way into the full screens.
+6. **`upNext` keeps a `settling` task.** It has already been marked done by the
+   optimistic layer, so dropping it would make the row vanish from Home the
+   instant it was ticked — no tick drawn, nothing to say the click landed. The
+   day screen holds finished rows for the same 520 ms for the same reason.
+7. **The per-second tick updates in place; it never re-renders.** Rebuilding a
+   screen every second replaces every node under the pointer: hover states
+   reset, a click can land on an element already thrown away, and Playwright
+   never finds the page stable enough to act on.
+8. **A wheel changes screen unless the thing under the pointer can scroll.**
+   Not "over the tab rail only", which was the first version: the island is a
+   different height on each screen, so switching moves the rail out from under
+   the pointer — measured at 71px between Home and Today — and the next flick
+   lands on whatever slid into its place. There is a 260 ms cooldown so one
+   flick cannot run through every tab; a test that wheels twice must wait it out.
+9. **`cmd /C start` must never be used to open a URL.** `cmd` treats `&` as a
+   command separator and an OAuth URL is nothing but `&`-separated parameters —
+   the browser got everything up to the first one and Google answered
+   "Required parameter is missing: response_type". `ShellExecuteW` hands the
+   string to the shell API with no command line to re-parse, and its return
+   value is checked: at or below 32 is an error, and a browser that never opened
+   otherwise looks exactly like waiting three minutes for a redirect.
+10. **Demo mode blocks the write, not the field.** Focusing the composer is what
+    lifts `WS_EX_NOACTIVATE`, so disabling it under fixtures left the native
+    smoke test with no way to exercise the one behaviour it exists to check.
+11. **Home renders the same task titles as the day screen**, so browser tests
+    must scope day assertions to `[data-screen="today"]` or Playwright refuses
+    in strict mode.
+
+### The bar (2026-09-09)
+
+Home was three vertical columns in a 758 x 388 panel and read as clutter. It is
+now **one row** in a 969 x ~158 bar: art beside the words beside the transport,
+a month and a date strip, a ring and two tasks — three sections separated by
+hairlines, no section headings, no cards around events.
+
+12. **Chrome is one strip, not two.** The tabs moved from a rail at the bottom
+    into the top-left of the header, with the window controls at the top-right.
+    That is ~50px of height back and puts where-you-are and where-you-can-go on
+    the same line. The shell no longer has a title or subtitle at all — each
+    screen says what it needs (Today prints its own date and count).
+13. **`overdueDays` returns 0 for a completed task**, so a task that was three
+    months late drops to unranked the instant it is ticked and falls straight
+    out of a top-N list. On Home that looked exactly like the settle window not
+    working, and no filter can fix it — `upNext` ranks a settling task as if it
+    were still open so it holds its place until the timer moves it.
+14. **Finishing overdue work DOES move the day's tally** (2/6 -> 3/7), and that
+    is not a contradiction of §"the pill" above. Pending overdue work stays out
+    of the denominator so a backlog cannot hold the day at 2/15 all week; work
+    completed today is work done today and joins as done. The ratio can only
+    improve by clearing a backlog, never worsen.
+15. **The island is ~970px wide.** A browser test that sets a narrow viewport
+    for the editor page must reset it before loading the island, or the tabs are
+    off screen and every click times out.
+16. **`.check()` is the wrong Playwright verb for a row that completes.** It
+    waits for a checkbox it can still toggle, and a completed row is disabled;
+    `.click()` is what the interaction actually is.
+
+17. **The media waveform is synthetic, and the code says so.** Windows' transport
+    controls hand over metadata, never samples, and nothing here captures the
+    loopback stream — so there is no audio to analyse. What makes it honest
+    rather than decorative is that `waveform()` is *deterministic*: seeded from
+    title and artist, so one track always draws the same shape and a different
+    track visibly draws a different one. Random bars redrawn each render would
+    be a lie that also flickers, and a browser test asserts the shape is stable
+    across a screen change.
+18. **Only the four bars at the playhead animate.** Putting the whole played
+    region in motion says "this audio is playing again", which is not what it
+    means.
+19. **The waveform seeks**, via `TryChangePlaybackPositionAsync`, and is only
+    offered when the session reports `IsPlaybackPositionEnabled` — several
+    players accept the call and silently do nothing. A scrubber that cannot
+    scrub is a worse affordance than a plain bar.
+
+### Clock, hiding, capture and audio (2026-09-09)
+
+20. **The resting pill is a clock**, built by the shell rather than by a screen.
+    Nothing owns the time, and the alternative — Today claiming the pill whenever
+    it had nothing better to say — made the default state of the whole app a
+    fraction. A paused player hands the pill back after **30 seconds**: paused is
+    still a claim at first so the controls stay one glance away, but not for the
+    rest of the afternoon.
+21. **`renderActivity` reuses its nodes.** The pill repaints every second, and
+    `replaceChildren` each time means the text can never animate (there is no old
+    node to animate away from) and any hover inside it is thrown away on every
+    tick. It rebuilds only when the *kind* of claim changes.
+22. **Restarting a CSS animation needs a forced reflow.** Removing and re-adding
+    a class in the same task does nothing — the browser never computes the
+    intermediate style. `tween.ts` reads `offsetWidth` in between.
+23. **Hiding is animated by the webview; Rust waits it out.** The class drives a
+    transform, and `apply_visibility` only really calls `hide()` after 340 ms —
+    and **re-reads the state first**, because it can flip back mid-animation and
+    hiding then leaves a window that is invisible but believes it is shown.
+    ⚠️ Neither `#island` nor `#stage` is ever given a transform by its paint
+    loop; anything that starts writing one must move the transition to a wrapper.
+24. **Auto-hide uses `SHQueryUserNotificationState`**, the API Windows itself
+    uses to decide whether a toast may appear, so it already knows about
+    exclusive-fullscreen games and presentation mode. Comparing the foreground
+    window's rect to the monitor — the obvious approach — calls a maximised
+    editor fullscreen and hides the island all day. It is kept in a separate
+    atomic from `config.chrome_hidden`: one is a preference that survives a
+    restart, the other a condition that clears itself.
+25. **Switching the audio output goes through `IPolicyConfig`**, which is
+    undocumented — there has never been a public API. The vtable in audio.rs is
+    declared by hand and **the ten reserved slots are load-bearing**: they exist
+    only to put `SetDefaultEndpoint` at the right offset, and removing one makes
+    this call `SetPropertyValue` with a device id, which is not a crash, just
+    wrong. Both `eConsole` and `eMultimedia` are set, or communication apps stay
+    on the old device and it looks like the switch failed.
+26. **Bluetooth is read from `PKEY_Device_EnumeratorName` (`BTH…`)**, not the
+    form factor — a Bluetooth headset reports "Headset" exactly like a USB one.
+27. **An endpoint name has two shapes and both are real.** "Headphones (6- Buds3
+    Pro)" hides the device in the brackets; "DELL U2724D (NVIDIA High Definition
+    Audio)" hides the *driver* there. Taking the brackets every time renames
+    every monitor to its graphics card, so `deviceName` keeps whichever half is
+    not a generic form factor. Covered in `tests/media-format.test.mjs`, which is
+    why the pure helpers live in `media-format.ts` — screen-media.ts touches the
+    DOM on import and cannot be loaded under `node --test`.
+
+### Reveal, System, app time (2026-09-09)
+
+`system.rs` (volume, brightness, Bluetooth), `apptime.rs` (foreground tracking),
+`screen-system.ts`. Tabs are Home · Today · Media · Calendar · System.
+
+28. **Hidden no longer means `hide()`.** A hidden window has no edge to hover,
+    so there was no way back except the shortcut — and the island is hideable
+    precisely because it sits where a hand already is. Hidden now means the shape
+    has slid out through its bezel, leaving a **3px hot strip** the width of the
+    pill that reveals it on hover and slides it away again on leave. ⚠️ The strip
+    makes the window non-click-through where it sits, so anything larger quietly
+    swallows clicks at the top of the screen for a surface that is not visible.
+29. **The System screen is read on open, never polled.** Brightness is a DDC/CI
+    round trip down the display cable and can hang for a second on a panel that
+    half-implements the protocol; Bluetooth enumeration walks the radio's device
+    list. `system.rs` polls only the connected list, on a 4-second beat, and only
+    to raise a notice — and it seeds from the first read so devices already
+    connected at launch are not announced as if they had just arrived.
+30. **`GetMonitorBrightness` and `SetMonitorBrightness` return a raw `BOOL`**,
+    not the `Result` most of the `windows` crate hands back. A monitor that
+    refuses DDC/CI is reported in words rather than shown as a dead slider.
+31. **Bluetooth rows are a readout, and look like one.** Windows exposes no
+    supported way to connect or disconnect a device from another process, so
+    those rows must never look clickable.
+32. **App time never counts idle.** Without `GetLastInputInfo`, a machine left on
+    overnight reports fourteen hours in whatever was in front and the number
+    stops meaning anything. Only the process name is recorded — never window
+    titles, which are where the private part of "what were you doing" lives.
+    `PROCESS_QUERY_LIMITED_INFORMATION` so it works unelevated against
+    higher-integrity processes.
+33. **The app-time strip shares the focus session's slot.** One or the other,
+    never both, so the day's breakdown costs no row. It is rebuilt only when its
+    signature changes — it redraws on the same pass as the task list, which runs
+    on every optimistic tick.
+34. **Home lost its progress ring.** It cost a third of the section to say
+    "1/1", which the resting pill already says and the Today screen says
+    properly. The tasks took the room: three of them, with list colour and how
+    late they are.
+35. ⚠️ **Do not write CSS escapes through a patch script.** `content:" b7"`
+    survived one round of scripting as a doubled backslash and rendered as the
+    literal text `b7` next to the date. The middle dot is a literal character in
+    the stylesheet now, and a browser test asserts the date line never contains
+    `00b7`.
+
+### The iOS pass (2026-09-09)
+
+Content lives in translucent rounded **tiles** on the dark ground, separated by
+gaps rather than hairlines — Control Centre's grammar. App time moved off Today
+onto System, where it sits as a full-width tile under the three columns.
+
+36. **"Frosted" is painted, not blurred.** `backdrop-filter` on a child of
+    `#island` samples the island's own opaque black, not the desktop behind the
+    window — the island is where the transparency stops. Translucent white over
+    black is what iOS-on-dark actually looks like anyway. Every surface reads
+    from `--tile` / `--tile-hi` / `--tile-on`.
+37. **The volume and brightness controls are capsules, not `<input type=range>`.**
+    A range gives a 4px rail whose thumb is the only hit area, and restyling it
+    into this shape means fighting three vendor pseudo-elements. The capsule
+    keeps `role="slider"`, `aria-valuenow` and the arrow keys, so nothing is
+    lost by leaving the native control behind — the browser tests drive it by
+    keyboard.
+38. **The capsule glyph uses `mix-blend-mode: difference`.** It sits at the
+    bottom where the fill usually is, but at a low value the fill is beneath it.
+    Blending inverts it against whatever it is over, with no second state to
+    keep in step.
+39. ⚠️ **`measure()`'s grid rule counts ROWS.** Taking the tallest child was
+    right only while a grid had a single row, and silently clipped the second
+    the day System grew a full-width tile underneath. It now groups children by
+    `offsetTop`, takes the tallest in each row and adds the gaps back — which is
+    also correct for the single-row case, so there is one rule, not two.
+
+### The bento, and lists that do not grow (2026-09-09)
+
+System is a fixed-shape bento — capsules, Output, Bluetooth, This PC, and the
+day's app time — rather than three columns that grow with their contents.
+
+40. ⚠️ **A list must not drive the panel height.** Seven audio endpoints (a
+    developer's machine has Steam's two virtual ones, every monitor and the real
+    speakers) made a column taller than the island can be, so the tile
+    underneath was cut off with **nothing to scroll**. A tile now shows what is
+    *in use* and puts the rest behind one press, which costs the same two rows
+    with three devices or thirty.
+41. **`measure()`'s grid rule is the union of the boxes, in viewport space.**
+    Three earlier versions were each wrong: summing the children asks for three
+    stacked columns' worth of panel, taking the tallest clips a second row, and
+    grouping by `offsetTop` over-counts the moment a tile spans two rows — which
+    is what a bento is made of. Measuring in viewport space also lets an
+    absolutely positioned `.sheet` count, so opening a device list **grows** the
+    island instead of being clipped by it.
+42. **The day tile runs under the three narrow tiles, not beside the capsules.**
+    Spanning the capsules down a second short row left a tile two thirds empty —
+    exactly the dead space the redesign was about.
+43. **Home's tiles stretch.** Three tiles of different natural heights left
+    ragged gaps under the short ones, which was most of what read as emptiness.
+44. **The machine tile reads CPU, memory, disk, network and uptime.** ⚠️
+    `GetSystemTimes` returns cumulative totals — reading it once and dividing
+    gives the machine's lifetime average, which barely moves and looks broken;
+    a previous sample is kept so the figure is a delta. `GetAdaptersAddresses`
+    is called twice on purpose, once for the size: guessing a buffer is how it
+    silently truncates on a machine with Hyper-V, WSL and a VPN on it. Meters go
+    amber past 80% and red past 92%, because a disk at 97% is the one fact on
+    that screen that is actually urgent.
+45. **Uptime switches to days past 48 hours.** "up 112h 00m" is arithmetic; "up
+    4d 16h" is the thing you wanted to know.
+
+### Agent runs and multiple monitors (2026-09-09)
+
+**The agent activity notch stays its own window.** It is `index.html` / the
+`notch` label, welded to the right edge; the island is `tasks.html`. They were
+never merged and should not be — the usage notch is click-through chrome that
+reports on something running elsewhere, while the island is a surface you type
+into. Folding one into the other would mean either giving up the island's
+`WS_EX_NOACTIVATE` or making usage unreadable while a composer has focus.
+
+46. **A finished run is a `Working` — `Idle` transition on a session that is
+    still alive.** The distinction is load-bearing: a session whose process is
+    gone drops out of `live_sessions()` before the comparison happens, so
+    closing a terminal mid-run raises nothing. Shutting a window is not an
+    achievement to be congratulated for, and a toast for it would fire every
+    time one was closed.
+47. **The run duration subtracts `WORKING_WINDOW`.** The transcript counts as
+    live for 8s after its last write, so a run that has "just ended" ended
+    eight seconds ago. Without the subtraction every run is reported 8s longer
+    than it was, and a short one at roughly double.
+48. **`Finished` is an event, never a field on `ProviderActivity`.** That struct
+    is cached in `Latest` and handed to anyone who calls `get_activity`, so a
+    one-shot fact living on it would be replayed as news on every WebView
+    reload.
+49. **The collapsed pill is the indicator; the toast is the courtesy.** Cells
+    are `opacity: 0` when collapsed, so until now the notch reported a run only
+    to someone already hovering it — the opposite of the case it exists for.
+    `#pip` is 5px, shares the shape's own box, and has three states: breathing
+    white while working, green on a finish, nothing otherwise. `done` outranks
+    `working` on purpose — a second session starting does not un-finish the
+    first, and the finish is the news. **Opening the notch is the
+    acknowledgement**: there is no dismiss control on a 10px pill, and adding
+    one would mean a second gesture to clear something already read.
+50. ⚠️ **An unpackaged exe cannot simply raise a toast.**
+    `CreateToastNotifier` resolves the AppUserModelID against the shell, and an
+    id it has never heard of fails with `ELEMENT_NOT_FOUND` — an `Err` nobody
+    is looking at, so the notification is silently never shown.
+    `notify::register()` writes
+    `HKCU\Software\Classes\AppUserModelId\<identifier>` on every launch, which is
+    the lighter of the two documented registrations (the other puts a shortcut
+    in a Start Menu nobody asked for). Written against the `windows` crate
+    already in the tree rather than through `tauri-plugin-notification`, which
+    would pull a second major version of `windows` in behind it for four lines
+    of XML. Toast XML is parsed, so a project name containing `&` is escaped or
+    the whole toast fails to load — again with nothing shown and no error.
+51. **`spoken()` exists twice, in Rust and in TypeScript, and both are tested
+    against the same table.** The same duration is written into the toast and
+    into the notch's tooltip; two spellings of "4m 12s" side by side read as
+    two different numbers.
+52. **`MonitorFromWindow` answers the wrong question for a notch.** It reports
+    where the window *is*, and a window that is only ever where it was last put
+    answers "wherever Windows dropped me at launch". Placement now takes a
+    display id from the config; `win::place_on` is the only entry point and
+    `win::place` is gone, so no caller can pin a window to the right edge of the
+    wrong screen.
+53. **The display id is the device interface path, not `\\.\DISPLAY1`.** The
+    adapter slot is a position, not a panel: unplugging one monitor renumbers
+    the rest, and a saved position would silently reappear on the wrong screen.
+54. ⚠️ **Windows will not tell you a monitor's model.**
+    `EnumDisplayDevicesW` reports the *driver's* description, which on ordinary
+    panels is the string "Generic PnP Monitor" — three displays all called the
+    same thing, which is useless in a menu whose whole job is telling them
+    apart. The name on the box is only in the EDID the driver cached under
+    `...\Enum\<enumerator>\<hardware id>\<instance>\Device Parameters`,
+    in the 18-byte descriptor tagged `0xFC`. It is not always the first
+    descriptor — the MSI here has it in the fourth — so all four are walked,
+    and a short or absent blob must return `None` rather than panic in a
+    background thread.
+55. **`MONITORINFOF_PRIMARY` and `EDD_GET_DEVICE_INTERFACE_NAME` live in
+    `UI::WindowsAndMessaging`**, not in `Graphics::Gdi` beside the functions
+    that take them. And **`BOOL` is `windows::core::BOOL` in 0.62**, while
+    `TRUE` is still in `Win32::Foundation`.
+56. **A missing display falls back and never clears the setting.** A monitor
+    that is asleep, on another input, or behind a KVM is absent, not gone —
+    clearing would move the notch home for good the first time the screen
+    blanked, with nothing to say why.
+57. **Nothing here can hear `WM_DISPLAYCHANGE`.** tao owns the window procedure
+    and Tauri surfaces no equivalent, so plugging a monitor in or waking from
+    sleep can strand both windows on a bezel that has moved.
+    `drag::watch_displays` polls the monitor list every 3s instead —
+    enumerating monitors costs microseconds — and skips a re-place while a
+    drag is in flight, or it would fight the pointer for the window.
+58. **Moving the island announces where it went.** It is click-through chrome
+    on a bezel; sent to a screen you were not looking at it reads as having
+    vanished. `island:moved` raises a transient pill claim at priority 90,
+    which is also the first brick of the claims-queue idea in the roadmap.
+59. **The display picker hides itself on one monitor**, and the two tray items
+    are disabled there. A control whose only entries are "Automatic" and the
+    single screen you have cannot do anything, and offering it only invites the
+    question of what it would mean.
+60. ⚠️ **A patch tool that rewrites files eats backslashes, and this
+    codebase is full of them.** The literal `r"\\?\"` reached win.rs as
+    `r"\?\"`, so the prefix was never trimmed, the registry key came out
+    with the prefix embedded in its middle, `RegOpenKeyEx` said "file not
+    found", and `.ok()?` swallowed it — **every** monitor fell through to its
+    driver description, and it looked correct on the one display whose driver
+    publishes a real name. The same collapse hit `sessions::project_of`, where
+    the compiler caught it instead. Two defences now: `win::SEP` is a named
+    constant so the file carries no bare escape, and `registry_key()` is a pure
+    function tested against a real device path off this machine.
+
+### The resting clock, the motion scale, and Home (2026-09-14)
+
+61. **The resting pill is the time and nothing else.** It was a ring, the
+    time, and `Mon, Sep 14 · 0/0` under it. At rest — which is most of the
+    day — that made the strip a progress meter for a number that is 0/0 on
+    any day nothing is due, beside a date the taskbar carries two inches
+    away. The clock gets its own build path in `island-activity.ts` rather
+    than a claim with its parts left blank, because a `kind: "clock"` with
+    no `progress` falls through `build()` to `paintIcon(lead, "media")` and
+    the pill grows a music note.
+62. ⚠️ **`hourCycle: "h23"`, not `hour12: false`.** They are not the same
+    switch: `hour12: false` selects the **h24** cycle in several locales,
+    which prints midnight as `24:00` and one minute past as `24:01` before
+    rolling over to `00:02`. Nobody sees this until midnight, on a machine
+    that is not the developer's.
+63. **`hour: "2-digit"` is advisory in the 12-hour cycle.** Every engine
+    prints `2:32 PM`, never `02:32 PM`, so the two formats have different
+    character counts and nothing may be sized on one of them.
+64. **The clock re-animates only the characters that changed.**
+    transitions.dev's number pop-in replays every digit on every update,
+    which is right for a balance you tap to refresh and wrong for a clock:
+    `14:32` to `14:33` moves one character, and popping all five once a
+    minute is the same thing-twitching-in-the-corner-of-your-eye problem the
+    "no seconds" rule already solved once. `setDigits` matches
+    right-to-left so `9:59` to `10:00` still only re-animates what moved,
+    and the colon never carries the attribute at all — a separator
+    wobbling between two still numbers reads as a fault.
+65. ⚠️ **`align-items: stretch` on a `.screen-body` grid is a feedback
+    loop.** `.home-grid` is a `screen-body`, so flex hands it the panel's
+    whole height; a row left to fill that height stretches the tiles,
+    `measure()` reads the taller tiles, the panel grows to hold them, and
+    round again. Measured: the island reached 357px and ran off the side of
+    its own window. `align-content: start` is what makes stretch safe —
+    the row is then sized by its tiles and stretch only equalises them
+    against each other. `.sys-grid` already did this; `.home-grid` now does.
+66. **Home is styled in exactly one place.** It had grown three passes — an
+    original hairline-column pass, a tile pass, and a "stretch, not centre"
+    pass — and because later rules simply win, the tile padding from the
+    second was overwritten by `padding: 0 18px` from the first and the
+    `align-items: stretch` from the third by `align-items: center`. On
+    screen that was ragged tiles with their content pressed against the top
+    and bottom edges: exactly what the two later passes had been written to
+    prevent. No rule was wrong; there were just three of them.
+67. **Motion is on one token scale** (`--duration-*`, `--ease-*`), in both
+    `tasks.css` and `style.css`, chosen by **what the motion does** rather
+    than by what number looked right in isolation. Two things are
+    deliberately NOT on it: the infinite loops (`eq`, `wave-head`, the
+    activity spinner) have no matching token usage, and the notch's shape,
+    fold and orb are integrated springs written frame by frame by `main.ts`
+    — nothing on that path reads a CSS duration.
+68. ⚠️ **`cargo build --release` does NOT produce a release binary here.**
+    It produces one that still points at `http://localhost:1420`, so both
+    WebViews land on `chrome-error://chromewebdata/` and the app is two
+    blank rectangles. There is no `[features] custom-protocol` in
+    `Cargo.toml`, which is what the Tauri CLI passes to switch a build from
+    the dev server to the embedded assets. **`npm run tauri build` is the
+    command** (`beforeBuildCommand` is `pnpm build`, and pnpm is installed).
+    Touching `build.rs` does not fix it and neither does rebuilding; the
+    only symptom is the smoke test reporting two error pages, which reads
+    like a frontend fault rather than a build one.
+69. **The two smoke tests poll for the click-through flip rather than
+    sleeping on it.** `WS_EX_TRANSPARENT` is cleared by `hover.rs`'s own
+    100ms poll, from a mask the page pushes on a 20ms interval, so the lag
+    is however long those two take to line up. A fixed `pause(1000)` passed
+    on an idle machine and failed right after another smoke run had torn a
+    WebView2 down — which is exactly when it runs. It flaked twice before
+    it was fixed rather than re-run.
+
+### The resting pill's three slots (2026-09-14)
+
+`[ 14 / SEP ]   14:53   [ module ]`. The date came back stacked, and the
+third slot carries whatever `pill-modules.ts` decides is worth the space.
+
+70. ⚠️ **`1fr auto 1fr`, never `auto auto auto`.** The two sides may be
+    different widths; the **middle may not move**. With auto columns the
+    clock slides left and right as the module changes from "22°" to "3 tasks
+    left", and a clock that is not always in the same place is one the eye
+    has to find before it can read — which is the whole job it has. The
+    browser test measures the clock's centre against the pill's for exactly
+    this.
+71. ⚠️ **Severity decides whether a reading CAN hold the slot; time
+    decides how long it does.** The first version had only the first half, and
+    it produced exactly the thing it was written to prevent: this machine's
+    disk sits at 95-97% and will until someone buys a new one, so the strip
+    carried a permanent red warning and nothing else could ever be seen — a
+    permanent alert being the definition of an alert you stop reading. `decay`
+    is the fix: news owns the slot for `HOLD_MS` (2 minutes), then drops to
+    just under `HOLD` and takes its turn. It still sorts above every ambient
+    module, so a standing condition leads the cycle and is seen every time
+    round rather than every time you look.
+    It **re-arms** when the figure gets materially worse (5 points, not 1 —
+    one point is the disk creeping), measured from a high-water mark so a
+    reading that dips and climbs back does not re-alert on ground it has
+    already covered. A module falling silent drops its arming entirely, so
+    coming back is news again.
+    `decay` returns the next state rather than writing to the one it was given,
+    which is what lets the whole rule be tested a tick at a time with no clock
+    and no DOM.
+72. **`choose()` is pure, and that is deliberate.** Given the same readings
+    and the same elapsed milliseconds it always answers the same thing, so
+    the rotation rule is tested with no clock, no DOM and no fixture.
+73. **The rotation restarts when the SET changes, not when the text does.**
+    The key is which modules have something to say. A module arriving or
+    falling silent shows the new thing now; the same set carrying on keeps
+    its place in the cycle instead of jumping back to the start every time
+    a countdown ticks.
+74. ⚠️ **The module slot animates on a change of SUBJECT, not of
+    wording.** A countdown going from "in 2h 10m" to "in 2h 09m" is the same
+    module being more precise; running the text swap on that is a slot that
+    never holds still. `data-module` is what tells the two apart, and the
+    same-subject path updates in place through `setText`.
+75. **CPU speaks at 90, where the System meters speak at 80.** A developer's
+    machine sits at 80% with an editor and a browser open and is perfectly
+    well. A meter you went to look at can afford to be informative; a pill
+    that warns all day is one that is ignored on the day it matters.
+76. **The event module starts at 30 minutes, where the calendar screen stops
+    claiming the pill.** Inside that window the screen takes the *whole*
+    pill at priority 25/50, so a module covering the same range would never
+    be seen — and on the frame it was, the pill would say the same thing
+    twice. It is a hand-off, not a duplicate.
+77. **-1 is "not read yet", not a low reading.** Every machine module tests
+    for it, or a fresh launch reports `Disk -1%` as a quiet fact.
+78. **The machine is polled by the shell, not by the System screen.** That
+    screen reads it only when opened, and a threshold module cannot wait for
+    that. It also fixes a quirk nobody had chased: `cpu_percent` needs a
+    previous sample and returns -1 without one, so the CPU figure was always
+    wrong the *first* time the System screen was opened and right every time
+    after.
+79. ⚠️ **Weather is opt-in by a typed place, and that is a decision, not
+    an omission.** Resolving the location from the IP address would mean
+    every launch tells a third party where this machine is, to save one text
+    field. Open-Meteo needs no key and no account, the place is geocoded
+    **once** into cached coordinates, and nothing is requested at all while
+    the field is empty. Clearing it drops the coordinates too — leaving
+    them would make a later re-enable silently report the old city.
+80. **The weather icon names cross the IPC boundary as strings** (`wxRain`,
+    `wxStorm`, …). Renaming one in `task-icons.ts` without renaming it in
+    `describe()` leaves the pill with no icon and no error.
+81. **`sessions::ProviderActivity` carries a `running` count as well as a
+    state**, and the count is part of the change comparison. Two sessions
+    starting and one stopping leaves `state` at `Working`, so without it the
+    pill would keep saying "2 agents" indefinitely.
+82. **`islandPillLong` is 640, up from 430.** `cpx()` is 56/117, so that is
+    306 CSS px of body plus two curls — about 342 in all. Past roughly 700
+    the strip stops reading as a notch welded to the bezel and starts
+    reading as a toolbar someone left open. The release smoke test's "thin
+    pill" ceiling moved from 260 to 400 with it.
+83. ⚠️ **On a vertical edge the sides are hidden, not shrunk.** The shape
+    is 35px wide there and has room for one thing. A date stacked into 35px
+    is unreadable and a module clipped to its glyph is a mystery rather than
+    a summary, so only the time survives.
+
+### Minimal is a glyph and a token (2026-09-14)
+
+84. ⚠️ **A module says an icon and one token, never a sentence.** `97%`
+    beside a disk glyph, not `Disk 97% · 14 GB free` on two lines. The
+    strip is on screen all day: after a week you are reading the glyph and
+    the colour, and the words are only costing width. Everything a module
+    summarises is on its own screen, one hover away, which is where the
+    sentence belongs. The node test asserts `text.length <= 4` and that no
+    module carries a second line, because this is the kind of rule that
+    erodes one helpful clarification at a time.
+85. **`islandPillLong` went 430 -> 640 -> 470.** Widened when the resting
+    pill became three slots, then brought most of the way back when the
+    module slot lost its sentence: 470 design px is 225 CSS px of body, about
+    260 with both curls. The release smoke test's "thin pill" ceiling is 400,
+    which still catches the panel at ~970 without pinning the pill's own
+    width to a number that changes with its contents.
+86. **The resting pill's padding is 20px, not 4.** With the slots hard
+    against the curls the strip read as something clipped rather than
+    something laid out, and the curl is a curve — the content has to clear
+    where it starts bending, not where it ends.

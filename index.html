@@ -33,6 +33,11 @@
           <path id="orb-gear" fill-rule="evenodd" />
         </svg>
         <div id="rings"></div>
+        <!-- The one thing the pill can say while it is shut. The stack behind
+             it is opacity 0 when collapsed, so until now the notch reported a
+             run only to someone already hovering it — which is the opposite of
+             the case it exists for. -->
+        <div id="pip" data-state="idle" aria-hidden="true"><i></i></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

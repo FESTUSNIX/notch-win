@@ -1,12 +1,20 @@
+mod apptime;
+mod audio;
 mod autostart;
+mod calendar;
 mod config;
 mod credentials;
 mod drag;
 mod fixtures;
 mod hover;
+mod media;
 mod model;
+mod notify;
+mod weather;
 mod providers;
 mod sessions;
+mod system;
+mod shortcuts;
 mod task_window;
 mod tasks;
 mod win;
@@ -62,6 +70,25 @@ pub struct Wake(pub tokio::sync::Notify);
 #[derive(Default)]
 pub struct History(pub Mutex<std::collections::HashMap<String, Snapshot>>);
 
+/// The two tray items that only mean something on more than one display.
+///
+/// Held so the display watcher can enable them when a monitor is plugged in.
+/// Computing `enabled` once at setup would leave them greyed out until the next
+/// restart, with nothing on screen to say why — and a permanently grey menu
+/// item reads as a broken feature rather than an inapplicable one.
+#[derive(Default)]
+pub struct DisplayItems(pub Mutex<Vec<tauri::menu::MenuItem<tauri::Wry>>>);
+
+/// Match the two items to the number of attached displays.
+pub fn sync_display_items(app: &AppHandle) {
+    let several = win::screens().len() > 1;
+    if let Ok(items) = app.state::<DisplayItems>().0.lock() {
+        for item in items.iter() {
+            let _ = item.set_enabled(several);
+        }
+    }
+}
+
 #[tauri::command]
 fn get_readings(state: tauri::State<Latest>) -> Vec<Snapshot> {
     state.0.lock().map(|held| held.clone()).unwrap_or_default()
@@ -111,17 +138,16 @@ fn set_edge(app: AppHandle, edge: win::Edge) {
     let Some(window) = app.get_webview_window("notch") else {
         return;
     };
-    let along = {
+    {
         let settings = app.state::<Settings>();
         let Ok(mut config) = settings.0.lock() else {
             return;
         };
         config.edge = edge;
         config::save(&config);
-        config.along
-    };
+    }
     let _ = app.emit("notch:edge", edge);
-    win::place(&window, edge, along);
+    drag::place_now(&app, &window);
 }
 
 /// Ask every provider again, now.
@@ -137,6 +163,55 @@ fn refresh_now(app: AppHandle) {
         }
     }
     app.state::<Wake>().0.notify_one();
+}
+
+/// Every attached display, with the one each window is welded to.
+#[tauri::command]
+fn get_displays(app: AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "screens": win::screens(),
+        "notch": drag::monitor_for(&app, "notch"),
+        "tasks": drag::monitor_for(&app, "tasks"),
+    })
+}
+
+/// Weld a window to a display. `None` gives back "wherever it already is",
+/// which is what a single-monitor machine should keep.
+#[tauri::command]
+fn set_display(app: AppHandle, label: String, monitor: Option<String>) {
+    if !matches!(label.as_str(), "notch" | "tasks") {
+        return;
+    }
+    {
+        let settings = app.state::<Settings>();
+        let Ok(mut config) = settings.0.lock() else {
+            return;
+        };
+        if label == "tasks" {
+            config.task_monitor = monitor;
+        } else {
+            config.monitor = monitor;
+        }
+        config::save(&config);
+    }
+    if let Some(window) = app.get_webview_window(&label) {
+        drag::place_now(&app, &window);
+    }
+    let _ = app.emit("notch:displays", get_displays(app.clone()));
+}
+
+/// Send a window to the next display along. What the tray item and the
+/// shortcut both call.
+#[tauri::command]
+fn next_display(app: AppHandle, label: String) -> Option<String> {
+    if !matches!(label.as_str(), "notch" | "tasks") {
+        return None;
+    }
+    let moved = drag::next_display(&app, &label);
+    if moved.is_some() {
+        let _ = app.emit("notch:displays", get_displays(app.clone()));
+    }
+    moved
 }
 
 #[tauri::command]
@@ -187,8 +262,7 @@ fn set_notch_size(app: AppHandle, window: tauri::WebviewWindow, width: f64, heig
     let _ = window.set_size(wanted);
     // Re-pin: growing a window on a screen edge would otherwise push it off,
     // and the drag ratio has to be honoured on every resize, not just at boot.
-    let (edge, along) = drag::current_for(&app, window.label());
-    win::place(&window, edge, along);
+    drag::place_now(&app, &window);
 }
 
 /// Fold this round's reading into what is already known, and remember it.
@@ -347,17 +421,23 @@ fn spawn_polling(app: AppHandle) {
 
 pub fn run() {
     let settings = config::load();
-    let (edge, along) = (settings.edge, settings.along);
     let remembered: std::collections::HashMap<String, Snapshot> =
         config::load_readings().unwrap_or_default();
 
     tauri::Builder::default()
         .manage(InteractiveRects::default())
+        .manage(DisplayItems::default())
+        .manage(weather::Latest::default())
         .manage(Latest::default())
         .manage(History(Mutex::new(remembered)))
         .manage(Wake::default())
         .manage(tasks::TaskState::new())
         .manage(sessions::Latest::default())
+        .manage(media::MediaState::default())
+        .manage(calendar::CalendarState::default())
+        .manage(shortcuts::ShortcutState_::default())
+        .manage(apptime::AppTimeState::default())
+        .manage(system::Watched::default())
         .manage(Settings(Mutex::new(settings)))
         .invoke_handler(tauri::generate_handler![
             set_interactive_rects,
@@ -386,7 +466,34 @@ pub fn run() {
             task_window::get_task_placement,
             task_window::set_task_input,
             task_window::set_task_placement,
-            task_window::task_window_diagnostics
+            task_window::task_window_diagnostics,
+            task_window::set_clock_format,
+            weather::get_weather,
+            weather::set_weather_place,
+            media::get_media,
+            media::media_command,
+            media::media_seek,
+            audio::get_audio_devices,
+            audio::set_audio_device,
+            apptime::get_app_time,
+            system::get_system,
+            system::set_volume,
+            system::set_brightness,
+            system::get_machine,
+            system::lock_workstation,
+            calendar::get_calendar,
+            calendar::refresh_calendar,
+            calendar::connect_google,
+            calendar::disconnect_google,
+            calendar::google_status,
+            calendar::open_external,
+            shortcuts::get_shortcuts,
+            shortcuts::set_shortcuts,
+            shortcuts::get_chrome_hidden,
+            shortcuts::toggle_chrome,
+            get_displays,
+            set_display,
+            next_display
         ])
         .setup(move |app| {
             let window = app
@@ -397,7 +504,7 @@ pub fn run() {
             // window is briefly visible in the middle of the screen — and
             // harden *after* set_ignore_cursor_events, which rewrites the whole
             // extended-style word and drops anything set before it.
-            win::place(&window, edge, along);
+            drag::place_now(app.handle(), &window);
             let _ = window.set_ignore_cursor_events(true);
             window.show()?;
             win::harden(&window);
@@ -411,8 +518,40 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit Codenotch", true, None::<&str>)?;
             let task_item =
                 MenuItem::with_id(app, "tasks", "Tasks & TickTick…", true, None::<&str>)?;
-            let menu =
-                Menu::with_items(app, &[&task_item, &refresh, &settings_item, &reset, &quit])?;
+            // Enabled only where there is somewhere to move to: on one monitor
+            // these do nothing, and a menu item that does nothing is worse than
+            // one that is not there.
+            let several = win::screens().len() > 1;
+            let move_island = MenuItem::with_id(
+                app,
+                "next-display-tasks",
+                "Move island to next display",
+                several,
+                None::<&str>,
+            )?;
+            let move_notch = MenuItem::with_id(
+                app,
+                "next-display-notch",
+                "Move usage notch to next display",
+                several,
+                None::<&str>,
+            )?;
+            if let Ok(mut items) = app.state::<DisplayItems>().0.lock() {
+                items.push(move_island.clone());
+                items.push(move_notch.clone());
+            }
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &task_item,
+                    &refresh,
+                    &move_island,
+                    &move_notch,
+                    &settings_item,
+                    &reset,
+                    &quit,
+                ],
+            )?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -426,6 +565,12 @@ pub fn run() {
                             let _ = task_window::open_task_editor(handle).await;
                         });
                     }
+                    "next-display-tasks" => {
+                        next_display(app.clone(), "tasks".into());
+                    }
+                    "next-display-notch" => {
+                        next_display(app.clone(), "notch".into());
+                    }
                     "reset" => drag::reset_position(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
@@ -436,7 +581,17 @@ pub fn run() {
             hover::spawn(app.handle().clone(), "notch");
             hover::spawn(app.handle().clone(), "tasks");
             tasks::spawn(app.handle().clone());
+            media::spawn(app.handle().clone());
+            calendar::spawn(app.handle().clone());
+            apptime::spawn(app.handle().clone());
+            system::spawn(app.handle().clone());
+            // Last, so a stolen key combination cannot stop the rest of setup.
+            if let Err(message) = shortcuts::setup(app.handle()) {
+                eprintln!("global shortcuts: {message}");
+            }
             sessions::spawn(app.handle().clone());
+            drag::watch_displays(app.handle().clone());
+            weather::spawn(app.handle().clone());
             spawn_polling(app.handle().clone());
             Ok(())
         })

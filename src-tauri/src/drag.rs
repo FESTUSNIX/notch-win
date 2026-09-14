@@ -135,16 +135,15 @@ pub fn reset_position(app: AppHandle) {
     let Some(window) = app.get_webview_window("notch") else {
         return;
     };
-    let settings = app.state::<Settings>();
-    let edge = {
+    {
+        let settings = app.state::<Settings>();
         let Ok(mut config) = settings.0.lock() else {
             return;
         };
         config.along = 0.5;
         crate::config::save(&config);
-        config.edge
-    };
-    win::place(&window, edge, 0.5);
+    }
+    place_now(&app, &window);
 }
 
 /// The edge to draw against, for whoever needs it without the lock ceremony.
@@ -164,4 +163,101 @@ pub fn current_for(app: &AppHandle, label: &str) -> (Edge, f64) {
             }
         })
         .unwrap_or((Edge::Right, 0.5))
+}
+
+/// Which display this window is welded to, if one was chosen.
+pub fn monitor_for(app: &AppHandle, label: &str) -> Option<String> {
+    app.state::<Settings>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|c| {
+            if label == "tasks" {
+                c.task_monitor.clone()
+            } else {
+                c.monitor.clone()
+            }
+        })
+}
+
+/// Put a window where the config says it goes — edge, position along it, and
+/// display. The one place all three are read together, so no caller can place
+/// a window on the right edge of the wrong screen.
+pub fn place_now(app: &AppHandle, window: &tauri::WebviewWindow) {
+    let label = window.label().to_string();
+    let (edge, along) = current_for(app, &label);
+    win::place_on(window, edge, along, monitor_for(app, &label).as_deref());
+}
+
+/// Send a window to the next display, and remember it.
+///
+/// Returns the display's name so the caller can say where it went — a window
+/// that is click-through and lives on a bezel is easy to lose, and moving it
+/// silently to a screen you are not looking at reads as it having vanished.
+pub fn next_display(app: &AppHandle, label: &str) -> Option<String> {
+    let window = app.get_webview_window(label)?;
+    let screens = win::screens();
+    if screens.len() < 2 {
+        return None;
+    }
+
+    let current = monitor_for(app, label)
+        .and_then(|id| screens.iter().position(|s| s.id == id))
+        .or_else(|| {
+            let here = win::screen_of(&window)?;
+            screens.iter().position(|s| s.id == here.id)
+        })
+        .unwrap_or(0);
+    let next = &screens[(current + 1) % screens.len()];
+
+    if let Ok(mut config) = app.state::<Settings>().0.lock() {
+        if label == "tasks" {
+            config.task_monitor = Some(next.id.clone());
+        } else {
+            config.monitor = Some(next.id.clone());
+        }
+        crate::config::save(&config);
+    }
+    place_now(app, &window);
+    Some(next.name.clone())
+}
+
+/// Re-place both windows whenever the desktop's shape changes.
+///
+/// ⚠️ There is no event for this here. Win32 sends `WM_DISPLAYCHANGE`, but tao
+/// owns the notch's window procedure and Tauri surfaces nothing equivalent — so
+/// a monitor being plugged in, a resolution change, or waking from sleep can
+/// leave both windows pinned to a bezel that has moved, or off screen entirely,
+/// with nothing to notice. Enumerating monitors is a handful of microseconds,
+/// so polling it is cheaper than it looks and needs no window procedure.
+pub fn watch_displays(app: AppHandle) {
+    std::thread::spawn(move || {
+        let signature = || -> Vec<(String, (i32, i32, i32, i32))> {
+            win::screens()
+                .into_iter()
+                .map(|s| (s.id, (s.work.left, s.work.top, s.work.right, s.work.bottom)))
+                .collect()
+        };
+        let mut last = signature();
+        loop {
+            std::thread::sleep(Duration::from_secs(3));
+            let now = signature();
+            if now == last {
+                continue;
+            }
+            last = now;
+            crate::sync_display_items(&app);
+            let _ = app.emit("notch:displays", crate::get_displays(app.clone()));
+            // A drag in flight is the person moving the window by hand; putting
+            // it back underneath them would fight the pointer.
+            if is_dragging() {
+                continue;
+            }
+            for label in ["notch", "tasks"] {
+                if let Some(window) = app.get_webview_window(label) {
+                    place_now(&app, &window);
+                }
+            }
+        }
+    });
 }

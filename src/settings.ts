@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type Edge = "top" | "bottom" | "left" | "right";
@@ -8,6 +9,22 @@ interface Snapshot {
   displayName: string;
   status: { state: string; message?: string };
   windows: { id: string }[];
+}
+
+interface Screen {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  primary: boolean;
+}
+
+interface Displays {
+  screens: Screen[];
+  notch: string | null;
+  tasks: string | null;
 }
 
 const edges = document.getElementById("edges") as HTMLDivElement;
@@ -62,6 +79,56 @@ document.getElementById("close")?.addEventListener("click", () => {
   getCurrentWindow().hide();
 });
 
+/* Which screen each notch lives on.
+ *
+ * The section stays hidden on a single-monitor machine: a picker whose only
+ * two entries are "Automatic" and the one screen you have cannot do anything,
+ * and offering it invites the question of what it would mean.
+ *
+ * "Automatic" is a real choice, not an empty one — it is what every install
+ * had before this existed, and it means "wherever it already is", which on one
+ * monitor is the only sane answer. */
+async function paintDisplays() {
+  const section = document.getElementById("displays-section");
+  if (!section) return;
+
+  const displays = await invoke<Displays>("get_displays").catch(() => null);
+  if (!displays || displays.screens.length < 2) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  for (const label of ["tasks", "notch"] as const) {
+    const select = document.getElementById(`display-${label}`) as HTMLSelectElement | null;
+    if (!select) continue;
+    const chosen = displays[label];
+    select.replaceChildren();
+
+    const auto = new Option("Automatic", "");
+    auto.selected = chosen === null;
+    select.append(auto);
+
+    for (const screen of displays.screens) {
+      // The size disambiguates two panels of the same model, which is exactly
+      // the case a name alone cannot answer.
+      const option = new Option(
+        `${screen.name} · ${screen.width}×${screen.height}${screen.primary ? " · main" : ""}`,
+        screen.id,
+      );
+      option.selected = screen.id === chosen;
+      select.append(option);
+    }
+
+    select.onchange = () => {
+      void invoke("set_display", {
+        label,
+        monitor: select.value === "" ? null : select.value,
+      }).catch(() => {});
+    };
+  }
+}
+
 /* What the notch is actually reading, named rather than counted — "Claude,
    Codex" says more than "2 providers", and a provider that is signed out should
    say so here rather than only be missing from the notch. */
@@ -94,6 +161,12 @@ async function boot() {
   const enabled = await invoke<boolean>("get_autostart").catch(() => false);
   autostart?.setAttribute("aria-pressed", String(enabled));
   await describeProviders();
+  await paintDisplays();
+  // This window is shown rather than reloaded, so it would otherwise keep
+  // whatever list it was opened with while monitors came and went behind it.
+  await listen("notch:displays", () => {
+    void paintDisplays();
+  });
 }
 
 boot();

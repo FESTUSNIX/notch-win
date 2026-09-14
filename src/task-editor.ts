@@ -16,6 +16,33 @@ document.getElementById("task-editor")!.innerHTML = `<main class="editor-wrap">
       <p class="hint" style="margin-top:10px">Saved in Windows Credential Manager on this PC.</p>
     </form></details>
   </section>
+  <section class="settings-section"><h2>Google Calendar</h2>
+    <p class="hint" id="google-state">Not connected.</p>
+    <details id="google-details"><summary>Connect or replace the Google client</summary>
+      <p class="hint">In Google Cloud Console create an OAuth client of type <strong>Desktop app</strong>, enable the Google Calendar API, then paste its two values here. Connecting opens your normal browser to sign in — Codenotch never sees your password, and asks only for read access to your calendars.</p>
+      <form id="google-form">
+        <label class="field">Client ID<input id="google-id" autocomplete="off" spellcheck="false" maxlength="400" required placeholder="…apps.googleusercontent.com"></label>
+        <label class="field">Client secret<input id="google-secret" type="password" autocomplete="off" maxlength="400" required placeholder="Paste the client secret"></label>
+        <div class="button-row"><button class="primary" type="submit">Connect Google Calendar</button><button class="secondary" id="google-disconnect" type="button">Disconnect</button></div>
+        <p class="hint" style="margin-top:10px">Saved in Windows Credential Manager on this PC, beside the TickTick token.</p>
+      </form>
+    </details>
+  </section>
+  <section class="settings-section"><h2>Weather</h2>
+    <p class="hint">Shown on the collapsed island when nothing more pressing is. Leave it empty and nothing is ever requested.</p>
+    <form id="weather-form">
+      <label class="field">Town or city<input id="weather-place" autocomplete="off" spellcheck="false" maxlength="120" placeholder="Krak&oacute;w"></label>
+      <div class="button-row"><button class="primary" type="submit">Use this place</button><button class="secondary" id="weather-clear" type="button">Turn off</button></div>
+    </form>
+    <p class="hint" id="weather-state"></p>
+  </section>
+  <section class="settings-section"><h2>Shortcuts</h2>
+    <p class="hint">Global, so they work while another app has focus. Windows will refuse a combination another app already owns.</p>
+    <form id="shortcut-form">
+      <div class="form-row"><label class="field">Open the island<input id="sc-toggle" autocomplete="off" spellcheck="false" maxlength="60" required></label><label class="field">Hide everything<input id="sc-hide" autocomplete="off" spellcheck="false" maxlength="60" required></label></div>
+      <div class="button-row"><button class="primary" type="submit">Save shortcuts</button></div>
+    </form>
+  </section>
   <section class="settings-section" id="capture"><h2 id="capture-heading">Quick add</h2><form id="task-form">
     <label class="field">Task<input id="task-title" maxlength="1000" required placeholder="What would you like to get done?" autocomplete="off"></label>
     <div class="form-row" id="schedule-fields"><label class="field">List<select id="project" required></select></label><label class="field">Scheduled day<input id="task-date" type="date"></label></div>
@@ -81,6 +108,54 @@ function cancelEdit() {
   get("cancel-edit").hidden = true; get("schedule-fields").hidden = false; render();
 }
 get("cancel-edit").onclick = cancelEdit;
+
+/* ── Google Calendar ─────────────────────────────────────────────────────
+ * The secrets go straight to Rust and never come back: `google_status` answers with a
+ * bare boolean, so this page can show the right state without ever holding
+ * the client secret or the refresh token. */
+async function paintGoogle() {
+  try {
+    const connected = await call<boolean>("google_status");
+    get("google-state").textContent = connected
+      ? "Connected. Events refresh every five minutes."
+      : "Not connected. The island's Calendar screen is empty until you connect.";
+    get<HTMLDetailsElement>("google-details").open = !connected;
+  } catch (error) { message = String(error); render(); }
+}
+get("google-form").onsubmit = async e => {
+  e.preventDefault();
+  const id = get<HTMLInputElement>("google-id"), secret = get<HTMLInputElement>("google-secret");
+  message = "Waiting for Google in your browser…"; render();
+  if (await action("connect_google", { clientId: id.value, clientSecret: secret.value })) {
+    // Only the secret is cleared: leaving the ID makes a re-connect one field.
+    secret.value = "";
+    message = "Google Calendar connected.";
+  }
+  await paintGoogle();
+  render();
+};
+get("google-disconnect").onclick = async () => {
+  if (await action("disconnect_google")) message = "Google Calendar disconnected.";
+  await paintGoogle();
+  render();
+};
+
+/* ── Shortcuts ─────────────────────────────────────────────────────────── */
+get("shortcut-form").onsubmit = async e => {
+  e.preventDefault();
+  const toggle = get<HTMLInputElement>("sc-toggle").value;
+  const hide = get<HTMLInputElement>("sc-hide").value;
+  if (await action("set_shortcuts", { toggle, hide })) message = "Shortcuts saved.";
+  else await paintShortcuts();   // a rejected pair rolls back; show what stuck
+  render();
+};
+async function paintShortcuts() {
+  try {
+    const current = await call<{ toggle: string; hide: string }>("get_shortcuts");
+    get<HTMLInputElement>("sc-toggle").value = current.toggle;
+    get<HTMLInputElement>("sc-hide").value = current.hide;
+  } catch { /* the plugin failed to start; the fields stay empty */ }
+}
 get("connect-form").onsubmit = async e => {
   e.preventDefault();
   const value = token.value; token.value = "";
@@ -116,10 +191,54 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") { if (editin
 document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => button.onclick = () => {
   view = button.dataset.view as TaskView; document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", String(b === button))); render();
 });
+/* Weather is the one thing here that reaches the network without a token, so
+ * it is the one thing that has to be obviously OFF until asked for. An empty
+ * field means no request is ever made — see weather.rs on why this is typed
+ * rather than resolved from the IP address. */
+const weatherState = document.getElementById("weather-state") as HTMLElement;
+const weatherPlace = document.getElementById("weather-place") as HTMLInputElement;
+
+type Reading = { place: string; celsius: number; summary: string } | null;
+
+function sayWeather(reading: Reading) {
+  weatherState.textContent = reading
+    ? `${reading.place} \u00b7 ${reading.celsius}\u00b0 ${reading.summary.toLowerCase()}`
+    : "Off. Nothing is requested.";
+  // The resolved spelling, not what was typed: "krakow" comes back "Kraków",
+  // which is how you can tell it found the right place and not a same-named
+  // town somewhere else.
+  if (reading) weatherPlace.value = reading.place;
+}
+
+document.getElementById("weather-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  weatherState.textContent = "Looking it up…";
+  try {
+    sayWeather(await call<Reading>("set_weather_place", { place: weatherPlace.value }));
+  } catch (error) {
+    weatherState.textContent = String(error);
+  }
+});
+
+document.getElementById("weather-clear")?.addEventListener("click", async () => {
+  weatherPlace.value = "";
+  try {
+    await call("set_weather_place", { place: "" });
+    sayWeather(null);
+  } catch (error) {
+    weatherState.textContent = String(error);
+  }
+});
+
 async function boot() {
+  try {
+    sayWeather(await call<Reading>("get_weather"));
+  } catch { sayWeather(null); }
   await watchTasks(value => { snapshot = value; render(); });
   get<HTMLDetailsElement>("connection-details").open = !snapshot.connected;
   const placement = await call<{edge:string;visible:boolean}>("get_task_placement");
   edge.value = placement.edge; visible.checked = placement.visible;
+  await paintGoogle();
+  await paintShortcuts();
 }
 boot().catch(e => { message = String(e); render(); });

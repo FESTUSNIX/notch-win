@@ -111,6 +111,32 @@ export const FRAME = {
   taskPanelMinHeight: 480,
   taskPanelInset: 32,
   taskPanelSlide: 28,
+
+  /* The island, collapsed. One rect that grows into the panel rather than a
+   * pill plus a detached card, so there is a single shape to animate and a
+   * single rect to report as interactive. Long is along the edge, thin across
+   * it, and the two swap on a vertical edge. */
+  /* Lengths here are the BODY — the straight part. The flare at each end is
+   * added on top, exactly as shapeLength() does for the usage notch, so the
+   * element is always `body + 2 * curl` along its edge. */
+  /* ⚠️ The *body* in design pixels; `cpx()` is 56/117, so 470 -> 225 CSS px,
+     about 260 with both curls. Widened from 430 when the resting pill became
+     three slots, then brought most of the way back when the module slot went
+     from a two-line sentence to a glyph and a token. Past about 700 the strip
+     stops reading as a notch welded to the bezel and starts reading as a
+     toolbar someone left open. */
+  islandPillLong: 470,
+  islandPillThin: 74,
+  /** Wider than it is tall, on purpose: the island is read at a glance across,
+   *  and a tall narrow panel wastes the one dimension a top edge has to give. */
+  islandBodyLong: 1900,
+  islandBodyDepth: 810,
+  /** Minimum expanded depth, so a screen with one row is not a tall void. */
+  islandMinDepth: 330,
+  /** The inverse fillet where the island meets the bezel. Smaller than the
+   *  usage notch's 103: this shape is four times as long, and the same flare on
+   *  it reads as a slope rather than a corner. */
+  islandCurl: 62,
   // Timer pill: slim ~31 x 157 CSS px; a ~7 x 96 px fill is the entire readout.
   focusPillDepth: 80,
   focusPillLength: 400,
@@ -200,8 +226,13 @@ export function ringCenter(
  * shape comes out with square corners. The corner is claimed first, out of
  * half the depth, and the flare takes what is left.
  */
-function clampCorners(depth: number, length: number, flare: number) {
-  const wanted = Math.max(0, Math.min(FRAME.cornerRadius, depth / 2));
+function clampCorners(
+  depth: number,
+  length: number,
+  flare: number,
+  cornerRadius: number = FRAME.cornerRadius,
+) {
+  const wanted = Math.max(0, Math.min(cornerRadius, depth / 2));
   const curl = Math.max(0, Math.min(flare, length / 2, depth - wanted));
   const corner = Math.max(0, Math.min(wanted, (length - 2 * curl) / 2));
   return { curl, corner };
@@ -220,8 +251,11 @@ export function notchPath(
   depth: number,
   length: number,
   flare: number = FRAME.curlRadius,
+  /** Pass this when the path is generated in CSS pixels rather than frame
+   *  pixels — the default is a frame measurement and means nothing there. */
+  cornerRadius: number = FRAME.cornerRadius,
 ): string {
-  const { curl, corner } = clampCorners(depth, length, flare);
+  const { curl, corner } = clampCorners(depth, length, flare, cornerRadius);
   const bodyTop = curl;
   const bodyBottom = length - curl;
   const n = (v: number) => v.toFixed(2);

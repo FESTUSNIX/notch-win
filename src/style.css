@@ -32,6 +32,31 @@ body {
   user-select: none;
 }
 
+/* ── Motion tokens (transitions.dev) ─────────────────────────────────────
+   The same scale the island uses, so the two surfaces on one screen move at
+   one speed. ⚠️ Most of this window's motion is NOT here: the shape, the fold
+   and the orb are integrated springs written frame by frame by main.ts, and
+   nothing on that path reads a CSS duration. These tokens cover what CSS
+   actually owns — the rings, the stack, the pip and the hide gesture. */
+:root {
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+
+  --distance-micro: 4px;
+  --distance-base: 8px;
+}
+
 #stage {
   position: fixed;
   inset: 0;
@@ -46,7 +71,8 @@ body {
    draws in shape coordinates land where the shape actually is. */
 #notch-svg,
 #orb-svg,
-#rings {
+#rings,
+#pip {
   position: absolute;
   width: var(--shape-w);
   height: var(--shape-h);
@@ -76,22 +102,22 @@ body {
 }
 
 /* Pinned to the bezel, centred along it. */
-#stage[data-edge="right"] :is(#notch-svg, #orb-svg, #rings) {
+#stage[data-edge="right"] :is(#notch-svg, #orb-svg, #rings, #pip) {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
 }
-#stage[data-edge="left"] :is(#notch-svg, #orb-svg, #rings) {
+#stage[data-edge="left"] :is(#notch-svg, #orb-svg, #rings, #pip) {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
 }
-#stage[data-edge="top"] :is(#notch-svg, #orb-svg, #rings) {
+#stage[data-edge="top"] :is(#notch-svg, #orb-svg, #rings, #pip) {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
 }
-#stage[data-edge="bottom"] :is(#notch-svg, #orb-svg, #rings) {
+#stage[data-edge="bottom"] :is(#notch-svg, #orb-svg, #rings, #pip) {
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
@@ -120,7 +146,8 @@ body {
 }
 
 /* Each cell trails the one above it, so the stack unfurls rather than arriving
-   all at once — NotchMotion.stagger: 45ms apart, capped so a long list never
+   all at once — NotchMotion.stagger, now one --duration-stagger apart, capped
+   so a long list never
    feels sluggish. The slide is along the bezel, so the cells appear to come
    out of the screen edge with the shape. */
 .cell {
@@ -129,8 +156,8 @@ body {
   gap: var(--ring-label-gap);
   opacity: 0;
   transition:
-    opacity 200ms ease-out,
-    translate 260ms cubic-bezier(0.22, 0.68, 0.3, 1);
+    opacity var(--duration-quick) var(--ease-in-out),
+    translate var(--duration-fast) var(--ease-smooth-out);
   transition-delay: 0ms;
 }
 
@@ -150,7 +177,7 @@ body {
 #stage[data-state="expanded"] .cell {
   opacity: 1;
   translate: none;
-  transition-delay: min(calc(var(--i) * 45ms), 180ms);
+  transition-delay: min(calc(var(--i) * var(--duration-stagger)), 180ms);
 }
 
 /* A figure that has stopped being refreshed. Dimmed rather than removed —
@@ -186,7 +213,7 @@ body {
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
-  transition: stroke-dashoffset 640ms cubic-bezier(0.22, 0.68, 0.3, 1);
+  transition: stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out);
 }
 
 /* The inner indicator: a short arc that turns while work is happening, and a
@@ -413,7 +440,7 @@ body {
 .bar__fill {
   height: 100%;
   border-radius: calc(var(--bar-h) / 2);
-  transition: width 640ms cubic-bezier(0.22, 0.68, 0.3, 1);
+  transition: width var(--duration-very-slow) var(--ease-smooth-out);
 }
 
 .bar__fill.is-ample {
@@ -454,8 +481,103 @@ body {
 }
 
 .block__used.is-up {
-  animation: block-rise 320ms cubic-bezier(0.22, 0.68, 0.3, 1);
+  animation: block-rise var(--duration-fast) var(--ease-smooth-out);
 }
 .block__used.is-down {
-  animation: block-fall 320ms cubic-bezier(0.22, 0.68, 0.3, 1);
+  animation: block-fall var(--duration-fast) var(--ease-smooth-out);
+}
+
+/* Slides out with the island; see the note in tasks.css. #stage is positioned,
+   never transformed, by main.ts's paint loop. */
+#stage { transition:transform var(--duration-medium) var(--ease-smooth-out), opacity var(--duration-quick) var(--ease-in-out) var(--duration-stagger); }
+html.chrome-hidden #stage { opacity:0; pointer-events:none; }
+html.chrome-hidden #stage[data-edge=top] { transform:translateY(-118%); }
+html.chrome-hidden #stage[data-edge=bottom] { transform:translateY(118%); }
+html.chrome-hidden #stage[data-edge=left] { transform:translateX(-118%); }
+html.chrome-hidden #stage[data-edge=right] { transform:translateX(118%); }
+
+/* --- the run indicator ----------------------------------------------------
+   The collapsed pill is ~83 x 10px, which is room for exactly one fact. It
+   carries whether an agent is working, and — the thing this exists for — that
+   one has just finished while you were looking at something else.
+
+   ⚠️ Only while collapsed. Expanded, the same fact is on every ring as its own
+   activity arc, and a second copy of it floating over the stack would read as a
+   different reading rather than the same one. */
+#pip {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+}
+
+#stage[data-state="collapsed"] #pip:not([data-state="idle"]) {
+  opacity: 1;
+}
+
+#pip i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text);
+  /* The pill is the same black as the bezel it sits on, so the dot needs its
+     own light to read as lit rather than as a speck of dust on the screen. */
+  box-shadow: 0 0 6px 1px currentcolor;
+  color: transparent;
+  scale: 0;
+  transition:
+    background-color var(--duration-fast) var(--ease-in-out),
+    scale var(--duration-fast) var(--ease-bounce);
+}
+
+#stage[data-state="collapsed"] #pip:not([data-state="idle"]) i {
+  scale: 1;
+}
+
+/* Working: breathing, not spinning. A 5px spinner is a flicker. */
+#pip[data-state="working"] i {
+  background: rgba(255, 255, 255, 0.55);
+  animation: pip-breathe 1.8s ease-in-out infinite;
+}
+
+/* Finished. Green, and it stays until the notch is opened — a toast is gone in
+   five seconds and this is precisely the run nobody was watching. */
+#pip[data-state="done"] i {
+  background: #30d158;
+  color: rgba(48, 209, 88, 0.75);
+  animation: pip-arrive var(--duration-very-slow) var(--ease-smooth-out);
+}
+
+@keyframes pip-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes pip-arrive {
+  0% {
+    scale: 0.4;
+  }
+  38% {
+    scale: 1.85;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pip i,
+  #pip[data-state="working"] i,
+  #pip[data-state="done"] i {
+    animation: none;
+    transition: background-color var(--duration-fast) var(--ease-in-out);
+    scale: 1;
+  }
 }

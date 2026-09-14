@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -53,6 +53,25 @@ pub enum Activity {
 pub struct ProviderActivity {
     pub provider: String,
     pub state: Activity,
+    /// How many live sessions are writing right now. `state` collapses them
+    /// into one answer for the notch's activity arc, which has room for one;
+    /// the island's pill can say "2 agents", which on a machine with three
+    /// terminals open is the difference between the fact and a hint of it.
+    pub running: u32,
+}
+
+/// A run that has just ended, emitted once on `notch:finished`.
+///
+/// ⚠️ Deliberately **not** a field on `ProviderActivity`. That struct is cached
+/// in `Latest` and handed to whoever asks, so a one-shot fact living on it
+/// would be replayed as news every time the WebView reloaded.
+#[derive(Clone, Debug, Serialize)]
+pub struct Finished {
+    pub provider: String,
+    /// The working directory's last component — "akcesfonia", not a path. With
+    /// two or three sessions open, which one finished is the whole message.
+    pub project: String,
+    pub seconds: u64,
 }
 
 fn claude_home() -> Option<PathBuf> {
@@ -125,6 +144,8 @@ struct Session {
     session_id: String,
     pid: u32,
     proc_start: Option<u64>,
+    /// Where the session was started, so a finish can name it.
+    cwd: Option<String>,
 }
 
 fn live_sessions() -> Vec<Session> {
@@ -158,6 +179,10 @@ fn live_sessions() -> Vec<Session> {
             .get("procStart")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<u64>().ok());
+        let cwd = value
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         if !is_alive(pid, proc_start) {
             continue;
@@ -166,43 +191,103 @@ fn live_sessions() -> Vec<Session> {
             session_id: session_id.to_string(),
             pid,
             proc_start,
+            cwd,
         });
     }
     out
 }
 
+/// The last component of a working directory: "akcesfonia" out of
+/// `C:\Users\matko\CODE\akcesfonia`. Separators are handled both ways because
+/// the field is written by whatever shell launched the session.
+pub fn project_of(cwd: &str) -> String {
+    cwd.trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(cwd)
+        .to_string()
+}
+
+/// A duration a person would say out loud. Seconds alone under a minute,
+/// because "0m 8s" is worse than "8s".
+pub fn spoken(seconds: u64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else {
+        format!("{}m {:02}s", seconds / 60, seconds % 60)
+    }
+}
+
+struct Tracked {
+    transcript: PathBuf,
+    /// When this session was first seen writing. `None` between runs.
+    started: Option<Instant>,
+    project: String,
+}
+
 #[derive(Default)]
 pub struct Watcher {
-    /// sessionId → transcript, so the directory is walked once per session
-    /// rather than once per tick.
-    transcripts: HashMap<String, PathBuf>,
+    /// sessionId -> what is known about it, so the projects directory is walked
+    /// once per session rather than once per tick.
+    tracked: HashMap<String, Tracked>,
 }
 
 impl Watcher {
-    fn claude_activity(&mut self) -> Activity {
+    /// One round: the state to show, plus any run that ended on this tick.
+    fn tick(&mut self) -> (Activity, u32, Vec<Finished>) {
         let sessions = live_sessions();
-        self.transcripts
+        self.tracked
             .retain(|id, _| sessions.iter().any(|s| &s.session_id == id));
 
+        let mut state = Activity::Idle;
+        let mut running = 0u32;
+        let mut finished = Vec::new();
+
         for session in &sessions {
-            let path = match self.transcripts.get(&session.session_id) {
-                Some(path) => path.clone(),
-                None => {
-                    let Some(found) = transcript_for(&session.session_id) else {
-                        continue;
-                    };
-                    self.transcripts
-                        .insert(session.session_id.clone(), found.clone());
-                    found
-                }
-            };
+            if !self.tracked.contains_key(&session.session_id) {
+                let Some(found) = transcript_for(&session.session_id) else {
+                    continue;
+                };
+                self.tracked.insert(
+                    session.session_id.clone(),
+                    Tracked {
+                        transcript: found,
+                        started: None,
+                        project: session
+                            .cwd
+                            .as_deref()
+                            .map(project_of)
+                            .unwrap_or_else(|| "Claude Code".to_string()),
+                    },
+                );
+            }
             let _ = session.pid;
             let _ = session.proc_start;
-            if written_within(&path, WORKING_WINDOW) {
-                return Activity::Working;
+            let Some(entry) = self.tracked.get_mut(&session.session_id) else {
+                continue;
+            };
+
+            if written_within(&entry.transcript, WORKING_WINDOW) {
+                state = Activity::Working;
+                running += 1;
+                entry.started.get_or_insert_with(Instant::now);
+            } else if let Some(started) = entry.started.take() {
+                // The transcript went quiet WORKING_WINDOW ago, and the run
+                // began up to one poll before it was first seen; subtracting
+                // the window is the larger of the two corrections.
+                let ran = started
+                    .elapsed()
+                    .saturating_sub(WORKING_WINDOW)
+                    .as_secs()
+                    .max(1);
+                finished.push(Finished {
+                    provider: "claude".to_string(),
+                    project: entry.project.clone(),
+                    seconds: ran,
+                });
             }
         }
-        Activity::Idle
+        (state, running, finished)
     }
 }
 
@@ -215,22 +300,40 @@ pub fn get_activity(state: tauri::State<Latest>) -> Vec<ProviderActivity> {
 }
 
 pub fn spawn(app: AppHandle) {
+    crate::notify::register();
     std::thread::spawn(move || {
         let mut watcher = Watcher::default();
-        let mut last: Option<Activity> = None;
+        let mut last: Option<(Activity, u32)> = None;
 
         loop {
-            let state = watcher.claude_activity();
+            let (state, running, finished) = watcher.tick();
+            for run in &finished {
+                if cfg!(debug_assertions) {
+                    println!("[notch] finished: {} in {}s", run.project, run.seconds);
+                }
+                crate::notify::toast(
+                    &format!("{} finished", run.project),
+                    &format!("Claude Code ran for {}.", spoken(run.seconds)),
+                );
+                // The notch keeps its own indicator up until it is looked at.
+                // A toast is gone in five seconds, and the whole point of this
+                // is the run you were not watching.
+                let _ = app.emit("notch:finished", run.clone());
+            }
             // Only on change: this runs every 900ms forever, and an event per
             // tick would wake the WebView for nothing.
-            if last != Some(state) {
-                last = Some(state);
+            // ⚠️ The count is part of the comparison, not just the state. Two
+            // sessions starting and one stopping leaves `state` at Working, and
+            // without this the pill would keep saying "2 agents" indefinitely.
+            if last != Some((state, running)) {
+                last = Some((state, running));
                 if cfg!(debug_assertions) {
                     println!("[notch] claude activity: {state:?}");
                 }
                 let payload = vec![ProviderActivity {
                     provider: "claude".to_string(),
                     state,
+                    running,
                 }];
                 if let Ok(mut held) = app.state::<Latest>().0.lock() {
                     *held = payload.clone();
@@ -240,4 +343,27 @@ pub fn spawn(app: AppHandle) {
             std::thread::sleep(POLL);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_the_project_whichever_way_the_shell_wrote_the_path() {
+        assert_eq!(project_of(r"C:\Users\matko\CODE\akcesfonia"), "akcesfonia");
+        assert_eq!(project_of("/c/Users/matko/CODE/codenotch-win"), "codenotch-win");
+        // A trailing separator must not name the project the empty string,
+        // which would toast a title of just "finished".
+        assert_eq!(project_of(r"C:\CODE\esono\"), "esono");
+        assert_eq!(project_of("esono"), "esono");
+    }
+
+    #[test]
+    fn says_durations_the_way_a_person_would() {
+        assert_eq!(spoken(8), "8s");
+        assert_eq!(spoken(59), "59s");
+        assert_eq!(spoken(60), "1m 00s");
+        assert_eq!(spoken(252), "4m 12s");
+    }
 }
