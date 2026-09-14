@@ -1823,3 +1823,19 @@ The two halves were the same fault.
      something you have not seen", and the track is already named on the pill
      with its equaliser running — the same claim twice. It would also land on
      Home, the default screen, which is the one place a dot says least.
+202. ⚠️ **A "what it is doing" phrase must be CLEARED when the turn ends.**
+     The transcript goes quiet the moment a tool call is answered, so the last
+     one seen outlives the run that made it — a row still reading "editing
+     palette.ts" is a status that WAS true, which is worse than no status. It is
+     cleared by a turn-ending record in `scan`, and gated on `Working` again in
+     the view.
+203. ⚠️ **The LAST `tool_use` in an assistant block, not the first.** One
+     turn can carry several calls, and the last written is the one in flight.
+204. ⚠️ **An unknown tool still says something.** The set grows — an MCP
+     server adds its own — and a session that went blank because `phrase()` had
+     no branch for `mcp__figma__get_design_context` would look exactly like one
+     that had stopped. Unknown names fall back to the tool's own name.
+205. ⚠️ **Working with no phrase is CORRECT, not a bug.** After a prompt goes
+     in and before the first tool call the model is thinking and there is
+     nothing to name — which is why the row falls back to the state word rather
+     than showing an empty line. Confirmed against the real transcripts.

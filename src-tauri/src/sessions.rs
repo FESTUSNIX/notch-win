@@ -233,6 +233,11 @@ pub struct SessionView {
     pub output: u64,
     /// How long the last completed run took, 0 if none has been seen.
     pub last_run_secs: u64,
+    /// What it is doing right now, in words — `editing palette.ts`.
+    ///
+    /// ⚠️ `None` whenever the session is not working. A phrase left behind by
+    /// a finished run is a status that WAS true, which is worse than none.
+    pub doing: Option<String>,
 }
 
 struct Tracked {
@@ -247,6 +252,7 @@ struct Tracked {
     started: Option<Instant>,
     last_run: Duration,
     usage: crate::transcript::Usage,
+    doing: Option<crate::transcript::Doing>,
     project: String,
     branch: Option<String>,
     pid: u32,
@@ -290,6 +296,8 @@ impl Watcher {
                         offset: crate::transcript::opening_offset(&path),
                         transcript: path,
                         turn,
+                        // Whatever the opening tail already showed it doing.
+                        doing: opening.doing.clone(),
                         state: state_of(turn),
                         since: Instant::now(),
                         // A session already working when it is first seen has
@@ -326,6 +334,14 @@ impl Watcher {
                     entry.usage.add(scanned.usage);
                     if scanned.branch.is_some() {
                         entry.branch = scanned.branch;
+                    }
+                    /* ⚠️ Only replaced when the chunk said something. A poll
+                     * that read nothing conversational must leave the phrase
+                     * alone — the tool call is still in flight, and blanking it
+                     * would make a long `cargo build` flicker between "running
+                     * cargo build" and nothing every second. */
+                    if scanned.doing.is_some() || scanned.turn == Some(crate::transcript::Turn::Waiting) {
+                        entry.doing = scanned.doing;
                     }
                 }
             }
@@ -367,6 +383,12 @@ impl Watcher {
                 input: entry.usage.input,
                 output: entry.usage.output,
                 last_run_secs: entry.last_run.as_secs(),
+                /* ⚠️ Gated on the state, not just on the phrase. The transcript
+                 * goes quiet the moment a tool call is answered, so the last
+                 * one seen outlives the run that made it. */
+                doing: (entry.state == Activity::Working)
+                    .then(|| entry.doing.as_ref().map(|d| d.say()))
+                    .flatten(),
             });
         }
 

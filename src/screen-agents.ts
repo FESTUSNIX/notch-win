@@ -29,6 +29,9 @@ export interface SessionView {
   input: number;
   output: number;
   lastRunSecs: number;
+  /** What it is doing right now — `editing palette.ts`. Absent unless it
+   *  is working: a phrase that outlives its run is a status that WAS true. */
+  doing?: string | null;
 }
 
 const WORDS: Record<AgentState, string> = {
@@ -118,7 +121,12 @@ export class AgentsScreen {
     head.append(element("span", "agent-project", session.project));
     if (session.branch) head.append(element("span", "agent-branch", session.branch));
     const state = element("div", "agent-state");
-    state.append(element("span", "agent-word", WORDS[session.state]));
+    /* ⚠️ The WORK, where there is any, rather than the state. "working" is
+     * three bits of information about something you are watching closely;
+     * "editing palette.ts" is the thing you actually wanted to know, and the
+     * transcript has been carrying it all along. The state word stays where
+     * there is no phrase — waiting and idle have nothing to describe. */
+    state.append(element("span", "agent-word", session.doing || WORDS[session.state]));
     const clock = element("span", "agent-for", held(session.forSecs));
     this.clocks.set(session.id, clock);
     state.append(clock);

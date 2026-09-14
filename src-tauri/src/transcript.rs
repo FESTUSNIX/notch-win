@@ -67,6 +67,111 @@ pub const TAIL_BYTES: u64 = 512 * 1024;
 /// while the app was asleep must not stall the watcher for a second.
 pub const CHUNK_BYTES: u64 = 4 * 1024 * 1024;
 
+/// What a session is doing right now, in words.
+///
+/// ⚠️ The status was three bits — working / waiting / idle — for something you
+/// are paying real attention to. The transcript has always carried the answer:
+/// an `assistant` record mid-flight ends in a `tool_use` block that names the
+/// tool and carries its arguments. "working" becomes "editing palette.ts".
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Doing {
+    /// The verb, already conjugated: `editing`, `running`, `reading`.
+    pub verb: String,
+    /// What it is doing it to, short enough for a pill. May be empty.
+    pub subject: String,
+}
+
+impl Doing {
+    pub fn say(&self) -> String {
+        if self.subject.is_empty() { self.verb.clone() }
+        else { format!("{} {}", self.verb, self.subject) }
+    }
+}
+
+/// The last path segment, so a row says `palette.ts` rather than 60 characters
+/// of absolute path nobody can read at 11px.
+fn leaf(path: &str) -> String {
+    path.rsplit([SEP, '/']).next().unwrap_or(path).to_string()
+}
+
+/// ⚠️ Built, never typed. A literal backslash in this repo has been eaten by
+/// patch tooling often enough to be worth a constant — see `win.rs`.
+const SEP: char = '\\';
+
+/// The first few words of a command, which is the part that says what it is.
+///
+/// ⚠️ Truncated hard. A `Bash` input is routinely a 400-character pipeline with
+/// a heredoc in it; the pill has room for about twenty characters and the
+/// agents row for forty.
+fn gist(command: &str) -> String {
+    let head = command.trim().lines().next().unwrap_or("").trim();
+    let mut out = String::new();
+    for word in head.split_whitespace() {
+        if out.len() + word.len() > 28 {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(word);
+    }
+    if out.is_empty() { head.chars().take(28).collect() } else { out }
+}
+
+/// Turn a `tool_use` block into a phrase.
+///
+/// ⚠️ Unknown tools fall back to the tool's own name rather than to nothing.
+/// The set grows — an MCP server adds its own — and a session that went quiet
+/// because this function had no branch for `mcp__figma__get_design` would look
+/// exactly like one that had stopped.
+fn phrase(name: &str, input: Option<&serde_json::Value>) -> Doing {
+    let arg = |key: &str| -> String {
+        input
+            .and_then(|value| value.get(key))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (verb, subject) = match name {
+        "Edit" | "Write" | "NotebookEdit" => ("editing", leaf(&arg("file_path"))),
+        "Read" => ("reading", leaf(&arg("file_path"))),
+        "Bash" | "PowerShell" => ("running", gist(&arg("command"))),
+        "Glob" | "Grep" => ("searching", gist(&arg("pattern"))),
+        "Task" | "Agent" => ("delegating", arg("description")),
+        "WebFetch" | "WebSearch" => ("looking up", gist(&arg("query"))),
+        "TodoWrite" => ("planning", String::new()),
+        "Skill" => ("using", arg("skill")),
+        other => {
+            // `mcp__figma__get_design_context` -> `get design context`
+            let tail = other.rsplit("__").next().unwrap_or(other);
+            return Doing { verb: "using".into(), subject: tail.replace('_', " ") };
+        }
+    };
+    Doing { verb: verb.into(), subject }
+}
+
+/// The tool call a mid-flight `assistant` record is making, if any.
+pub fn doing(line: &str) -> Option<Doing> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true) {
+        return None;
+    }
+    if value.get("type").and_then(|v| v.as_str())? != "assistant" {
+        return None;
+    }
+    let content = value.get("message")?.get("content")?.as_array()?;
+    // ⚠️ The LAST tool_use in the block, not the first. One assistant turn can
+    // carry several calls, and the last one written is the one in flight.
+    let block = content
+        .iter()
+        .filter(|block| block.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
+        .next_back()?;
+    Some(phrase(
+        block.get("name").and_then(|v| v.as_str()).unwrap_or("a tool"),
+        block.get("input"),
+    ))
+}
+
 /// Classify one JSONL line, or `None` if it is not a conversational record.
 ///
 /// ⚠️ `isSidechain` records are a **subagent's** conversation, not yours. A
@@ -133,6 +238,13 @@ pub struct Scan {
     pub turn: Option<Turn>,
     pub usage: Usage,
     pub branch: Option<String>,
+    /// What the newest tool call in the chunk is doing.
+    ///
+    /// ⚠️ Cleared by a record that ENDS the turn, not merely left behind. A
+    /// session that finished editing and is now waiting for you must not still
+    /// read "editing palette.ts" — that is a status that was true and is now a
+    /// lie, which is worse than no status at all.
+    pub doing: Option<Doing>,
 }
 
 /// Walk a chunk of transcript, newest fact winning.
@@ -145,6 +257,12 @@ pub fn scan(chunk: &str) -> Scan {
         }
         if let Some(turn) = classify(line) {
             out.turn = Some(turn);
+            if turn == Turn::Waiting {
+                out.doing = None;
+            }
+        }
+        if let Some(action) = doing(line) {
+            out.doing = Some(action);
         }
         if let Some(usage) = usage_of(line) {
             out.usage.add(usage);
@@ -218,6 +336,105 @@ pub fn opening_scan(path: &Path) -> Scan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn call(name: &str, input: serde_json::Value) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "name": name, "input": input}]}
+        })
+        .to_string()
+    }
+
+    /// ⚠️ "working" was three bits of information about something you are
+    /// paying real attention to. The transcript always carried the answer.
+    #[test]
+    fn a_tool_call_says_what_it_is_doing() {
+        let edit = call("Edit", serde_json::json!({"file_path": "C:/CODE/app/src/palette.ts"}));
+        assert_eq!(doing(&edit).unwrap().say(), "editing palette.ts");
+
+        let read = call("Read", serde_json::json!({"file_path": "/home/x/notes.md"}));
+        assert_eq!(doing(&read).unwrap().say(), "reading notes.md");
+
+        let bash = call("Bash", serde_json::json!({"command": "cargo test --lib"}));
+        assert_eq!(doing(&bash).unwrap().say(), "running cargo test --lib");
+
+        assert_eq!(doing(&call("TodoWrite", serde_json::json!({}))).unwrap().say(), "planning");
+    }
+
+    /// ⚠️ A `Bash` input is routinely a 400-character pipeline with a heredoc
+    /// in it, and the row it lands in is about forty characters wide.
+    #[test]
+    fn a_long_command_is_cut_to_its_gist() {
+        let long = call("Bash", serde_json::json!({
+            "command": "cargo test --lib --all-features -- --nocapture --test-threads 1 | grep -E 'ok|FAILED'"
+        }));
+        let said = doing(&long).unwrap().say();
+        assert!(said.len() < 44, "{said}");
+        assert!(said.starts_with("running cargo test"), "{said}");
+
+        // A heredoc is many lines; only the first one says anything.
+        let heredoc = call("Bash", serde_json::json!({"command": "python - <<PY\nimport os\nPY"}));
+        assert!(!doing(&heredoc).unwrap().say().contains("import"));
+    }
+
+    /// ⚠️ The set of tools grows — an MCP server adds its own — and a session
+    /// that went blank because there was no branch for it would look exactly
+    /// like one that had stopped.
+    #[test]
+    fn an_unknown_tool_still_says_something() {
+        let mcp = call("mcp__figma__get_design_context", serde_json::json!({}));
+        assert_eq!(doing(&mcp).unwrap().say(), "using get design context");
+        let odd = call("SomeNewThing", serde_json::json!({}));
+        assert_eq!(doing(&odd).unwrap().say(), "using SomeNewThing");
+    }
+
+    /// ⚠️ The LAST call in the block, not the first: one assistant turn can
+    /// carry several, and the last written is the one in flight.
+    #[test]
+    fn the_newest_call_in_a_turn_wins() {
+        let two = serde_json::json!({
+            "type": "assistant",
+            "message": {"content": [
+                {"type": "tool_use", "name": "Read", "input": {"file_path": "a.ts"}},
+                {"type": "tool_use", "name": "Edit", "input": {"file_path": "b.ts"}}
+            ]}
+        })
+        .to_string();
+        assert_eq!(doing(&two).unwrap().say(), "editing b.ts");
+    }
+
+    /// ⚠️ A subagent's tool call is not the session's. Same rule as `classify`.
+    #[test]
+    fn a_subagent_is_not_the_session() {
+        let side = serde_json::json!({
+            "type": "assistant",
+            "isSidechain": true,
+            "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {"file_path": "x.ts"}}]}
+        })
+        .to_string();
+        assert!(doing(&side).is_none());
+        // And prose carries no call at all.
+        let prose = serde_json::json!({
+            "type": "assistant", "message": {"content": [{"type": "text", "text": "done"}]}
+        })
+        .to_string();
+        assert!(doing(&prose).is_none());
+    }
+
+    /// ⚠️ A phrase that outlives its run is a status that WAS true, which is
+    /// worse than no status. Prose ending the turn clears it.
+    #[test]
+    fn ending_the_turn_clears_what_it_was_doing() {
+        let working = call("Bash", serde_json::json!({"command": "cargo build"}));
+        let prose = serde_json::json!({
+            "type": "assistant", "message": {"content": [{"type": "text", "text": "Built."}]}
+        })
+        .to_string();
+        assert_eq!(scan(&working).doing.unwrap().say(), "running cargo build");
+        assert!(scan(&format!("{working}\n{prose}")).doing.is_none());
+        // ...and the other order keeps it: the call came after the prose.
+        assert!(scan(&format!("{prose}\n{working}")).doing.is_some());
+    }
 
     const TOOL: &str = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}],"usage":{"input_tokens":2,"cache_read_input_tokens":532375,"cache_creation_input_tokens":4334,"output_tokens":1760}}}"#;
     const PROSE: &str = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":10,"output_tokens":20}}}"#;
@@ -360,12 +577,25 @@ mod tests {
                     continue;
                 }
                 let size = std::fs::metadata(&path).unwrap().len();
+                let scan = opening_scan(&path);
+                /* ⚠️ The phrase is checked against REAL transcripts, not only
+                 * against hand-written fixtures. Every mistake in this parser
+                 * comes back as an empty phrase, which is indistinguishable
+                 * from a session that simply is not working — exactly the
+                 * failure mode a unit test cannot see. */
+                let said = scan.doing.as_ref().map(|d| d.say()).unwrap_or_default();
                 println!(
-                    "{:>7.1} MB  {:?}  {}",
+                    "{:>7.1} MB  {:?}  {:<40}  {}",
                     size as f64 / 1_048_576.0,
-                    opening_scan(&path).turn,
+                    scan.turn,
+                    said,
                     path.file_name().unwrap().to_string_lossy()
                 );
+                assert!(said.len() < 60, "a phrase has to fit a row: {said}");
+                assert!(!said.starts_with(' '), "{said:?}");
+                if scan.turn == Some(Turn::Waiting) {
+                    assert!(said.is_empty(), "a waiting session is doing nothing: {said}");
+                }
                 seen += 1;
             }
         }

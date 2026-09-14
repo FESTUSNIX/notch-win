@@ -132,12 +132,12 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      agent, which is exactly what happened when this stub was first written. */
   if (command === "get_sessions") return (quiet ? [] : !agentsFixture ? [
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
-     forSecs:31, input:512_000, output:9_100, lastRunSecs:96},
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib"},
   ] : [
     {id:"s1", project:"akcesfonia", branch:"master", pid:4242, state:"waiting",
      forSecs:214, input:1_284_000, output:38_200, lastRunSecs:252},
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
-     forSecs:31, input:512_000, output:9_100, lastRunSecs:96},
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib"},
     {id:"s3", project:"esono", branch:"feat/pdp", pid:4244, state:"idle",
      forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
   ]) as T;

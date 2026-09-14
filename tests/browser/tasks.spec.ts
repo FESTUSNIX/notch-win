@@ -505,6 +505,26 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await expect(rows.nth(0)).not.toHaveClass(/is-quiet/);
   await page.screenshot({path: "test-results/island-agents.png"});
 });
+test("a working session says what it is doing, not that it is working", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.locator('[data-tab="agents"]').click();
+
+  /* ⚠️ "working" is three bits of information about something you are
+   * watching closely. The transcript has always carried the answer — an
+   * assistant record mid-flight ends in a tool_use block naming the tool and
+   * its arguments — and nothing was reading it. */
+  const working = page.locator(".agent-row.is-working").first();
+  await expect(working.locator(".agent-word")).toHaveText("running cargo test --lib");
+
+  /* And where there is no work there is no phrase: waiting and idle have
+   * nothing to describe, so the state word stays. A phrase left behind by a
+   * finished run would be a status that WAS true, which is worse than none. */
+  await expect(page.locator(".agent-row.is-waiting .agent-word").first())
+    .toHaveText("waiting for you");
+  await page.screenshot({path: "test-results/island-agents-doing.png"});
+});
+
 
 test("the palette searches the island's own world and acts on it", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
