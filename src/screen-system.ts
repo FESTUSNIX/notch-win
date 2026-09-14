@@ -50,9 +50,6 @@ export interface AppTime {
 
 export const emptySystem = (): SystemState => ({ volume: -1, muted: false, brightness: -1, bluetooth: [] });
 
-/** Deliberately not the task-list colours: these name applications, and reusing
- *  that palette would imply a relationship that is not there. */
-const APP_COLOURS = ["#5ac8fa", "#bf5af2", "#ff9f0a", "#30d158"];
 
 /** "3h 12m", "48m". Hours only when there are any — "0h 48m" reads as a
  *  placeholder rather than as three quarters of an hour. */
@@ -66,7 +63,6 @@ export function spanText(seconds: number): string {
 export class SystemScreen {
   state: SystemState = emptySystem();
   devices: AudioDevice[] = [];
-  appTime: AppTime = { day: "", total: 0, apps: [] };
   machine: Machine = { cpu: -1, memory: -1, diskUsed: -1, diskFree: 0, network: "", uptime: 0 };
   error = "";
   /** Which summary tile has its sheet open, if any. */
@@ -85,9 +81,7 @@ export class SystemScreen {
         void this.load();
         this.changed();
       });
-      await listen<AppTime>("apptime:changed", event => { this.appTime = event.payload; this.changed(); });
     }
-    try { this.appTime = await call<AppTime>("get_app_time"); } catch { /* not tracked yet */ }
   }
 
   /** Something plugged in, briefly, at the top of the stack. */
@@ -291,43 +285,6 @@ export class SystemScreen {
   }
 
   /** The day, as a stacked bar with the top few named. */
-  private dayTile(): HTMLElement {
-    const tile = this.tile("Today on this PC", "sys-day");
-    if (!this.appTime.total) {
-      tile.append(element("p", "home-empty", "Nothing tracked yet today"));
-      return tile;
-    }
-    const row = element("div", "apptime");
-    row.append(element("span", "apptime-total", spanText(this.appTime.total)));
-    const bar = element("div", "apptime-bar");
-    const keys = element("div", "apptime-keys");
-    const top = this.appTime.apps.slice(0, 4);
-    top.forEach((app, index) => {
-      const colour = APP_COLOURS[index % APP_COLOURS.length];
-      const slice = element("i");
-      slice.style.width = `${(app.seconds / this.appTime.total) * 100}%`;
-      slice.style.background = colour;
-      slice.title = `${app.name} · ${spanText(app.seconds)}`;
-      bar.append(slice);
-      const key = element("div", "apptime-key");
-      const swatch = element("b");
-      swatch.style.background = colour;
-      key.append(swatch, element("span", "", `${app.name} ${spanText(app.seconds)}`));
-      keys.append(key);
-    });
-    // Whatever is left over, so the bar always reads as a whole day.
-    const named = top.reduce((n, a) => n + a.seconds, 0);
-    if (named < this.appTime.total) {
-      const rest = element("i");
-      rest.style.width = `${((this.appTime.total - named) / this.appTime.total) * 100}%`;
-      rest.style.background = "rgba(255,255,255,.14)";
-      rest.title = `Everything else · ${spanText(this.appTime.total - named)}`;
-      bar.append(rest);
-    }
-    row.append(bar);
-    tile.append(row, keys);
-    return tile;
-  }
 
   render() {
     this.host.replaceChildren();
@@ -418,7 +375,7 @@ export class SystemScreen {
     }
     if (facts.childElementCount) machine.append(facts);
 
-    this.host.append(controls, output, bluetooth, machine, this.dayTile());
+    this.host.append(controls, output, bluetooth, machine);
     if (this.error) this.host.append(element("p", "screen-error", this.error));
   }
 }

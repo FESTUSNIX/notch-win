@@ -19,14 +19,23 @@ import { HomeScreen } from "./screen-home";
 import { MediaScreen } from "./screen-media";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
+import { AgentsScreen } from "./screen-agents";
+import * as snooze from "./snooze";
+import { ShelfScreen } from "./screen-shelf";
+import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
 
+/* Grouped, not alphabetical, and the order is the argument: what you are
+ * doing, what is around you, then the machine and the day behind you. */
 const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "home", icon: "home", label: "Home" },
   { name: "today", icon: "today", label: "Today" },
+  { name: "agents", icon: "agent", label: "Agents" },
+  { name: "shelf", icon: "shelf", label: "Shelf" },
   { name: "media", icon: "media", label: "Media" },
   { name: "calendar", icon: "calendar", label: "Calendar" },
   { name: "system", icon: "system", label: "System" },
+  { name: "review", icon: "review", label: "Review" },
 ];
 
 const app = document.getElementById("task-app")!;
@@ -34,17 +43,21 @@ app.innerHTML = `<div id="notch-shell">
   <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath></defs></svg>
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
+    <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
         <div class="panel-actions"><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Island settings" aria-expanded="false" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
-      <div id="surface-options" hidden><span>Screen edge</span><div class="edge-choices" role="group" aria-label="Screen edge"><button type="button" data-task-edge="top" aria-pressed="false">Top</button><button type="button" data-task-edge="bottom" aria-pressed="false">Bottom</button><button type="button" data-task-edge="left" aria-pressed="false">Left</button><button type="button" data-task-edge="right" aria-pressed="false">Right</button></div><span>Clock</span><div class="edge-choices" role="group" aria-label="Clock format"><button type="button" data-clock="24" aria-pressed="true">24 h</button><button type="button" data-clock="12" aria-pressed="false">12 h</button></div><span>Tasks showing</span><div class="edge-choices" role="group" aria-label="Task view"><button type="button" data-view="day" aria-pressed="true">Today</button><button type="button" data-view="all" aria-pressed="false">All lists</button></div><p id="shortcut-hint" class="options-hint"></p><button id="account-settings">Accounts &amp; connections &#8599;</button></div>
+      <div id="surface-options" hidden><span>Screen edge</span><div class="edge-choices" role="group" aria-label="Screen edge"><button type="button" data-task-edge="top" aria-pressed="false">Top</button><button type="button" data-task-edge="bottom" aria-pressed="false">Bottom</button><button type="button" data-task-edge="left" aria-pressed="false">Left</button><button type="button" data-task-edge="right" aria-pressed="false">Right</button></div><span>Clock</span><div class="edge-choices" role="group" aria-label="Clock format"><button type="button" data-clock="24" aria-pressed="true">24 h</button><button type="button" data-clock="12" aria-pressed="false">12 h</button></div><span>Tasks showing</span><div class="edge-choices" role="group" aria-label="Task view"><button type="button" data-view="day" aria-pressed="true">Today</button><button type="button" data-view="all" aria-pressed="false">All lists</button></div><p id="snoozed-line" class="options-hint" hidden></p><p id="shortcut-hint" class="options-hint"></p><button id="account-settings">Accounts &amp; connections &#8599;</button></div>
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Media" hidden><div class="screen-body scrolls" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
+        <section class="screen" data-screen="agents" role="tabpanel" aria-label="Agents" hidden><div class="screen-body scrolls" id="agents-body"></div></section>
+        <section class="screen" data-screen="shelf" role="tabpanel" aria-label="Shelf" hidden><div class="screen-body scrolls" id="shelf-body"></div></section>
+        <section class="screen" data-screen="review" role="tabpanel" aria-label="Review" hidden><div class="screen-body review-grid spans" id="review-body"></div></section>
         <section class="screen" data-screen="system" role="tabpanel" aria-label="System" hidden><div class="screen-body sys-grid spans" id="system-body"></div></section>
       </div>
     </div>
@@ -73,6 +86,9 @@ const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen=
 const media = new MediaScreen(get("media-body"), () => render());
 const calendar = new CalendarScreen(get("calendar-body"), () => render());
 const system = new SystemScreen(get("system-body"), () => render());
+const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
+const shelf = new ShelfScreen(get("shelf-body"), () => render());
+const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────
@@ -101,6 +117,7 @@ function show(name: ScreenName) {
   // Volume, brightness and the device lists are read when the screen is
   // opened — see screen-system.ts on why none of it is polled.
   if (name === "system") void system.load();
+  if (name === "review") void review.load().then(() => render());
   for (const section of document.querySelectorAll<HTMLElement>(".screen")) {
     const active = section.dataset.screen === name;
     section.classList.toggle("active", active);
@@ -133,7 +150,6 @@ function show(name: ScreenName) {
  *  screen was opened and correct every time after. */
 let machine: ModuleContext["machine"] = null;
 let weather: ModuleContext["weather"] = null;
-let agents = 0;
 /** When the current rotation started. Reset when the set of things worth
  *  saying changes, so a new arrival is seen rather than waited for. */
 let rotationFrom = Date.now();
@@ -150,7 +166,11 @@ function moduleContext(): ModuleContext {
     now,
     machine,
     weather,
-    agents,
+    // Read off the screen that owns the sessions rather than kept a second
+    // time here; one fact, one home.
+    agents: agentsScreen.sessions.filter(s => s.state === "working").length,
+    quiet: ["disk", "cpu", "memory", "agents", "event", "tasks", "weather"]
+      .filter(id => snooze.isQuiet(`module:${id}`)),
     nextEvent: next
       ? { minutes: (startOf(next).getTime() - now.getTime()) / 60000, title: next.title }
       : null,
@@ -228,6 +248,7 @@ function noticeClaim(): Activity | null {
 function claims(): (Activity | null)[] {
   return [
     noticeClaim(),
+    agentsScreen.activity(),
     system.activity(),
     today.activity(),
     media.activity(),
@@ -254,6 +275,25 @@ function paintPill(live = claims()) {
   });
 }
 
+/** ⚠️ Said out loud, with a way back. The failure mode of a mute button is
+ *  forgetting you pressed it and then wondering for a week why the app stopped
+ *  telling you things. */
+function paintSnoozed() {
+  const line = document.getElementById("snoozed-line");
+  if (!line) return;
+  const quiet = snooze.count();
+  line.hidden = quiet === 0;
+  if (!quiet) return;
+  line.replaceChildren();
+  line.append(`${quiet} thing${quiet === 1 ? "" : "s"} snoozed \u00b7 `);
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "snooze-clear";
+  back.textContent = "bring back";
+  back.onclick = () => { void snooze.wake(); };
+  line.append(back);
+}
+
 function render() {
   // Every screen renders, not just the visible one: the collapsed pill draws on
   // all three, and a screen that only updated while it was on top would show
@@ -262,6 +302,9 @@ function render() {
   media.render();
   calendar.render();
   system.render();
+  agentsScreen.render();
+  shelf.render();
+  review.render();
   home.render();
 
   const live = claims();
@@ -394,6 +437,21 @@ async function boot() {
     // Which display it landed on, said by the pill itself.
     await listen<string>("island:moved", event => say("Moved to", event.payload));
 
+    /* The shelf shortcut deliberately does not open the island: the point is
+     * to park something without leaving what you are in. The pill is the
+     * whole acknowledgement. */
+    await listen<string>("island:shelved", event => say("Shelved", event.payload));
+
+    /* A file dropped straight onto the window, which never reaches the web
+     * layer as a Tauri drag event — see dropfiles.rs. The shelf updates itself
+     * from `notch:shelf`; this is only the acknowledgement. */
+    await listen("island:dropped", () => {
+      say("Shelved", "dropped file");
+      show("shelf");
+      surface.pinFor(4000);
+    });
+    await listen<string>("island:shelved-failed", event => say("Nothing to shelf", event.payload));
+
     await listen("island:capture", () => {
       show("today");
       surface.pinFor(4000);
@@ -441,20 +499,153 @@ async function boot() {
       weather = event.payload;
       paintPill();
     });
-    await listen<{ provider: string; state: string; running: number }[]>("notch:activity", event => {
-      agents = event.payload.reduce((n, a) => n + (a.running ?? 0), 0);
-      paintPill();
-    });
-    try {
-      const running = await call<{ running: number }[]>("get_activity");
-      agents = running.reduce((n, a) => n + (a.running ?? 0), 0);
-    } catch { /* the watcher has not reported yet */ }
+    await listen("notch:sessions", () => paintPill());
   }
 
   show("home");
   await media.boot();
   await calendar.boot();
   await system.boot();
+  await agentsScreen.boot();
+  await snooze.boot(() => { paintSnoozed(); render(); });
+  paintSnoozed();
+
+  /* ── Dropping a file on the island ──────────────────────────────────────
+   *
+   * ⚠️ Three mechanisms were tried before this one, and the symptom that
+   * settled it was the **no-drop cursor**: a file held over the island showed
+   * the circle-slash, which means the window *was* being targeted and
+   * something was refusing. Not the shell walking past it.
+   *
+   *   1. Tauri's `tauri://drag-*` events: never fired once, for any real drag.
+   *   2. `DragAcceptFiles` + `WM_DROPFILES` on the window (`dropfiles.rs`):
+   *      provable by posting the message by hand, and never reached by a real
+   *      drag either — an OLE drop target on WebView2's own child window is
+   *      found first and the parent's shell registration is never consulted.
+   *   3. So: let WebView2 have it (`dragDropEnabled: false`) and handle the
+   *      drop in the page, which is the one layer that is definitely the
+   *      target.
+   *
+   * The refusal in (2) is also the explanation for the cursor: WebView2 was
+   * the target all along and the page was not accepting. */
+  /** What a drag is carrying, for the log. The shape of `dataTransfer` under
+   *  WebView2 was the open question, so it is written down rather than
+   *  assumed. */
+  const describe = (transfer: DataTransfer | null) => {
+    if (!transfer) return "no dataTransfer";
+    const types = [...transfer.types];
+    const files = [...transfer.files].map(f => `${f.name}:${f.size}`);
+    const uri = types.includes("text/uri-list") ? transfer.getData("text/uri-list") : "";
+    return `types=[${types.join(",")}] files=[${files.join(",")}] uri=${JSON.stringify(uri)}`;
+  };
+  const log = (note: string) => { void call("debug_note", { note }).catch(() => {}); };
+
+  /** Is this drag carrying files, as opposed to selected text or a link?
+   *
+   * ⚠️ `dataTransfer.files` is EMPTY during dragenter/dragover — the browser
+   * withholds the contents until the drop actually happens. `types` is the
+   * only thing that can be read early, which is why the decision is made on
+   * that rather than on what looks more obvious. */
+  const carryingFiles = (transfer: DataTransfer | null) =>
+    !!transfer && [...transfer.types].includes("Files");
+
+  /* ── Standing the island open for a drag ────────────────────────────────
+   *
+   * The pill is the doorway. The island is click-through everywhere else, so
+   * a drag cannot be seen until it crosses painted chrome; once it does,
+   * WebView2 raises dragenter here, and THEN the whole window can be opened up
+   * as a target. That is the difference between this and the Shift gesture it
+   * replaced: this knows it is a file.
+   *
+   * ⚠️ Closed on a timer refreshed by `dragover`, never on `dragleave`. That
+   * event fires every time the pointer crosses between child elements — a
+   * dozen times on the way across a panel of task rows — so closing on it
+   * makes the overlay strobe and the window stop being a target mid-drag. */
+  let dragTimer: number | undefined;
+  let dragOpen = false;
+
+  function openForDrag() {
+    window.clearTimeout(dragTimer);
+    dragTimer = window.setTimeout(closeForDrag, 220);
+    if (dragOpen) return;
+    dragOpen = true;
+    document.documentElement.classList.add("dragging-files");
+    void call("set_drop_zone", { active: true }).catch(() => {});
+    if (!surface.open) { show("shelf"); surface.pinFor(12_000); }
+  }
+
+  function closeForDrag() {
+    window.clearTimeout(dragTimer);
+    if (!dragOpen) return;
+    dragOpen = false;
+    document.documentElement.classList.remove("dragging-files");
+    void call("set_drop_zone", { active: false }).catch(() => {});
+  }
+
+  for (const name of ["dragenter", "dragover"] as const) {
+    window.addEventListener(name, event => {
+      if (!carryingFiles(event.dataTransfer)) return;
+      // ⚠️ preventDefault on BOTH, or the drop never fires and the cursor stays
+      // on the circle-slash. That was the whole original fault.
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      if (name === "dragenter" && !dragOpen) log(`dom dragenter: ${describe(event.dataTransfer)}`);
+      openForDrag();
+    });
+  }
+
+  window.addEventListener("drop", event => {
+    event.preventDefault();
+    closeForDrag();
+    log(`dom drop: ${describe(event.dataTransfer)}`);
+    void takeDrop(event.dataTransfer);
+  });
+  // A drag abandoned outside the window never sends anything more; the timer
+  // is what notices.
+  window.addEventListener("dragend", closeForDrag);
+
+  /** Get real paths out of a drop, whatever WebView2 is willing to give.
+   *
+   * ⚠️ A browser `File` has no path, by design. Three routes, cheapest first:
+   * a path the host put on the transfer, a `file://` uri-list, and — only if
+   * neither — the bytes, written into the app's own folder. The last one
+   * **copies**, which the shelf otherwise never does. */
+  async function takeDrop(transfer: DataTransfer | null) {
+    if (!transfer) return;
+    const paths: string[] = [];
+
+    for (const file of [...transfer.files]) {
+      const hosted = (file as File & { path?: string }).path;
+      if (hosted) paths.push(hosted);
+    }
+    if (!paths.length && [...transfer.types].includes("text/uri-list")) {
+      for (const line of transfer.getData("text/uri-list").split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        if (trimmed.startsWith("file:///")) {
+          paths.push(decodeURIComponent(trimmed.slice("file:///".length)));
+        }
+      }
+    }
+    if (paths.length) {
+      await shelf.dropped(paths);
+    } else if (transfer.files.length) {
+      for (const file of [...transfer.files]) {
+        const bytes = [...new Uint8Array(await file.arrayBuffer())];
+        await call("shelf_add_bytes", { name: file.name, bytes }).catch((error: unknown) => {
+          shelf.error = String(error);
+        });
+      }
+    } else {
+      const text = transfer.getData("text/plain");
+      if (!text.trim()) return;
+      await call("shelf_add_text", { text }).catch(() => {});
+    }
+    show("shelf");
+    surface.pinFor(4000);
+  }
+
+  await shelf.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   try {
@@ -470,6 +661,7 @@ async function boot() {
    * timer; renderActivity reuses its nodes, so this is a few text writes. */
   window.setInterval(() => {
     today.paintTimer();
+    agentsScreen.tick();
     paintPill();
     if (screen === "media") media.tick();
   }, 1000);

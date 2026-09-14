@@ -9,7 +9,7 @@ import { paintIcon } from "./task-icons";
 import { call, native, preview } from "./task-client";
 import {
   emptySnapshot, localDay, nodeDone, overdueDays, progress, taskForest, taskId,
-  type Task, type TaskSnapshot, type TaskView,
+  type Task, type TaskNode, type TaskSnapshot, type TaskView,
 } from "./task-model";
 import { listColor, renderDay } from "./task-day";
 import type { Activity } from "./island-activity";
@@ -324,6 +324,24 @@ export class TodayScreen {
     const shown = this.local();
     const { done, total } = progress(taskForest(shown.tasks, "today"));
     return { done, total, reliable: !!shown.updatedAt && shown.historyComplete && shown.day === localDay() };
+  }
+
+  /** What actually got finished today, for the Review screen.
+   *
+   * ⚠️ Read from the same forest the tally counts, so the number and the list
+   * can never disagree. Titles rather than tasks: nothing downstream needs to
+   * act on them, and handing out live tasks invites a second completion path. */
+  finishedToday(): string[] {
+    const shown = this.local();
+    const out: string[] = [];
+    const walk = (nodes: TaskNode[]) => {
+      for (const node of nodes) {
+        if (node.task.status === 2) out.push(node.task.title || "Untitled task");
+        if (node.children.length) walk(node.children);
+      }
+    };
+    walk(taskForest(shown.tasks, "today"));
+    return out;
   }
 
   /** The next few things to do, overdue first — the same order the day lists.

@@ -425,6 +425,107 @@ test("Home gathers the other three onto one row, and opens into them", async ({p
   await page.screenshot({path: "test-results/island-home.png"});
 });
 
+test("Agents lists every session, whoever wants you first, and goes to it", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  /* The pill: only a WAITING session claims it. Something working needs
+   * nothing from you and will carry on by itself. ⚠️ Not under `?quiet` —
+   * that fixture has no sessions at all, on purpose, so the resting-clock
+   * tests are not competing with an agent for the same strip. */
+  await expect(page.locator(".pill-label")).toHaveText("akcesfonia");
+  await expect(page.locator(".pill-value")).toHaveText(/waiting \d+m/);
+
+  await open(page);
+  await page.locator('[data-tab="agents"]').click();
+  const rows = page.locator(".agent-row");
+  await expect(rows).toHaveCount(3);
+  // Ordered by who wants you, not by name or by when they started.
+  await expect(rows.nth(0)).toHaveClass(/is-waiting/);
+  await expect(rows.nth(1)).toHaveClass(/is-working/);
+  await expect(rows.nth(2)).toHaveClass(/is-idle/);
+
+  await expect(rows.nth(0).locator(".agent-project")).toHaveText("akcesfonia");
+  await expect(rows.nth(0).locator(".agent-branch")).toHaveText("master");
+  await expect(rows.nth(0).locator(".agent-tokens")).toHaveText("1.3M / 38k");
+  await expect(rows.nth(0).locator(".agent-run")).toHaveText("last 4m 12s");
+
+  // Going there is the useful thing to do with "akcesfonia is waiting".
+  const go = rows.nth(0).locator(".agent-go");
+  await expect(go).toHaveAttribute("aria-label", /Go to akcesfonia, waiting for you/);
+  await go.click();
+  await expect(page.locator(".screen-error")).toHaveCount(0);
+
+  /* Snoozing is offered on the waiting row and NOT on the others: muting
+   * something that is already saying nothing is a control that does nothing
+   * but make you wonder later what you switched off. */
+  await expect(rows.nth(0).locator(".agent-snooze")).toHaveCount(1);
+  await expect(rows.nth(1).locator(".agent-snooze")).toHaveCount(0);
+  await expect(rows.nth(2).locator(".agent-snooze")).toHaveCount(0);
+
+  // A snoozed session hands the pill back and says so where it can be undone.
+  await rows.nth(0).locator(".agent-snooze").click();
+  await expect(rows.nth(0)).toHaveClass(/is-quiet/);
+  // The pill goes back to whatever it would otherwise be showing — here the
+  // player, which a waiting agent had been outranking.
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
+  await page.getByRole("button", {name: "Island settings", exact: true}).click();
+  await expect(page.locator("#snoozed-line")).toContainText("1 thing snoozed");
+  await page.getByRole("button", {name: "bring back", exact: true}).click();
+  await expect(page.locator("#snoozed-line")).toBeHidden();
+  await expect(rows.nth(0)).not.toHaveClass(/is-quiet/);
+  await page.screenshot({path: "test-results/island-agents.png"});
+});
+
+test("the shelf parks things and hands them back", async ({page}) => {
+  await page.goto("/tasks.html?nocal");
+  await open(page);
+  await page.locator('[data-tab="shelf"]').click();
+  const rows = page.locator(".shelf-row");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0).locator(".shelf-name")).toHaveText("Codenotch_0.1.0_x64-setup.exe");
+  await expect(rows.nth(0).locator(".shelf-note")).toHaveText("4.8 MB");
+  await expect(rows.nth(1).locator(".shelf-note")).toHaveText("link");
+  // A pasted wall of text is one line, not the row.
+  await expect(rows.nth(2).locator(".shelf-name")).toHaveText("Traceback (most recent call last):");
+
+  /* ⚠️ A file the shelf no longer has is SHOWN, not hidden. Referencing rather
+   * than copying is what makes a shelf cheap; being honest when the reference
+   * breaks is the price, and a row that silently vanished would look like the
+   * shelf losing things. */
+  await expect(rows.nth(3)).toHaveClass(/is-missing/);
+  await expect(rows.nth(3).locator(".shelf-note")).toHaveText("moved or deleted");
+  // It offers removal and nothing else: a button that cannot work is worse
+  // than no button.
+  await expect(rows.nth(3).locator(".shelf-do")).toHaveCount(1);
+  await expect(rows.nth(0).locator(".shelf-do")).toHaveCount(4);
+
+  // Copy leads, because taking a file out of this shelf IS a clipboard copy.
+  await expect(rows.nth(0).locator(".shelf-do").first()).toHaveAttribute("aria-label", /^Copy /);
+  await page.screenshot({path: "test-results/island-shelf.png"});
+});
+
+test("Review looks backwards at four things nothing else joined", async ({page}) => {
+  await page.goto("/tasks.html?nocal");
+  await open(page);
+  await page.locator('[data-tab="review"]').click();
+  const tiles = page.locator(".review-tile");
+  await expect(tiles).toHaveCount(4);
+
+  // App time, which used to be on System and never belonged there.
+  await expect(tiles.nth(0).locator(".review-value")).toHaveText("4h 40m");
+  await expect(tiles.nth(0).locator(".review-bar").first()).toBeVisible();
+  await expect(tiles.nth(0).locator(".review-bar-name").first()).toHaveText("VS Code");
+  await expect(page.locator(".sys-day")).toHaveCount(0);
+
+  // Agent runs, grouped by project and longest first.
+  await expect(tiles.nth(2).locator(".review-value")).toHaveText("3");
+  await expect(tiles.nth(2).locator(".review-item-name").first()).toHaveText("codenotch-win");
+
+  // Four tiles of different content, one height.
+  const heights = await tiles.evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().height)));
+  expect(new Set(heights).size).toBe(1);
+  await page.screenshot({path: "test-results/island-review.png"});
+});
+
 test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
@@ -531,25 +632,3 @@ test("a long device list stays behind one press instead of growing the panel", a
   await expect(bt.locator(".sheet .sys-row")).toHaveCount(4);    // everything paired
 });
 
-test("the day's app time lives on System, and the panel grows to hold it", async ({page}) => {
-  await page.goto("/tasks.html?quiet");
-  await open(page);
-  await page.locator('[data-tab="system"]').click();
-
-  const strip = page.locator(".sys-day");
-  await expect(strip).toBeVisible();
-  await expect(strip.locator(".apptime-total")).toHaveText("4h 40m");
-  // Four named apps plus a slice for everything else, so the bar is a whole day.
-  await expect(strip.locator(".apptime-bar i")).toHaveCount(5);
-  await expect(strip.locator(".apptime-key").first()).toContainText("VS Code 2h 30m");
-
-  /* ⚠️ The tile sits on a second grid row. Measuring a grid by its tallest
-   * child was right only while there was one row, and clipped this one. */
-  const island = await page.locator("#island").boundingBox();
-  const tile = await strip.boundingBox();
-  expect(tile!.y + tile!.height).toBeLessThanOrEqual(island!.y + island!.height);
-
-  // It is not on Today any more.
-  await page.locator('[data-tab="today"]').click();
-  await expect(page.locator("#apptime")).toHaveCount(0);
-});

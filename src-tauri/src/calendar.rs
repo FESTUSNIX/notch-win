@@ -684,3 +684,53 @@ mod tests {
         assert_eq!(parse_events(&body, "", "")[0].title, "(no title)");
     }
 }
+
+/// Open a file or folder with whatever the shell says owns it.
+///
+/// The same `ShellExecuteW` contract as `open_browser`, and the same reason for
+/// checking the return: a shell that refused otherwise looks identical to a
+/// click that did nothing.
+pub fn open_path(target: &str) -> Result<(), String> {
+    let result = unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let wide = HSTRING::from(target);
+        ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err("Windows would not open it.".into())
+    }
+}
+
+/// Show a file in Explorer with the file itself selected.
+///
+/// ⚠️ `explorer.exe /select,<path>` is one argument, comma and all — there is
+/// no space after the comma and the path is not a separate parameter. Written
+/// any other way Explorer silently opens the user's Documents folder instead.
+pub fn explore(path: &str) -> Result<(), String> {
+    let result = unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let args = HSTRING::from(format!("/select,\"{path}\""));
+        ShellExecuteW(
+            None,
+            w!("open"),
+            w!("explorer.exe"),
+            PCWSTR(args.as_ptr()),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err("Windows would not open Explorer.".into())
+    }
+}

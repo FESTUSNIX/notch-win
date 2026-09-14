@@ -41,6 +41,8 @@ pub const DEFAULT_HIDE: &str = "Ctrl+Alt+H";
 pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+N";
 /// M for monitor. Only does anything on a machine with more than one.
 pub const DEFAULT_DISPLAY: &str = "Ctrl+Alt+M";
+/// S for shelf. Whatever is on the clipboard, parked.
+pub const DEFAULT_SHELF: &str = "Ctrl+Alt+S";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +55,8 @@ pub struct Shortcuts {
     pub capture: String,
     /// Sends the island to the next display.
     pub display: String,
+    /// Puts whatever is on the clipboard on the shelf.
+    pub shelf: String,
 }
 
 impl Default for Shortcuts {
@@ -62,6 +66,7 @@ impl Default for Shortcuts {
             hide: DEFAULT_HIDE.into(),
             capture: DEFAULT_CAPTURE.into(),
             display: DEFAULT_DISPLAY.into(),
+            shelf: DEFAULT_SHELF.into(),
         }
     }
 }
@@ -145,14 +150,16 @@ pub fn set_shortcuts(
     hide: String,
     capture: String,
     display: String,
+    shelf: String,
 ) -> Result<(), String> {
     let next = Shortcuts {
         toggle: toggle.trim().into(),
         hide: hide.trim().into(),
         capture: capture.trim().into(),
         display: display.trim().into(),
+        shelf: shelf.trim().into(),
     };
-    let all = [&next.toggle, &next.hide, &next.capture, &next.display];
+    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -172,6 +179,7 @@ pub fn set_shortcuts(
             config.shortcut_hide = next.hide;
             config.shortcut_capture = next.capture;
             config.shortcut_display = next.display;
+            config.shortcut_shelf = next.shelf;
             crate::config::save(&config);
             Ok(())
         }
@@ -190,6 +198,7 @@ fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
         ("Hide", &shortcuts.hide),
         ("Capture", &shortcuts.capture),
         ("Next display", &shortcuts.display),
+        ("Shelf", &shortcuts.shelf),
     ] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
@@ -207,6 +216,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         hide: config.shortcut_hide,
         capture: config.shortcut_capture,
         display: config.shortcut_display,
+        shelf: config.shortcut_shelf,
     };
 
     let handler = app.clone();
@@ -238,6 +248,19 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                         set_chrome_hidden(&handler, false);
                     }
                     let _ = handler.emit_to("tasks", "island:toggle", ());
+                } else if matches(&pressed, &current.shelf) {
+                    /* Deliberately does NOT open the island. The point is to
+                     * park something without leaving what you are in; showing
+                     * a panel would be the interruption the shelf exists to
+                     * avoid. The pill says what landed. */
+                    match crate::shelf::shelf_capture(handler.clone()) {
+                        Ok(what) => {
+                            let _ = handler.emit_to("tasks", "island:shelved", what);
+                        }
+                        Err(message) => {
+                            let _ = handler.emit_to("tasks", "island:shelved-failed", message);
+                        }
+                    }
                 } else if matches(&pressed, &current.display) {
                     // Moving it while it is off screen would be a keypress with
                     // no visible result, so bring it back first.

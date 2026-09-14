@@ -97,3 +97,27 @@ export function spoken(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
+
+/* ── Agent sessions ───────────────────────────────────────────────────────
+ * Here rather than in `screen-agents.ts` for one blunt reason: node's
+ * type-stripping refuses a `constructor(private host: HTMLElement)` parameter
+ * property, so nothing in a screen class's file can be imported by a node
+ * test. This file is where the strip's pure formatting lives for exactly that
+ * reason, whatever its name suggests. */
+
+/** `1.3M`, `48k`, `900`. Tokens are read at a glance or not at all, and past
+ *  ten million the decimal is noise rather than precision. */
+export function tokens(count: number): string {
+  if (count >= 1e6) return `${(count / 1e6).toFixed(count < 1e7 ? 1 : 0)}M`;
+  if (count >= 1000) return `${Math.round(count / 1000)}k`;
+  return String(count);
+}
+
+/** How long a session has been in its current state. One unit, never two: a
+ *  session left open since yesterday is "2d", not "31h 12m". */
+export function held(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}

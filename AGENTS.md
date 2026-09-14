@@ -1163,3 +1163,371 @@ third slot carries whatever `pill-modules.ts` decides is worth the space.
     against the curls the strip read as something clipped rather than
     something laid out, and the curl is a curve — the content has to clear
     where it starts bending, not where it ends.
+
+### Agent supervision (2026-09-14)
+
+**The thing this file used to say was impossible.** Every earlier version of
+`sessions.rs` and the README said telling *waiting* from *finished* needed
+Claude Code's hooks, because both stop writing and a modification time cannot
+separate them. That was true of the modification time and false of the file.
+
+87. **The last conversational record is the whole signal.** `assistant` with a
+    `tool_use` means working; `assistant` with only prose means the turn
+    ended and it is **waiting for you**; a `user` record means the model is
+    thinking. No hook, no config, nothing of the user's to modify.
+88. ⚠️ **"The last record" is not the last line.** A transcript carries
+    fifteen record types and barely half are conversational —
+    `bridge-session`, `atis-latch`, `attachment`, `last-prompt`, `ai-title`,
+    `queue-operation` and friends land at the tail constantly. Reading the
+    final line and looking for a role finds nothing, silently and for ever.
+    `transcript::classify` returns `None` for them and a test feeds it every
+    one.
+89. ⚠️ **`isSidechain` records are a subagent's conversation.** A subagent
+    ending its turn with prose is not the session waiting for you — the
+    parent picks the result up and carries on — and counting it would make
+    every Task call look like a prompt. Its tokens are skipped for the same
+    reason.
+90. ⚠️ **Transcripts reach 49 MB on this machine.** Nothing may load one.
+    A newly noticed session is classified from a 512 KB tail; after that only
+    the bytes appended since the last look are read, capped at 4 MB a tick.
+    Measured: all 18 transcripts on this machine, the 49 MB one included,
+    classify in **0.76 s** total.
+91. ⚠️ **A read can land mid-append and take half a line.** The offset is
+    rewound to the last newline so the fragment is read again — whole —
+    next time, rather than parsed as truncated JSON. A file *shorter* than
+    the offset was replaced, not rewound, and the offset jumps to the new end
+    rather than re-reading 49 MB.
+92. **Token totals are "since Codenotch started watching", and the UI says
+    so.** A historical scan of every open transcript at launch would read
+    hundreds of megabytes to learn what the last few kilobytes already say.
+93. ⚠️ **Cache reads are counted.** They are most of what a long session
+    spends and what the limit is measured against; a figure that left them
+    out would report an afternoon as a few thousand tokens.
+94. ⚠️ **The pid owns no window.** Claude Code is a console program: its
+    node process draws nothing and the window belongs to its *terminal*,
+    which is an ancestor. `GetWindowThreadProcessId` on that window answers
+    with the terminal's pid, so matching the session's own pid against window
+    owners finds nothing at all. `win::raise_process` walks the process tree
+    upward (capped at 8, because a recycled pid can make the parent map
+    cyclic) until it finds an ancestor that owns a visible, titled window.
+95. ⚠️ **`SetForegroundWindow` refuses silently.** It returns FALSE, with
+    no error, for a process that does not already own the foreground — and
+    this one never does: the notch is `WS_EX_NOACTIVATE` precisely so it
+    cannot. `AttachThreadInput` to the current foreground thread for the
+    duration of the call is the way around it. Verified against a real
+    session's pid: `raised: true`.
+    Honest limitation: it raises the **window, not the tab**. One Windows
+    Terminal window hosts many sessions and there is no supported way to
+    select one of its tabs from outside.
+96. **`AttachThreadInput` is in `System::Threading`**, not beside the other
+    input functions in `UI::Input::KeyboardAndMouse`.
+97. **Only *waiting* claims the pill, never *working*.** Something working
+    needs nothing from you and will carry on by itself. Priority 55 puts it
+    under a meeting about to start and **over media** — which is correct,
+    and which quietly broke two media tests when the demo fixture was first
+    given a waiting session. `?agents` is the flag now; `?quiet` has none at
+    all, because that fixture means the pill is at rest.
+98. ⚠️ **The sessions event is compared on what is DRAWN.** `forSecs`
+    climbs every tick, so comparing the views wholesale emits an event 65
+    times a minute for ever and wakes both WebViews for nothing. The elapsed
+    figures are recomputed in the web layer from the state it already has.
+99. ⚠️ **Node's type-stripping refuses `constructor(private host: ...)`.**
+    Nothing in a screen class's file can be imported by a node test, which is
+    why `media-format.ts` holds the strip's pure formatting whatever its name
+    suggests. `tokens()` and `held()` live there for that reason alone.
+100. **The usage notch is not replaced by the Agents screen and must not be.**
+     It is click-through chrome reporting on something running elsewhere; the
+     screen is a panel you click into. Its pip gained `waiting` (amber,
+     breathing slowly) — a style that had been sitting in `style.css` since
+     the first version, waiting for the day the state could be produced.
+
+### The shelf, the review and snoozing (2026-09-14)
+
+101. ⚠️ **Shelved files are REFERENCED, never copied.** A shelf that
+     copied would duplicate a 2 GB video to park it for ten minutes and
+     then hold a stale copy of something you kept editing. The price is
+     that a file can move or be deleted behind the shelf's back, so every
+     item is re-checked on read and **shown as missing rather than hidden**
+     — a row that silently vanished would look like the shelf losing
+     things. A missing row offers removal and nothing else: a button that
+     cannot work is worse than no button.
+102. ⚠️ **Taking a file OUT is a clipboard copy, not a drag, and that is
+     a decision.** Dragging a real file out of a WebView is not something
+     HTML can do — the browser can offer text or a URL, and Explorer wants
+     a `CF_HDROP`. Doing it properly means becoming an OLE drag source: a
+     hand-written `IDataObject` and `IDropSource` and a modal `DoDragDrop`
+     running its own message loop inside a window that is click-through and
+     non-activating. That is the same class of hand-rolled COM as
+     `IPolicyConfig`, the most dangerous code in this tree, for a gesture
+     that is awkward from a 35px strip anyway. `SetClipboardData(CF_HDROP)`
+     is one documented call and pastes into Explorer, Slack, a browser
+     upload and everything else.
+103. ⚠️ **Every path out of the clipboard code closes the clipboard.**
+     Leaving it open locks it for the whole desktop — nothing on the
+     machine can copy or paste until this process exits, and there is no
+     error anywhere to say why. Hence the `Clipboard` guard with a `Drop`
+     impl rather than a matched pair of calls.
+104. ⚠️ **The `HGLOBAL` is given away, not lent.** Once
+     `SetClipboardData` succeeds the clipboard owns that block and freeing
+     it is a double free; if it *fails*, nobody owns it and not freeing it
+     leaks. Both branches are written out.
+105. **A `CF_HDROP` payload needs a second NUL.** The path list is
+     double-terminated; without it the receiver reads past the buffer
+     looking for the next path. `GlobalFree` is in `Foundation`, not beside
+     `GlobalAlloc`/`Lock`/`Unlock` in `System::Memory`.
+106. ⚠️ **A file dropped on the island only lands while the island is
+     interactive.** Both windows are `WS_EX_TRANSPARENT` except over the
+     rects the web layer reports, and the drag loop finds its target with
+     `WindowFromPoint`, which skips a transparent window entirely — so a
+     file held over a collapsed, untouched island drops onto whatever is
+     behind it. Hovering with a file held does open the island (the hover
+     poll reads the cursor, which keeps moving during a drag). **The
+     `Ctrl+Alt+S` clipboard path is the one that always works**, which is
+     why it exists and why it is the one under test.
+107. **The shelf shortcut does not open the island.** The point is to park
+     something without leaving what you are in; showing a panel would be
+     the interruption the shelf exists to avoid. The pill's transient
+     notice is the whole acknowledgement.
+108. **`explorer.exe /select,<path>` is ONE argument, comma and all.** No
+     space after the comma, and the path is not a separate parameter.
+     Written any other way Explorer silently opens Documents instead.
+109. **App time moved off System and onto Review.** It went to System when
+     Today got too busy and it never belonged there — System is the
+     machine's controls, and how long you spent in an editor is not a
+     control. Review is the screen that looks backwards, and it is the
+     first thing in this app that does.
+110. **Review invents nothing.** App time, finished tasks, agent runs and
+     the calendar were all already being kept, in four places, with nothing
+     joining them. Only the run log was new, and only because the watcher
+     was throwing each finished run away after raising its toast.
+111. ⚠️ **Snooze is the missing gesture, and `decay` is not a
+     substitute for it.** `decay` handles a condition that is chronically
+     true; snooze handles one you are choosing to ignore for an hour. A
+     waiting agent has neither a severity that fades nor a value that
+     creeps, so nothing but an explicit "not now" could ever quiet it.
+112. ⚠️ **Nothing is silenced for ever, and the app says what is quiet.**
+     Every snooze has an end, the island's settings line says how many
+     things are snoozed, and one press brings them all back. The failure
+     mode of a mute button is forgetting you pressed it and then wondering
+     for a week why the app stopped telling you things.
+113. **Snoozing is only offered where something is asking.** An idle agent
+     row has no bell: muting silence is a control that does nothing but
+     make you wonder later what you switched off.
+114. ⚠️ **The quiet set is PASSED INTO `pill-modules`, not imported.**
+     Importing `./snooze` pulls `task-client` and the Tauri event API in
+     behind it, and `readings()` stops being something node can import —
+     which costs the file its entire test suite. One field on
+     `ModuleContext` buys that back.
+115. **State that is neither a setting nor a cache gets its own file.**
+     `shelf.json`, `runs.json` and `snooze.json` sit beside `config.json`
+     rather than inside it: each is written on its own schedule by its own
+     thread, and folding them in would mean a run ending rewrites the
+     user's edge, position and shortcuts — with a torn write costing all
+     of it at once.
+116. **Eight tabs now, grouped rather than alphabetical**: what you are
+     doing (Home, Today, Agents, Shelf), what is around you (Media,
+     Calendar), then the machine and the day behind you (System, Review).
+
+### Why dropping a file did not work (2026-09-14)
+
+Reported as "I can't drag the file onto the shelf". Three separate causes,
+none of them the handler, and the first one had been there since the app was
+written.
+
+117. ⚠️ **There was no single-instance guard, and two copies look exactly
+     like a broken feature.** Two always-on-top islands sit at the same
+     coordinates, each with its own hover poll rewriting its own window's
+     extended styles and its own in-memory shelf. A drop lands on whichever
+     window is on top and *is* written to `shelf.json` — while the island
+     you are looking at belongs to the other process and never hears about
+     it. Everything works and nothing appears to. Found by a probe that
+     enumerated windows whose title starts with "Codenotch" and got four.
+118. ⚠️ **A collapsed island is not a drop target, and its mask is too
+     small to become one.** `WS_EX_TRANSPARENT` is skipped by
+     `WindowFromPoint`, which is what the OLE drag loop uses; the mask that
+     clears the flag is the collapsed pill, about 260 × 35, and a pointer
+     dragging a file has to cross it and *stop* there for a 100ms poll
+     before anything opens. Nobody hits that. `hover.rs` now takes the whole
+     window rect while the left button is down, which makes the target the
+     size of the panel. It cannot steal anything: a drag in progress already
+     owns the mouse, and the flag decides where the *next* hit test lands.
+119. **The third was self-inflicted: `cargo build --release` again** (see
+     #68). The binary under test was pointing at the dev server, so both
+     WebViews were error pages and no handler existed to receive anything.
+     The lesson holds: **`npm run tauri build`, always.**
+120. ⚠️ **`println!` goes nowhere in this app, and never did.** The
+     release build is `windows_subsystem = "windows"` with no console, so
+     every `println!` in the tree — nineteen background threads' worth —
+     is dead in exactly the build anyone runs when something is wrong.
+     `log.rs` is a capped rolling file beside the config, `debug_note` now
+     routes into it instead of being dev-only, and the tray has **Open
+     log**. This is the first half of the logging gap the 1.0 discussion
+     listed as a blocker.
+121. **The drop path is under test without a human.** A real OS drag needs a
+     hand holding a file, but everything from Tauri's event to the file
+     being on the shelf is exercised in the release smoke test by emitting
+     the `tauri://drag-drop` the drag would have produced. When dropping
+     "does not work" again, that is what says whether the fault is in the
+     window — hit-testing, transparency, a second instance — or in the
+     handler.
+122. **`dropprobe.rs` is the tool that answered this.** Test-only and
+     ignored: it enumerates Codenotch windows, prints their rects and
+     extended styles, and asks `WindowFromPoint` what is hit-testable with
+     the mouse button up and held down. Run it with the app running:
+     `cargo test --lib dropprobe -- --ignored --nocapture`.
+123. ⚠️ **Use forward slashes in any Windows path a patch tool touches.**
+     The smoke test's `C:\Windows\...\hosts` lost every backslash on the way
+     into the file and JS then read what was left as escape sequences, so
+     the shelf filed an item called `WindowsSystem32driversetchosts`.
+     Windows takes forward slashes everywhere that matters here, and no
+     shell, patch script or JS parser can eat them. Same root cause as #60.
+
+### The drop, properly (2026-09-14)
+
+124. ⚠️ **"The whole window counts while the button is down" is not an
+     acceptable way to widen a drop target.** It was tried and it is
+     unusable: this window is always the EXPANDED size and almost entirely
+     invisible, so clicking anywhere in a 969×388 patch of apparently empty
+     desktop made the island interactive and opened it. Reverted the same
+     day it was added. The mask is the painted chrome and nothing else.
+125. ⚠️ **Tauri's drag-and-drop never fires for this window.** Measured,
+     not assumed. The web layer logs *every* `tauri://drag-*` event it
+     receives; a synthetic `drag-drop` emitted at the same webview arrives
+     and shelves the file; a real file dragged out of Explorer produces
+     **nothing at all** — no drop, no enter, no over. Whatever wry
+     registers as an OLE drop target is not found for a window that is
+     layered, click-through, non-activating and undecorated.
+126. **So the window asks the shell directly.** `dropfiles.rs`:
+     `DragAcceptFiles` plus a `SetWindowSubclass` that catches
+     `WM_DROPFILES`. No `IDataObject`, no `IDropSource`, no modal
+     `DoDragDrop` — the older and much simpler contract, and it covers
+     exactly the case that matters, a file dragged out of Explorer.
+127. **`DragAcceptFiles` is a shell registration, not a style bit**, so it
+     survives `set_ignore_cursor_events` rewriting the whole extended-style
+     word — the trap `win::harden` exists for. The subclass survives it
+     too. Worth knowing before someone adds a third re-apply call.
+128. **`DragFinish` runs even on an empty path list.** It frees the block
+     the shell allocated for the drop; skipping it leaks into the shell's
+     heap for the life of the process.
+129. **The handler path is provable without a human.** Unlike an OLE drag,
+     `WM_DROPFILES` is just a window message carrying an `HDROP` — and an
+     `HDROP` is the same `DROPFILES` block the clipboard code already
+     builds. `dropprobe::posts_a_real_drop_message` allocates one, posts it
+     at the island from another process, and the log shows
+     `WM_DROPFILES: 1 path(s)` followed by `shelf: 1 item(s)`. If dropping
+     ever stops working again, that test says whether the fault is the
+     handler or the hit test.
+130. ⚠️ **The posted block needs `GMEM_SHARE` (0x2000), which the
+     `windows` crate does not name.** Another process has to be able to
+     follow the pointer; without it the receiver gets one it cannot read
+     and the drop silently does nothing.
+131. **A drop still has to land on PAINTED chrome.** The window is a hole
+     almost everywhere, and per-pixel alpha is what the shell hit-tests
+     against, so the pill or the open panel are the target — everywhere
+     else the island genuinely is not there. That is correct behaviour and
+     not something to widen; see #124 for what widening costs.
+
+### Dropping in, and dragging out (2026-09-14)
+
+132. ⚠️ **The no-drop cursor was the clue, and it meant the opposite of
+     what was assumed.** A circle-slash means the window *is* being
+     targeted and something is refusing — not that the shell walked past
+     it. WebView2 registers an OLE drop target on its own **child** window,
+     the drag loop finds that first, and the parent's `DragAcceptFiles`
+     registration is never consulted. The page was the target all along and
+     was not accepting.
+133. **`dragDropEnabled: false` on the tasks window, and the page handles
+     it.** `preventDefault()` on **both** `dragenter` and `dragover` is
+     what turns the circle-slash into a copy cursor and lets `drop` fire.
+     Missing either one gives exactly the reported symptom.
+134. ⚠️ **`dataTransfer.files` is EMPTY during dragenter/dragover.** The
+     browser withholds the contents until the drop actually happens, so
+     `types` — which contains `"Files"` — is the only thing that can be read
+     early. Deciding "is this a file drag" on `files.length` looks obvious
+     and never fires.
+135. **The pill is the doorway, and that is the whole detection story.** The
+     island is click-through everywhere else, so a drag cannot be seen at
+     all until it crosses painted chrome. Once WebView2 raises `dragenter`,
+     the page knows it is a file and asks Rust to open the *whole* window as
+     a target. This replaced a Shift+click gesture: a modifier can make the
+     window interactive but cannot tell a file from a stray click.
+136. ⚠️ **The drop zone closes on a TIMER refreshed by `dragover`, never
+     on `dragleave`.** That event fires every time the pointer crosses
+     between child elements — a dozen times on the way across a panel of
+     task rows — so closing on it makes the overlay strobe and the window
+     stop being a target mid-drag.
+137. **Dragging back OUT is a real OLE drag, and it is not as bad as
+     `shelf.rs` feared.** The judgement there — that a hand-maintained COM
+     vtable is not worth it — still stands; what changed is that almost
+     none of it has to be written. The `IDataObject` comes from the shell
+     (`SHCreateItemFromParsingName` + `BindToHandler(BHID_DataObject)`),
+     carrying a proper `CF_HDROP`; only `IDropSource` is implemented, it is
+     two methods, and `#[implement]` writes the vtable. The dangerous part
+     — the part that makes `IPolicyConfig` the scariest code in this tree
+     — does not exist here.
+138. ⚠️ **`DoDragDrop` runs a modal message loop, so it gets its own
+     thread.** On the UI thread it would freeze the island for the length of
+     the drag; on Tauri's async pool it would hold a worker. The thread is
+     also where `OleInitialize` goes — **not `CoInitializeEx`**: OLE drag
+     and drop needs the full OLE apartment and fails with
+     `CO_E_NOTINITIALIZED` without it.
+139. ⚠️ **The shell's parser refuses forward slashes.**
+     `SHCreateItemFromParsingName` answers `E_INVALIDARG` for
+     `C:/Windows/.../hosts`, so a file that arrived as a `file:///C:/...`
+     uri-list could be opened and copied but **never dragged back out**.
+     `shelf::windows_path` normalises on the way in and `dragout` again on
+     the way out. Measured, and now a test: `std::fs` and `ShellExecuteW`
+     both accept either spelling, which is what hides this.
+140. **A drag out starts on pointer MOVEMENT, not on pointerdown.**
+     `DoDragDrop` takes the mouse the instant it is called, so starting it
+     on the press would turn every click on a shelf row — including ones
+     aimed at the buttons beside it — into a drag nobody asked for. Six
+     pixels separates the two gestures.
+141. **The drop path is under test without a human.** The release smoke test
+     dispatches a real `DragEvent` carrying a `File`, which exercises
+     detection, the overlay, the bytes fallback and the shelf write; and it
+     starts a real drag out to prove the path resolves and the shell
+     accepts it. What it cannot check is the modal loop, which needs a
+     mouse.
+142. **The bytes fallback never overwrites.** A browser `File` has no path
+     by design, so a drop through the page has only the contents; they go
+     in the app's own folder, and a second file of the same name lands
+     beside the first rather than on top of it.
+
+### The drag that would not end (2026-09-14)
+
+Reported as "dragging out doesn't work and it also broke my normal drag".
+The two halves were the same fault.
+
+143. ⚠️ **`DoDragDrop` must run on a thread that receives mouse
+     messages, which in practice means the main thread.** It drives its own
+     modal loop out of the *calling thread's* message queue and calls
+     `QueryContinueDrag` for each mouse message it sees. A plain worker
+     thread has no message queue and gets no mouse input, so the loop never
+     learns the button came up and **never returns**.
+144. ⚠️ **And a stuck drag loop does not break the app — it breaks the
+     desktop.** It holds the mouse capture, so dragging stops working
+     everywhere until the process is killed. That is the whole reason this
+     is not something to try by hand: the failure mode costs the user their
+     mouse, not a feature.
+145. **Blocking the main thread for the length of a drag is correct, not a
+     compromise.** It is what every Windows app does. `run_on_main_thread`
+     is how the work gets there; the hover poll checks `dragout::DRAGGING`
+     and stands back, because `set_ignore_cursor_events` goes through the
+     main thread too and would queue behind the modal loop at best.
+146. **`continue_drag` is a free function so it can be tested.** It is the
+     rule that decides whether the loop ever ends — `MK_LBUTTON` clear
+     means drop, Escape means cancel — and testing the wrong bit gives a
+     drag that follows the cursor for ever. Five assertions, no COM.
+147. **There is a watchdog, and it exists because of #144.** If a drag is
+     still running after twelve seconds a synthetic Escape is sent:
+     `continue_drag` always answers `DRAGDROP_S_CANCEL` for it, so the loop
+     ends and the capture comes back. It converts "kill the app" into
+     "wait a few seconds". Sent only while `DRAGGING` is still true, so a
+     drag that finished never sees a stray keystroke.
+148. **`tools/drag-out-check.mjs` proves termination without risking it.**
+     It launches the app, shelves a real file, presses the button, starts
+     the drag through the real command, wiggles, releases, and reads the
+     log. `returned HRESULT(0x00040100)` is `DRAGDROP_S_DROP`: the loop
+     ended and gave the capture back. Verified on this machine, with
+     `effect 1` — the drop was accepted, not just abandoned.

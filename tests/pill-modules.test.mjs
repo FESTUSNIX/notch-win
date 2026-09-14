@@ -9,9 +9,17 @@ const quiet = {
   nextEvent: null,
   tasks: {done: 2, total: 6, reliable: true, view: 'day'},
   agents: 0,
+  quiet: [],
 };
 
 const withDisk = pct => ({...quiet, machine: {cpu: 20, memory: 40, diskUsed: pct, diskFree: 7.6e9}});
+
+test('a snoozed module says nothing at all', () => {
+  // The one place that decides what quiet means, so a module cannot forget.
+  assert.deepEqual(readings(quiet).map(r => r.id), ['tasks', 'weather']);
+  assert.deepEqual(readings({...quiet, quiet: ['tasks']}).map(r => r.id), ['weather']);
+  assert.deepEqual(readings({...quiet, quiet: ['tasks', 'weather']}), []);
+});
 
 test('a module with nothing to say yields the slot', () => {
   const silent = {...quiet, weather: null, tasks: {done: 0, total: 0, reliable: true, view: 'day'}};

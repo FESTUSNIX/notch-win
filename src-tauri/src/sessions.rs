@@ -1,26 +1,28 @@
-//! "Is it still working?" — the other question the notch answers.
+//! "Is it still working?" — and the question that actually matters, "is it
+//! waiting for *me*?"
 //!
 //! ⚠️ **The macOS route does not exist on Windows.** `ClaudeSessionMonitor`
 //! reads a `status` / `tempo` pair out of `~/.claude/sessions/<pid>.json`;
 //! Claude Code on Windows writes that file with an entirely different shape —
 //! `pid`, `sessionId`, `cwd`, `startedAt`, `procStart`, `entrypoint`,
 //! `messagingSocketPath` — and **no status field at all**. It registers that a
-//! session exists, not what it is doing. Reading it the macOS way yields
-//! `idle` for ever, silently.
+//! session exists, not what it is doing.
 //!
-//! So the state comes from the transcript instead: Claude Code appends to
-//! `~/.claude/projects/<project>/<sessionId>.jsonl` as it streams, and a file
-//! touched within the last few seconds means it is working right now. No hook
-//! to install and nothing of the user's configuration to modify.
+//! So the state comes from the transcript. This file used to say that telling
+//! *waiting* from *finished* needed Claude Code's hooks, because both stop
+//! writing and a modification time cannot tell them apart. That was true of
+//! the modification time and false of the file: the last conversational record
+//! says which it is, and `transcript.rs` reads it. No hook to install and
+//! nothing of the user's configuration to modify.
 //!
-//! What this cannot see is **waiting**. A session blocked on a prompt stops
-//! writing exactly as a finished one does, so the two are identical from here.
-//! Telling them apart needs Claude Code's hooks — which is why the other
-//! Windows port ships a separate hook executable — and that is not built.
+//! Each session is tracked on its own — one collapsed answer is all the usage
+//! notch's single arc can draw, but with three terminals open the useful fact
+//! is *which* of them is waiting, and that is what the island's Agents screen
+//! and `focus_session` are for.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -33,19 +35,18 @@ use windows::Win32::System::Threading::{
 /// screen; cheap enough to run forever — it stats a handful of known paths.
 const POLL: Duration = Duration::from_millis(900);
 
-/// How recently the transcript must have been written to count as working.
-/// Generous, because streaming pauses: a model thinking between tool calls can
-/// leave several seconds between appends, and a spinner that stutters off and
-/// on through one answer is worse than one that lingers a moment past the end.
-const WORKING_WINDOW: Duration = Duration::from_secs(8);
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Activity {
+    /// A tool call is pending, or the model is thinking.
     Working,
-    /// Never produced yet — see the note at the top of this file.
-    #[allow(dead_code)]
+    /// The turn ended with prose. Nothing will happen until you type.
+    ///
+    /// ⚠️ The style for this has been in `style.css` since the first version
+    /// (`.ring__activity.is-waiting`, an amber pulse) waiting for the day the
+    /// state could actually be produced. It can now.
     Waiting,
+    /// No live session, or one that has said nothing legible.
     Idle,
 }
 
@@ -67,6 +68,9 @@ pub struct ProviderActivity {
 /// would be replayed as news every time the WebView reloaded.
 #[derive(Clone, Debug, Serialize)]
 pub struct Finished {
+    /// Whether the run ended *waiting for you* or simply went quiet. Almost
+    /// always the former, and it is what the notification says.
+    pub waiting: bool,
     pub provider: String,
     /// The working directory's last component — "akcesfonia", not a path. With
     /// two or three sessions open, which one finished is the whole message.
@@ -130,20 +134,9 @@ fn transcript_for(session_id: &str) -> Option<PathBuf> {
     None
 }
 
-fn written_within(path: &Path, window: Duration) -> bool {
-    let Ok(modified) = std::fs::metadata(path).and_then(|m| m.modified()) else {
-        return false;
-    };
-    SystemTime::now()
-        .duration_since(modified)
-        .map(|age| age <= window)
-        .unwrap_or(true) // a clock skew into the future is not "old"
-}
-
 struct Session {
     session_id: String,
     pid: u32,
-    proc_start: Option<u64>,
     /// Where the session was started, so a finish can name it.
     cwd: Option<String>,
 }
@@ -190,7 +183,6 @@ fn live_sessions() -> Vec<Session> {
         out.push(Session {
             session_id: session_id.to_string(),
             pid,
-            proc_start,
             cwd,
         });
     }
@@ -218,11 +210,54 @@ pub fn spoken(seconds: u64) -> String {
     }
 }
 
+/// One session, as the island draws it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionView {
+    pub id: String,
+    /// The working directory's last component — "akcesfonia", not a path.
+    pub project: String,
+    /// Whatever branch the transcript last recorded, where it recorded one.
+    pub branch: Option<String>,
+    /// What `focus_session` needs. Not a window handle: see `win::raise_process`.
+    pub pid: u32,
+    pub state: Activity,
+    /// Seconds in this state, so "waiting 40s" reads differently from
+    /// "waiting since lunch".
+    pub for_secs: u64,
+    /// ⚠️ **Since Codenotch started watching**, not for the session's life. A
+    /// historical scan of every open transcript at launch would read hundreds
+    /// of megabytes to learn something the tail already says; the UI says
+    /// "seen" rather than "total" for the same reason.
+    pub input: u64,
+    pub output: u64,
+    /// How long the last completed run took, 0 if none has been seen.
+    pub last_run_secs: u64,
+}
+
 struct Tracked {
     transcript: PathBuf,
-    /// When this session was first seen writing. `None` between runs.
+    /// How far into the transcript this watcher has read.
+    offset: u64,
+    turn: crate::transcript::Turn,
+    state: Activity,
+    /// When the current state began, for `for_secs`.
+    since: Instant,
+    /// When the current run of work began. `None` between runs.
     started: Option<Instant>,
+    last_run: Duration,
+    usage: crate::transcript::Usage,
     project: String,
+    branch: Option<String>,
+    pid: u32,
+}
+
+fn state_of(turn: crate::transcript::Turn) -> Activity {
+    match turn {
+        crate::transcript::Turn::Working => Activity::Working,
+        crate::transcript::Turn::Waiting => Activity::Waiting,
+        crate::transcript::Turn::Unknown => Activity::Idle,
+    }
 }
 
 #[derive(Default)]
@@ -233,70 +268,157 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    /// One round: the state to show, plus any run that ended on this tick.
-    fn tick(&mut self) -> (Activity, u32, Vec<Finished>) {
+    /// One round: every live session, plus any run that ended on this tick.
+    fn tick(&mut self) -> (Vec<SessionView>, Vec<Finished>) {
         let sessions = live_sessions();
         self.tracked
             .retain(|id, _| sessions.iter().any(|s| &s.session_id == id));
 
-        let mut state = Activity::Idle;
-        let mut running = 0u32;
         let mut finished = Vec::new();
+        let mut views = Vec::new();
 
         for session in &sessions {
             if !self.tracked.contains_key(&session.session_id) {
-                let Some(found) = transcript_for(&session.session_id) else {
+                let Some(path) = transcript_for(&session.session_id) else {
                     continue;
                 };
+                let opening = crate::transcript::opening_scan(&path);
+                let turn = opening.turn.unwrap_or(crate::transcript::Turn::Unknown);
                 self.tracked.insert(
                     session.session_id.clone(),
                     Tracked {
-                        transcript: found,
+                        offset: crate::transcript::opening_offset(&path),
+                        transcript: path,
+                        turn,
+                        state: state_of(turn),
+                        since: Instant::now(),
+                        // A session already working when it is first seen has
+                        // no start to measure from; the next run gets one.
                         started: None,
+                        last_run: Duration::ZERO,
+                        usage: Default::default(),
                         project: session
                             .cwd
                             .as_deref()
                             .map(project_of)
                             .unwrap_or_else(|| "Claude Code".to_string()),
+                        branch: opening.branch,
+                        pid: session.pid,
                     },
                 );
             }
-            let _ = session.pid;
-            let _ = session.proc_start;
             let Some(entry) = self.tracked.get_mut(&session.session_id) else {
                 continue;
             };
+            entry.pid = session.pid;
 
-            if written_within(&entry.transcript, WORKING_WINDOW) {
-                state = Activity::Working;
-                running += 1;
-                entry.started.get_or_insert_with(Instant::now);
-            } else if let Some(started) = entry.started.take() {
-                // The transcript went quiet WORKING_WINDOW ago, and the run
-                // began up to one poll before it was first seen; subtracting
-                // the window is the larger of the two corrections.
-                let ran = started
-                    .elapsed()
-                    .saturating_sub(WORKING_WINDOW)
-                    .as_secs()
-                    .max(1);
-                finished.push(Finished {
-                    provider: "claude".to_string(),
-                    project: entry.project.clone(),
-                    seconds: ran,
-                });
+            // Only the bytes appended since last time. The transcripts on this
+            // machine reach 49 MB; re-reading one every 900ms is not an option.
+            if let Some((offset, chunk)) =
+                crate::transcript::read_from(&entry.transcript, entry.offset)
+            {
+                entry.offset = offset;
+                if !chunk.is_empty() {
+                    let scanned = crate::transcript::scan(&chunk);
+                    if let Some(turn) = scanned.turn {
+                        entry.turn = turn;
+                    }
+                    entry.usage.add(scanned.usage);
+                    if scanned.branch.is_some() {
+                        entry.branch = scanned.branch;
+                    }
+                }
             }
+
+            let next = state_of(entry.turn);
+            if next != entry.state {
+                // Working -> anything else is a run ending. ⚠️ A session whose
+                // process is gone was dropped above and never reaches here:
+                // closing a terminal mid-run is not an achievement to be
+                // congratulated for, and a toast for it would fire every time
+                // a window was shut.
+                if entry.state == Activity::Working {
+                    let ran = entry
+                        .started
+                        .map(|start| start.elapsed())
+                        .unwrap_or_else(|| entry.since.elapsed());
+                    entry.last_run = ran;
+                    entry.started = None;
+                    finished.push(Finished {
+                        provider: "claude".to_string(),
+                        project: entry.project.clone(),
+                        seconds: ran.as_secs().max(1),
+                        waiting: next == Activity::Waiting,
+                    });
+                } else if next == Activity::Working {
+                    entry.started = Some(Instant::now());
+                }
+                entry.state = next;
+                entry.since = Instant::now();
+            }
+
+            views.push(SessionView {
+                id: session.session_id.clone(),
+                project: entry.project.clone(),
+                branch: entry.branch.clone(),
+                pid: entry.pid,
+                state: entry.state,
+                for_secs: entry.since.elapsed().as_secs(),
+                input: entry.usage.input,
+                output: entry.usage.output,
+                last_run_secs: entry.last_run.as_secs(),
+            });
         }
-        (state, running, finished)
+
+        // Whoever wants you most, first.
+        views.sort_by_key(|view| match view.state {
+            Activity::Waiting => 0,
+            Activity::Working => 1,
+            Activity::Idle => 2,
+        });
+        (views, finished)
+    }
+}
+
+/// The one answer the usage notch's single arc can draw.
+///
+/// ⚠️ Waiting outranks working. With one session thinking and another blocked
+/// on you, the one that needs you is the news — the other will carry on by
+/// itself.
+fn overall(views: &[SessionView]) -> Activity {
+    if views.iter().any(|v| v.state == Activity::Waiting) {
+        Activity::Waiting
+    } else if views.iter().any(|v| v.state == Activity::Working) {
+        Activity::Working
+    } else {
+        Activity::Idle
     }
 }
 
 #[derive(Default)]
 pub struct Latest(pub std::sync::Mutex<Vec<ProviderActivity>>);
 
+#[derive(Default)]
+pub struct Sessions(pub std::sync::Mutex<Vec<SessionView>>);
+
 #[tauri::command]
 pub fn get_activity(state: tauri::State<Latest>) -> Vec<ProviderActivity> {
     state.0.lock().map(|held| held.clone()).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_sessions(state: tauri::State<Sessions>) -> Vec<SessionView> {
+    state.0.lock().map(|held| held.clone()).unwrap_or_default()
+}
+
+/// Bring the terminal a session is running in to the front.
+///
+/// Returns false when there is nothing to raise, which is a real outcome
+/// rather than an error: a session started from a detached process, or one
+/// whose terminal has since been closed, owns no window.
+#[tauri::command]
+pub fn focus_session(pid: u32) -> bool {
+    crate::win::raise_process(pid)
 }
 
 pub fn spawn(app: AppHandle) {
@@ -304,31 +426,61 @@ pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || {
         let mut watcher = Watcher::default();
         let mut last: Option<(Activity, u32)> = None;
+        let mut last_views: Vec<SessionView> = Vec::new();
 
         loop {
-            let (state, running, finished) = watcher.tick();
+            let (views, finished) = watcher.tick();
             for run in &finished {
-                if cfg!(debug_assertions) {
-                    println!("[notch] finished: {} in {}s", run.project, run.seconds);
-                }
+                crate::log::note(&format!(
+                    "run finished: {} in {}s, waiting={}",
+                    run.project, run.seconds, run.waiting
+                ));
                 crate::notify::toast(
-                    &format!("{} finished", run.project),
+                    &format!(
+                        "{} {}",
+                        run.project,
+                        if run.waiting { "needs you" } else { "stopped" }
+                    ),
                     &format!("Claude Code ran for {}.", spoken(run.seconds)),
                 );
                 // The notch keeps its own indicator up until it is looked at.
                 // A toast is gone in five seconds, and the whole point of this
                 // is the run you were not watching.
+                // Kept, so the Review screen can look backwards at all.
+                crate::runlog::record(&app, &run.project, run.seconds, run.waiting);
                 let _ = app.emit("notch:finished", run.clone());
             }
+
+            let state = overall(&views);
+            let running = views.iter().filter(|v| v.state == Activity::Working).count() as u32;
+
+            if let Ok(mut held) = app.state::<Sessions>().0.lock() {
+                *held = views.clone();
+            }
+            /* ⚠️ Compared on what is *drawn*, not on the whole view. `for_secs`
+             * climbs every tick, so comparing the views wholesale would emit an
+             * event 65 times a minute for ever and wake both WebViews for
+             * nothing. The elapsed figures are recomputed in the web layer from
+             * the state it already has. */
+            let drawn: Vec<_> = views
+                .iter()
+                .map(|v| (v.id.clone(), v.state, v.input, v.output, v.branch.clone()))
+                .collect();
+            let previous: Vec<_> = last_views
+                .iter()
+                .map(|v| (v.id.clone(), v.state, v.input, v.output, v.branch.clone()))
+                .collect();
+            if drawn != previous {
+                last_views = views.clone();
+                let _ = app.emit("notch:sessions", views);
+            }
+
             // Only on change: this runs every 900ms forever, and an event per
             // tick would wake the WebView for nothing.
-            // ⚠️ The count is part of the comparison, not just the state. Two
-            // sessions starting and one stopping leaves `state` at Working, and
-            // without this the pill would keep saying "2 agents" indefinitely.
             if last != Some((state, running)) {
                 last = Some((state, running));
                 if cfg!(debug_assertions) {
-                    println!("[notch] claude activity: {state:?}");
+                    println!("[notch] claude activity: {state:?} ({running} working)");
                 }
                 let payload = vec![ProviderActivity {
                     provider: "claude".to_string(),
@@ -365,5 +517,40 @@ mod tests {
         assert_eq!(spoken(59), "59s");
         assert_eq!(spoken(60), "1m 00s");
         assert_eq!(spoken(252), "4m 12s");
+    }
+}
+
+#[cfg(test)]
+mod live {
+    /// `cargo test --lib sessions::live -- --ignored --nocapture` — what this
+    /// machine's own open sessions look like through the watcher.
+    #[test]
+    #[ignore]
+    fn reports_the_real_sessions() {
+        let mut watcher = super::Watcher::default();
+        let (views, _) = watcher.tick();
+        for view in &views {
+            println!(
+                "{:<9?} {:<18} pid {:<7} branch {}",
+                view.state,
+                view.project,
+                view.pid,
+                view.branch.clone().unwrap_or_else(|| "-".into()),
+            );
+        }
+        println!("{} live session(s)", views.len());
+    }
+
+    /// Can we actually get to the terminal a session is in?
+    /// `cargo test --lib sessions::live::raises -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn raises_the_terminal_a_session_is_in() {
+        let mut watcher = super::Watcher::default();
+        let (views, _) = watcher.tick();
+        for view in &views {
+            let raised = crate::win::raise_process(view.pid);
+            println!("{} (pid {}) -> raised: {}", view.project, view.pid, raised);
+        }
     }
 }

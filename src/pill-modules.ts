@@ -65,6 +65,14 @@ export interface ModuleContext {
   tasks: { done: number; total: number; reliable: boolean; view: TaskView };
   /** Live Claude Code sessions writing right now. */
   agents: number;
+  /** Module ids the user has told to be quiet.
+   *
+   * ⚠️ Passed in rather than read from `./snooze`, and that is not a style
+   * choice: importing it would pull `task-client` and the Tauri event API in
+   * behind it, and `readings()` would stop being something node can import.
+   * Every rule in this file is tested with no clock, no DOM and no Tauri, and
+   * that is worth one field. */
+  quiet: string[];
 }
 
 type Module = (ctx: ModuleContext) => ModuleReading | null;
@@ -145,7 +153,9 @@ const MODULES: Module[] = [disk, cpu, memory, agents, event, tasks, weather];
 export function readings(ctx: ModuleContext): ModuleReading[] {
   return MODULES
     .map(module => module(ctx))
-    .filter((r): r is ModuleReading => r !== null)
+    // ⚠️ Filtered here rather than inside each module, so a module cannot
+    // forget to check and there is one place that decides what "quiet" means.
+    .filter((r): r is ModuleReading => r !== null && !ctx.quiet.includes(r.id))
     .sort((a, b) => b.urgency - a.urgency);
 }
 

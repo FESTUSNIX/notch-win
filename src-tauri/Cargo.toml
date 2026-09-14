@@ -18,7 +18,7 @@ serde_json = "1"
 # Media_Control/Storage_Streams/Foundation are WinRT, not Win32: the media
 # screen reads whatever player owns the system transport controls (Spotify,
 # a browser tab, VLC) rather than talking to any one service.
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Shutdown", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_Security_Credentials", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_Media_Audio", "Win32_Devices_FunctionDiscovery", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_SystemInformation", "Win32_Devices_Bluetooth", "Win32_Devices_Display", "Win32_Media_Audio_Endpoints", "Win32_Graphics_Gdi", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Shutdown", "Media_Control", "Storage_Streams", "Foundation", "Foundation_Collections", "UI_Notifications", "Data_Xml_Dom"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Shutdown", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_Security_Credentials", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_Media_Audio", "Win32_Devices_FunctionDiscovery", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_SystemInformation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Bluetooth", "Win32_Devices_Display", "Win32_Media_Audio_Endpoints", "Win32_Graphics_Gdi", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Shutdown", "Media_Control", "Storage_Streams", "Foundation", "Foundation_Collections", "UI_Notifications", "Data_Xml_Dom"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 dirs = "7.0.0"
 tokio = { version = "1.53.1", features = ["macros", "sync", "time"] }
@@ -31,7 +31,14 @@ windows-registry = "0.6.1"
 # IAsyncOperation here is a different type from the one its APIs return.
 # `windows` re-exports windows_core as `windows::core` but not this crate.
 windows-future = "0.3.2"
+# ⚠️ A direct dependency purely so `#[implement]` compiles: the macro expands to
+# `::windows_core::` paths, and `windows` re-exports it as `windows::core`
+# rather than under its crate name. Must track the version `windows` itself
+# depends on (0.62.2 -> 0.62.2), for the same reason windows-future must.
+windows-core = "0.62.2"
 tauri-plugin-global-shortcut = "2"
+# One island, not two. See the note in lib.rs.
+tauri-plugin-single-instance = "2"
 # PKCE for the Google loopback flow: a verifier that never leaves this machine.
 sha2 = "0.10"
 rand = "0.9"

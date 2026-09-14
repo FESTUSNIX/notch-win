@@ -14,7 +14,9 @@ import { paintIcon, type TaskIcon } from "./task-icons";
 import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";
 
-export type ScreenName = "home" | "today" | "media" | "calendar" | "system";
+export type ScreenName =
+  | "home" | "today" | "agents" | "shelf"
+  | "media" | "calendar" | "system" | "review";
 
 /** What the resting pill shows: the date, the time, and at most one module. */
 export interface Resting {

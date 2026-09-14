@@ -61,6 +61,8 @@ interface Finished {
   provider: string;
   project: string;
   seconds: number;
+  /** Whether the run ended waiting for you, or the session simply stopped. */
+  waiting: boolean;
 }
 
 let snapshots: Snapshot[] = [];
@@ -636,14 +638,21 @@ function reportRects() {
 function paintPip() {
   const pip = document.getElementById("pip");
   if (!pip) return;
-  const working = [...activity.values()].includes("working");
-  const state = finished ? "done" : working ? "working" : "idle";
+  const states = [...activity.values()];
+  /* ⚠️ Waiting outranks working, and `done` outranks both. With one session
+   * thinking and another blocked on you, the one that needs you is the news —
+   * the other will carry on by itself. */
+  const waiting = states.includes("waiting");
+  const working = states.includes("working");
+  const state = finished ? "done" : waiting ? "waiting" : working ? "working" : "idle";
   if (pip.dataset.state !== state) pip.dataset.state = state;
   pip.title = finished
-    ? `${finished.project} finished in ${spoken(finished.seconds)}`
-    : working
-      ? "Working"
-      : "";
+    ? `${finished.project} ${finished.waiting ? "needs you" : "stopped"} after ${spoken(finished.seconds)}`
+    : waiting
+      ? "Waiting for you"
+      : working
+        ? "Working"
+        : "";
 }
 
 /* ----------------------------------------------------------------- hover */

@@ -27,6 +27,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     EDD_GET_DEVICE_INTERFACE_NAME, MONITORINFOF_PRIMARY,
 };
+// ⚠️ In `System::Threading`, not beside the other input functions.
+use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
@@ -462,5 +464,136 @@ mod key_tests {
     fn too_few_fields_is_none_rather_than_a_key_that_cannot_open() {
         assert_eq!(registry_key("MONITOR"), None);
         assert_eq!(registry_key("DISPLAY#DEL42D3"), None);
+    }
+}
+
+/* ── Raising the window a process is running in ───────────────────────────
+ *
+ * For "this session is waiting for you" to be worth anything, it has to be
+ * possible to get *to* it. Two Win32 problems stand between a pid and a raised
+ * window, and both of them fail quietly.
+ */
+
+/// The parent of every process on the machine, in one pass.
+fn parents() -> std::collections::HashMap<u32, u32> {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    let mut out = std::collections::HashMap::new();
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            return out;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                out.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = windows::Win32::Foundation::CloseHandle(snapshot);
+    }
+    out
+}
+
+unsafe extern "system" fn push_window(window: HWND, data: LPARAM) -> BOOL {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+    let out = unsafe { &mut *(data.0 as *mut Vec<(HWND, u32)>) };
+    unsafe {
+        // A titleless or hidden top-level window is a message sink, a tray
+        // host or a tooltip — raising one puts nothing on screen.
+        if !IsWindowVisible(window).as_bool() || GetWindowTextLengthW(window) == 0 {
+            return TRUE;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(window, Some(&mut pid));
+        if pid != 0 {
+            out.push((window, pid));
+        }
+    }
+    TRUE
+}
+
+fn visible_windows() -> Vec<(HWND, u32)> {
+    use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
+    let mut out: Vec<(HWND, u32)> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(push_window), LPARAM(&mut out as *mut Vec<(HWND, u32)> as isize));
+    }
+    out
+}
+
+/// Bring the window a process is running in to the front.
+///
+/// ⚠️ **The pid owns no window.** Claude Code is a console program: its node
+/// process draws nothing, and the window is its terminal's — Windows Terminal,
+/// VS Code, conhost — which is an *ancestor*, not the process itself.
+/// `GetWindowThreadProcessId` on that window answers with the terminal's pid,
+/// so matching the session's own pid against window owners finds nothing at
+/// all. The process tree is walked upward until an ancestor is found that does
+/// own a visible window.
+///
+/// ⚠️ **And `SetForegroundWindow` refuses silently.** It returns `FALSE`, with
+/// no error, for a process that does not already own the foreground — and this
+/// one never does: the notch is `WS_EX_NOACTIVATE` precisely so that it cannot.
+/// Attaching this thread's input queue to the current foreground thread for the
+/// duration of the call is the documented way around it.
+///
+/// Honest limitation: this raises the *window*, not the tab. One Windows
+/// Terminal window hosts many sessions and there is no supported way to select
+/// one of its tabs from outside.
+pub fn raise_process(pid: u32) -> bool {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SetForegroundWindow, ShowWindow,
+        SW_RESTORE,
+    };
+
+    let windows = visible_windows();
+    let tree = parents();
+
+    // Up the tree, but not for ever: a cycle in the parent map, or a pid whose
+    // parent has been recycled into one of its own descendants, would loop.
+    let mut candidate = pid;
+    let mut target = None;
+    for _ in 0..8 {
+        if let Some((window, _)) = windows.iter().find(|(_, owner)| *owner == candidate) {
+            target = Some(*window);
+            break;
+        }
+        match tree.get(&candidate) {
+            Some(parent) if *parent != 0 && *parent != candidate => candidate = *parent,
+            _ => break,
+        }
+    }
+    let Some(window) = target else { return false };
+
+    unsafe {
+        if IsIconic(window).as_bool() {
+            let _ = ShowWindow(window, SW_RESTORE);
+        }
+        let foreground = GetForegroundWindow();
+        let mine = GetCurrentThreadId();
+        let theirs = GetWindowThreadProcessId(foreground, None);
+        let attached = theirs != 0
+            && theirs != mine
+            && AttachThreadInput(mine, theirs, true).as_bool();
+        let raised = SetForegroundWindow(window).as_bool();
+        if raised {
+            let _ = SetFocus(Some(window));
+        }
+        if attached {
+            let _ = AttachThreadInput(mine, theirs, false);
+        }
+        raised
     }
 }

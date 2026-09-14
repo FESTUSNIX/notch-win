@@ -60,6 +60,7 @@ pub struct Config {
     pub shortcut_hide: String,
     pub shortcut_capture: String,
     pub shortcut_display: String,
+    pub shortcut_shelf: String,
 }
 
 impl Default for Config {
@@ -84,6 +85,7 @@ impl Default for Config {
             shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
             shortcut_capture: crate::shortcuts::DEFAULT_CAPTURE.into(),
             shortcut_display: crate::shortcuts::DEFAULT_DISPLAY.into(),
+            shortcut_shelf: crate::shortcuts::DEFAULT_SHELF.into(),
         }
     }
 }
@@ -144,6 +146,32 @@ pub fn save_readings<T: Serialize>(value: &T) {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(text) = serde_json::to_string(value) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+/// A file beside the config, for state that is neither a setting nor a cache.
+///
+/// ⚠️ Separate files rather than more fields on `Config`. The shelf, the run
+/// log and the snooze list are each written on their own schedule by their own
+/// thread; folding them into the one struct would mean every write of any of
+/// them rewrites the user's edge, position and shortcuts too, and a torn write
+/// would cost all of it at once.
+pub fn beside(name: &str) -> Option<PathBuf> {
+    path().map(|p| p.with_file_name(name))
+}
+
+pub fn load_beside<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    let text = std::fs::read_to_string(beside(name)?).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn save_beside<T: Serialize>(name: &str, value: &T) {
+    let Some(path) = beside(name) else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(value) {
         let _ = std::fs::write(path, text);
     }
 }

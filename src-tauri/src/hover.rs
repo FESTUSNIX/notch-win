@@ -20,6 +20,31 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::win;
 
+/// Whether the island is currently standing open as a drop target.
+///
+/// ⚠️ Set from the web layer, because the web layer is the only part of this
+/// app that can see a drag at all. The island is click-through, so it receives
+/// no mouse or drag messages until `WS_EX_TRANSPARENT` is cleared — and it is
+/// only cleared over the painted pill. So the pill is the doorway: a file
+/// crossing it reaches WebView2, WebView2 raises `dragenter` on the page, the
+/// page sees `Files` on the transfer and says so here, and the whole window
+/// opens up as somewhere to drop.
+///
+/// This replaced a Shift+click gesture. A modifier could make the window
+/// interactive, but it could not tell a file from a stray click, and widening
+/// a mostly-invisible 969x388 window on any click is the obstruction bug that
+/// had to be reverted once already.
+pub static DROP_ZONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Stand the island open for a drag, or let it close again.
+#[tauri::command]
+pub fn set_drop_zone(active: bool) {
+    use std::sync::atomic::Ordering;
+    if DROP_ZONE.swap(active, Ordering::SeqCst) != active {
+        crate::log::note(&format!("drop zone: {active}"));
+    }
+}
+
 /// Fast enough that the notch is already open by the time the pointer lands,
 /// slow enough to be free. The pill sits on a screen edge, so it is approached
 /// rather than jumped to.
@@ -63,6 +88,7 @@ pub fn spawn(app: AppHandle, label: &'static str) {
         // authority on click-through and converges within one poll whatever
         // happened at startup.
         let mut was_hovering: Option<bool> = None;
+    let mut was_zone = false;
         let mut last_work: Option<(i32, i32, i32, i32)> = None;
 
         loop {
@@ -103,7 +129,7 @@ pub fn spawn(app: AppHandle, label: &'static str) {
             };
 
             // CSS pixels relative to the window -> physical pixels on screen.
-            let hovering = rects.iter().any(|r| {
+            let on_chrome = rects.iter().any(|r| {
                 let left = origin.x as f64 + r.x * scale;
                 let top = origin.y as f64 + r.y * scale;
                 let right = left + r.width * scale;
@@ -113,6 +139,25 @@ pub fn spawn(app: AppHandle, label: &'static str) {
                     && (point.y as f64) >= top
                     && (point.y as f64) < bottom
             });
+
+            /* ⚠️ The island is a hole: `WS_EX_TRANSPARENT` is what the shell
+             * skips when it looks for something to drop on, and clearing it is
+             * the only way this window can be dropped on away from the pill.
+             * While a file drag is known to be in flight the whole window
+             * counts, so the target is the panel rather than a 260x35 strip. */
+            let zone = label == "tasks"
+                && DROP_ZONE.load(std::sync::atomic::Ordering::SeqCst);
+            let _ = &mut was_zone;
+            let hovering = on_chrome || zone;
+
+            /* ⚠️ Hands off while a drag-out is running. `set_ignore_cursor_events`
+             * is a tao call that goes through the main thread, and the main
+             * thread is inside `DoDragDrop`'s modal loop — so this would queue
+             * behind it at best, and at worst rewrite the window's styles from
+             * under a drag the shell is in the middle of. */
+            if crate::dragout::DRAGGING.load(std::sync::atomic::Ordering::SeqCst) {
+                continue;
+            }
 
             let changed = was_hovering != Some(hovering);
             if changed {
@@ -124,6 +169,13 @@ pub fn spawn(app: AppHandle, label: &'static str) {
                 // win::harden for the measurement.
                 let _ = window.set_ignore_cursor_events(!hovering);
                 win::harden(&window);
+                /* ⚠️ Logged, because this flag is the difference between a
+                 * window that can be dropped on and one the shell walks
+                 * straight past — and it is invisible from everywhere else. */
+                crate::log::note(&format!(
+                    "{label}: interactive={hovering} at {},{}",
+                    point.x, point.y
+                ));
             }
 
             // While the pointer is on the notch its position keeps flowing, so

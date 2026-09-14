@@ -63,6 +63,101 @@ However it got hidden, **hovering the screen edge brings it back** for as long
 as the pointer stays there, the way an auto-hiding taskbar does. It leaves a few
 pixels of hot strip behind for exactly that.
 
+### Agents
+
+Every live Claude Code session, ordered by who wants you: **waiting** in amber
+first, then working, then idle. Each row carries the project, the branch, the
+tokens seen and how long the last run took.
+
+**Clicking a row raises that session's terminal.** This is the point of the
+screen — finding which of three terminals has stopped otherwise means
+alt-tabbing through all of them.
+
+⚠️ Two Win32 problems sit between a pid and a raised window, and both fail
+quietly. Claude Code is a console program, so **the pid owns no window** — the
+window belongs to its terminal, an ancestor, and the process tree has to be
+walked upward to find it. And **`SetForegroundWindow` refuses silently** for a
+process that does not already own the foreground, which this one never does.
+It raises the window, not the tab: one terminal window hosts many sessions and
+there is no supported way to pick one from outside.
+
+A waiting session also claims the collapsed pill, and the usage notch's dot
+turns amber. Only *waiting* claims it — something working needs nothing from
+you and will carry on by itself.
+
+Token totals are **since Codenotch started watching**, not for the session's
+life, and the screen says so.
+
+### Shelf
+
+A place to put a thing down. Drop a file on the island, or press **`Ctrl+Alt+S`**
+and whatever is on the clipboard parks there — a file, a link, a pasted note.
+Later you take it out again wherever you were going with it.
+
+⚠️ **Files are referenced, never copied.** A shelf that copied would duplicate
+a 2 GB video to park it for ten minutes. The price is that a file can move
+behind the shelf's back, so a broken reference is **shown** rather than hidden
+— a row that silently vanished would look like the shelf losing things.
+
+⚠️ **Taking a file out is a clipboard copy, not a drag.** Dragging a real file
+*out* of a WebView is not something HTML can do; doing it properly means a
+hand-written OLE drag source and a modal `DoDragDrop` inside a click-through,
+non-activating window. `SetClipboardData(CF_HDROP)` is one documented call, and
+Ctrl+V then pastes the real file into Explorer, Slack or an upload field.
+
+The shortcut deliberately does **not** open the island — the point is to park
+something without leaving what you are in. The pill says what landed.
+
+**Drag a file over the pill** and the island opens into a drop zone — a dashed
+frame across the whole panel saying *Drop to shelve*. Let go anywhere on it.
+
+⚠️ **The pill is the doorway, and it has to be.** The island is click-through
+everywhere else, so a drag cannot be *seen* until it crosses painted chrome.
+Once it does, WebView2 tells the page it is carrying files, and only then can
+the whole window open up as somewhere to aim. (An earlier version used Shift as
+the trigger; a modifier can make the window interactive but cannot tell a file
+from a stray click.)
+
+**Drag a row back out** to drop the file somewhere else — a real OLE drag
+carrying a real `CF_HDROP`, so Explorer, Slack and upload fields all take it.
+**Copy** puts the same thing on the clipboard, which is easier to aim at a chat
+box than a drag from a strip on the bezel.
+
+⚠️ That drag runs on the **main thread**, and it has to. `DoDragDrop` drives a
+modal loop out of the calling thread's message queue; on a worker thread it
+receives no mouse input, never learns the button came up, and never returns —
+holding the mouse capture, which stops dragging working *everywhere* until the
+app is killed. There is also a watchdog: a drag still running after twelve
+seconds gets a synthetic Escape, so the worst case is a few seconds rather than
+a dead cursor. `node tools/drag-out-check.mjs` proves the loop terminates
+without having to find out by hand.
+
+If a drop seems to do nothing, tray → **Open log**: `dom dragenter` means the
+page saw it and the fault is downstream; nothing means the drag never reached
+the window, so aim closer to the painted strip.
+
+### Review
+
+Where the day went. App time, tasks finished, agent runs and meetings attended
+— four things that were all already being kept, in four places, with nothing
+joining them. "I was here nine hours" and "two tasks got finished" are each a
+fact; together they are the question you actually had.
+
+App time lives here now rather than on System, where it never belonged: System
+is the machine's controls, and how long you spent in an editor is not a control.
+
+### Not now
+
+Anything that asks for attention can be told to wait an hour — a waiting agent
+from its row, a pill module from its id. It is the gesture the app was missing:
+`decay` already handles a condition that is *chronically* true, like a disk at
+96%, but a waiting session has no severity that fades and no value that creeps,
+so nothing but an explicit "not now" could quiet it.
+
+⚠️ **Nothing is silenced for ever.** Every snooze ends, the island's settings
+say how many things are quiet, and one press brings them all back. The failure
+mode of a mute button is forgetting you pressed it.
+
 ### When a run finishes
 
 The usage notch is a separate window from the island on purpose: it is
@@ -341,6 +436,14 @@ pnpm tauri dev          # live reload; needs the vite server on :1420
 CODENOTCH_DEMO=1 pnpm tauri dev   # the design frame's fixtures instead of live data
 ```
 
+**One instance only.** A second launch hands off to the first and exits. Two
+copies put two always-on-top islands at the same coordinates with two separate
+in-memory shelves, which does not look like two apps — it looks like one app
+whose features have stopped working.
+
+**Something went wrong?** Tray → **Open log**. It is a capped rolling file
+beside the config. (`println!` goes nowhere in a release build: no console.)
+
 ⚠️ **Quit the notch from its tray icon before building.** A running instance
 holds its own exe open, and cargo reports that as
 `failed to remove file … Access is denied (os error 5)` — which reads like a
@@ -409,14 +512,21 @@ way it yields `idle` for ever, silently.
 So the state comes from the transcript: Claude Code appends to
 `~/.claude/projects/<project>/<sessionId>.jsonl` as it streams, and a write in
 the last 8 seconds means it is working. Nothing of yours has to be configured.
-What that cannot distinguish is a session **blocked on you** from one that has
-simply finished — both stop writing. That needs Claude Code's hooks, which is
-why the other port ships a separate hook executable, and it is not built here.
+**It can tell waiting from finished**, which this file used to say needed
+Claude Code's hooks. It does not — the modification time cannot separate them,
+but the file can. The last conversational record says which:
 
-It *can* see a run **end**, which is the transition from writing to quiet on a
-session whose process is still alive, and that is what the green dot and the
-toast report. The duration subtracts the 8-second window, or every run would be
-reported eight seconds longer than it was.
+| last record | the session is |
+|---|---|
+| `assistant` with a `tool_use` | working — a tool call is pending |
+| `assistant` with only prose | **waiting for you** |
+| `user` (a prompt or a tool result) | working — the model is thinking |
+
+⚠️ "The last record" is not the last line. A transcript carries fifteen record
+types and barely half are conversational; bookkeeping lands at the tail
+constantly. And they reach **49 MB**, so nothing loads one — a new session is
+classified from a 512 KB tail and then only the bytes appended since the last
+look are read. All 18 transcripts on this machine classify in 0.76 seconds.
 
 One good thing the Windows file does carry: `procStart`, the process's own
 creation FILETIME. That makes the pid-reuse check exact against

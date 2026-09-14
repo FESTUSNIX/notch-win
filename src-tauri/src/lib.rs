@@ -8,8 +8,16 @@ mod drag;
 mod fixtures;
 mod hover;
 mod media;
+mod dragout;
+mod dropfiles;
+mod dropprobe;
+mod log;
 mod model;
 mod notify;
+mod runlog;
+mod shelf;
+mod snooze;
+mod transcript;
 mod weather;
 mod providers;
 mod sessions;
@@ -219,12 +227,15 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-/// Debug channel for the web layer. Dev builds only.
+/// Debug channel for the web layer.
+///
+/// ⚠️ Used to be dev-builds-only, which made it useless: the release build has
+/// no console (`windows_subsystem = "windows"`), so a `println!` there goes
+/// nowhere — and a release build is the only kind anyone is running when
+/// something is actually wrong.
 #[tauri::command]
 fn debug_note(note: String) {
-    if cfg!(debug_assertions) {
-        println!("[notch] {note}");
-    }
+    log::note(&note);
 }
 
 /// The window is always its *expanded* size — folding is drawn inside it, so
@@ -425,9 +436,31 @@ pub fn run() {
         config::load_readings().unwrap_or_default();
 
     tauri::Builder::default()
+        /* ⚠️ One instance, and this is not housekeeping.
+         *
+         * Two copies put two always-on-top islands at the same coordinates,
+         * each with its own 100ms hover poll rewriting its own window's
+         * extended styles, and each with its own in-memory copy of the shelf,
+         * the snooze list and the session watcher. Everything still *works*,
+         * which is what makes it so confusing: a file dropped on the island
+         * lands on whichever window is on top and is written to shelf.json,
+         * while the island you are actually looking at belongs to the other
+         * process and never hears about it. It reads exactly like drag and
+         * drop being broken.
+         *
+         * A second launch hands its arguments to the first and exits; the
+         * first brings its chrome back, in case it was hidden and the second
+         * launch was someone trying to find it. */
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            shortcuts::set_chrome_hidden(app, false);
+        }))
         .manage(InteractiveRects::default())
         .manage(DisplayItems::default())
         .manage(weather::Latest::default())
+        .manage(sessions::Sessions::default())
+        .manage(snooze::Store::default())
+        .manage(shelf::Store::default())
+        .manage(runlog::Store::default())
         .manage(Latest::default())
         .manage(History(Mutex::new(remembered)))
         .manage(Wake::default())
@@ -468,6 +501,24 @@ pub fn run() {
             task_window::set_task_placement,
             task_window::task_window_diagnostics,
             task_window::set_clock_format,
+            runlog::get_runs,
+            shelf::get_shelf,
+            shelf::shelf_add_paths,
+            shelf::shelf_add_text,
+            shelf::shelf_add_bytes,
+            dragout::shelf_drag,
+            shelf::shelf_remove,
+            shelf::shelf_copy,
+            shelf::shelf_open,
+            shelf::shelf_reveal,
+            shelf::shelf_capture,
+            log::open_log,
+            hover::set_drop_zone,
+            snooze::get_snoozed,
+            snooze::snooze,
+            snooze::unsnooze,
+            sessions::get_sessions,
+            sessions::focus_session,
             weather::get_weather,
             weather::set_weather_place,
             media::get_media,
@@ -518,6 +569,7 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit Codenotch", true, None::<&str>)?;
             let task_item =
                 MenuItem::with_id(app, "tasks", "Tasks & TickTick…", true, None::<&str>)?;
+            let log_item = MenuItem::with_id(app, "log", "Open log", true, None::<&str>)?;
             // Enabled only where there is somewhere to move to: on one monitor
             // these do nothing, and a menu item that does nothing is worse than
             // one that is not there.
@@ -548,6 +600,7 @@ pub fn run() {
                     &move_island,
                     &move_notch,
                     &settings_item,
+                    &log_item,
                     &reset,
                     &quit,
                 ],
@@ -571,6 +624,9 @@ pub fn run() {
                     "next-display-notch" => {
                         next_display(app.clone(), "notch".into());
                     }
+                    "log" => {
+                        let _ = log::open_log();
+                    }
                     "reset" => drag::reset_position(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
@@ -589,6 +645,12 @@ pub fn run() {
             if let Err(message) = shortcuts::setup(app.handle()) {
                 eprintln!("global shortcuts: {message}");
             }
+            log::note(&format!("--- codenotch {} starting ---", env!("CARGO_PKG_VERSION")));
+            snooze::load(app.handle());
+            shelf::load(app.handle());
+            // Our own drop target: Tauri's never fires here. See dropfiles.rs.
+            dropfiles::accept(app.handle(), "tasks");
+            runlog::load(app.handle());
             sessions::spawn(app.handle().clone());
             drag::watch_displays(app.handle().clone());
             weather::spawn(app.handle().clone());

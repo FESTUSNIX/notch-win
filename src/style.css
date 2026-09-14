@@ -581,3 +581,12 @@ html.chrome-hidden #stage[data-edge=right] { transform:translateX(118%); }
     scale: 1;
   }
 }
+
+/* Waiting: the state the pill exists for. Amber and breathing slowly — the
+   session has stopped and will not start again until you go to it. It stays up
+   like `done` does, rather than fading, because it is a standing request. */
+#pip[data-state="waiting"] i {
+  background: #ff9f0a;
+  color: rgba(255, 159, 10, 0.7);
+  animation: pip-breathe 2.4s ease-in-out infinite;
+}

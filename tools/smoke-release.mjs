@@ -2,7 +2,7 @@
 // https://playwright.dev/docs/webview2
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
@@ -174,6 +174,54 @@ try {
     console.log('One display attached: the move check needs a second monitor.');
   }
 
+  // --- The shelf's drop path ----------------------------------------------
+  /* The one part of drag-and-drop that can be checked without a human. A real
+     OS drag needs a hand holding a file, but everything from the DOM event
+     inwards is exercised by dispatching the drop the drag would have produced.
+
+     ⚠️ A DOM event, not `tauri://drag-drop`. Tauri's own drag events never
+     fired for this window at all — see dropfiles.rs — so the tasks window sets
+     `dragDropEnabled: false` and WebView2 delivers drops to the page instead.
+     This is that path.
+
+     It also covers the bytes fallback, which is the branch that runs when a
+     drop carries a `File` with no path: a browser File has no path by design,
+     so this is the case, not the exception. */
+  await taskPage.evaluate(() => window.smokeInvoke('shelf_remove', {id: ''}));
+  await taskPage.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['shelved by the smoke test'], 'smoke-drop.txt', {type: 'text/plain'}));
+    window.dispatchEvent(new DragEvent('dragenter', {dataTransfer: transfer, bubbles: true}));
+    window.dispatchEvent(new DragEvent('drop', {dataTransfer: transfer, bubbles: true}));
+  });
+  await pause(1500);
+  let shelved = await taskPage.evaluate(() => window.smokeInvoke('get_shelf'));
+  assert.equal(shelved.length, 1, 'A dropped file reaches the shelf');
+  /* ⚠️ Not an exact name. The bytes branch never overwrites what is already
+     parked, so a second run of this test files "smoke-drop (2).txt" beside the
+     first — which is the behaviour, not a fault. */
+  assert.match(shelved[0].name, /^smoke-drop( \(\d+\))?\.txt$/, `under its own name: ${shelved[0].name}`);
+  assert.equal(shelved[0].missing, false, 'and is checked for existence, not trusted');
+  assert.match(shelved[0].path, /codenotch-win.dropped.smoke-drop/, `and has a real path: ${shelved[0].path}`);
+  // Twice does not duplicate it: the second copy lands beside the first and
+  // the shelf keeps both references distinct rather than silently overwriting.
+  await taskPage.evaluate(() => window.smokeInvoke('shelf_remove', {id: ''}));
+  await rm(shelved[0].path, {force: true});
+
+  // Dragging one back OUT needs a file that is really there.
+  await taskPage.evaluate(p => window.smokeInvoke('shelf_add_paths', {paths: [p]}),
+    'C:/Windows/System32/drivers/etc/hosts');
+  shelved = await taskPage.evaluate(() => window.smokeInvoke('get_shelf'));
+  assert.equal(shelved[0].name, 'hosts');
+  /* ⚠️ Only that it is ACCEPTED. `shelf_drag` hands the file to a real OLE
+     drag on its own thread and returns; the modal loop that follows needs a
+     mouse, so what is checked here is that the path resolves and the drag is
+     started, not that something received it. */
+  await taskPage.evaluate(id => window.smokeInvoke('shelf_drag', {id}), shelved[0].id);
+  await pause(400);
+  await taskPage.keyboard.press('Escape');
+  await taskPage.evaluate(() => window.smokeInvoke('shelf_remove', {id: ''}));
+
   // --- The run indicator ---------------------------------------------------
   // Detection is unit-tested in Rust; what cannot be tested there is that the
   // event reaches the notch and that the pill actually shows it while shut.
@@ -184,13 +232,13 @@ try {
     'The pip is always in one of its three states');
   await usagePage.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {
     event: 'notch:finished',
-    payload: {provider: 'claude', project: 'akcesfonia', seconds: 252}
+    payload: {provider: 'claude', project: 'akcesfonia', seconds: 252, waiting: true}
   }));
   await usagePage.locator('#pip[data-state="done"]').waitFor({state:'attached'});
   assert.equal(await usagePage.locator('#pip').evaluate(el => getComputedStyle(el).opacity), '1',
     'A finished run is visible on the collapsed pill, not only on hover');
-  assert.match(await usagePage.locator('#pip').getAttribute('title'), /akcesfonia finished in 4m 12s/,
-    'The tooltip names the project and spells the duration the way the toast does');
+  assert.match(await usagePage.locator('#pip').getAttribute('title'), /akcesfonia needs you after 4m 12s/,
+    'The tooltip says which session wants you, and spells the duration the way the toast does');
   await usagePage.screenshot({path:resolve(root,'test-results/native-run-finished.png'),omitBackground:true});
 
   await Promise.race([
@@ -221,7 +269,7 @@ try {
   assert.ok(editor.isClosed(),'Editor close button has native permission');
   assert.deepEqual(errors,[]);
   await writeFile(resolve(root,'test-results/native-window-checks.json'),JSON.stringify({resting,interactive,entry,afterEntry,focused},null,2));
-  console.log('Native release passed: both notches, isolated masks, inline focus mode/restoration, pill collapse, demo task IPC, display enumeration and placement, the run-finished pip, editor opening and closing.');
+  console.log('Native release passed: both notches, isolated masks, inline focus mode/restoration, pill collapse, demo task IPC, display enumeration and placement, the shelf drop path, the run-finished pip, editor opening and closing.');
 } finally {
   // Terminate only the child created by this test; no live task writes occurred.
   if(child.exitCode === null) child.kill();

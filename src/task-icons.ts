@@ -7,6 +7,8 @@ import {
   ChipIcon, RamMemoryIcon, HardDriveIcon, AiBrain01Icon,
   CloudIcon, CloudSunRainIcon, CloudFogIcon, CloudDrizzleIcon, CloudMidRainIcon,
   CloudBigRainIcon, CloudSnowIcon, CloudLightningIcon,
+  File01Icon, Note01Icon, Link01Icon, Copy01Icon, Folder01Icon,
+  ArrowUpRight01Icon, InboxIcon, Analytics01Icon, AlarmClockIcon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -27,6 +29,10 @@ const icons = {
   wxClear: Sun03Icon, wxPartly: CloudSunRainIcon, wxCloud: CloudIcon, wxFog: CloudFogIcon,
   wxDrizzle: CloudDrizzleIcon, wxRain: CloudMidRainIcon, wxHeavyRain: CloudBigRainIcon,
   wxSnow: CloudSnowIcon, wxStorm: CloudLightningIcon,
+  // The shelf, the review and snoozing.
+  file: File01Icon, note: Note01Icon, link: Link01Icon, copy: Copy01Icon,
+  folder: Folder01Icon, open: ArrowUpRight01Icon, shelf: InboxIcon,
+  review: Analytics01Icon, snooze: AlarmClockIcon,
 };
 export type TaskIcon = keyof typeof icons;
 

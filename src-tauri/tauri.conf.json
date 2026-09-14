@@ -28,6 +28,7 @@
       {
         "label": "tasks",
         "title": "Codenotch Tasks",
+        "dragDropEnabled": false,
         "url": "tasks.html",
         "width": 460,
         "height": 560,

@@ -11,6 +11,12 @@ const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600_000).toISOStr
  * imminent in the calendar. Both of those outrank the day on the collapsed
  * pill, so a test that wants to read the day's own tally has to silence them. */
 const quiet = new URLSearchParams(location.search).has("quiet");
+/* `?agents` puts a session in the WAITING state.
+ * ⚠️ Not the default, and not under `?quiet`. A waiting session claims the
+ * pill at priority 55, which outranks media — correctly, because music is
+ * ambient and a blocked agent is a request — so having one in the default
+ * fixture quietly took the pill away from every media test. */
+const agentsFixture = new URLSearchParams(location.search).has("agents");
 /* `nocal` pushes the demo agenda out of claiming range but leaves the player
  * alone — the two flags silence different competitors for the pill. */
 const nocal = quiet || new URLSearchParams(location.search).has("nocal");
@@ -87,7 +93,46 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "get_weather") return {place:"Krakow, Poland", celsius:17,
     summary:"Partly cloudy", icon:"wxPartly", readAtMs: Date.now()} as T;
   if (command === "set_weather_place") return null as T;
-  if (command === "get_activity") return [{provider:"claude", state:"working", running:2}] as T;
+  if (command === "get_activity") return [{provider:"claude",
+    state: quiet ? "idle" : agentsFixture ? "waiting" : "working",
+    running: quiet ? 0 : 1}] as T;
+  /* Three sessions in the three states, so the preview shows the ordering:
+     whoever wants you first.
+     ⚠️ None of them under `?quiet`. A waiting session CLAIMS the pill at
+     priority 55, and `quiet` means the preview is in its resting state — with
+     sessions here every test that checks the clock would instead find an
+     agent, which is exactly what happened when this stub was first written. */
+  if (command === "get_sessions") return (quiet ? [] : !agentsFixture ? [
+    {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96},
+  ] : [
+    {id:"s1", project:"akcesfonia", branch:"master", pid:4242, state:"waiting",
+     forSecs:214, input:1_284_000, output:38_200, lastRunSecs:252},
+    {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96},
+    {id:"s3", project:"esono", branch:"feat/pdp", pid:4244, state:"idle",
+     forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
+  ]) as T;
+  if (command === "focus_session") return true as T;
+  if (command === "get_snoozed") return {} as T;
+  if (command === "snooze" || command === "unsnooze") return undefined as T;
+  if (command === "get_shelf") return (quiet ? [] : [
+    {id:"f1", kind:"file", name:"Codenotch_0.1.0_x64-setup.exe", path:"C:\\build\\setup.exe",
+     text:null, addedMs:Date.now()-60_000, missing:false, size:4_820_000},
+    {id:"f2", kind:"link", name:"https://open-meteo.com/en/docs", path:null,
+     text:"https://open-meteo.com/en/docs", addedMs:Date.now()-600_000, missing:false, size:0},
+    {id:"f3", kind:"text", name:"Traceback (most recent call last):", path:null,
+     text:"Traceback (most recent call last):\n  boom", addedMs:Date.now()-900_000, missing:false, size:0},
+    // The case that only exists because files are referenced, not copied.
+    {id:"f4", kind:"file", name:"moved.psd", path:"C:\\gone\\moved.psd", text:null,
+     addedMs:Date.now()-9_000_000, missing:true, size:0},
+  ]) as T;
+  if (command.startsWith("shelf_")) return undefined as T;
+  if (command === "get_runs") return (quiet ? [] : [
+    {day:"", project:"akcesfonia", seconds:252, endedMs:Date.now()-3_600_000, waiting:true},
+    {day:"", project:"akcesfonia", seconds:96, endedMs:Date.now()-7_200_000, waiting:true},
+    {day:"", project:"codenotch-win", seconds:1_840, endedMs:Date.now()-1_800_000, waiting:true},
+  ]) as T;
   if (command === "get_audio_devices") return structuredClone(demoDevices) as T;
   if (command === "set_audio_device") {
     demoDevices = demoDevices.map(d => ({...d, isDefault: d.id === args.id}));

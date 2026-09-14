@@ -903,3 +903,163 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-chip-title { font-size:10.5px; line-height:1.25; overflow:hidden; display:-webkit-box;
   -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#c8c8c8; }
 .home-task.is-done .home-task-title { color:#6e6e6e; }
+
+/* ── Agents ──────────────────────────────────────────────────────────────
+   One row per live Claude Code session, whoever wants you first. The row is a
+   button because the useful thing to do with "akcesfonia is waiting" is to go
+   there — see win::raise_process for what that costs on Windows. */
+.agent-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+  padding:11px 13px; border-radius:var(--r-tile); background:var(--tile);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.agent-row+.agent-row { margin-top:7px; }
+.agent-row:hover { background:var(--tile-hi); }
+.agent-mark { display:grid; place-items:center; width:30px; height:30px; flex-shrink:0;
+  border-radius:50%; background:rgba(255,255,255,.05); color:#8b8b8b; }
+.agent-mark svg { width:16px; height:16px; }
+.agent-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.agent-head { display:flex; align-items:baseline; gap:8px; min-width:0; }
+.agent-project { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.agent-branch { font-size:10px; color:#6a6a6a; font-variant-numeric:tabular-nums;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; }
+.agent-state { display:flex; align-items:baseline; gap:6px; font-size:11px; color:#7d7d7d; }
+.agent-for { font-variant-numeric:tabular-nums; }
+.agent-meta { display:flex; flex-direction:column; align-items:flex-end; gap:2px;
+  font-size:10px; color:#5f5f5f; font-variant-numeric:tabular-nums; flex-shrink:0; }
+
+/* Waiting is the only state that wants anything from you, so it is the only
+   one that is coloured. Working is a fact; idle is furniture. */
+.agent-row.is-waiting .agent-mark { background:rgba(255,159,10,.14); color:#ff9f0a; }
+.agent-row.is-waiting .agent-word { color:#ff9f0a; font-weight:600; }
+.agent-row.is-working .agent-mark { color:var(--accent); background:rgba(0,255,136,.1); }
+.agent-row.is-idle { opacity:.62; }
+.agent-note { margin:12px 2px 0; font-size:10px; color:#4f4f4f; line-height:1.5; }
+
+/* ── The shelf ───────────────────────────────────────────────────────────
+   A row is not a button: it carries three or four actions and the useful one
+   depends on where you are going. Copy leads, because taking a file out IS a
+   clipboard copy here — see shelf.rs on why it is not a drag. */
+.shelf-row { display:flex; align-items:center; gap:11px; padding:9px 12px;
+  border-radius:var(--r-tile); background:var(--tile);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.shelf-row+.shelf-row { margin-top:6px; }
+.shelf-row:hover { background:var(--tile-hi); }
+.shelf-mark { display:grid; place-items:center; width:26px; height:26px; flex-shrink:0;
+  border-radius:8px; background:rgba(255,255,255,.05); color:#8b8b8b; }
+.shelf-mark svg { width:15px; height:15px; }
+.shelf-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.shelf-name { font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shelf-note { font-size:10px; color:#6a6a6a; font-variant-numeric:tabular-nums; }
+/* Actions stay out of the way until the row is under the pointer: four glyphs
+   on every row is a toolbar, and this is a shelf. */
+.shelf-actions { display:flex; align-items:center; gap:2px; flex-shrink:0;
+  opacity:0; transition:opacity var(--duration-quick) var(--ease-smooth-out); }
+.shelf-row:hover .shelf-actions, .shelf-row:focus-within .shelf-actions { opacity:1; }
+.shelf-do { width:26px; height:26px; padding:0; border-radius:7px; display:grid; place-items:center;
+  color:#9a9a9a; }
+.shelf-do svg { width:14px; height:14px; }
+.shelf-do:hover { background:var(--tile-on); color:#fff; }
+.shelf-do.lead { color:#d8d8d8; }
+/* A file that has gone is shown, not hidden: referencing rather than copying is
+   what makes the shelf cheap, and being honest about it is the price. */
+.shelf-row.is-missing { opacity:.55; }
+.shelf-row.is-missing .shelf-note { color:#ff9f0a; }
+.shelf-row.is-missing .shelf-actions { opacity:1; }
+.shelf-empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:6px; padding:26px 20px; text-align:center; }
+.shelf-hint { margin:0; font-size:11px; color:#4f4f4f; line-height:1.6; max-width:340px; }
+.shelf-foot { display:flex; justify-content:flex-end; margin-top:10px; }
+.shelf-clear { font-size:11px; color:#6a6a6a; padding:5px 9px; }
+.shelf-clear:hover { color:#ff6961; background:rgba(255,105,97,.1); }
+/* While a file is held over the island. */
+#island.is-dropping { box-shadow:inset 0 0 0 2px var(--accent); }
+
+/* ── Review ──────────────────────────────────────────────────────────────
+   Four tiles, one per source, each a big number and the few rows behind it.
+   Nothing here is live: it is the day, and the day has already happened. */
+.review-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:12px; padding:6px 16px 16px; align-content:start; align-items:stretch; }
+.review-tile { display:flex; flex-direction:column; gap:10px; min-width:0;
+  padding:14px 15px; background:var(--tile); border-radius:var(--r-tile); }
+.review-head { margin:0; font-size:10px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; color:#5f5f5f; }
+.review-figure { display:flex; flex-direction:column; gap:2px; }
+.review-value { font-size:26px; font-weight:600; letter-spacing:-.8px; line-height:1;
+  font-variant-numeric:tabular-nums; }
+.review-note { font-size:10.5px; color:#6a6a6a; }
+.review-list { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.review-item { display:flex; align-items:center; gap:7px; min-width:0; font-size:11px; }
+.review-item-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:#b4b4b4; }
+.review-item-meta { font-size:10px; color:#5f5f5f; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.review-tick { display:grid; place-items:center; color:var(--accent); flex-shrink:0; }
+.review-tick svg { width:12px; height:12px; }
+.review-more { margin:2px 0 0; font-size:10px; color:#4f4f4f; }
+.review-bars { display:flex; flex-direction:column; gap:6px; }
+.review-bar { display:flex; align-items:center; gap:8px; font-size:10.5px; }
+.review-bar-name { width:74px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; color:#b4b4b4; }
+.review-rail { flex:1; height:5px; border-radius:999px; background:rgba(255,255,255,.07);
+  overflow:hidden; min-width:0; }
+.review-rail i { display:block; height:100%; border-radius:999px; background:rgba(255,255,255,.42);
+  transition:width var(--duration-very-slow) var(--ease-smooth-out); }
+.review-bar-time { color:#6a6a6a; font-variant-numeric:tabular-nums; flex-shrink:0; }
+
+/* ── Snooze ──────────────────────────────────────────────────────────────
+   Offered only where something is actually asking for attention: muting
+   silence is a control that does nothing but make you wonder later what you
+   switched off. */
+.agent-row { padding:0; }
+.agent-go { flex:1; display:flex; align-items:center; gap:12px; min-width:0;
+  padding:11px 4px 11px 13px; text-align:left; background:transparent; border-radius:0; }
+.agent-go:hover { background:transparent; }
+.agent-snooze { width:30px; height:30px; margin-right:9px; padding:0; border-radius:50%;
+  display:grid; place-items:center; color:#5f5f5f; flex-shrink:0; }
+.agent-snooze svg { width:15px; height:15px; }
+.agent-snooze:hover { background:var(--tile-on); color:#fff; }
+.agent-snooze.is-on { color:#ff9f0a; }
+.agent-row.is-quiet .agent-go { opacity:.5; }
+.snooze-clear { padding:0 3px; font-size:inherit; color:var(--accent); background:transparent; }
+.snooze-clear:hover { background:transparent; text-decoration:underline; }
+
+/* ── Dropping ────────────────────────────────────────────────────────────
+   The window is a hole almost everywhere, so while a file is overhead the
+   island has to say plainly where the target is. Stylistic rather than exact:
+   a frame inset from the shape, not a traced outline of it. */
+#drop-veil { position:absolute; inset:0; z-index:40; display:none; padding:7px;
+  border-radius:inherit; }
+html.dragging-files #drop-veil { display:block; animation:veil-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes veil-in { from { opacity:0; } to { opacity:1; } }
+
+.drop-frame { width:100%; height:100%; display:flex; align-items:center;
+  justify-content:center; gap:10px; border-radius:calc(var(--r-tile) + 4px);
+  border:2px dashed rgba(0,255,136,.55);
+  background:color-mix(in srgb, var(--accent) 9%, rgba(8,8,8,.82));
+  backdrop-filter:blur(2px); }
+.drop-mark { width:22px; height:22px; border-radius:7px; flex-shrink:0; position:relative;
+  border:2px solid var(--accent); }
+/* A downward arrow drawn from the box, so the frame needs no icon font. */
+.drop-mark::before { content:""; position:absolute; left:50%; top:3px; width:2px; height:9px;
+  background:var(--accent); transform:translateX(-50%); border-radius:2px; }
+.drop-mark::after { content:""; position:absolute; left:50%; top:8px; width:7px; height:7px;
+  border-right:2px solid var(--accent); border-bottom:2px solid var(--accent);
+  transform:translate(-50%,0) rotate(45deg); }
+.drop-say { font-size:13px; font-weight:600; color:#eafff4; letter-spacing:-.2px; }
+
+/* The shape itself picks up an edge, so the island reads as lit rather than
+   as a panel with a box drawn on it. */
+html.dragging-files #island {
+  box-shadow: 0 0 40px -6px rgba(0,255,136,.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.dragging-files #drop-veil { animation:none; }
+}
+
+/* A row that can be dragged out says so by the cursor, and dims while the
+   native drag has the mouse — the WebView stops getting events the moment
+   DoDragDrop takes over, so there is no other way to acknowledge the gesture. */
+.shelf-row.can-drag { cursor: grab; }
+.shelf-row.can-drag:active { cursor: grabbing; }
+.shelf-row.is-leaving { opacity: .45; }
+.shelf-hint-out { margin:10px 2px 0; font-size:10px; color:#4f4f4f; line-height:1.5; }
