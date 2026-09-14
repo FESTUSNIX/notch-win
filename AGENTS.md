@@ -1807,3 +1807,19 @@ The two halves were the same fault.
      before the pill does. And the icon-to-caption gap is a `margin`, not flex
      `gap`: gap applies to a zero-width item just the same, so every icon-only
      tab would carry 7px it shows nothing in.
+199. ⚠️ **`backdrop-filter` on a child of `#island` blurs the ISLAND, not the
+     desktop.** The island is solid black and is what the transparency stops
+     at, so the palette's blur was sampling the tab strip and the open screen
+     and smearing them through its own surface — two stacked surfaces where
+     there should be one. Same trap the iOS-pass note already warned about, made
+     again. The palette is opaque now, and the layers behind it are hidden.
+200. ⚠️ **Hide them with `visibility`, never `display`.** The tab strip has
+     to keep its layout while out of sight: the travelling pill is placed from
+     the tabs' measured widths (trap 196), and a strip at `display:none`
+     measures zero — the pill would be rebuilt at width 0 the moment the palette
+     opened and stay there until the next click. The island's own height is
+     measured from the active screen for the same reason.
+201. ⚠️ **The player raises no tab dot.** A dot means "this screen has
+     something you have not seen", and the track is already named on the pill
+     with its equaliser running — the same claim twice. It would also land on
+     Home, the default screen, which is the one place a dot says least.

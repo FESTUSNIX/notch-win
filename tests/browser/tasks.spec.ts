@@ -53,8 +53,6 @@ test("the island morphs from one pill into one panel, and the tabs switch screen
   // Home is the default: three sections on one row, one per other screen.
   await expect(page.locator(".home-sec")).toHaveCount(3);
   await expect(page.locator(".home-month")).toBeVisible();
-  await page.locator('[data-tab="media"]').click();
-  await expect(page.locator(".media-title")).toBeVisible();
   await page.locator('[data-tab="calendar"]').click();
   await expect(page.locator(".cal-next")).toBeVisible();
   await page.locator('[data-tab="today"]').click();
@@ -68,8 +66,11 @@ test("the collapsed pill shows whatever is most live, and opens that screen", as
   // Something playing outranks the day's tally.
   await expect(page.locator(".pill-label")).toHaveText(/potion shop/);
   await expect(page.locator(".pill-eq.on")).toBeVisible();
-  // The pill can only name one thing; the other screens raise a dot instead.
-  await expect(page.locator('[data-tab="media"]')).toHaveClass(/live/);
+  /* ⚠️ Nothing raises a dot for the player, and that is deliberate rather
+   * than a consequence of it losing its tab: a dot means "this screen has
+   * something you have not seen", and the track is already named on the pill
+   * with its equaliser running. The same claim twice is worse than once. */
+  await expect(page.locator('[data-tab="home"]')).not.toHaveClass(/live/);
   await expect(page.locator('[data-tab="today"]')).not.toHaveClass(/live/);
   await page.locator("#island-collapsed").click();
   await expect(page.locator("#island-expanded")).toBeVisible();
@@ -157,7 +158,7 @@ test("a player left paused hands the pill back to the clock", async ({page}) => 
   await page.goto("/tasks.html?nocal");
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
   await open(page);
-  await page.locator('[data-tab="media"]').click();
+  // The transport lives on Home now, which is the screen the island opens on.
   await page.getByRole("button", {name: "Pause", exact: true}).click();
   // Paused is still a claim at first — the controls stay one glance away.
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
@@ -167,53 +168,29 @@ test("a player left paused hands the pill back to the clock", async ({page}) => 
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "clock");
 });
 
-test("media controls answer at once and the scrubber reads the real timeline", async ({page}) => {
+/* ⚠️ The Media SCREEN's two tests are gone with the screen, and that is the
+ * honest accounting rather than an oversight: the scrubber and the waveform
+ * were the only things it had that Home does not, and deleting a feature
+ * deletes what covered it. What survives is tested where it now lives — the
+ * pill's claim and hand-back above, and the transport on Home below. */
+test("the player is on Home, and the transport there is the whole control", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
-  await page.locator('[data-tab="media"]').click();
-  await expect(page.locator(".media-title")).toHaveText(/potion shop/);
-  // Artist and app share one line now: six rows of chrome became four.
-  await expect(page.locator(".media-artist")).toHaveText("Real Civil Engineer  ·  Brave");
-  await expect(page.locator(".media-time").first()).toHaveText(/^\d+:\d{2}$/);
-  const pause = page.getByRole("button", {name: "Pause"});
+  await expect(page.locator(".home-track-title")).toHaveText(/potion shop/);
+  await expect(page.locator(".home-media")).toBeVisible();
+
+  const pause = page.getByRole("button", {name: "Pause", exact: true});
   await expect(pause).toBeVisible();
   await pause.click();
   // Optimistic: the button flips without waiting for Windows to answer.
-  await expect(page.getByRole("button", {name: "Play"})).toBeVisible();
+  await expect(page.getByRole("button", {name: "Play", exact: true})).toBeVisible();
   await expect(page.locator(".pill-eq.on")).toHaveCount(0);
-  await page.screenshot({path: "test-results/island-media.png"});
-});
 
-test("the waveform is the progress bar, is per-track, and seeks", async ({page}) => {
-  await page.goto("/tasks.html");
-  await open(page);
-  await page.locator('[data-tab="media"]').click();
-
-  // Art beside the copy, not above it: one row.
-  const art = await page.locator(".media-art").boundingBox();
-  const side = await page.locator(".media-side").boundingBox();
-  expect(side!.x).toBeGreaterThan(art!.x + art!.width - 1);
-
-  const bars = page.locator(".wave i");
-  await expect(bars).toHaveCount(72);
-  // The demo track is 4:26 into 31:18, so roughly the first eighth is played.
-  const played = await page.locator(".wave i.on").count();
-  expect(played).toBeGreaterThan(4);
-  expect(played).toBeLessThan(20);
-
-  /* ⚠️ Synthetic, but deterministic — the same track must always draw the same
-   * shape. Random bars would be a lie that also flickers on every render. */
-  const shape = () => page.locator(".wave").evaluate(w =>
-    [...w.querySelectorAll("i")].map(b => (b as HTMLElement).style.height).join(","));
-  const first = await shape();
-  await page.locator('[data-tab="home"]').click();
-  await page.locator('[data-tab="media"]').click();
-  expect(await shape()).toBe(first);
-
-  // Clicking it moves the playhead, and the played run grows with it.
-  const box = await page.locator(".wave").boundingBox();
-  await page.mouse.click(box!.x + box!.width * 0.75, box!.y + box!.height / 2);
-  await expect.poll(() => page.locator(".wave i.on").count()).toBeGreaterThan(48);
+  /* ⚠️ And no chevron. Every other Home column is a summary with a fuller
+   * screen behind it; this one has no screen behind it any more, so an arrow
+   * promising one would be a control that goes nowhere. */
+  await expect(page.locator(".home-media .home-go")).toHaveCount(0);
+  await expect(page.locator(".home-sec .home-go")).toHaveCount(2);
   await page.screenshot({path: "test-results/island-media.png"});
 });
 
@@ -598,6 +575,15 @@ test("the palette searches the island's own world and acts on it", async ({page}
   const full = (await page.locator("#island").boundingBox())!.width;
   await page.getByRole("button", {name: "Search and commands"}).click();
   await expect(page.locator(".palette")).toBeVisible();
+
+  /* ⚠️ And the panel behind it is out of sight, not merely covered. It had a
+   * `backdrop-filter`, which on a child of the solid-black island samples the
+   * island's OWN contents rather than the desktop — so the search showed the
+   * tab strip and the day smeared through it, reading as two stacked surfaces
+   * rather than one. */
+  await expect(page.locator(".island-head")).toBeHidden();
+  await expect(page.locator(".screens")).toBeHidden();
+
   await expect.poll(async () => (await page.locator("#island").boundingBox())!.width)
     .toBeLessThan(full - 100);
   await page.screenshot({path: "test-results/island-palette.png"});

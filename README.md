@@ -25,14 +25,13 @@ the bezel at each end the way the usage notch does, so it reads as part of the
 screen edge rather than a panel parked against it. The tabs sit at the top-left
 and the window controls at the top-right, on one strip.
 
-Four screens, switched from the rail along the bottom — or by **scrolling
+Seven screens, switched from the strip in the header — or by **scrolling
 anywhere in the panel** that is not a scrollable list:
 
 | screen | what it holds |
 |---|---|
 | **Home** | the default: now playing, the week ahead and the next couple of tasks, on one row |
 | **Today** | the Day Card — tasks, the composer, the focus timer |
-| **Media** | whatever is playing, with artwork, position and transport controls |
 | **Calendar** | Google Calendar as an **agenda** or a **seven-day grid** |
 | **System** | volume, screen brightness, audio output, and what is connected over Bluetooth |
 

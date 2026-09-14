@@ -227,6 +227,11 @@ export class Palette {
     this.surface.pinFor(6000);
     this.open = true;
     this.host.hidden = false;
+    /* ⚠️ The panel behind it is taken out of sight, not just covered over.
+     * Covered, it still answers the pointer at the edges and the tab rail still
+     * answers a wheel — and any translucency at all puts it back on screen,
+     * which is what made the search look like two surfaces stacked. */
+    this.host.parentElement?.classList.add("is-searching");
     this.field.value = "";
     this.inside = null;
     this.scope = null;
@@ -279,6 +284,7 @@ export class Palette {
     if (!this.open) return;
     this.open = false;
     this.host.hidden = true;
+    this.host.parentElement?.classList.remove("is-searching");
     this.field.value = "";
     this.inside = null;
     this.scope = null;

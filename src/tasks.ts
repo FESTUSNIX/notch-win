@@ -16,7 +16,12 @@ import { clockText } from "./tween";
 import { nextEvent, startOf } from "./screen-calendar";
 import { TodayScreen } from "./screen-today";
 import { HomeScreen } from "./screen-home";
-import { MediaScreen } from "./screen-media";
+/* ⚠️ Still here, without a screen of its own. The player was in THREE
+ * places — the collapsed pill, the Home column, and a whole tab — and the tab
+ * was the only one of the three that duplicated what Spotify, a browser and
+ * the media keys already do better on a bigger surface. What it keeps is the
+ * part nothing else had: the pill saying what is playing at a glance. */
+import { MediaSource } from "./screen-media";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
@@ -36,7 +41,6 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "today", icon: "today", label: "Today" },
   { name: "agents", icon: "agent", label: "Agents" },
   { name: "shelf", icon: "shelf", label: "Shelf" },
-  { name: "media", icon: "media", label: "Media" },
   { name: "calendar", icon: "calendar", label: "Calendar" },
   { name: "system", icon: "system", label: "System" },
   { name: "review", icon: "review", label: "Review" },
@@ -57,7 +61,6 @@ app.innerHTML = `<div id="notch-shell">
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
-        <section class="screen" data-screen="media" role="tabpanel" aria-label="Media" hidden><div class="screen-body scrolls" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
         <section class="screen" data-screen="agents" role="tabpanel" aria-label="Agents" hidden><div class="screen-body scrolls" id="agents-body"></div></section>
         <section class="screen" data-screen="shelf" role="tabpanel" aria-label="Shelf" hidden><div class="screen-body scrolls" id="shelf-body"></div></section>
@@ -100,7 +103,7 @@ paintIcon(get("surface-settings"), "settings");
 paintIcon(get("collapse-panel"), "close");
 
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
-const media = new MediaScreen(get("media-body"), () => render());
+const media = new MediaSource(() => render());
 const calendar = new CalendarScreen(get("calendar-body"), () => render());
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
@@ -391,7 +394,6 @@ function render() {
   // all three, and a screen that only updated while it was on top would show
   // stale numbers the moment you switched to it.
   today.render();
-  media.render();
   calendar.render();
   system.render();
   agentsScreen.render();
@@ -405,7 +407,14 @@ function render() {
    * thing at a time; this is how the other two say "there is something here"
    * without competing for those 200 pixels. Resting claims (the day's own
    * tally) do not count — every tab would wear a dot forever. */
-  const lit = new Set(live.filter(c => c && c.priority > 5).map(c => c!.screen));
+/* ⚠️ Media raises no dot, and not merely because it lost its tab. A dot means
+ * "this screen has something you have not seen"; the player is already NAMED on
+ * the pill, with its own equaliser running, so a dot would be the same claim
+ * made twice — and it would land on Home, which is the default screen and
+ * therefore the one place a dot says least. */
+  const lit = new Set(live
+    .filter(c => c && c.priority > 5 && c.kind !== "media")
+    .map(c => c!.screen));
   for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
     button.classList.toggle("live", lit.has(button.dataset.tab as ScreenName));
   }
@@ -1075,7 +1084,7 @@ async function boot() {
       `${keys.palette} searches everything · ${keys.toggle} opens · ${keys.capture} adds a task · ${keys.hide} hides`;
   } catch { /* the plugin failed to start; the island still works */ }
   render();
-  // One second, because the media position and the focus timer both move on
+  // One second, because the pill's media position and the focus timer both move on
   // that scale. The day's own minute work happens inside the Today screen.
   /* In place, never a redraw: see MediaScreen.tick and renderActivity. The pill
    * is repainted every second because it carries the clock and any running
@@ -1084,7 +1093,6 @@ async function boot() {
     today.paintTimer();
     agentsScreen.tick();
     paintPill();
-    if (screen === "media") media.tick();
   }, 1000);
   window.setInterval(() => { today.tick(); render(); }, 60000);
 }

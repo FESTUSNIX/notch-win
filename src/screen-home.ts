@@ -12,7 +12,7 @@
 import { element } from "./task-list";
 import { paintIcon } from "./task-icons";
 import { localDay, overdueDays } from "./task-model";
-import { sourceName, type MediaScreen } from "./screen-media";
+import { sourceName, type MediaSource } from "./screen-media";
 import { countdown, dayHeading, endOf, nextEvent, startOf, type CalendarScreen } from "./screen-calendar";
 import type { TodayScreen } from "./screen-today";
 import type { Activity, ScreenName } from "./island-activity";
@@ -23,7 +23,7 @@ const STRIP_FORWARD = 4;
 
 export interface HomeDeps {
   today: TodayScreen;
-  media: MediaScreen;
+  media: MediaSource;
   calendar: CalendarScreen;
   open: (screen: ScreenName) => void;
 }
@@ -42,8 +42,13 @@ export class HomeScreen {
   /** A section of the bar, with a quiet chevron into the full screen. No
    *  heading: the content says what it is, and three uppercase labels across a
    *  strip this size is most of what made the first version read as clutter. */
-  private section(cls: string, title: string, screen: ScreenName): HTMLElement {
+  /** ⚠️ `screen` is nullable, and Now playing is the one that passes null.
+   *  Every other column is a summary with a fuller screen behind it; the player
+   *  has no screen behind it any more, so a chevron promising one would be a
+   *  control that goes nowhere. */
+  private section(cls: string, title: string, screen: ScreenName | null): HTMLElement {
     const wrap = element("section", `home-sec ${cls}`);
+    if (!screen) return wrap;
     const go = element("button", "home-go", "›");
     (go as HTMLButtonElement).type = "button";
     go.setAttribute("aria-label", `Open ${title}`);
@@ -56,7 +61,7 @@ export class HomeScreen {
   /* ── Media ───────────────────────────────────────────────────────────────
    * Art on the left, the words beside it, the transport under the words. */
   private mediaSection(): HTMLElement {
-    const wrap = this.section("home-media", "Now playing", "media");
+    const wrap = this.section("home-media", "Now playing", null);
     const media = this.deps.media.media;
     if (!media.active) {
       wrap.append(element("p", "home-empty", "Nothing playing"));
