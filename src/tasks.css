@@ -450,6 +450,19 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .cal-new input:focus-visible { outline:none;
   box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
     inset 0 2px 6px -3px rgba(0,0,0,.9); }
+/* Which list it goes into. Reuses the composer's chip grammar rather than
+   inventing a second one — it is the same decision, made from a different
+   screen. */
+.cal-new-list { display:flex; align-items:center; gap:6px; align-self:flex-start;
+  font-size:10.5px; color:#a5a5a5; padding:4px 9px; border-radius:8px;
+  background:var(--tile); box-shadow:var(--hairline); }
+.cal-new-list:hover { color:#fff; background:var(--tile-hi); }
+.cal-new-list:active { scale:.97; transition-duration:90ms; }
+.cal-new-list.is-on { color:#fff; background:var(--tile-on); }
+.cal-list-menu { display:flex; flex-direction:column; gap:1px; max-height:150px;
+  overflow-y:auto; overscroll-behavior:contain; padding:4px; border-radius:11px;
+  background:rgba(0,0,0,.4); box-shadow:inset 0 0 0 1px var(--hair);
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
 .cal-new-add { flex-shrink:0; font-size:11.5px; font-weight:600; padding:7px 13px;
   border-radius:9px; color:var(--on-accent);
   background-color:var(--accent);
@@ -1537,7 +1550,7 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
   transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), transform var(--duration-fast) var(--ease-bounce); }
 .pip svg { width:18px; height:18px; }
 .pip:hover { background:var(--tile-on); }
-.pip:active { transform:scale(.96); }
+.pip:active { scale:.96; transform:none; transition-duration:90ms; }
 .pip.is-on { background:var(--warn); color:#1a1200; }
 
 .sys-row { display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:var(--r-row);
@@ -1545,6 +1558,10 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
   transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out); }
 .sys-row:not(.static):hover { background:var(--tile-hi); color:#fff; }
 .sys-row.is-on { color:#fff; }
+/* ⚠️ Not on `.static`. Half the rows here are readouts — a network name, an
+   uptime — and a readout that goes down under a finger is a control that is
+   about to do nothing. */
+.sys-row:not(.static):active { scale:.99; transition-duration:90ms; }
 .sys-row.static { cursor:default; }
 .sys-mark { display:grid; place-items:center; flex-shrink:0; width:20px; height:20px;
   color:rgba(255,255,255,.55); }
@@ -1670,6 +1687,10 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 .pill-head { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
   padding:11px 13px; border-radius:var(--r-tile); background:none; box-shadow:none; }
 .pill-head:hover { background:var(--tile-hi); box-shadow:none; }
+/* ⚠️ Deliberately NO press. This is the head of a whole section, and the
+   rows it opens are inside it — a card that flinches under a finger aimed at
+   something within it moves the target away mid-press. The rows have their
+   own. */
 .pill-head:active { transform:none; }
 .pill-mark { display:grid; place-items:center; width:26px; height:26px; flex-shrink:0;
   border-radius:9px; color:#dcdcdc;
@@ -2187,6 +2208,7 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   color:#9a9a9a; }
 .shelf-do svg { width:14px; height:14px; }
 .shelf-do:hover { background:var(--tile-on); color:#fff; }
+.shelf-do:active { scale:.9; transition-duration:90ms; }
 .shelf-do.lead { color:#d8d8d8; }
 /* A file that has gone is shown, not hidden: referencing rather than copying is
    what makes the shelf cheap, and being honest about it is the price. */

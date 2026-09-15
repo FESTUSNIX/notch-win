@@ -173,6 +173,12 @@ export class MediaScreen {
   private queueOpen = false;
   private queue: Queue = { connected: false, tracks: [], note: "" };
   private asked = 0;
+  /** The track the open queue was fetched against.
+   *
+   * ⚠️ Title and artist, not the position. `media:changed` fires constantly —
+   * the playhead moves — and refetching on every one of those is a request to
+   * Spotify several times a second for a list that changes once a song. */
+  private fetchedFor = "";
   private devicesOpen = false;
   private devices: AudioDevice[] = [];
   /** The add-to-queue search: open, what was typed, and what came back. */
@@ -229,8 +235,10 @@ export class MediaScreen {
   private toggleQueue() {
     this.queueOpen = !this.queueOpen;
     this.deps.width(this.queueOpen);
+    // Opening asks again whatever was fetched last time: the panel may have
+    // been shut for an hour.
+    this.fetchedFor = "";
     this.changed();
-    void this.load();
   }
 
   title$() { return "Playing"; }
@@ -248,6 +256,17 @@ export class MediaScreen {
 
   render() {
     const media = this.deps.source.media;
+    /* ⚠️ The queue goes stale the moment the track changes, and it used to sit
+     * there stale until the panel was closed and reopened — showing the song
+     * that just finished at the top of "Playing Next". Refetched on the change
+     * itself rather than polled: the queue changes once a song, and a timer
+     * fast enough to feel right would be a request every few seconds for a
+     * list that almost never moves. */
+    const playing = `${media.title} ${media.artist}`;
+    if (this.queueOpen && media.active && playing !== this.fetchedFor) {
+      this.fetchedFor = playing;
+      void this.load();
+    }
     this.host.replaceChildren();
     this.host.classList.toggle("has-queue", this.queueOpen);
 

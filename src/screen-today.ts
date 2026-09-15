@@ -400,18 +400,23 @@ export class TodayScreen {
    * screen and not the other until TickTick answers.
    *
    * Returns the complaint, or "" — the caller draws it where it was typed. */
-  async createOn(title: string, day: string): Promise<string> {
+  async createOn(title: string, day: string, list = ""): Promise<string> {
     const value = title.trim();
     if (!value) return "";
     if (!this.writable) return "Connect TickTick to add a task.";
-    if (!this.toList) return "Choose a list on Today first.";
+    /* ⚠️ Checked against what still EXISTS, not taken on trust. A list closed
+     * in TickTick since the menu was drawn would otherwise be a create that
+     * comes back rejected with the task's words already thrown away. */
+    const projects = this.lists();
+    const into = projects.some(p => p.id === list) ? list : this.toList;
+    if (!into) return "Choose a list on Today first.";
     const [y, m, d] = day.split("-").map(Number);
     const ticket = { id: `${Date.now()}`, title: value };
     this.outbox.push(ticket);
     this.changed();
     try {
       await call("create_task", {
-        projectId: this.toList, name: value,
+        projectId: into, name: value,
         date: new Date(y, m - 1, d).toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
@@ -503,6 +508,18 @@ export class TodayScreen {
         run: () => { void this.action("refresh_tasks"); },
       }],
     };
+  }
+
+  /** The lists a task can be filed into, and which one the composer is on.
+   *
+   * ⚠️ One definition, shared. The Calendar's New Task menu draws from this
+   * rather than reading the snapshot itself — the filter for what counts as a
+   * fileable list (open, and not a note) lives here and is easy to get subtly
+   * different somewhere else. */
+  lists(): { id: string; name: string; chosen: boolean }[] {
+    return this.local().projects
+      .filter(p => !p.closed && p.kind !== "NOTE")
+      .map(p => ({ id: p.id, name: p.name, chosen: p.id === this.toList }));
   }
 
   /** Today's tally, exactly as the ring and the pill read it.

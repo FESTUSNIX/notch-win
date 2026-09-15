@@ -1364,9 +1364,25 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
      optimistic layer, one reconciliation. */
   await page.getByRole("button", {name: "New task", exact: true}).click();
   await expect(page.getByLabel("New task name")).toBeFocused();
+
+  /* ⚠️ And it says which list it files into. It defaults to whatever Today's
+     composer is on rather than to the first list — filing from here and filing
+     from there should land in the same place unless you say otherwise, or the
+     two screens quietly disagree about where your tasks go. */
+  const picker = page.locator(".cal-new-list");
+  await expect(picker).toContainText("Codenotch");
+  await picker.click();
+  await page.locator(".cal-list-menu .chip-option").filter({hasText: "Personal"}).click();
+  await expect(picker).toContainText("Personal");
+  // The caret comes back: choosing a list is a detour in the middle of typing.
+  await expect(page.getByLabel("New task name")).toBeFocused();
+
   await page.getByLabel("New task name").fill("Ring the plumber");
   await page.getByRole("button", {name: "Add", exact: true}).click();
   await page.locator('[data-tab="today"]').click();
+  await expect(day(page).getByText("Ring the plumber", {exact: true})).toBeVisible();
+  // Filed where the picker said, not where Today's composer was.
+  await page.locator(".list-chip").filter({hasText: "Personal"}).click();
   await expect(day(page).getByText("Ring the plumber", {exact: true})).toBeVisible();
 });
 

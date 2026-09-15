@@ -555,6 +555,7 @@ pub fn run() {
             calendar::disconnect_google,
             calendar::google_status,
             calendar::open_external,
+            calendar::calendar_days,
             spotify::connect_spotify,
             spotify::disconnect_spotify,
             spotify::spotify_status,

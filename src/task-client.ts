@@ -165,6 +165,9 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "copy_text") return undefined as T;
   if (command === "open_external") return undefined as T;
   if (command === "google_status") return true as T;
+  // ⚠️ Empty, and that is the honest stub: the preview has no account, and a
+  // month nobody can ask about draws exactly like a month with nothing in it.
+  if (command === "calendar_days") return {} as T;
   if (command === "spotify_status") return true as T;
   if (command === "spotify_redirect") return "http://127.0.0.1:5733/callback" as T;
   if (command === "connect_spotify" || command === "disconnect_spotify") {

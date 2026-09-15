@@ -52,9 +52,14 @@ show less and reveal more.
       the transport control. Per `better-ui`: icon swap at scale `0.25 → 1`,
       opacity `0 → 1`, blur `4px → 0`, both icons kept in the DOM, one
       absolutely positioned, `cubic-bezier(0.2, 0, 0, 1)`.
-- [ ] Audit every screen for the same move (the pill's equaliser is done): what is ambient at rest and
-      actionable under the pointer. Candidates — the day's progress rail
-      (→ open Today), the Home cards' arrows, the System meters.
+- [x] Audited. The pill's equaliser is the only place it earned its keep:
+      the pill is the one surface with no room for a control at rest. The
+      candidates were all rejected on the same ground — ⚠️ a hover-revealed
+      control is only right where there is nowhere to put a permanent one.
+      The day rail sits above a screen you can already press a tab to reach;
+      the Home cards' arrows are already visible and the whole card is
+      clickable; the System meters have their own device rows underneath.
+      Hiding those behind a hover would be hiding a control that had a home.
 - [x] ⚠️ **Motion is never the only feedback channel.** Every hover-revealed
       control needs a static cue too (a cursor change, a colour, a label), or
       it is invisible to anyone who does not move a mouse over it first.
@@ -142,7 +147,7 @@ Shipped values. `sizing()` in `island-surface.ts` picks between the two, and
       focus-visible, disabled. Done: the tab strip, day rows, agent rows, the
       pill itself, the pill's equaliser. ⚠️ `scale`, not `transform`, on
       anything the paint loop or the tab glide already transforms.
-- [ ] Still thin: System's device rows and the shelf's row actions.
+- [x] Still thin: System's device rows and the shelf's row actions.
 - [x] `transition-property` named explicitly, never `transition: all`.
 - [x] ⚠️ **Style each thing once, where it is defined.** This has bitten here
       before — a tab rule hundreds of lines later silently overrode the whole
@@ -187,7 +192,7 @@ something is playing. What landed:
       `PUT /v1/playlists/{id}/tracks` — but the queue is not a playlist.) A
       drag handle here would be a control that cannot be implemented, so there
       is none. If Spotify ever ships it, this is the one thing to add.
-- [ ] The queue is fetched when the panel opens and after an add, never
+- [x] The queue is fetched when the panel opens and after an add, never
       refreshed while it sits open. A track change leaves a stale list.
 - [ ] Nothing in the queue is clickable — skipping _to_ a queued track has no
       endpoint either.
@@ -218,10 +223,10 @@ Month grid and agenda in one view, plus a week that is a time grid:
 
 ### Still open on the calendar
 
-- [ ] Paging past the fetched window (45 days) draws a correct grid with no
+- [x] Paging past the fetched window (45 days) draws a correct grid with no
       busy dots, because there are no events for it. Either fetch per month or
       say so in the grid.
-- [ ] The New Task popover files into whatever list Today's composer is on.
+- [x] The New Task popover files into whatever list Today's composer is on.
       There is no list picker in the popover.
 - [ ] Nothing can be created *in the calendar* — it makes TickTick tasks, not
       Google events. Writing events needs a second Google scope.

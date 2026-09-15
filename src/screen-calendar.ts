@@ -150,14 +150,16 @@ export class CalendarScreen {
     private host: HTMLElement,
     private changed: () => void,
     private deps: {
-      create: (title: string, day: string) => void;
+      create: (title: string, day: string, list: string) => void;
+      /** The lists a task can go into, and which one Today is filing to. */
+      lists: () => { id: string; name: string; chosen: boolean }[];
       /** ⚠️ Lift `WS_EX_NOACTIVATE`, or a field here cannot be typed into.
        *  The island never takes focus — that is the whole point of it — so a
        *  `focus()` on its own puts the caret in the DOM and leaves the
        *  keystrokes going to whatever application is actually in front. It is
        *  the same round trip Today's composer makes; see `set_task_input`. */
       focus: (active: boolean) => Promise<void>;
-    } = { create: () => {}, focus: async () => {} },
+    } = { create: () => {}, lists: () => [], focus: async () => {} },
   ) {}
 
   async boot() {
@@ -283,9 +285,48 @@ export class CalendarScreen {
   private scrollTo = "";
   /** Whether the New Task popover is up, and what is in it. */
   private composing = false;
+  /** The list the popover will file into, or "" to follow Today's. */
+  private intoList = "";
+  private listMenu = false;
 
   private shownMonth(now: Date): Date {
     return new Date(now.getFullYear(), now.getMonth() + this.monthOffset, 1);
+  }
+
+  /** Busy-day counts for months the main feed does not reach.
+   *
+   * ⚠️ The feed is 45 days. Paging the grid past that drew a correct month
+   * with no marks at all — which is not an empty month, it is a month nobody
+   * asked about, and the two look identical.
+   *
+   * ⚠️ Cached by month and asked for ONCE. A `render()` runs on every tick of
+   * the clock, so a fetch driven straight off "the shown month has no entry"
+   * would ask Google for the same month every second until the answer landed. */
+  private months = new Map<string, Record<string, number>>();
+  private asking = new Set<string>();
+
+  private monthKey(first: Date): string {
+    return `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  private wantMonth(first: Date) {
+    const key = this.monthKey(first);
+    if (this.months.has(key) || this.asking.has(key)) return;
+    this.asking.add(key);
+    /* The whole grid, not the month: the six rows run into the months either
+     * side and those cells carry dots too. */
+    const from = weekStart(first, this.mondayFirst);
+    const to = new Date(from);
+    to.setDate(from.getDate() + 42);
+    void call<Record<string, number>>("calendar_days", {
+      from: from.toISOString(), to: to.toISOString(),
+    }).then(days => {
+      this.months.set(key, days);
+      this.changed();
+    }).catch(() => {
+      // An empty month is the honest answer; the grid draws the same either way.
+      this.months.set(key, {});
+    }).finally(() => this.asking.delete(key));
   }
 
   private renderMonth(now: Date) {
@@ -298,6 +339,10 @@ export class CalendarScreen {
     const panel = element("div", "cal-month");
     const first = this.shownMonth(now);
     const today = localDay(now);
+    /* ⚠️ Only for months the feed does not cover. Asking for the current one
+     * would be a second request for events we already have, every time the
+     * screen is opened. */
+    if (Math.abs(this.monthOffset) > 0) this.wantMonth(first);
 
     /* ── The head: the month, a way to add, and the pager ─────────────── */
     const head = element("div", "cal-month-head");
@@ -355,7 +400,14 @@ export class CalendarScreen {
      * ⚠️ Six, not "as many as this month needs". A grid that is five rows in
      * November and six in December changes the panel's height every time you
      * page, and the agenda beside it jumps with it. */
+    /* ⚠️ The feed first, then the fetched month on top of it. The feed is
+     * what the agenda beside the grid is drawn from and is always the more
+     * current of the two — a month cached ten minutes ago must not overwrite a
+     * day the live feed has just changed. */
     const busy = new Map<string, number>();
+    for (const [day, count] of Object.entries(this.months.get(this.monthKey(first)) ?? {})) {
+      busy.set(day, count);
+    }
     for (const event of this.feed.events) {
       const key = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
       busy.set(key, (busy.get(key) ?? 0) + 1);
@@ -422,6 +474,7 @@ export class CalendarScreen {
     (add as HTMLButtonElement).type = "button";
     const close = () => {
       this.composing = false;
+      this.listMenu = false;
       // Hand the keyboard back, or the island stays unfoldable and the next
       // thing you type still goes to it.
       void this.deps.focus(false).catch(() => {});
@@ -430,7 +483,7 @@ export class CalendarScreen {
     const commit = () => {
       const value = field.value.trim();
       if (!value) return;
-      this.deps.create(value, this.chosenDay || localDay(now));
+      this.deps.create(value, this.chosenDay || localDay(now), this.intoList);
       close();
     };
     add.onclick = commit;
@@ -440,6 +493,51 @@ export class CalendarScreen {
     };
     row.append(when, field, add);
     sheet.append(row);
+
+    /* Which list it goes into. ⚠️ It defaults to Today's composer rather than
+     * to the first list: filing from here and filing from there should land in
+     * the same place unless you say otherwise, or the two screens quietly
+     * disagree about where your tasks go. */
+    const lists = this.deps.lists();
+    if (lists.length > 1) {
+      const chosen = lists.find(l => l.id === this.intoList)
+        ?? lists.find(l => l.chosen) ?? lists[0];
+      const pick = element("button", `cal-new-list${this.listMenu ? " is-on" : ""}`);
+      (pick as HTMLButtonElement).type = "button";
+      pick.setAttribute("aria-haspopup", "listbox");
+      pick.setAttribute("aria-expanded", String(this.listMenu));
+      pick.setAttribute("aria-label", `List: ${chosen.name}`);
+      pick.append(element("span", "chip-dot"), element("span", "", chosen.name));
+      pick.onclick = event => {
+        event.stopPropagation();
+        this.listMenu = !this.listMenu;
+        this.changed();
+      };
+      sheet.append(pick);
+
+      if (this.listMenu) {
+        const menu = element("div", "cal-list-menu");
+        for (const list of lists) {
+          const option = element("button",
+            `chip-option${list.id === chosen.id ? " is-on" : ""}`);
+          (option as HTMLButtonElement).type = "button";
+          option.append(element("span", "", list.name));
+          option.onclick = event => {
+            event.stopPropagation();
+            this.intoList = list.id;
+            this.listMenu = false;
+            this.changed();
+            /* ⚠️ The caret goes back to the field. Choosing a list is a detour
+             * in the middle of typing a task, and leaving focus on the menu
+             * means the next keystroke is lost. */
+            requestAnimationFrame(() =>
+              this.host.querySelector<HTMLInputElement>(".cal-new input")?.focus());
+          };
+          menu.append(option);
+        }
+        sheet.append(menu);
+      }
+    }
     return sheet;
   }
 

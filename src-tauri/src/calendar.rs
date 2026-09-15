@@ -11,6 +11,7 @@
 //! Credential Manager with the refresh token and is never returned to a WebView.
 
 use std::io::{BufRead, BufReader, Write};
+use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -486,6 +487,29 @@ fn parse_events(body: &Value, calendar: &str, color: &str) -> Vec<Event> {
 }
 
 async fn collect(http: &reqwest::Client, token: &str) -> Result<Vec<Event>, String> {
+    let now = Utc::now();
+    /* ⚠️ Back to the start of the month, not twelve hours. The grid draws the
+     * whole month including the days already gone, and a dot missing from the
+     * 3rd because the fetch started on the 14th is a calendar that looks wrong
+     * rather than one that looks empty. */
+    let min = (now - chrono::Duration::days(i64::from(now.day()) + 6))
+        .max(now - chrono::Duration::days(38));
+    let max = now + chrono::Duration::days(HORIZON_DAYS);
+    between(http, token, &min.to_rfc3339(), &max.to_rfc3339()).await
+}
+
+/// Every event in a window, from every calendar the user can read.
+///
+/// ⚠️ Split out of `collect` so the month grid can ask for a month it does
+/// not already have. Paging the grid used to draw a correct month with no busy
+/// marks on it at all — which is not an empty month, it is a month we never
+/// asked about, and the two look identical.
+async fn between(
+    http: &reqwest::Client,
+    token: &str,
+    min: &str,
+    max: &str,
+) -> Result<Vec<Event>, String> {
     let list = get_json(http, token, &format!("{API}/users/me/calendarList?minAccessRole=reader")).await?;
     let calendars: Vec<(String, String, String)> = list
         .get("items")
@@ -511,20 +535,13 @@ async fn collect(http: &reqwest::Client, token: &str) -> Result<Vec<Event>, Stri
         })
         .unwrap_or_default();
 
-    let now = Utc::now();
-    /* ⚠️ Back to the start of the month, not twelve hours. The grid draws the
-     * whole month including the days already gone, and a dot missing from the
-     * 3rd because the fetch started on the 14th is a calendar that looks wrong
-     * rather than one that looks empty. */
-    let min = (now - chrono::Duration::days(i64::from(now.day()) + 6)).max(now - chrono::Duration::days(38));
-    let max = now + chrono::Duration::days(HORIZON_DAYS);
     let mut events = Vec::new();
     for (id, name, color) in calendars {
         let url = format!(
             "{API}/calendars/{}/events?timeMin={}&timeMax={}&singleEvents=true&orderBy=startTime&maxResults=250",
             encode(&id),
-            encode(&min.to_rfc3339()),
-            encode(&max.to_rfc3339())
+            encode(min),
+            encode(max)
         );
         // One unreadable calendar must not empty the whole agenda.
         if let Ok(body) = get_json(http, token, &url).await {
@@ -593,6 +610,41 @@ pub fn spawn(app: AppHandle) {
             tokio::time::sleep(Duration::from_secs(300)).await;
         }
     });
+}
+
+/// Which days in a window have something on them, and how many things.
+///
+/// ⚠️ DAYS and counts, not events. The month grid draws a dot or three per
+/// cell and nothing else; shipping a month of full events across the IPC
+/// boundary to derive a number from them is a payload two orders of magnitude
+/// bigger than the answer.
+///
+/// ⚠️ Never an `Err` for a month that simply cannot be fetched — an empty map
+/// is "nothing here", which is also what a month with no events looks like,
+/// and the grid draws the same either way. A red banner over a calendar because
+/// somebody paged into next March is worse than a month without dots.
+#[tauri::command]
+pub async fn calendar_days(app: AppHandle, from: String, to: String) -> BTreeMap<String, u32> {
+    let state = app.state::<CalendarState>();
+    let Ok(Some(record)) = stored() else {
+        return BTreeMap::new();
+    };
+    let http = client();
+    let Ok(token) = access_token(&http, &state, &record).await else {
+        return BTreeMap::new();
+    };
+    let Ok(events) = between(&http, &token, &from, &to).await else {
+        return BTreeMap::new();
+    };
+    let mut days: BTreeMap<String, u32> = BTreeMap::new();
+    for event in events {
+        // The local day the event starts on, which is the cell it belongs in.
+        let day = event.start.get(..10).unwrap_or_default().to_string();
+        if !day.is_empty() {
+            *days.entry(day).or_insert(0) += 1;
+        }
+    }
+    days
 }
 
 #[tauri::command]
