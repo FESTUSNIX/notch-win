@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { choose, decay, readings, DWELL_MS, HOLD_MS } from '../src/pill-modules.ts';
+import { choose, decay, readings, DWELL_MS, HOLD_MS, THRESHOLDS } from '../src/pill-modules.ts';
 
 const quiet = {
   now: new Date('2026-09-14T14:53:00'),
@@ -136,4 +136,24 @@ test('nothing read yet is not the same as nothing to report', () => {
   // it as a number would make "-1%" a quiet reading rather than no reading.
   const unread = readings({...quiet, machine: {cpu: -1, memory: -1, diskUsed: -1, diskFree: 0}});
   assert.equal(unread.some(r => ['cpu', 'memory', 'disk'].includes(r.id)), false);
+});
+
+test('a threshold moves where a reading starts speaking', () => {
+  // 88% is quiet by default and news to somebody who set the bar at 80.
+  const eightyEight = withDisk(88);
+  assert.deepEqual(readings(eightyEight).map(r => r.id), ['tasks', 'weather']);
+  assert.equal(readings({...eightyEight, thresholds: {disk: 80}})[0].id, 'disk');
+  // ...and one raised above the reading silences it again, which is the whole
+  // point: a disk that lives at 95% is a fact, not news.
+  assert.ok(!readings({...withDisk(95), thresholds: {disk: 97}}).some(r => r.id === 'disk'));
+  // A module with no entry keeps the fallback rather than falling to zero:
+  // the disk is at 61% here and stays quiet while the CPU bar is lowered.
+  assert.equal(THRESHOLDS.disk, 92);
+  assert.deepEqual(readings({...quiet, thresholds: {cpu: 10}}).map(r => r.id),
+    ['cpu', 'tasks', 'weather']);
+});
+
+test('the forecast is written in the unit that was asked for', () => {
+  assert.equal(readings(quiet).find(r => r.id === 'weather').text, '17°');
+  assert.equal(readings({...quiet, fahrenheit: true}).find(r => r.id === 'weather').text, '63°');
 });

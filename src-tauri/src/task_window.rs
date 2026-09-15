@@ -140,9 +140,13 @@ pub async fn open_task_editor(app: AppHandle) -> Result<(), String> {
             "task-editor",
             tauri::WebviewUrl::App("task-editor.html".into()),
         )
-        .title("Codenotch · Tasks")
-        .inner_size(460.0, 690.0)
-        .min_inner_size(380.0, 480.0)
+        .title("Codenotch Settings")
+        /* Two columns need room for both. ⚠️ Decorated and resizable, unlike
+         * every other window here: this one is an ordinary application window
+         * that you open, read and close, not a piece of chrome welded to an
+         * edge. */
+        .inner_size(880.0, 640.0)
+        .min_inner_size(680.0, 460.0)
         .center()
         .build()
         .map_err(|e| e.to_string())?

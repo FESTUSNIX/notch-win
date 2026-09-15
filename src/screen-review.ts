@@ -10,7 +10,7 @@
  * got too busy, and it never belonged there — System is the machine's controls,
  * and how long you spent in an editor is not a control.
  */
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { call } from "./task-client";
 import { spoken } from "./media-format";

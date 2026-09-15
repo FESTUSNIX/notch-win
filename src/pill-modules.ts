@@ -73,7 +73,20 @@ export interface ModuleContext {
    * Every rule in this file is tested with no clock, no DOM and no Tauri, and
    * that is worth one field. */
   quiet: string[];
+  /** Percent at which a reading starts being worth saying, by module id.
+   *
+   * ⚠️ The numbers below are the FALLBACK, not the rule. A disk that lives
+   * above 95% is a fact about the machine rather than news, and a threshold
+   * nobody could move meant the pill said so for ever. */
+  thresholds?: Record<string, number>;
+  /** Write the forecast in Fahrenheit. */
+  fahrenheit?: boolean;
 }
+
+/** Where each reading starts speaking with nothing configured. */
+export const THRESHOLDS: Record<string, number> = { disk: 92, cpu: 90, memory: 90 };
+
+const at = (ctx: ModuleContext, id: string) => ctx.thresholds?.[id] ?? THRESHOLDS[id];
 
 type Module = (ctx: ModuleContext) => ModuleReading | null;
 
@@ -97,8 +110,9 @@ const event: Module = ({ nextEvent }) => {
   };
 };
 
-const disk: Module = ({ machine }) => {
-  if (!machine || machine.diskUsed < 92) return null;
+const disk: Module = ctx => {
+  const { machine } = ctx;
+  if (!machine || machine.diskUsed < at(ctx, "disk")) return null;
   return {
     id: "disk",
     urgency: 85,
@@ -113,13 +127,15 @@ const disk: Module = ({ machine }) => {
  *  a browser open and is perfectly well; a pill that says so all day is a pill
  *  that gets ignored on the day it matters. The System screen's meters go amber
  *  at 80 because a meter you went to look at can afford to be informative. */
-const cpu: Module = ({ machine }) => {
-  if (!machine || machine.cpu < 90) return null;
+const cpu: Module = ctx => {
+  const { machine } = ctx;
+  if (!machine || machine.cpu < at(ctx, "cpu")) return null;
   return { id: "cpu", urgency: 60, icon: "chip", text: `${machine.cpu}%`, tone: "warn", level: machine.cpu };
 };
 
-const memory: Module = ({ machine }) => {
-  if (!machine || machine.memory < 90) return null;
+const memory: Module = ctx => {
+  const { machine } = ctx;
+  if (!machine || machine.memory < at(ctx, "memory")) return null;
   return { id: "memory", urgency: 55, icon: "memory", text: `${machine.memory}%`, tone: "warn", level: machine.memory };
 };
 
@@ -136,14 +152,22 @@ const tasks: Module = ({ tasks: day }) => {
   return { id: "tasks", urgency: 15, icon: "today", text: left === 0 ? "✓" : String(left) };
 };
 
-const weather: Module = ({ weather: reading }) => {
+const weather: Module = ctx => {
+  const reading = ctx.weather;
   if (!reading || !reading.place) return null;
+  /* ⚠️ Converted here rather than in Rust. `celsius` is what the forecast
+   * returns and what everything else reasons about; Fahrenheit is a way of
+   * writing it down, and a unit stored at the source is a unit every consumer
+   * has to remember to ask about. */
+  const degrees = ctx.fahrenheit
+    ? Math.round(reading.celsius * 9 / 5 + 32)
+    : reading.celsius;
   return {
     id: "weather",
     // The floor. Anything with something to say outranks the forecast.
     urgency: 5,
     icon: reading.icon as TaskIcon,
-    text: `${reading.celsius}°`,
+    text: `${degrees}°`,
   };
 };
 

@@ -6,7 +6,8 @@
  */
 import { FocusTimer, timerText } from "./focus-timer";
 import { paintIcon } from "./task-icons";
-import { element } from "./task-list";
+import { element } from "./dom";
+import { still } from "./motion-pref";
 import { call, native, preview } from "./task-client";
 import {
   emptySnapshot, localDay, nodeDone, overdueDays, progress, taskForest, taskId,
@@ -69,7 +70,6 @@ export class TodayScreen {
   private writable = false;
 
   readonly focusTimer: FocusTimer;
-  private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   private composer!: HTMLFormElement;
   private title!: HTMLInputElement;
 
@@ -99,8 +99,8 @@ export class TodayScreen {
   private get(id: string) { return document.getElementById(id) as HTMLElement; }
 
   /** How long a finished row is held before it leaves, and how long it takes. */
-  private HOLD() { return this.reduced.matches ? 0 : 520; }
-  private COLLAPSE() { return this.reduced.matches ? 0 : 340; }
+  private HOLD() { return still() ? 0 : 520; }
+  private COLLAPSE() { return still() ? 0 : 340; }
 
   title$(): string { return this.view === "all" ? "All lists" : "Today"; }
   /** Which list the day is showing, for the resting pill's tasks module. */

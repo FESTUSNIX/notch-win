@@ -40,14 +40,14 @@ test("a focus session survives a reload and takes over the collapsed island", as
 
   // Collapsed, a running timer outranks the day: the pill names the task and
   // counts, on every edge, without a second control of its own.
+  /* ⚠️ One load per edge, with the pointer parked in the middle of the screen.
+     The island's own edge control is gone — it lives in the settings window,
+     which is a different page and cannot reach this one in the preview — so
+     the edge is staged from the query string. The timer is read back from disk
+     on every load, which is the same thing this test opened by proving. */
   for (const edge of ["left", "top", "bottom", "right"]) {
-    await open();
-    await page.getByRole("button", {name: "Island settings", exact: true}).click();
-    await page.locator(`[data-task-edge="${edge}"]`).click();
-    await page.getByRole("button", {name: "Island settings", exact: true}).click();
-    // Let it fold the way it does in use — by the pointer leaving — rather than
-    // by a button that has already moved to another edge under the cursor.
-    await page.mouse.move(500, 780);
+    await page.goto(`/tasks.html?single&quiet&edge=${edge}`);
+    await page.mouse.move(450, 350);
     await expect(page.locator("#island-expanded")).toBeHidden();
     const vertical = edge === "left" || edge === "right";
     if (vertical) {

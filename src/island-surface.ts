@@ -17,6 +17,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { FRAME, cpx, isVertical, notchPath, notchTransform, type Edge } from "./layout";
 import { Spring } from "./motion";
+import { still, onSystemMotionChange } from "./motion-pref";
 import { call, native } from "./task-client";
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -51,7 +52,14 @@ export class IslandSurface {
    * changing size under your cursor, and overshoot there reads as a wobble. */
   private grow = new Spring(cpx(FRAME.islandMinDepth), 0.34, 0.9);
   private widen = new Spring(cpx(FRAME.islandBodyLong), 0.34, 0.9);
-  private reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  /** The full body along the edge, in CSS px. ⚠️ Not `cpx(FRAME.islandBodyLong)`
+   *  inline any more: the width is a preference, and a constant read at three
+   *  call sites is a preference that can only be changed in two of them. */
+  private full = cpx(FRAME.islandBodyLong);
+  /** How long the panel waits after the pointer leaves. */
+  private foldDelay = 450;
+  /** Whether pointing at the pill opens it at all. */
+  private openOnHover = true;
   private shell = document.getElementById("notch-shell")!;
   private island = document.getElementById("island")!;
   private collapsed = document.getElementById("island-collapsed")!;
@@ -68,7 +76,7 @@ export class IslandSurface {
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height", `${cpx(FRAME.taskRowHeight)}px`);
     window.addEventListener("resize", () => this.measure());
-    this.reduced.addEventListener("change", () => {
+    onSystemMotionChange(() => {
       this.fold.snap(this.open ? 1 : 0);
       this.grow.snap(this.depth);
       this.widen.snap(this.body);
@@ -199,8 +207,8 @@ export class IslandSurface {
       return el.offsetHeight;
     };
     this.body = this.cap && !isVertical(this.edge)
-      ? Math.min(cpx(FRAME.islandBodyLong), this.cap)
-      : cpx(FRAME.islandBodyLong);
+      ? Math.min(this.full, this.cap)
+      : this.full;
     const screen = this.expanded.querySelector<HTMLElement>(".screen.active");
     const content = screen ? [...screen.children].reduce((n, el) => n + natural(el as HTMLElement), 0) : 0;
     const available = isVertical(this.edge) ? this.shell.clientWidth : this.shell.clientHeight;
@@ -222,7 +230,7 @@ export class IslandSurface {
      * not showing must not animate: the spring would spend its travel behind a
      * collapsed pill and the panel would then open at whatever size it had got
      * to, which is a different wrong size every time. */
-    if (this.open && !this.reduced.matches) {
+    if (this.open && !still()) {
       this.grow.setTarget(this.depth);
       this.widen.setTarget(this.body);
       if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
@@ -262,11 +270,34 @@ export class IslandSurface {
     clearTimeout(this.timer);
     if (!value) {
       this.suppressed = false;
-      this.timer = window.setTimeout(() => this.show(false), 450);
-    } else if (!this.suppressed) {
+      this.timer = window.setTimeout(() => this.show(false), this.foldDelay);
+    } else if (!this.suppressed && this.openOnHover) {
       this.show(true);
     }
   }
+
+  /* ── What the settings window can change ─────────────────────────────
+   * ⚠️ Applied live, never at boot only. The settings window is a different
+   * window: a preference the island picked up on its next restart would be a
+   * settings screen that looks broken. */
+
+  /** The panel's width along its edge, in CSS px. 0 restores the default. */
+  setBodyLong(px: number) {
+    const next = px > 0 ? px : cpx(FRAME.islandBodyLong);
+    if (next === this.full) return;
+    this.full = next;
+    this.measure();
+  }
+
+  /** How long the panel waits after the pointer leaves, in ms. */
+  setFoldDelay(ms: number) { this.foldDelay = ms; }
+
+  /** Whether pointing at the pill opens the panel.
+   *
+   * ⚠️ Only the OPENING. Leaving still folds it, and the pointer still holds
+   * it open while it is over it — an island that ignored the pointer entirely
+   * would fold under the cursor mid-read. */
+  setOpenOnHover(value: boolean) { this.openOnHover = value; }
 
   toggle() {
     if (this.open) void this.collapse();
@@ -282,7 +313,7 @@ export class IslandSurface {
     this.island.setAttribute("aria-expanded", String(value));
     this.onFold?.(value);
     this.fold.setTarget(value ? 1 : 0);
-    if (this.reduced.matches) {
+    if (still()) {
       this.fold.snap(value ? 1 : 0);
       this.paint();
       return;

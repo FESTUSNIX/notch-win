@@ -251,25 +251,36 @@ try {
     if(editor) break;
     await pause(250);
   }
-  assert.ok(editor,'Native editor must open');
+  assert.ok(editor,'Native settings window must open');
   await editor.bringToFront();
   await editor.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|set_focus'));
   await pause(300);
-  await editor.getByLabel('Task',{exact:true}).fill('Local keyboard focus check');
-  assert.equal(await editor.getByLabel('Task',{exact:true}).inputValue(),'Local keyboard focus check');
-  await editor.screenshot({path:resolve(root,'test-results/native-task-editor.png')});
+  /* ⚠️ The point of this is FOCUS, not the field. The page used to be a task
+     editor and this typed into its quick-add box; that box is gone, so it
+     types into the one plain text field the settings window has. Never the
+     token or the client secret — nothing in an automated run should be putting
+     characters into a field whose job is to hold a credential. */
+  await editor.getByRole('tab',{name:'Connections'}).click();
+  const field = editor.locator('#weather-place');
+  await field.fill('Local keyboard focus check');
+  assert.equal(await field.inputValue(),'Local keyboard focus check');
+  await editor.screenshot({path:resolve(root,'test-results/native-settings.png')});
   const focused = await diagnostics();
   await writeFile(resolve(root,'test-results/native-window-checks.json'),JSON.stringify({resting,interactive,entry,afterEntry,focused},null,2));
   assert.equal(focused['task-editor'].style & 0x08000000,0,'Editor can activate');
-  assert.equal(await editor.getByLabel('Task',{exact:true}).evaluate(el => document.activeElement === el),true,'Editor input receives WebView focus');
+  assert.equal(await field.evaluate(el => document.activeElement === el),true,'Settings input receives WebView focus');
   if (!focused['task-editor'].focused) console.log('Manual check required: Windows foreground activation was not granted during this automated launch.');
   assert.equal(focused.tasks.focused,false,'Task notch does not take focus');
-  await editor.getByRole('button',{name:'Close task editor'}).click();
+  /* ⚠️ Escape, not a close button. The window is decorated now — an ordinary
+     application window with the system's own X — so the page carries no close
+     button of its own. Escape runs the same `getCurrentWindow().close()` and
+     therefore still proves the permission is granted. */
+  await editor.keyboard.press('Escape');
   for(let i=0;i<40 && !editor.isClosed();i++) await pause(100);
-  assert.ok(editor.isClosed(),'Editor close button has native permission');
+  assert.ok(editor.isClosed(),'Escape closes the settings window with native permission');
   assert.deepEqual(errors,[]);
   await writeFile(resolve(root,'test-results/native-window-checks.json'),JSON.stringify({resting,interactive,entry,afterEntry,focused},null,2));
-  console.log('Native release passed: both notches, isolated masks, inline focus mode/restoration, pill collapse, demo task IPC, display enumeration and placement, the shelf drop path, the run-finished pip, editor opening and closing.');
+  console.log('Native release passed: both notches, isolated masks, inline focus mode/restoration, pill collapse, demo task IPC, display enumeration and placement, the shelf drop path, the run-finished pip, settings opening and closing.');
 } finally {
   // Terminate only the child created by this test; no live task writes occurred.
   if(child.exitCode === null) child.kill();

@@ -14,7 +14,7 @@
  * Providers are plain functions returning actions, so a new screen adds its
  * commands by exporting a list rather than by touching this file.
  */
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { search, type Match } from "./palette-match";
 import { Recent } from "./palette-recent";

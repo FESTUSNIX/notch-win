@@ -10,7 +10,7 @@
  * panel you click into. They answer the same question at different distances.
  */
 import { listen } from "@tauri-apps/api/event";
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import { byProject, share, short, sum, total } from "./spend";

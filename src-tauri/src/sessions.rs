@@ -482,14 +482,18 @@ pub fn spawn(app: AppHandle) {
                     "run finished: {} in {}s, waiting={}",
                     run.project, run.seconds, run.waiting
                 ));
-                crate::notify::toast(
-                    &format!(
-                        "{} {}",
-                        run.project,
-                        if run.waiting { "needs you" } else { "stopped" }
-                    ),
-                    &format!("Claude Code ran for {}.", spoken(run.seconds)),
-                );
+                // ⚠️ Read per run, not once at spawn: this thread outlives every
+                // trip through the settings window.
+                if crate::prefs::current(&app).notify_runs {
+                    crate::notify::toast(
+                        &format!(
+                            "{} {}",
+                            run.project,
+                            if run.waiting { "needs you" } else { "stopped" }
+                        ),
+                        &format!("Claude Code ran for {}.", spoken(run.seconds)),
+                    );
+                }
                 // The notch keeps its own indicator up until it is looked at.
                 // A toast is gone in five seconds, and the whole point of this
                 // is the run you were not watching.

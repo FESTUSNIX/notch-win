@@ -9,7 +9,7 @@
  * controls is a panel; the same content laid across reads at a glance, which is
  * the only thing a strip welded to a screen edge can usefully be.
  */
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { localDay, overdueDays } from "./task-model";
 import { sourceName, type MediaSource } from "./screen-media";

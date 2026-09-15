@@ -5,7 +5,7 @@
  * to me", not calendar management.
  */
 import { listen } from "@tauri-apps/api/event";
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import { localDay } from "./task-model";

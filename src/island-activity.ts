@@ -9,7 +9,7 @@
  * with nothing to say returns null rather than a placeholder, so the pill can
  * never show "—" while something real is happening one screen over.
  */
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";

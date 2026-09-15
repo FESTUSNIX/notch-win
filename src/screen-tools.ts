@@ -16,7 +16,7 @@
  * once, in the docs — a permanent button whose only job is to re-explain
  * dragging is a footer that learned to hide.
  */
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 
 export interface Tool {

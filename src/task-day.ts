@@ -1,15 +1,18 @@
 /* The Day Card: the notch panel's list.
  *
- * Separate from task-list.ts on purpose. That one draws the editor window — a
- * settings page, grouped by list, dense, with a rename pencil. This draws the
- * product: one day as one list, no project headings, finished work sunk into a
- * single line, and a composer that is always a field.
+ * ⚠️ The ONLY task renderer now. There used to be a second, `task-list.ts`,
+ * drawing the editor window's browser — grouped by list, dense, with a rename
+ * pencil. Two renderers for one kind of data meant every change to how a task
+ * reads had to be made twice, and one of them was on a page nobody opened to
+ * look at tasks. This draws the product: one day as one list, no project
+ * headings, finished work sunk into a single line, and a composer that is
+ * always a field.
  *
  * Nothing here awaits the network. Every control reports what it did straight
  * away and the caller reconciles when TickTick answers; see `settling` below.
  */
 import { taskIcon } from "./task-icons";
-import { element } from "./task-list";
+import { element } from "./dom";
 import {
   nodeDone, overdueDays, progress, taskForest, taskId, visibleNode,
   type Project, type Task, type TaskNode, type TaskSnapshot, type TaskView,

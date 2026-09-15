@@ -1,0 +1,222 @@
+//! Everything about the app that was a constant in the source until now.
+//!
+//! The app already had settings — in three places. The island's gear popover
+//! held the edge, the clock and the task view; the editor window held the
+//! connections, the shortcuts and the notch's position; and the rest were
+//! numbers in TypeScript. This is one struct, one file and one command pair, so
+//! the settings window has one thing to read and one thing to write.
+//!
+//! ⚠️ **Kept beside the config, not in it.** `config.json` is the app's own
+//! state — which edge, which monitor, how far along, when Claude's endpoint may
+//! next be asked — and a bad write there costs the user their placement. These
+//! are preferences: losing the file means everything goes back to the defaults
+//! below, which is a shrug rather than a bug.
+//!
+//! ⚠️ **Every field is `serde(default)`.** A preferences file written by an
+//! older build is missing whatever was added since, and a parse error would
+//! throw away all of them to add one. The defaults here are the constants the
+//! code used to carry, so an empty file behaves exactly like the old app.
+
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager};
+
+const FILE: &str = "prefs.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Prefs {
+    /* ── Appearance ─────────────────────────────────────────────────────── */
+    /// The one colour the whole surface is tinted by. Every elevation value is
+    /// white or black at low alpha over it, so this is genuinely one variable.
+    pub accent: String,
+    /// ⚠️ There is no `week_starts_monday` here, and it is not an oversight.
+    /// Neither week on the island is week-ALIGNED: Home's strip is the days
+    /// either side of today and the Calendar's grid is seven columns from
+    /// today, both on purpose. A first-day setting would have had nothing to
+    /// change, and a switch with nothing on the other end of it is worse than
+    /// no switch — it makes you doubt the ones beside it.
+    pub fahrenheit: bool,
+
+    /* ── Behaviour ──────────────────────────────────────────────────────── */
+    /// Whether pointing at the pill opens the panel. Off, it takes a click.
+    ///
+    /// ⚠️ The most opinionated behaviour in the app and the one that was not
+    /// changeable: an island that opens when the pointer passes over it is
+    /// either the whole point or the whole problem, depending on where the
+    /// pointer spends its day.
+    pub open_on_hover: bool,
+    /// How long the panel waits after the pointer leaves. The old constant.
+    pub fold_delay_ms: u64,
+    /// `system`, `always` or `never`. Anything else reads as `system`.
+    pub motion: String,
+
+    /* ── The island ─────────────────────────────────────────────────────── */
+    /// The panel's width along its edge, in design pixels. 0 means the default.
+    pub panel_width: u32,
+
+    /* ── The palette ────────────────────────────────────────────────────── */
+    pub use_everything: bool,
+    /// ⚠️ Off, nothing walks the Start Menu at launch — which is a shell call
+    /// per shortcut and about 1.7s on a real machine.
+    pub index_apps: bool,
+
+    /* ── Notifications ──────────────────────────────────────────────────── */
+    pub notify_runs: bool,
+
+    /* ── The resting pill ───────────────────────────────────────────────── */
+    /// Which ambient modules may NOT take the pill's third slot.
+    ///
+    /// ⚠️ Muted rather than enabled, and that is not a naming preference. An
+    /// enabled list cannot express "none of them": empty has to mean "all", so
+    /// switching the last module off would switch them all back on. Empty here
+    /// means nothing is muted, which is also what an older file says.
+    pub muted_modules: Vec<String>,
+    /// Percent at which a module starts having something to say.
+    ///
+    /// ⚠️ This is the one that was actually asked for: a disk that lives above
+    /// 95% is not news, it is a fact about the machine, and a threshold nobody
+    /// could move meant the pill said so for ever.
+    pub thresholds: BTreeMap<String, u8>,
+
+    /* Today */
+    /// `day` or `all`. Anything else reads as `day`.
+    ///
+    /// ⚠️ This was island state and nothing else — chosen from the gear
+    /// popover and forgotten on the next restart. A switch that only lasts the
+    /// session is worse than no switch, because you stop trusting the ones
+    /// beside it.
+    pub task_view: String,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            accent: "#00ff88".into(),
+            fahrenheit: false,
+            open_on_hover: true,
+            fold_delay_ms: 450,
+            motion: "system".into(),
+            panel_width: 0,
+            use_everything: true,
+            index_apps: true,
+            notify_runs: true,
+            muted_modules: Vec::new(),
+            thresholds: BTreeMap::new(),
+            task_view: "day".into(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Store(pub Mutex<Prefs>);
+
+pub fn load(app: &AppHandle) {
+    let stored: Prefs = crate::config::load_beside(FILE).unwrap_or_default();
+    if let Ok(mut held) = app.state::<Store>().0.lock() {
+        *held = stored;
+    }
+}
+
+/// What the rest of the process should read rather than guessing.
+pub fn current(app: &AppHandle) -> Prefs {
+    app.state::<Store>().0.lock().map(|held| held.clone()).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_prefs(app: AppHandle) -> Prefs {
+    current(&app)
+}
+
+/// ⚠️ Takes the WHOLE struct, never a field at a time. A settings window with
+/// twenty controls and twenty commands is twenty chances for one of them to
+/// write a stale copy of everything else — the same trap `set_shortcuts` is
+/// built around.
+#[tauri::command]
+pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
+    let clean = Prefs {
+        // A colour that is not a colour would leave the whole surface unpainted.
+        accent: if is_hex(&prefs.accent) { prefs.accent } else { Prefs::default().accent },
+        // Bounded: a fold delay of zero folds the panel while it is being
+        // reached for, and one of a minute is a panel that never closes.
+        fold_delay_ms: prefs.fold_delay_ms.clamp(120, 5_000),
+        motion: match prefs.motion.as_str() {
+            "always" | "never" => prefs.motion,
+            _ => "system".into(),
+        },
+        task_view: match prefs.task_view.as_str() {
+            "all" => prefs.task_view,
+            _ => "day".into(),
+        },
+        thresholds: prefs.thresholds.into_iter()
+            .map(|(key, value)| (key, value.clamp(1, 100)))
+            .collect(),
+        ..prefs
+    };
+    let snapshot = {
+        let state = app.state::<Store>();
+        let Ok(mut held) = state.0.lock() else { return clean };
+        *held = clean.clone();
+        clean
+    };
+    crate::config::save_beside(FILE, &snapshot);
+    /* ⚠️ Emitted to every window. The settings window is not the island, and a
+     * preference the island only picked up on its next restart would be a
+     * settings screen that looks broken. */
+    let _ = app.emit("notch:prefs", snapshot.clone());
+    snapshot
+}
+
+fn is_hex(value: &str) -> bool {
+    let body = value.strip_prefix('#').unwrap_or("");
+    (body.len() == 6 || body.len() == 3) && body.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ⚠️ A file written by an older build is missing whatever was added since.
+    /// A parse error here would throw away every preference to add one.
+    #[test]
+    fn a_file_from_an_older_build_keeps_its_defaults() {
+        /* ⚠️ `r##`, not `r#`. The JSON holds a colour, and a `"#` inside an
+         * `r#"..."#` string closes it — the delimiter has to out-hash the
+         * content. */
+        let loaded: Prefs = serde_json::from_str(r##"{"accent":"#ff0000"}"##).unwrap();
+        assert_eq!(loaded.accent, "#ff0000");
+        assert_eq!(loaded.fold_delay_ms, 450);
+        assert!(loaded.open_on_hover);
+        assert!(loaded.index_apps);
+        // And an empty file is the old app exactly.
+        let empty: Prefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(empty.accent, "#00ff88");
+        assert!(empty.muted_modules.is_empty());
+        assert_eq!(empty.task_view, "day");
+    }
+
+    /// ⚠️ Values arrive from a WebView. A colour that is not a colour leaves
+    /// the whole surface unpainted, and a fold delay of zero folds the panel
+    /// while it is being reached for.
+    #[test]
+    fn nonsense_is_replaced_rather_than_stored() {
+        assert!(is_hex("#00ff88"));
+        assert!(is_hex("#abc"));
+        assert!(!is_hex("green"));
+        assert!(!is_hex("#00ff8"));
+        assert!(!is_hex(""));
+
+        let mut thresholds = BTreeMap::new();
+        thresholds.insert("disk".to_string(), 0u8);
+        thresholds.insert("cpu".to_string(), 200u8.min(u8::MAX));
+        let cleaned: BTreeMap<String, u8> = thresholds.into_iter()
+            .map(|(k, v)| (k, v.clamp(1, 100)))
+            .collect();
+        assert_eq!(cleaned["disk"], 1);
+        assert_eq!(cleaned["cpu"], 100);
+        assert_eq!(0u64.clamp(120, 5_000), 120);
+        assert_eq!(999_999u64.clamp(120, 5_000), 5_000);
+    }
+}

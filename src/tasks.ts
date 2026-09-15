@@ -5,14 +5,13 @@
  * header, the tabs and which screen is showing; each screen owns its own body.
  */
 import { IslandSurface } from "./island-surface";
-import { type Edge } from "./layout";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, watchTasks } from "./task-client";
-import { type TaskView } from "./task-model";
 import { pick, renderActivity, renderResting, type Activity, type ScreenName } from "./island-activity";
 import { choose, decay, readings, type HoldState, type ModuleContext, type ModuleReading } from "./pill-modules";
 import { clockText } from "./tween";
+import { setMotion } from "./motion-pref";
 import { nextEvent, startOf } from "./screen-calendar";
 import { TodayScreen } from "./screen-today";
 import { HomeScreen } from "./screen-home";
@@ -58,9 +57,8 @@ app.innerHTML = `<div id="notch-shell">
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
         <div class="screen-tools" id="screen-tools"></div>
-        <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Island settings" aria-expanded="false" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
+        <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Settings" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
-      <div id="surface-options" hidden><span>Screen edge</span><div class="edge-choices" role="group" aria-label="Screen edge"><button type="button" data-task-edge="top" aria-pressed="false">Top</button><button type="button" data-task-edge="bottom" aria-pressed="false">Bottom</button><button type="button" data-task-edge="left" aria-pressed="false">Left</button><button type="button" data-task-edge="right" aria-pressed="false">Right</button></div><span>Clock</span><div class="edge-choices" role="group" aria-label="Clock format"><button type="button" data-clock="24" aria-pressed="true">24 h</button><button type="button" data-clock="12" aria-pressed="false">12 h</button></div><span>Tasks showing</span><div class="edge-choices" role="group" aria-label="Task view"><button type="button" data-view="day" aria-pressed="true">Today</button><button type="button" data-view="all" aria-pressed="false">All lists</button></div><p id="snoozed-line" class="options-hint" hidden></p><p id="shortcut-hint" class="options-hint"></p><button id="account-settings">Accounts &amp; connections &#8599;</button></div>
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
@@ -81,11 +79,33 @@ let screen: ScreenName = "home";
  * cannot paint once in the wrong format before the answer arrives. */
 let clock24 = true;
 
-function paintClockChoice() {
-  for (const button of document.querySelectorAll<HTMLElement>("[data-clock]")) {
-    button.setAttribute("aria-pressed", String((button.dataset.clock === "24") === clock24));
-  }
+/* ── Preferences ────────────────────────────────────────────
+ * Everything the settings window can change, read once at boot and again every
+ * time that window writes.
+ *
+ * ⚠️ Applied LIVE. The settings window is a different window, so a preference
+ * the island only picked up on its next restart would be a settings screen that
+ * looks broken — you change the accent, nothing happens, you change it back.
+ */
+interface Prefs {
+  accent: string;
+  fahrenheit: boolean;
+  openOnHover: boolean;
+  foldDelayMs: number;
+  motion: string;
+  panelWidth: number;
+  useEverything: boolean;
+  indexApps: boolean;
+  mutedModules: string[];
+  thresholds: Record<string, number>;
+  taskView: string;
 }
+
+let prefs: Prefs = {
+  accent: "#00ff88", fahrenheit: false, openOnHover: true, foldDelayMs: 450,
+  motion: "system", panelWidth: 0, useEverything: true, indexApps: true,
+  mutedModules: [], thresholds: {}, taskView: "day",
+};
 
 /* ⚠️ A FOLD CLOSES THE PALETTE, and it has to.
  *
@@ -301,8 +321,13 @@ function moduleContext(): ModuleContext {
     // Read off the screen that owns the sessions rather than kept a second
     // time here; one fact, one home.
     agents: agentsScreen.sessions.filter(s => s.state === "working").length,
+    /* ⚠️ Two different reasons to be silent, folded into one list here
+     * because the module layer should only know "quiet", not why: snoozed is
+     * "not now", muted is "not ever". */
     quiet: ["disk", "cpu", "memory", "agents", "event", "tasks", "weather"]
-      .filter(id => snooze.isQuiet(`module:${id}`)),
+      .filter(id => snooze.isQuiet(`module:${id}`) || prefs.mutedModules.includes(id)),
+    thresholds: prefs.thresholds,
+    fahrenheit: prefs.fahrenheit,
     nextEvent: next
       ? { minutes: (startOf(next).getTime() - now.getTime()) / 60000, title: next.title }
       : null,
@@ -407,25 +432,6 @@ function paintPill(live = claims()) {
   });
 }
 
-/** ⚠️ Said out loud, with a way back. The failure mode of a mute button is
- *  forgetting you pressed it and then wondering for a week why the app stopped
- *  telling you things. */
-function paintSnoozed() {
-  const line = document.getElementById("snoozed-line");
-  if (!line) return;
-  const quiet = snooze.count();
-  line.hidden = quiet === 0;
-  if (!quiet) return;
-  line.replaceChildren();
-  line.append(`${quiet} thing${quiet === 1 ? "" : "s"} snoozed \u00b7 `);
-  const back = document.createElement("button");
-  back.type = "button";
-  back.className = "snooze-clear";
-  back.textContent = "bring back";
-  back.onclick = () => { void snooze.wake(); };
-  line.append(back);
-}
-
 function render() {
   // Every screen renders, not just the visible one: the collapsed pill draws on
   // all three, and a screen that only updated while it was on top would show
@@ -515,7 +521,6 @@ palette.add(() => {
       keep: { title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock", note: "command", icon: "clock", kind: "", path: "" },
       run: () => {
         clock24 = !clock24;
-        paintClockChoice();
         paintPill();
         call("set_clock_format", { clock24 });
       } },
@@ -709,7 +714,7 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
   /* Three characters, same threshold as the create-a-task row. Everything
    * answers "e" with half the disk, and a palette that fills with system DLLs
    * on the way to typing "editor" is worse than no file search. */
-  if (query.length < 3 || calc(query)) { resolve([]); return; }
+  if (!prefs.useEverything || query.length < 3 || calc(query)) { resolve([]); return; }
   const mine = ++asked;
   window.setTimeout(() => {
     if (mine !== asked) { resolve([]); return; }
@@ -852,16 +857,31 @@ palette.add(query => {
   }];
 });
 
+/** Everything a preference actually changes, in one place.
+ *
+ * ⚠️ Idempotent and safe to call at any time: it runs at boot, on every
+ * write from the settings window, and nothing here assumes it is the first. */
+function applyPrefs(next: Prefs) {
+  prefs = next;
+  document.documentElement.style.setProperty("--accent", next.accent);
+  setMotion(next.motion);
+  surface.setOpenOnHover(next.openOnHover);
+  surface.setFoldDelay(next.foldDelayMs);
+  surface.setBodyLong(next.panelWidth);
+  today.setView(next.taskView === "all" ? "all" : "day");
+  // The pill reads `prefs` itself through moduleContext(); this is what makes
+  // a muted module or a moved threshold visible without waiting for a tick.
+  paintPill();
+}
+
 /* ── Controls ─────────────────────────────────────────────────────────── */
 get("pin").onclick = () => surface.pin();
 get("collapse-panel").onclick = () => { void surface.collapse(); };
-get("account-settings").onclick = () => today.action("open_task_editor");
-get("surface-settings").onclick = () => {
-  const options = get("surface-options");
-  options.hidden = !options.hidden;
-  get("surface-settings").setAttribute("aria-expanded", String(!options.hidden));
-  surface.measure();
-};
+/* ⚠️ Opens the settings WINDOW. It used to open a popover inside the panel
+ * holding the edge, the clock and the task view — which meant those three
+ * settings lived somewhere the other twenty did not, and the popover pushed the
+ * island taller every time it was opened. One gear, one place. */
+get("surface-settings").onclick = () => { void today.action("open_task_editor"); };
 /* Clicking the pill opens the island and nothing else.
  *
  * It deliberately does NOT jump to the screen the pill is describing. Hover
@@ -871,23 +891,6 @@ get("surface-settings").onclick = () => {
  * reason this thing exists — was never what opening it showed. The tab dot
  * points at the live screen instead, and the tabs do the moving. */
 collapsedLayer.addEventListener("click", () => { if (!surface.open) surface.toggle(); });
-document.querySelectorAll<HTMLButtonElement>("[data-task-edge]").forEach(button => button.onclick = async () => {
-  const edge = button.dataset.taskEdge as Edge;
-  if (await today.action("set_task_placement", { edge, visible: true, reset: false })) await surface.place(edge);
-});
-document.querySelectorAll<HTMLButtonElement>("[data-clock]").forEach(button => button.onclick = () => {
-  clock24 = button.dataset.clock === "24";
-  paintClockChoice();
-  // Painted before the round-trip, not after: the change is a button the user
-  // just pressed, and waiting on a disk write to show it reads as a dropped
-  // click. The config is the record, not the source the pill reads from.
-  paintPill();
-  void call("set_clock_format", { clock24 }).catch(() => {});
-});
-document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => button.onclick = () => {
-  document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", String(b === button)));
-  today.setView(button.dataset.view as TaskView);
-});
 
 /* ── Changing screens with a wheel ────────────────────────────────────────
  * A wheel anywhere in the panel changes screen, UNLESS the pointer is over
@@ -990,6 +993,12 @@ window.addEventListener("pointerup", () => { dragStart = null; });
 
 async function boot() {
   await surface.boot();
+  /* ⚠️ FIRST, and awaited. Two things below read a preference as they run
+   * rather than after: the Start Menu walk checks `indexApps`, and the accent
+   * has to be on the element before the first paint or the island opens green
+   * and turns purple a frame later. */
+  try { applyPrefs(await call<Prefs>("get_prefs")); }
+  catch { applyPrefs(prefs); }
   /* ⚠️ Not awaited. The list takes a second or so to build on the Rust side
    * and nothing on screen depends on it — the palette simply has no
    * applications until it lands, which is the correct behaviour for the first
@@ -997,7 +1006,12 @@ async function boot() {
    * paint behind a Start Menu walk. */
   await stars.boot(() => render());
   await workspaces.boot(() => render());
-  void call<typeof installed>("list_apps")
+  /* ⚠️ Skipped entirely when the preference is off, rather than filtered
+   * later. Walking the Start Menu is a shell call per shortcut — about 1.7s on
+   * a real machine — and the whole point of switching it off is not paying it. */
+  void (prefs.indexApps
+    ? call<typeof installed>("list_apps")
+    : Promise.resolve([] as typeof installed))
     .then(list => { installed = list; })
     .catch(() => { /* no applications is a palette without apps, not an error */ });
   if (native) {
@@ -1027,15 +1041,16 @@ async function boot() {
     // island with nothing in the console.
     await listen<{ clock24: boolean }>("tasks:placement", event => {
       clock24 = event.payload.clock24;
-      paintClockChoice();
       paintPill();
     });
+    /* ⚠️ Emitted to every window by `set_prefs`, so this is the island being
+     * told rather than the island polling. */
+    await listen<Prefs>("notch:prefs", event => applyPrefs(event.payload));
   }
   try {
     const placement = await call<{ clock24: boolean }>("get_task_placement");
     if (typeof placement.clock24 === "boolean") clock24 = placement.clock24;
   } catch { /* the default stands */ }
-  paintClockChoice();
 
   /* ── Feeding the pill's modules ─────────────────────────────────────────
    * Three sources on three rhythms, none of them a screen: a module has to be
@@ -1069,8 +1084,11 @@ async function boot() {
   await calendar.boot();
   await system.boot();
   await agentsScreen.boot();
-  await snooze.boot(() => { paintSnoozed(); render(); });
-  paintSnoozed();
+  /* ⚠️ What is quiet is said out loud in two places that survive the popover
+   * going: the palette's "Bring back what is snoozed", which carries the
+   * count, and the Pill pane of the settings window. The failure mode of a
+   * mute button is forgetting you pressed it. */
+  await snooze.boot(() => render());
 
   /* ── Dropping a file on the island ──────────────────────────────────────
    *
@@ -1210,11 +1228,6 @@ async function boot() {
   await shelf.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
-  try {
-    const keys = await call<{ toggle: string; hide: string; capture: string; palette: string }>("get_shortcuts");
-    get("shortcut-hint").textContent =
-      `${keys.palette} searches everything · ${keys.toggle} opens · ${keys.capture} adds a task · ${keys.hide} hides`;
-  } catch { /* the plugin failed to start; the island still works */ }
   render();
   // One second, because the pill's media position and the focus timer both move on
   // that scale. The day's own minute work happens inside the Today screen.

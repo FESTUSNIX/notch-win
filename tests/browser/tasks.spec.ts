@@ -142,13 +142,21 @@ test("the clock is 24-hour by default, switches to 12, and pops only the digits 
   await expect(clock).toHaveText("15:00");
   expect(await clock.locator("[data-pop]").allTextContents()).toEqual(["5", "0", "0"]);
 
+  /* ⚠️ Through the PALETTE. The island's gear used to drop a popover holding
+     the edge, the clock and the task view; those live in the settings window
+     now, and the command is what is left on the island itself. */
   await open(page);
-  await page.getByRole("button", {name: "Island settings", exact: true}).click();
-  await page.getByRole("button", {name: "12 h", exact: true}).click();
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.locator(".palette-field").fill("12-hour");
+  await page.keyboard.press("Enter");
   // 3 PM, not 15:00 and not 03 PM: the 12-hour cycle drops the leading zero in
   // every engine, so the two formats are different lengths.
   await expect(clock).toHaveText(/^3:00\s?[AaPp]\.?[Mm]\.?$/);
-  await page.getByRole("button", {name: "24 h", exact: true}).click();
+  // And back, through the same command — which now offers the other format,
+  // because a command that said "12-hour" twice would be a dead end.
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.locator(".palette-field").fill("24-hour");
+  await page.keyboard.press("Enter");
   await expect(clock).toHaveText("15:00");
 });
 
@@ -340,25 +348,64 @@ test("finishing the last task clears the day", async ({page}) => {
   await page.screenshot({path: "test-results/island-clear.png"});
 });
 
-test("editor: safe quick add, rename, schedule and empty connection state", async ({page}) => {
-  await page.setViewportSize({width: 460, height: 690});
+test("settings: one window, seven pages, and nothing that can show a token", async ({page}) => {
+  await page.setViewportSize({width: 900, height: 640});
   await page.goto("/task-editor.html");
-  await page.getByLabel("Task", {exact: true}).fill('<img src=x onerror="alert(1)"> Review');
-  await page.getByRole("button", {name: "Add task", exact: true}).click();
-  await expect(page.getByText('<img src=x onerror="alert(1)"> Review', {exact: true})).toBeVisible();
-  await expect(page.locator("#editor-list img")).toHaveCount(0);
-  await page.getByRole("button", {name: 'Rename <img src=x onerror="alert(1)"> Review', exact: true}).click();
-  await page.getByLabel("Task", {exact: true}).fill("Review the release");
-  await page.getByRole("button", {name: "Save name", exact: true}).click();
-  await expect(page.getByText("Review the release", {exact: true})).toBeVisible();
-  // The island's two new connections are configured here, never in the notch.
-  await expect(page.getByLabel("Client secret")).toHaveAttribute("type", "password");
-  await expect(page.getByLabel("Open the island")).toHaveValue("Ctrl+Alt+Space");
-  await expect(page.getByLabel("Hide everything")).toHaveValue("Ctrl+Alt+H");
-  await page.screenshot({path: "test-results/task-editor.png"});
 
-  // Back to a normal viewport: the island is ~970px wide and does not fit the
-  // narrow one this test used for the editor page.
+  // ⚠️ The page that replaced this one. A quick-add form and a task list
+  // lived here; they live on the island now, and a test that only checked the
+  // new page would not notice them coming back.
+  await expect(page.locator("#task-form")).toHaveCount(0);
+  await expect(page.locator("#editor-list")).toHaveCount(0);
+
+  await expect(page.getByRole("tab")).toHaveCount(7);
+  await expect(page.getByRole("tab", {name: "General"})).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", {name: "General"})).toBeVisible();
+  await page.screenshot({path: "test-results/settings-general.png"});
+
+  // The accent is one variable, and picking it has to paint the window it was
+  // picked in — a colour you have to restart to see is a colour nobody trusts.
+  await page.getByRole("tab", {name: "Appearance"}).click();
+  await page.locator('[data-accent="#a78bfa"]').click();
+  await expect.poll(() => page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--accent").trim())).toBe("#a78bfa");
+  await page.screenshot({path: "test-results/settings-appearance.png"});
+
+  /* ⚠️ Settled, not clicked-and-shot. A pane arrives on an animation from
+     opacity 0, and a screenshot taken on the click catches its first frame —
+     which looks exactly like a pane that rendered nothing. */
+  await page.getByRole("tab", {name: "Island"}).click();
+  await expect(page.locator("#pane-island")).toHaveCSS("opacity", "1");
+  await page.screenshot({path: "test-results/settings-island.png"});
+  await page.getByRole("tab", {name: "The pill"}).click();
+  await expect(page.locator("#pane-pill")).toHaveCSS("opacity", "1");
+  await expect(page.locator("#modules .set-row")).toHaveCount(7);
+  await page.screenshot({path: "test-results/settings-pill.png"});
+
+  /* The recorder takes a key press, not typing. ⚠️ `Ctrl+Alt+J` rather than
+     a letter AltGr claims — see the guard checked below. */
+  await page.getByRole("tab", {name: "Shortcuts"}).click();
+  await page.locator("#key-toggle").click();
+  await expect(page.locator("#key-toggle")).toHaveClass(/is-listening/);
+  await page.keyboard.press("Control+Alt+J");
+  await expect(page.locator("#key-toggle")).toHaveText("CtrlAltJ");
+  await expect(page.locator("#altgr-note")).toBeHidden();
+
+  /* ⚠️ Ctrl+Alt IS AltGr on Windows, and on a Polish layout `Ctrl+Alt+N`
+     takes `ń` away everywhere on the machine. The warning is the only thing
+     connecting the two, since neither Windows nor Tauri says a word. */
+  await page.locator("#key-capture").click();
+  await page.keyboard.press("Control+Alt+N");
+  await expect(page.locator("#altgr-note")).toContainText("AltGr+N");
+  await page.screenshot({path: "test-results/settings-keys.png"});
+
+  // Nothing here may display a secret, and the fields that take one say so.
+  await page.getByRole("tab", {name: "Connections"}).click();
+  await expect(page.locator("#token")).toHaveAttribute("type", "password");
+  await expect(page.locator("#google-secret")).toHaveAttribute("type", "password");
+  await page.screenshot({path: "test-results/settings-accounts.png"});
+
+  // Back to a normal viewport: the island is ~970px wide.
   await page.setViewportSize({width: 1200, height: 700});
   await page.goto("/tasks.html?empty&quiet");
   await open(page);
@@ -383,12 +430,14 @@ test("long titles stay inside the island", async ({page}) => {
 
 test("all four edges keep the island upright and inside its window", async ({page}) => {
   await page.setViewportSize({width: 1000, height: 850});
-  await page.goto("/tasks.html?quiet");
-  await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
-  await page.getByRole("button", {name: "Island settings", exact: true}).click();
+  /* ⚠️ One load per edge. The island has no edge control any more — it is in
+     the settings window, which is a different page — so the preview stages the
+     edge from the query string instead. This also covers something the old
+     loop did not: BOOTING on each edge, rather than only arriving there. */
   for (const edge of ["left", "top", "bottom", "right"]) {
-    await page.locator(`[data-task-edge="${edge}"]`).click();
+    await page.goto(`/tasks.html?quiet&edge=${edge}`);
+    await open(page);
+    await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
     await expect(page.locator("#notch-shell")).toHaveAttribute("data-edge", edge);
     await expect.poll(() => page.locator("#notch-shell").evaluate(shell => {
       const outer = shell.getBoundingClientRect();
@@ -397,13 +446,18 @@ test("all four edges keep the island upright and inside its window", async ({pag
         && island.top >= outer.top - 1 && island.bottom <= outer.bottom + 1;
     })).toBe(true);
     /* ⚠️ And the header controls stay inside it. On a vertical edge the
-     * panel is only ~388px wide; a tab strip that refused to shrink laid
+     * panel is only ~270px wide; a tab strip that refused to shrink laid
      * `.panel-actions` out past the island's right edge, where the clip
      * erased them — pin, settings and collapse were simply absent, with
-     * nothing in the DOM saying so. */
+     * nothing in the DOM saying so.
+     *
+     * ⚠️ `.panel-actions` and its buttons, NOT every descendant of the header.
+     * The tab strip is a horizontal scroller, so a tab scrolled out of view
+     * legitimately reports a rect outside the island — asserting over all of
+     * them tests the scroller, not the bug this is here for. */
     await expect.poll(() => page.locator("#island").evaluate(el => {
       const box = el.getBoundingClientRect();
-      return [...el.querySelectorAll(".island-head *")].every(part => {
+      return [...el.querySelectorAll(".panel-actions, .panel-actions > *")].every(part => {
         const r = part.getBoundingClientRect();
         return !r.width || (r.left >= box.left - 1 && r.right <= box.right + 1);
       });
@@ -544,10 +598,16 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   // The pill goes back to whatever it would otherwise be showing — here the
   // player, which a waiting agent had been outranking.
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
-  await page.getByRole("button", {name: "Island settings", exact: true}).click();
-  await expect(page.locator("#snoozed-line")).toContainText("1 thing snoozed");
-  await page.getByRole("button", {name: "bring back", exact: true}).click();
-  await expect(page.locator("#snoozed-line")).toBeHidden();
+  /* ⚠️ Said out loud, with a way back. The failure mode of a mute button is
+     forgetting you pressed it and wondering for a week why the app went quiet.
+     The popover that used to carry the line is gone; the palette command
+     carries the count now, and the settings window's Pill pane says it too. */
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.locator(".palette-field").fill("snoozed");
+  const back = page.locator(".palette-row").first();
+  await expect(back.locator(".palette-title")).toHaveText("Bring back what is snoozed");
+  await expect(back.locator(".palette-note")).toHaveText("1 quiet");
+  await page.keyboard.press("Enter");
   await expect(rows.nth(0)).not.toHaveClass(/is-quiet/);
   await page.screenshot({path: "test-results/island-agents.png"});
 });

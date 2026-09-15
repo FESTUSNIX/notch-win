@@ -61,15 +61,55 @@ if(new URLSearchParams(location.search).has("single")) demo.tasks=demo.tasks.fil
 const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
 const demoStars: Record<string, Record<string, string>> = {};
+let demoPrefs: Record<string, unknown> = {
+  accent: "#00ff88", fahrenheit: false, openOnHover: true,
+  foldDelayMs: 450, motion: "system", panelWidth: 0, useEverything: true,
+  indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
+};
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
   if (command === "get_tasks") return structuredClone(demo) as T;
-  if (command === "get_task_placement") return {edge:"top",visible:true} as T;
+  if (command === "get_task_placement") return {
+    /* ⚠️ Staged from the query string. The island lost its own edge and clock
+       controls when the settings window took them — and the settings window is
+       a different PAGE, so in the preview nothing can reach this one. Without
+       this the preview could only ever be looked at welded to the top. */
+    edge: new URLSearchParams(location.search).get("edge") ?? "top",
+    visible: true,
+    clock24: !new URLSearchParams(location.search).has("clock12"),
+  } as T;
+  /* ⚠️ Held for the page's lifetime, not written anywhere. The point is to
+     exercise the round trip — including the validation, which lives in Rust
+     and is therefore the one thing this stub cannot reproduce. */
+  if (command === "get_prefs") return structuredClone(demoPrefs) as T;
+  if (command === "set_prefs") {
+    demoPrefs = args.prefs as Record<string, unknown>;
+    return structuredClone(demoPrefs) as T;
+  }
+  if (command === "get_displays") return {screens:[
+    {id:"\\.\DISPLAY1", name:"DELL U2720Q", x:0, y:0, width:3840, height:2160, primary:true},
+    {id:"\\.\DISPLAY2", name:"LG 24MK430", x:3840, y:0, width:1920, height:1080, primary:false},
+  ], notch:null, tasks:null} as T;
+  if (command === "set_display" || command === "set_edge") return undefined as T;
+  if (command === "get_edge") return "top" as T;
+  if (command === "get_autostart") return false as T;
+  if (command === "set_autostart") return undefined as T;
+  if (command === "get_readings") return [
+    {id:"claude", displayName:"Claude", status:{state:"ok"}, windows:[]},
+  ] as T;
+  if (command === "everything_running") return true as T;
+  if (command === "reset_position" || command === "open_log" || command === "quit_app") return undefined as T;
   if (command === "get_media") return structuredClone(demoMedia) as T;
   if (command === "get_calendar") return structuredClone(demoCalendar) as T;
-  if (command === "get_shortcuts") return {toggle:"Ctrl+Alt+Space",hide:"Ctrl+Alt+H",capture:"Ctrl+Alt+N"} as T;
+  /* ⚠️ All six, and the ones Rust actually defaults to. This stub was three
+     keys and a stale `Ctrl+Alt+N` for `capture` — which is `AltGr+N`, the
+     combination that ate `ń` and is the reason the defaults moved. The
+     settings window's AltGr guard is what found it: it warned about a shortcut
+     no build has shipped for months. */
+  if (command === "get_shortcuts") return {palette:"Ctrl+Alt+K",toggle:"Ctrl+Alt+Space",
+    capture:"Ctrl+Alt+T",shelf:"Ctrl+Alt+V",display:"Ctrl+Alt+M",hide:"Ctrl+Alt+H"} as T;
   if (command === "get_chrome_hidden") return false as T;
   /* ⚠️ Apps and file hits are stubbed here so the BANDING is exercised by
      the real code path rather than argued about. The names share a stem on

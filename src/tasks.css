@@ -523,82 +523,220 @@ h1 { margin:0; }
 
 button { transition:background-color var(--duration-quick) var(--ease-smooth-out),color var(--duration-quick) var(--ease-smooth-out); }
 button:active:not(:disabled) { background:var(--tile-on); }
-.day-row .task-title:active,.day-sub:active,
-/* ── The editor window ───────────────────────────────────────────────────
-   A settings page, not the product: grouped by list, dense, its own renderer
-   in task-list.ts. These rules serve only that page. */
-.eyebrow { color:var(--dim); font-size:11px; margin-bottom:5px; }
-.task-tabs { display:flex; gap:4px; margin:0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px; }
-.task-tabs button { font-size:12px; color:var(--dim); }
-.task-tabs button[aria-pressed=true] { color:#fff;
-  background-color:var(--tile-hi); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.task-group { margin:0 0 16px; }
-.group-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:8px 0; }
-.group-heading h3 { font-size:12px; font-weight:600; margin:0; overflow-wrap:anywhere; }
-.group-heading>span { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
-.task-row { display:flex; align-items:flex-start; gap:8px; min-height:35px; padding:7px 0; }
-.task-copy { min-width:0; flex:1; }
+.day-row .task-title:active,.day-sub:active { background:transparent; }
+/* ── What a task looks like ────────────────────────────────────
+   ⚠️ What is left of a much longer block. It styled `task-list.ts` — the
+   settings window's grouped, collapsible task browser — and went with it:
+   `.task-tabs`, `.task-group`, `.group-heading`, `.task-row`, `.disclosure`,
+   `.task-children`, `.checklist-row`, `.edit-task`, `.empty-state` and the
+   reveal keyframes were all drawn by nothing else. These two are the island's
+   own. */
 .task-title { font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
-.task-note { margin:3px 0 0; color:var(--dim); line-height:1.45; font-size:11px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; white-space:pre-line; }
-.task-meta { font-size:10px; color:var(--dim); }
-.task-count { color:var(--dim); font-size:10px; font-variant-numeric:tabular-nums; margin-top:4px; }
-.disclosure { padding:0; height:20px; width:12px; flex-shrink:0; color:var(--dim); line-height:18px; font-size:17px; }
-.disclosure:disabled { opacity:0; }
 .done>.task-copy>.task-title,.done>.task-title { text-decoration:line-through; color:#777; }
-.task-children { border-left:1px solid #262626; margin-left:26px; padding-left:var(--task-indent); }
-.task-children.flat { margin-left:0; padding-left:0; border-left:0; }
-.checklist-row { display:flex; align-items:flex-start; gap:8px; padding:6px 0; }
-.checklist-row .task-title { font-size:12px; }
-.edit-task { padding:2px 5px; color:var(--dim); }
-.empty-state { text-align:center; padding:48px 20px; }
-.empty-mark { font-size:36px; color:var(--accent); margin-bottom:15px; }
-.empty-state h3 { margin:0 0 8px; font-size:15px; font-weight:500; }
-.empty-state p { font-size:12px; color:var(--dim); line-height:1.6; max-width:240px; margin:0 auto; }
-.revealing .task-children { animation:task-reveal var(--duration-quick) var(--ease-out); }
-@keyframes task-reveal { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+
 /* The browser preview stages the island where it actually lives: top-centre,
    hugging the edge. */
 .preview { background:radial-gradient(ellipse at 50% -10%,#28333a,#11181e); min-height:100vh; display:flex; justify-content:center; align-items:flex-start; }
-.editor-page { background:#0a0a0a; height:100vh; overflow:auto; }
-.editor-wrap { max-width:600px; margin:auto; padding:24px; }
-.editor-wrap>header { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
-.editor-wrap h1 { font-size:22px; }
-.editor-wrap h2 { font-size:13px; margin:0 0 10px; }
-.editor-wrap section.settings-section { border-bottom:1px solid var(--line); padding:0 0 20px; margin:0 0 20px; }
-.editor-wrap label.field { display:block; color:var(--dim); font-size:12px; margin-bottom:12px; }
-.editor-wrap input:not([type=checkbox]),.editor-wrap select { display:block; margin-top:6px; width:100%;
-  padding:9px 11px; border-radius:9px; border:0; color:#fff; min-width:0;
+/* ── The settings window ─────────────────────────────────────────────────
+   One window, two columns: what there is on the left, what it does on the
+   right. macOS System Settings, because that is the shape everybody already
+   knows for "a long list of unrelated switches" — and because the alternative
+   the app had was three places (the island's gear, this window's stack of
+   sections, and a handful of constants in the source).
+
+   ⚠️ It reuses the island's own grammar — the same tokens, the same tile, the
+   same hairline, the same press. A settings window that looks like a different
+   application is how you end up with two design languages to maintain and a
+   user who cannot tell which one is the real app. */
+.settings-page { background:#0d0d0d; height:100vh; overflow:hidden; }
+.settings-shell { display:grid; grid-template-columns:214px minmax(0,1fr); height:100vh; }
+
+/* ── The sidebar ─────────────────────────────────────────────────────── */
+.settings-side { display:flex; flex-direction:column; min-height:0;
+  background:#131313; box-shadow:inset -1px 0 0 var(--hair); }
+.settings-brand { display:flex; align-items:center; gap:10px; padding:16px 15px 12px; }
+.settings-mark { display:grid; place-items:center; width:28px; height:28px; flex-shrink:0;
+  border-radius:9px; color:#04140c;
+  background-color:var(--accent); background-image:var(--sheen);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4), var(--lift-1), var(--glow-accent); }
+.settings-mark svg { width:16px; height:16px; }
+.settings-brand b { display:block; font-size:12.5px; font-weight:600; letter-spacing:-.1px; }
+.settings-brand small { display:block; font-size:10.5px; color:var(--dim); margin-top:1px; }
+.settings-nav { flex:1; min-height:0; overflow:auto; padding:4px 10px 10px;
+  display:flex; flex-direction:column; gap:2px; }
+.settings-nav button { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:8px 10px; border-radius:10px; font-size:12.5px; color:#c9c9c9; }
+.settings-nav button svg { width:16px; height:16px; color:#7d7d7d; flex-shrink:0; }
+.settings-nav button:hover { background:var(--tile); color:#fff; }
+/* ⚠️ `aria-selected`, not a class. The strip is a tab list, and the selected
+   pane is the one piece of state a screen reader has to be told about. */
+.settings-nav button[aria-selected=true] { color:#fff;
+  background-color:var(--tile-hi); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.settings-nav button[aria-selected=true] svg { color:var(--accent); }
+.settings-nav button:active { transform:scale(.99); transition-duration:90ms; }
+.settings-foot { padding:10px 12px 14px; font-size:10.5px; color:#5d5d5d; line-height:1.5; }
+
+/* ── The content column ──────────────────────────────────────────────── */
+.settings-main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.settings-bar { display:flex; align-items:baseline; gap:10px; flex-shrink:0;
+  padding:18px 22px 12px; }
+.settings-bar h1 { font-size:18px; font-weight:600; letter-spacing:-.3px; }
+.settings-bar p { margin:0; font-size:11.5px; color:var(--dim); }
+.settings-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden;
+  padding:0 22px 22px; }
+.settings-pane { display:flex; flex-direction:column; gap:20px; }
+.settings-pane[hidden] { display:none; }
+/* One staged entrance per pane rather than per card: the sequence here says
+   "this is a different page", which is one fact, not six. */
+.settings-pane.arriving { animation:pane-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes pane-in {
+  from { opacity:0; transform:translateY(var(--distance-base)); filter:blur(var(--blur-small)); }
+  to   { opacity:1; transform:none; filter:blur(0); }
+}
+
+/* ── A group of settings ─────────────────────────────────────────────────
+   Label above, card below. ⚠️ The label is OUTSIDE the card: a heading inside
+   a list of rows reads as one more row, which is the thing that made the old
+   editor window a wall of same-weight text. */
+.set-label { font-size:11px; font-weight:600; color:#8a8a8a; letter-spacing:.03em;
+  text-transform:uppercase; margin:0 0 8px 4px; }
+.set-group { border-radius:var(--r-tile); overflow:hidden;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.set-note { margin:8px 4px 0; font-size:11px; color:#7c7c7c; line-height:1.55; }
+.set-note a { color:var(--accent); }
+.set-note.is-warn { color:var(--warn); }
+
+.set-row { display:flex; align-items:center; gap:16px; padding:11px 14px; min-height:48px; }
+.set-row + .set-row { box-shadow:inset 0 1px 0 var(--hair); }
+.set-row.stack { flex-direction:column; align-items:stretch; gap:10px; }
+.set-text { flex:1; min-width:0; }
+.set-text b { display:block; font-size:12.5px; font-weight:500; }
+.set-text span { display:block; font-size:11px; color:#7c7c7c; line-height:1.5; margin-top:2px;
+  overflow-wrap:anywhere; }
+.set-ctl { flex-shrink:0; display:flex; align-items:center; gap:8px; }
+.set-row.stack .set-ctl { flex-shrink:1; }
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+.settings-page input:not([type=checkbox]):not([type=range]):not([type=color]),
+.settings-page select { padding:8px 10px; border-radius:9px; border:0; color:#fff; min-width:0;
   background:rgba(0,0,0,.32);
   box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 6px -3px rgba(0,0,0,.9); }
-.editor-wrap input:not([type=checkbox]):focus-visible,.editor-wrap select:focus-visible { outline:none;
+.settings-page select { min-width:150px; }
+.settings-page input:focus-visible,.settings-page select:focus-visible { outline:none;
   box-shadow:inset 0 0 0 1px rgba(0,255,136,.45), inset 0 2px 6px -3px rgba(0,0,0,.9); }
-.editor-wrap input::placeholder { color:#777; }
-.editor-wrap p.hint { color:var(--dim); line-height:1.55; font-size:12px; margin:0 0 12px; }
-.editor-wrap button.primary { color:#04140c; font-weight:600; padding:9px 14px; border-radius:9px;
+.settings-page input::placeholder { color:#6d6d6d; }
+/* ⚠️ Scoped to the fields, not to every input in the row. `.set-row.stack
+   input:not([type=checkbox])` is (0,3,1) and beat the colour well's own
+   (0,2,1) rule below, which stretched the accent picker into a 185px lozenge
+   where a 24px dot belongs. */
+.set-row.stack .set-ctl > input:not([type=checkbox]):not([type=color]) { flex:1; min-width:120px; }
+
+/* A segmented control, the same object as the island's own edge picker. */
+.seg { display:flex; gap:2px; padding:2px; border-radius:11px;
+  background:rgba(0,0,0,.28); box-shadow:inset 0 0 0 1px var(--hair); }
+.seg button { font-size:11.5px; padding:5px 11px; border-radius:9px; color:#a5a5a5; }
+.seg button:hover { color:#fff; background:var(--tile); }
+.seg button[aria-pressed=true] { color:#fff;
+  background-color:var(--tile-hi); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.seg button:active { transform:scale(.97); transition-duration:90ms; }
+
+/* ⚠️ A real checkbox underneath, restyled — not a div with a click handler.
+   Space, Tab and the form's own disabled state all come free that way.
+
+   ⚠️ And qualified with `input[type=checkbox]`, which is not decoration. The
+   island's own `input[type=checkbox]` rule sets width and height to 14px at
+   (0,1,1); a bare `.switch` is (0,1,0) and LOSES, so the toggle came out as a
+   14px square with a thumb hanging off it. Style each thing once — and where
+   two rules must both exist, the later one has to be able to win. */
+input[type=checkbox].switch { appearance:none; position:relative; width:38px; height:22px; margin:0;
+  border-radius:11px; cursor:pointer; flex-shrink:0;
+  background:rgba(255,255,255,.10);
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 1px 3px rgba(0,0,0,.5);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+input[type=checkbox].switch::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px;
+  border-radius:50%; background:#d6d6d6;
+  box-shadow:0 1px 2px rgba(0,0,0,.55);
+  transition:transform var(--duration-fast) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
+input[type=checkbox].switch:checked { background:var(--accent); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),
+  var(--glow-accent); }
+input[type=checkbox].switch:checked::after { transform:translateX(16px); background:#04140c; }
+input[type=checkbox].switch:disabled { opacity:.45; cursor:default; }
+
+.settings-page input[type=range] { appearance:none; width:160px; height:22px; background:none; }
+.settings-page input[type=range]::-webkit-slider-runnable-track { height:5px; border-radius:3px;
+  background:rgba(255,255,255,.12); box-shadow:inset 0 0 0 1px var(--hair); }
+.settings-page input[type=range]::-webkit-slider-thumb { appearance:none; margin-top:-6px;
+  width:17px; height:17px; border-radius:50%; background:#f0f0f0;
+  box-shadow:0 1px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(0,0,0,.12); }
+.settings-page input[type=range]:active::-webkit-slider-thumb { transform:scale(.94); }
+.set-value { font-size:11.5px; color:#a5a5a5; font-variant-numeric:tabular-nums;
+  min-width:52px; text-align:right; }
+
+.set-btn { font-size:11.5px; padding:8px 13px; border-radius:10px; white-space:nowrap;
+  background-color:var(--tile-hi); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.set-btn:hover:not(:disabled) { background-color:var(--tile-on);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+.set-btn:active:not(:disabled) { transform:scale(.96); transition-duration:90ms; }
+.set-btn:disabled { opacity:.45; cursor:default; }
+.set-btn.is-accent { color:#04140c; font-weight:600;
   background-color:var(--accent);
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
     0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.editor-wrap button.primary:hover { background-color:#22ff9a;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24), inset 0 1px 0 rgba(255,255,255,.45),
-    0 2px 4px rgba(0,0,0,.5), var(--glow-accent-hover); }
-.editor-wrap button.secondary { padding:9px 14px; border-radius:9px;
-  background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.editor-wrap button.secondary:hover { background-color:var(--tile-hi);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
-.editor-wrap button.primary:active:not(:disabled),
-.editor-wrap button.secondary:active:not(:disabled) { transform:scale(.96); transition-duration:90ms; }
-.editor-wrap .form-row { display:flex; gap:12px; align-items:flex-end; }
-.editor-wrap .form-row>* { flex:1; }
-.editor-wrap .button-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.editor-wrap a { color:var(--accent); }
-.editor-wrap #editor-status { font-size:12px; line-height:1.5; margin-bottom:15px; overflow-wrap:anywhere; }
-.editor-wrap .task-list { padding:0; }
-.editor-wrap [hidden] { display:none!important; }
-.editor-wrap .toggle-label { display:flex; gap:9px; align-items:center; font-size:12px; margin:12px 0; }
-.editor-wrap details summary { color:var(--dim); font-size:12px; cursor:pointer; padding:10px 0; }
+.set-btn.is-accent:hover:not(:disabled) { background-color:#22ff9a; }
+.set-btn.is-danger { color:var(--hot); }
+
+/* The accent picker: the swatches people will actually use, plus the door to
+   every other colour. */
+.swatches { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.swatch { width:24px; height:24px; padding:0; border-radius:50%; flex-shrink:0;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22), var(--lift-1); }
+.swatch:hover { transform:scale(1.08); }
+.swatch[aria-pressed=true] { box-shadow:inset 0 0 0 1.5px #0d0d0d, 0 0 0 2px currentColor,
+  var(--lift-1); }
+.swatch:active { transform:scale(.94); transition-duration:90ms; }
+.settings-page input[type=color] { width:24px; height:24px; padding:0; border:0; border-radius:50%;
+  background:none; cursor:pointer; }
+.settings-page input[type=color]::-webkit-color-swatch-wrapper { padding:0; }
+.settings-page input[type=color]::-webkit-color-swatch { border:0; border-radius:50%;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22), var(--lift-1); }
+
+/* ── The shortcut recorder ───────────────────────────────────────────────
+   ⚠️ A button, not a text field. Typing an accelerator as a string is how you
+   end up with `Control+Alt+K`, `ctrl alt k` and a shortcut that silently fails
+   to register — the recorder can only produce what Windows will accept. */
+/* Sized by the combination it holds. A fixed width leaves `Ctrl+Alt+K` afloat
+   in an empty box, which reads as a text field somebody forgot to fill in. */
+.key-record { display:flex; align-items:center; gap:4px; justify-content:center;
+  padding:6px 9px; border-radius:10px;
+  background:rgba(0,0,0,.32); box-shadow:inset 0 0 0 1px var(--hair); }
+.key-record:hover { background:rgba(0,0,0,.42); box-shadow:inset 0 0 0 1px rgba(255,255,255,.14); }
+.key-record.is-listening { box-shadow:inset 0 0 0 1px rgba(0,255,136,.5); color:var(--accent); }
+.key-record kbd { font:inherit; font-size:10.5px; padding:2px 6px; border-radius:6px;
+  background:rgba(255,255,255,.10); box-shadow:inset 0 0 0 1px var(--hair), var(--gloss);
+  color:#dcdcdc; }
+.key-record.is-listening kbd { color:var(--accent); }
+/* ⚠️ The warning names the combination, but the row it belongs to is what you
+   have to change — so the row says so too. */
+.key-record.is-warn { box-shadow:inset 0 0 0 1px rgba(255,159,10,.45); }
+.key-record.is-warn kbd { color:var(--warn); }
+
+/* ── The pill's module list ──────────────────────────────────────────── */
+.mod-row { display:flex; align-items:center; gap:11px; }
+.mod-row svg { width:16px; height:16px; color:#8a8a8a; flex-shrink:0; }
+
+/* One status line, in the one place a failure from any pane can land. */
+#settings-status { padding:0 22px 10px; flex-shrink:0; }
+.set-status { font-size:11.5px; line-height:1.5; color:var(--dim); overflow-wrap:anywhere;
+  padding:0 4px; min-height:17px; }
+.set-status.is-error { color:var(--hot); }
+.set-status.is-good { color:var(--accent); }
+.settings-page [hidden] { display:none!important; }
 
 /* ── Leaving and arriving ────────────────────────────────────────────────
    Hiding slides the shape out through the bezel it is welded to and back in
@@ -674,7 +812,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
   filter:blur(var(--blur-small)); opacity:0; }
 .t-text-swap.is-enter-start { transform:translateY(var(--distance-micro));
   filter:blur(var(--blur-small)); opacity:0; transition:none; }
-@media (prefers-reduced-motion: reduce) { .t-text-swap { transition:none !important; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion=always]) .t-text-swap { transition:none !important; } }
+html[data-motion=never] .t-text-swap { transition:none !important; }
 
 /* ⚠️ On a vertical edge the shape is 35px wide and there is room for one thing.
    The time is that thing. Hiding the sides is the honest degradation: a date
@@ -1060,7 +1199,19 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 }
 .icon-swapped > svg { animation:icon-in var(--duration-fast) var(--ease-smooth-out); }
 
-@media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; animation:none!important; } }
+/* ⚠️ Three states, not two. Windows' own reduced-motion setting is the
+   default and the right one, but `data-motion` on <html> can override it in
+   either direction — and the override has to work BOTH ways, so the media
+   query excludes `always` rather than simply being followed by a rule that
+   tries to turn transitions back on (there is no value that means "whatever
+   you were going to do"). See motion-pref.ts, which answers the same question
+   for the springs. */
+@media(prefers-reduced-motion:reduce) {
+  html:not([data-motion=always]) *, html:not([data-motion=always]) *::before,
+  html:not([data-motion=always]) *::after { transition:none!important; animation:none!important; }
+}
+html[data-motion=never] *, html[data-motion=never] *::before,
+html[data-motion=never] *::after { transition:none!important; animation:none!important; }
 .day-connect { margin-top:14px; color:#04140c; font-weight:600; font-size:12px; padding:8px 14px; border-radius:9px;
   background-color:var(--accent);
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
@@ -1609,8 +1760,9 @@ html.dragging-files #island {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.dragging-files #drop-veil { animation:none; }
+  html:not([data-motion=always]).dragging-files #drop-veil { animation:none; }
 }
+html[data-motion=never].dragging-files #drop-veil { animation:none; }
 
 /* A row that can be dragged out says so by the cursor, and dims while the
    native drag has the mouse — the WebView stops getting events the moment

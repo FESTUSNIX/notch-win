@@ -19,6 +19,7 @@ mod notify;
 mod runlog;
 mod shelf;
 mod snooze;
+mod prefs;
 mod stars;
 mod workspaces;
 mod transcript;
@@ -113,29 +114,22 @@ fn get_readings(state: tauri::State<Latest>) -> Vec<Snapshot> {
 /// and anything typed into it would be typed into something that cannot take
 /// focus — `WS_EX_NOACTIVATE` is on the notch for good reason and would have to
 /// come off for a form.
+///
+/// There is ONE settings window, and this is a second door to it.
+///
+/// ⚠️ It used to be a window of its own — `settings.html`, 360×470, edge and
+/// autostart and a button that opened the *other* settings window. Two windows
+/// of preferences is how a setting ends up in neither: it was in whichever one
+/// the person who added it happened to have open.
+///
+/// ⚠️ Spawned rather than awaited. Building a WebView2 inside a synchronous
+/// command deadlocks on Windows, which is the whole reason `open_task_editor`
+/// is async in the first place.
 #[tauri::command]
 fn open_settings(app: AppHandle) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        return;
-    }
-    let built = tauri::WebviewWindowBuilder::new(
-        &app,
-        "settings",
-        tauri::WebviewUrl::App("settings.html".into()),
-    )
-    .title("Codenotch")
-    .inner_size(360.0, 470.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(false)
-    .center()
-    .build();
-    if let Ok(window) = built {
-        let _ = window.set_focus();
-    }
+    tauri::async_runtime::spawn(async move {
+        let _ = task_window::open_task_editor(app).await;
+    });
 }
 
 #[tauri::command]
@@ -469,6 +463,7 @@ pub fn run() {
         .manage(sessions::Sessions::default())
         .manage(snooze::Store::default())
         .manage(stars::Store::default())
+        .manage(prefs::Store::default())
         .manage(workspaces::Store::default())
         .manage(shelf::Store::default())
         .manage(runlog::Store::default())
@@ -527,6 +522,8 @@ pub fn run() {
             log::open_log,
             hover::set_drop_zone,
             snooze::get_snoozed,
+            prefs::get_prefs,
+            prefs::set_prefs,
             stars::get_stars,
             stars::set_star,
             workspaces::get_workspaces,
@@ -590,10 +587,11 @@ pub fn run() {
             let refresh = MenuItem::with_id(app, "refresh", "Refresh now", true, None::<&str>)?;
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            // ⚠️ No second "Tasks & TickTick…" item: it opened the same window
+            // this one does. Two menu entries for one window is the tray's
+            // version of the two-settings-windows problem above.
             let reset = MenuItem::with_id(app, "reset", "Reset position", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Codenotch", true, None::<&str>)?;
-            let task_item =
-                MenuItem::with_id(app, "tasks", "Tasks & TickTick…", true, None::<&str>)?;
             let log_item = MenuItem::with_id(app, "log", "Open log", true, None::<&str>)?;
             // Enabled only where there is somewhere to move to: on one monitor
             // these do nothing, and a menu item that does nothing is worse than
@@ -620,7 +618,6 @@ pub fn run() {
             let menu = Menu::with_items(
                 app,
                 &[
-                    &task_item,
                     &refresh,
                     &move_island,
                     &move_notch,
@@ -637,12 +634,6 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "refresh" => refresh_now(app.clone()),
                     "settings" => open_settings(app.clone()),
-                    "tasks" => {
-                        let handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = task_window::open_task_editor(handle).await;
-                        });
-                    }
                     "next-display-tasks" => {
                         next_display(app.clone(), "tasks".into());
                     }
@@ -673,6 +664,7 @@ pub fn run() {
             guard::install_hook();
             log::note(&format!("--- codenotch {} starting ---", env!("CARGO_PKG_VERSION")));
             snooze::load(app.handle());
+            prefs::load(app.handle());
             stars::load(app.handle());
             workspaces::load(app.handle());
             shelf::load(app.handle());

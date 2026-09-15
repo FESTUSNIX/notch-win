@@ -11,7 +11,7 @@
  * upload field or a chat box than a drag from a strip welded to the bezel.
  */
 import { listen } from "@tauri-apps/api/event";
-import { element } from "./task-list";
+import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import type { Activity } from "./island-activity";

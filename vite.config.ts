@@ -10,10 +10,13 @@ export default defineConfig({
     minify: "esbuild",
     sourcemap: false,
     rollupOptions: {
-      // Two pages: the notch itself, and the settings panel the orb opens.
+      /* Three pages: the usage notch, the island, and the settings window.
+         ⚠️ `task-editor.html` IS the settings window — the filename is what
+         Rust opens and what the smoke test drives, so it kept its name when
+         the page stopped being a task editor. `settings.html` was a FOURTH
+         place to change a setting and is gone. */
       input: {
         notch: resolve(__dirname, "index.html"),
-        settings: resolve(__dirname, "settings.html"),
         tasks: resolve(__dirname, "tasks.html"),
         taskEditor: resolve(__dirname, "task-editor.html"),
       },

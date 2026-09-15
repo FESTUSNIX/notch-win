@@ -1998,3 +1998,60 @@ The two halves were the same fault.
      was a button with its own padding under task rows carrying NEGATIVE
      margins: three checkboxes at one inset, a plus at another, three different
      row heights. One padding, one radius, one circle size.
+242. ⚠️ **A dangling selector list joins itself to the next rule.** A regex
+     that deleted `#sync-line[^
+]*` took the `{ background:transparent; }` off
+     `.day-row .task-title:active,.day-sub:active,` and left the trailing
+     comma, which silently welded it to the `.eyebrow` rule hundreds of lines
+     of comment later — so pressing a day row made it grey and 11px. Valid CSS,
+     no warning anywhere.
+243. ⚠️ **`.switch` (0,1,0) loses to `input[type=checkbox]` (0,1,1).** The
+     island already sizes every checkbox to 14px, so a restyled toggle came out
+     as a 14px square with a 16px thumb hanging off it. Where two rules must
+     both exist, the later one has to be able to WIN — qualify it.
+244. ⚠️ **`.set-row.stack input:not([type=checkbox])` is (0,3,1)** and beat
+     the colour well's own `input[type=color]` rule, stretching a 24px swatch
+     into a 185px lozenge. A `:not()` carries the specificity of what is inside
+     it.
+245. ⚠️ **A pane that arrives on an animation screenshots as an empty
+     pane.** Playwright does not wait for CSS animations, so a shot taken on the
+     click catches opacity 0 and looks exactly like a page that rendered
+     nothing. Poll the opacity first.
+246. ⚠️ **An "enabled" list cannot say "none".** Empty has to mean "all" for
+     an older file to behave, so switching the last module off switched them all
+     back on. Store what is MUTED.
+247. ⚠️ **A setting with nothing on the other end of it is worse than no
+     setting.** `week_starts_monday` was written, validated, persisted and
+     rendered — and neither week on the island is week-aligned, so it could
+     never have changed a pixel. It is gone; the doc comment says why, so it is
+     not added back.
+248. ⚠️ **A preview stub is code that can rot.** `get_shortcuts` answered
+     with three of six keys and a stale `Ctrl+Alt+N` for capture — the exact
+     AltGr combination the defaults moved away from months ago. The settings
+     window's AltGr guard is what found it, by warning about a shortcut no build
+     has shipped.
+249. ⚠️ **Two settings windows is how a setting ends up in neither.** It
+     went wherever the person adding it happened to have open. One window, one
+     tray item, one gear — and `open_settings` is now a second door to the same
+     window rather than a second window.
+250. ⚠️ **A preference read after the thing that uses it is a preference
+     that does nothing on the first run.** `indexApps` is checked while the
+     Start Menu index is BUILT, so reading prefs later in `boot()` walked the
+     Start Menu on every launch whatever it said. The accent is the same shape
+     of bug one frame wide: read first, apply, then paint.
+251. ⚠️ **`matchMedia(...).matches` cached in a field is a preference that
+     needs a restart.** Both the island and Today held one, so "never animate"
+     would have taken effect next launch. `motion-pref.ts` answers live, and the
+     stylesheet reads the same three states off `<html>` — including the case
+     the media query cannot express, which is overriding it the OTHER way.
+252. ⚠️ **Removing a control removes its test's only route.** Three island
+     tests drove the edge, the clock and un-snoozing through the gear popover.
+     The clock and the snooze have palette commands that still exist; the edge
+     has nothing on the island at all any more, so the preview stages it from
+     the query string — which also covers BOOTING on each edge rather than only
+     arriving there.
+253. ⚠️ **A scroller's children legitimately report rects outside their
+     box.** The "header controls stay inside the island" check asserted over
+     every descendant of `.island-head`; on a vertical edge the 7-tab strip is a
+     112px horizontal scroller, so a scrolled-out tab fails a test that was
+     written about `.panel-actions`.
