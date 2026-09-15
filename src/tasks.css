@@ -68,14 +68,14 @@ button:hover { background:var(--tile-hi); }
    something going down under a finger. */
 .raised:active:not(:disabled) { transform:scale(.96); transition-duration:90ms;
   background-color:var(--tile); box-shadow:var(--hairline), var(--lift-1); }
-.raised.is-accent { color:#04140c; font-weight:600; background-color:var(--accent);
+.raised.is-accent { color:var(--on-accent); font-weight:600; background-color:var(--accent);
   /* ⚠️ A translucent SHEEN over the fill, never an opaque gradient: the
      accent IS the background, and an opaque top-down gradient would erase it.
      On a coloured face the light source is the button's own ink. */
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
     0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.raised.is-accent:hover { background-color:#22ff9a;
+.raised.is-accent:hover { background-color:var(--accent-hi);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.24), inset 0 1px 0 rgba(255,255,255,.45),
     0 2px 4px rgba(0,0,0,.5), var(--glow-accent-hover); }
 button:disabled { cursor:default; opacity:.45; }
@@ -399,8 +399,8 @@ h1 { margin:0; }
   box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
 .edge-choices button:active:not(:disabled) { transform:scale(.96); transition-duration:90ms; }
 .edge-choices button[aria-pressed=true] { color:var(--accent);
-  background-color:rgba(0,255,136,.12);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.26), var(--gloss), var(--lift-1); }
+  background-color:color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent), var(--gloss), var(--lift-1); }
 #account-settings { font-size:11px; padding-left:0; color:var(--dim); margin-top:10px; }
 #task-status:empty { display:none; }
 #task-status { color:var(--dim); font-size:12px; line-height:1.5; padding:8px 18px 4px; overflow-wrap:anywhere; flex-shrink:0; }
@@ -420,7 +420,7 @@ h1 { margin:0; }
 .check .pulse { position:absolute; inset:-3px; border-radius:50%; border:2px solid var(--list,var(--accent)); opacity:0; pointer-events:none; }
 .check:hover .disc { border-color:var(--list,#8a8a8a); }
 .check:has(input:disabled) { cursor:default; }
-.check:has(input:focus-visible) .disc { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,255,136,.35); }
+.check:has(input:focus-visible) .disc { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 .is-done .check .fill { transform:scale(1); }
 .is-done .check svg path { stroke-dashoffset:0; }
 .is-done .check .disc { border-color:var(--list,var(--accent)); }
@@ -470,7 +470,7 @@ h1 { margin:0; }
   background:rgba(0,0,0,.3);
   box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 5px -3px rgba(0,0,0,.9); }
 .day-field:focus-visible { outline:none;
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.45), inset 0 2px 5px -3px rgba(0,0,0,.9); }
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 2px 5px -3px rgba(0,0,0,.9); }
 
 /* ── The composer ────────────────────────────────────────────────────────
    Always a field, never a button that becomes one, and it sits outside
@@ -540,7 +540,7 @@ h1 { margin:0; }
 #task-done .day-row .task-title { font-size:13px; }
 
 /* ── Day clear ─────────────────────────────────────────────────────────── */
-.day-clear { display:flex; flex-direction:column; align-items:center; text-align:center; gap:3px; padding:32px 24px 28px; background:radial-gradient(58% 60% at 50% 38%,rgba(0,255,136,.10),rgba(0,0,0,0) 72%); }
+.day-clear { display:flex; flex-direction:column; align-items:center; text-align:center; gap:3px; padding:32px 24px 28px; background:radial-gradient(58% 60% at 50% 38%,color-mix(in srgb, var(--accent) 10%, transparent),rgba(0,0,0,0) 72%); }
 .clear-ring { width:70px; height:70px; overflow:visible; margin-bottom:15px; }
 .clear-ring circle { fill:none; stroke-width:5; }
 .clear-ring .trk { stroke:#1c1c1c; }
@@ -591,7 +591,7 @@ button:active:not(:disabled) { background:var(--tile-on); }
   background:#131313; box-shadow:inset -1px 0 0 var(--hair); }
 .settings-brand { display:flex; align-items:center; gap:10px; padding:16px 15px 12px; }
 .settings-mark { display:grid; place-items:center; width:28px; height:28px; flex-shrink:0;
-  border-radius:9px; color:#04140c;
+  border-radius:9px; color:var(--on-accent);
   background-color:var(--accent); background-image:var(--sheen);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.4), var(--lift-1), var(--glow-accent); }
 .settings-mark svg { width:16px; height:16px; }
@@ -660,7 +660,7 @@ button:active:not(:disabled) { background:var(--tile-on); }
   box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 6px -3px rgba(0,0,0,.9); }
 .settings-page select { min-width:150px; }
 .settings-page input:focus-visible,.settings-page select:focus-visible { outline:none;
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.45), inset 0 2px 6px -3px rgba(0,0,0,.9); }
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 2px 6px -3px rgba(0,0,0,.9); }
 .settings-page input::placeholder { color:#6d6d6d; }
 /* ⚠️ Scoped to the fields, not to every input in the row. `.set-row.stack
    input:not([type=checkbox])` is (0,3,1) and beat the colour well's own
@@ -698,7 +698,7 @@ input[type=checkbox].switch::after { content:""; position:absolute; top:3px; lef
     background-color var(--duration-quick) var(--ease-smooth-out); }
 input[type=checkbox].switch:checked { background:var(--accent); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),
   var(--glow-accent); }
-input[type=checkbox].switch:checked::after { transform:translateX(16px); background:#04140c; }
+input[type=checkbox].switch:checked::after { transform:translateX(16px); background:var(--on-accent); }
 input[type=checkbox].switch:disabled { opacity:.45; cursor:default; }
 
 .settings-page input[type=range] { appearance:none; width:160px; height:22px; background:none; }
@@ -718,12 +718,12 @@ input[type=checkbox].switch:disabled { opacity:.45; cursor:default; }
   box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
 .set-btn:active:not(:disabled) { transform:scale(.96); transition-duration:90ms; }
 .set-btn:disabled { opacity:.45; cursor:default; }
-.set-btn.is-accent { color:#04140c; font-weight:600;
+.set-btn.is-accent { color:var(--on-accent); font-weight:600;
   background-color:var(--accent);
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
     0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.set-btn.is-accent:hover:not(:disabled) { background-color:#22ff9a; }
+.set-btn.is-accent:hover:not(:disabled) { background-color:var(--accent-hi); }
 .set-btn.is-danger { color:var(--hot); }
 
 /* The accent picker: the swatches people will actually use, plus the door to
@@ -751,7 +751,7 @@ input[type=checkbox].switch:disabled { opacity:.45; cursor:default; }
   padding:6px 9px; border-radius:10px;
   background:rgba(0,0,0,.32); box-shadow:inset 0 0 0 1px var(--hair); }
 .key-record:hover { background:rgba(0,0,0,.42); box-shadow:inset 0 0 0 1px rgba(255,255,255,.14); }
-.key-record.is-listening { box-shadow:inset 0 0 0 1px rgba(0,255,136,.5); color:var(--accent); }
+.key-record.is-listening { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent); color:var(--accent); }
 .key-record kbd { font:inherit; font-size:10.5px; padding:2px 6px; border-radius:6px;
   background:rgba(255,255,255,.10); box-shadow:inset 0 0 0 1px var(--hair), var(--gloss);
   color:#dcdcdc; }
@@ -969,13 +969,30 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
      reading as a halo stuck to the object — at .5 alpha the accent button had a
      green corona a third of its own width. It is here to say "this one is
      live", not to be seen on its own. */
-  --glow-accent: 0 4px 14px -10px rgba(0,255,136,.34);
-  --glow-accent-hover: 0 6px 18px -10px rgba(0,255,136,.42);
+  /* ── Everything the accent implies ─────────────────────────────────
+     ⚠️ One variable has to BE one variable. The accent was settable from the
+     settings window while thirty-two places in this sheet still said
+     `#00ff88`, `#22ff9a` or `rgba(0,255,136,…)` — so a purple accent bought a
+     purple tab strip and left green hovers, a green today-cell on Home and a
+     green focus ring, which reads as a half-finished theme rather than as a
+     colour that did not take.
+
+     ⚠️ Derived with `color-mix`, never as a second stored colour. A hover
+     colour the user also has to pick is two settings for one decision, and the
+     pair can be set to disagree. */
+  --accent-hi: color-mix(in srgb, var(--accent) 86%, #fff);
+  /* Ink ON a filled accent. A very dark tint of the accent itself rather than
+     black: on a mid-tone accent pure black is a hole, and this keeps the
+     button reading as one object. */
+  --on-accent: color-mix(in srgb, var(--accent) 16%, #05070a);
+  --glow-accent: 0 4px 14px -10px color-mix(in srgb, var(--accent) 34%, transparent);
+  --glow-accent-hover: 0 6px 18px -10px color-mix(in srgb, var(--accent) 42%, transparent);
 
   /* ── Colour with a job ───────────────────────────────────────
      The surface was monochrome plus one green, which meant everything that
      mattered was the same green. Each of these already has a referent, so the
      colour is something you read rather than something you look at. */
+  --good: #30d158;    /* connected, healthy, nothing to do */
   --warn: #ff9f0a;    /* an agent waiting, a task overdue */
   --hot: #ff6961;     /* a disk at 97%, a CPU pinned */
   --cool: #5ac8fa;    /* the calendar, meetings */
@@ -1071,7 +1088,7 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 .cal-wcol { background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); border-radius:14px; }
 .cal-wcol.is-today { background-color:var(--tile-hi);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.18), var(--gloss), var(--lift-1); }
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), var(--gloss), var(--lift-1); }
 .cal-whead { border-bottom:1px solid var(--hair); }
 
 .cal-view { background:var(--tile); border-radius:10px; }
@@ -1088,7 +1105,7 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
    look at all day — a lit green panel at the foot of the screen was the
    brightest thing on it while saying nothing more than "you may type here". */
 #inline-composer:focus-within { background:rgba(0,0,0,.26);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.3), inset 0 2px 6px -4px rgba(0,0,0,.9); }
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 2px 6px -4px rgba(0,0,0,.9); }
 #task-done { border-top:1px solid var(--hair); }
 /* ⚠️ The tab rules that sat here are GONE, and finding them cost an hour.
    They were the iOS pass's own overrides — same specificity as the rules the
@@ -1212,7 +1229,10 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 .meter-rail i.hot { background:var(--hot); }
 .sys-facts { display:flex; gap:12px; flex-wrap:wrap; margin-top:1px; }
 .sys-fact { display:flex; align-items:center; gap:5px; font-size:10.5px; color:rgba(255,255,255,.45); }
-.sys-fact b { color:#30d158; font-size:8px; line-height:1; }
+/* ⚠️ `--good`, not the accent. This dot means "connected" — it is a traffic
+   light, and a traffic light that turns purple because somebody liked purple
+   has stopped being one. Same family as --warn and --hot beside it. */
+.sys-fact b { color:var(--good); font-size:8px; line-height:1; }
 
 
 /* ── An icon that changes, ENTERS ────────────────────────────────────
@@ -1247,12 +1267,12 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 }
 html[data-motion=never] *, html[data-motion=never] *::before,
 html[data-motion=never] *::after { transition:none!important; animation:none!important; }
-.day-connect { margin-top:14px; color:#04140c; font-weight:600; font-size:12px; padding:8px 14px; border-radius:9px;
+.day-connect { margin-top:14px; color:var(--on-accent); font-weight:600; font-size:12px; padding:8px 14px; border-radius:9px;
   background-color:var(--accent);
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
     0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.day-connect:hover { background-color:#22ff9a;
+.day-connect:hover { background-color:var(--accent-hi);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.24), inset 0 1px 0 rgba(255,255,255,.45),
     0 2px 4px rgba(0,0,0,.5), var(--glow-accent-hover); }
 .day-connect:active:not(:disabled) { transform:scale(.96); transition-duration:90ms; }
@@ -1364,8 +1384,8 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .cal-join { width:28px; height:28px; padding:0; display:grid; place-items:center; border-radius:8px;
   color:#5f5f5f; flex-shrink:0; }
 .cal-join svg { width:16px; height:16px; }
-.cal-join:hover { color:var(--accent); background:rgba(0,255,136,.12);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.26), var(--gloss); }
+.cal-join:hover { color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent), var(--gloss); }
 
 /* ── One event, in full ──────────────────────────────────────────────────
    ⚠️ A panel OVER the list, not a row that grows. The detail is five lines —
@@ -1403,12 +1423,12 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .cal-panel-join, .cal-panel-open { display:flex; align-items:center; gap:7px;
   font-size:11.5px; padding:7px 12px; border-radius:10px; }
 .cal-panel-join svg { width:15px; height:15px; }
-.cal-panel-join { color:#04140c; font-weight:600;
+.cal-panel-join { color:var(--on-accent); font-weight:600;
   background-color:var(--accent);
   background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
     0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.cal-panel-join:hover { background-color:#22ff9a; }
+.cal-panel-join:hover { background-color:var(--accent-hi); }
 .cal-panel-open { color:#c4c4c4;
   background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
@@ -1521,8 +1541,8 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    one column taller than its six neighbours and the row of dates sat on a
    crooked baseline — the shape a wall calendar uses is a mark behind the day,
    not a different size of day. */
-.home-day.is-today { background-color:rgba(0,255,136,.13);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.26), var(--gloss); }
+.home-day.is-today { background-color:color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent), var(--gloss); }
 .home-day.is-today .home-day-num { color:var(--accent); font-weight:700; }
 
 /* A dot in the flow, not an absolutely positioned pseudo-element: it reserves
@@ -1545,7 +1565,7 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   box-shadow:inset 0 0 0 1.4px #2f2f2f; }
 .home-add-mark svg { width:11px; height:11px; }
 .home-add:hover:not(:disabled) .home-add-mark { color:var(--accent);
-  box-shadow:inset 0 0 0 1.4px rgba(0,255,136,.45); }
+  box-shadow:inset 0 0 0 1.4px color-mix(in srgb, var(--accent) 45%, transparent); }
 .home-next { display:flex; align-items:center; justify-content:center; gap:8px; min-width:0; }
 .home-next-mark { display:grid; place-items:center; color:#4e4e4e; }
 .home-next-mark svg { width:14px; height:14px; }
@@ -1642,8 +1662,8 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .agent-row.is-waiting .agent-mark { color:var(--warn); background-color:rgba(255,159,10,.14);
   box-shadow:inset 0 0 0 1px rgba(255,159,10,.28), var(--gloss); }
 .agent-row.is-waiting .agent-word { color:var(--warn); font-weight:600; }
-.agent-row.is-working .agent-mark { color:var(--accent); background-color:rgba(0,255,136,.1);
-  box-shadow:inset 0 0 0 1px rgba(0,255,136,.24), var(--gloss); }
+.agent-row.is-working .agent-mark { color:var(--accent); background-color:color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), var(--gloss); }
 .agent-row.is-idle { opacity:.62; }
 
 /* ── The shelf ───────────────────────────────────────────────────────────
@@ -1754,7 +1774,7 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 /* ⚠️ The accent, not a per-project colour. Five hues down one column would
    be a legend to learn for an ordering the bar lengths already give. */
 .spend-rail i { display:block; height:100%; border-radius:999px;
-  background:linear-gradient(90deg, rgba(0,255,136,.55), var(--accent));
+  background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
   transition:width var(--duration-slow) var(--ease-smooth-out); }
 .spend-tokens { font-size:11px; color:var(--dim); min-width:42px; text-align:right;
   font-variant-numeric:tabular-nums; flex-shrink:0; }
@@ -1772,7 +1792,7 @@ html.dragging-files #drop-veil { display:block; animation:veil-in var(--duration
 
 .drop-frame { width:100%; height:100%; display:flex; align-items:center;
   justify-content:center; gap:10px; border-radius:calc(var(--r-tile) + 4px);
-  border:2px dashed rgba(0,255,136,.55);
+  border:2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   background:color-mix(in srgb, var(--accent) 9%, rgba(8,8,8,.82));
   backdrop-filter:blur(2px); }
 .drop-mark { width:22px; height:22px; border-radius:7px; flex-shrink:0; position:relative;
@@ -1791,7 +1811,7 @@ html.dragging-files #island {
   /* ⚠️ Halved. A 40px spread at .45 was a corona around the whole island
      rather than an edge picking up light — the same mistake the accent button
      was making, at four times the size. */
-  box-shadow: 0 0 26px -10px rgba(0,255,136,.38);
+  box-shadow: 0 0 26px -10px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

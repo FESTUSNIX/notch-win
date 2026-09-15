@@ -152,6 +152,19 @@ pub fn toggle_chrome(app: AppHandle) {
     set_chrome_hidden(&app, !crate::config::load().chrome_hidden);
 }
 
+/// Bring the chrome back, whatever it was doing.
+///
+/// ⚠️ Not `toggle_chrome`. Something that needs the island ON SCREEN has to
+/// be able to say so: a caller toggling from its own idea of the state hides
+/// the island half the time, and the half it gets wrong is the half where the
+/// state changed behind it. The command palette is the caller — asking for it
+/// while everything is hidden is asking for the app back, and opening it
+/// behind a hidden island is a shortcut that does nothing at all.
+#[tauri::command]
+pub fn show_chrome(app: AppHandle) {
+    set_chrome_hidden(&app, false);
+}
+
 #[tauri::command]
 pub fn get_shortcuts(app: AppHandle) -> Shortcuts {
     app.state::<ShortcutState_>().0.lock().unwrap().clone()

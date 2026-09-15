@@ -111,6 +111,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "get_shortcuts") return {palette:"Ctrl+Alt+K",toggle:"Ctrl+Alt+Space",
     capture:"Ctrl+Alt+T",shelf:"Ctrl+Alt+V",display:"Ctrl+Alt+M",hide:"Ctrl+Alt+H"} as T;
   if (command === "get_chrome_hidden") return false as T;
+  if (command === "show_chrome" || command === "toggle_chrome") return undefined as T;
   /* ⚠️ Apps and file hits are stubbed here so the BANDING is exercised by
      the real code path rather than argued about. The names share a stem on
      purpose: `code` matches an application, a shelf item and a path, which is

@@ -564,6 +564,7 @@ pub fn run() {
             everything::found_reveal,
             shortcuts::get_chrome_hidden,
             shortcuts::toggle_chrome,
+            shortcuts::show_chrome,
             get_displays,
             set_display,
             next_display

@@ -205,12 +205,48 @@ export class Palette {
    *  of it would be results for a question nobody asked. */
   addLive(provider: LiveProvider) { this.live.push(provider); }
 
-  /* ── Opening ──────────────────────────────────────────────────────────── */
+  /* ── Opening and closing ───────────────────────────────────────
+   *
+   * ⚠️ **One at a time, in order.** Both halves await a round trip to Rust —
+   * `set_task_input` lifts and restores `WS_EX_NOACTIVATE` — and `grab()` can
+   * spend fifteen frames asking for the caret. That is a quarter of a second in
+   * which a second press, a click outside or a fold can all arrive, and with
+   * the two halves running over each other the LAST thing to finish decided
+   * what the native side believed:
+   *
+   *   * open then close, closing first → `input(true)` lands after
+   *     `input(false)`, so the island is left in editing mode with no palette
+   *     on screen — and `editing` blocks folding, so the panel is stuck open;
+   *   * close then open → the keydown and pointerdown listeners are removed
+   *     after the re-open added them, and the palette stops answering Escape.
+   *
+   * Every entry point queues on the same chain, so a second press waits for the
+   * first to finish and then does the opposite of it. */
+  private queue: Promise<unknown> = Promise.resolve();
 
-  async show() {
+  private chain<T>(job: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(job, job);
+    // ⚠️ The chain must not stay rejected, or every later press is dropped.
+    this.queue = next.catch(() => {});
+    return next;
+  }
+
+  show() { return this.chain(() => this.opening()); }
+  hide() { return this.chain(() => this.closing()); }
+
+  /** What the shortcut does: the key that opens it closes it.
+   *
+   * ⚠️ The state is read INSIDE the chained job, not when `toggle()` is
+   * called — two presses in the same frame would otherwise both see
+   * `open === false` and both open. */
+  toggle() { return this.chain(() => (this.open ? this.closing() : this.opening())); }
+
+  private async opening() {
     if (this.open) {
-      // Pressing the shortcut again is "I meant the other thing" — start over
-      // rather than toggling shut, which loses what was typed for no reason.
+      /* Already up and asked for again by something that is not the toggle —
+       * the header button, a screen. Give the caret back and select what is
+       * there, rather than closing what was just asked for. */
+      await this.grab();
       this.field.select();
       return;
     }
@@ -252,6 +288,9 @@ export class Palette {
     this.surface.measure();
   }
 
+  /** Whether the palette is on screen, for callers deciding what a key means. */
+  get showing(): boolean { return this.open; }
+
   /** Keep asking for the caret until it arrives.
    *
    * ⚠️ One `focus()` is not enough. The lift is a round trip through
@@ -280,7 +319,7 @@ export class Palette {
     void this.hide();
   }
 
-  async hide() {
+  private async closing() {
     if (!this.open) return;
     this.open = false;
     this.host.hidden = true;

@@ -243,6 +243,9 @@ export class IslandSurface {
     this.paint();
   }
 
+  /** Whether the whole chrome is slid off the screen. */
+  get isHidden(): boolean { return this.hidden; }
+
   /** Slid away, or back. */
   setHidden(hidden: boolean) {
     this.hidden = hidden;

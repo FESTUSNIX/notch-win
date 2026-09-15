@@ -59,7 +59,10 @@ const PALETTE = ["#5ac8fa", "#ff9f0a", "#bf5af2", "#ff6482", "#64d2ff", "#30d158
 export function listColor(project?: Project): string {
   const raw = project?.color?.trim();
   if (raw && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(raw)) return raw;
-  if (!project) return "#00ff88";
+  // ⚠️ The app's own colour, not a copy of its default. A task with no list
+  // is the app speaking for itself, and it should say so in whatever colour
+  // the app is currently wearing.
+  if (!project) return "var(--accent)";
   let hash = 0;
   for (let i = 0; i < project.id.length; i++) hash = (hash * 31 + project.id.charCodeAt(i)) >>> 0;
   return PALETTE[hash % PALETTE.length];

@@ -759,6 +759,95 @@ test("a working session says what it is doing, not that it is working", async ({
 });
 
 
+test("the palette closes with the control that opened it, however fast it is pressed", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  const palette = page.locator(".palette");
+  /* ⚠️ The KEY, not the header button. Opening the palette takes the panel
+     behind it out of sight, header included — which is the whole reason the
+     shortcut has to be able to close it. In the preview `island:palette` is a
+     native event that never fires, so the island answers Ctrl+K itself; see
+     the `preview` guard in tasks.ts. */
+  const key = () => page.keyboard.press("Control+k");
+
+  await key();
+  await expect(palette).toBeVisible();
+  // ⚠️ The key that opens it closes it. It used to re-select the field, which
+  // left Escape — aimed at a window that may never have taken focus — as the
+  // only way out of a palette opened from inside another application.
+  await key();
+  await expect(palette).toBeHidden();
+
+  /* Pressed twice before the first has finished.
+     ⚠️ This does NOT reproduce the interleaving it is named for, and saying
+     so is the point: in the preview `set_task_input` returns immediately and
+     `grab()` gets the caret on its first frame, so there is no window for the
+     two halves to overlap in. Removing the queue in palette.ts leaves this
+     test green — checked. What it does cover is that two fast presses still
+     end closed, and that the palette works afterwards, which is where a
+     swallowed press or a listener removed after a re-open would show. */
+  await Promise.all([key(), key()]);
+  await expect(palette).toBeHidden();
+  // And it still opens afterwards: a queue that swallowed a press, or a
+  // listener removed after the re-open added it, both show up here.
+  await key();
+  await expect(palette).toBeVisible();
+  await expect(page.locator(".palette-field")).toBeFocused();
+
+  // Escape still means "one level back, then out".
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+
+  /* The island can fold again. ⚠️ This is the symptom the interleaving caused:
+     `editing` blocks folding outright, so a stranded `input(true)` is a panel
+     that never closes and no visible reason why. */
+  await page.mouse.move(2, 690);
+  await expect(page.locator("#island-expanded")).toBeHidden();
+});
+
+test("the accent is one variable, and nothing is still painted green", async ({page}) => {
+  await page.goto("/tasks.html?nocal");
+  await open(page);
+
+  const today = page.locator(".home-day.is-today");
+  const before = await today.evaluate(el => getComputedStyle(el).backgroundColor);
+
+  /* ⚠️ The whole sheet, not a list of the places that were wrong. Thirty-two
+     declarations said `#00ff88`, `#22ff9a` or `rgba(0,255,136,…)` while the
+     accent was settable from the settings window — so a purple accent bought a
+     purple tab strip and left green hovers, a green today-cell on Home and a
+     green focus ring. Auditing by eye is what missed them the first time. */
+  await page.evaluate(() => document.documentElement.style.setProperty("--accent", "#a78bfa"));
+
+  await expect.poll(() => today.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(before);
+
+  const green = await page.evaluate(() => {
+    const hits: string[] = [];
+    for (const el of document.querySelectorAll("*")) {
+      const style = getComputedStyle(el);
+      for (const prop of ["backgroundColor", "color", "borderColor", "boxShadow", "backgroundImage", "outlineColor"] as const) {
+        const value = style[prop];
+        // The default accent, in every form a computed style writes it.
+        if (/rgba?\(\s*0,\s*255,\s*136/.test(value)) hits.push(`${el.className || el.tagName} ${prop}: ${value}`);
+      }
+    }
+    return hits;
+  });
+  expect(green).toEqual([]);
+
+  /* And a hover is the same colour as the thing it lights up. `#22ff9a` was a
+     hand-mixed lighter green that no longer had anything to do with the accent
+     it was supposed to be a hover state for. */
+  await page.evaluate(() => {
+    const probe = document.createElement("button");
+    probe.className = "raised is-accent";
+    probe.id = "accent-probe";
+    document.body.append(probe);
+  });
+  const hover = await page.evaluate(() => getComputedStyle(document.getElementById("accent-probe")!).backgroundColor);
+  expect(hover).not.toMatch(/rgba?\(\s*0,\s*255,\s*136/);
+});
+
 test("the palette searches the island's own world and acts on it", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);

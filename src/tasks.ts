@@ -7,7 +7,7 @@
 import { IslandSurface } from "./island-surface";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
-import { call, native, watchTasks } from "./task-client";
+import { call, native, preview, watchTasks } from "./task-client";
 import { pick, renderActivity, renderResting, type Activity, type ScreenName } from "./island-activity";
 import { choose, decay, readings, type HoldState, type ModuleContext, type ModuleReading } from "./pill-modules";
 import { clockText } from "./tween";
@@ -478,7 +478,42 @@ get("island-expanded").prepend(palette.element());
  * Palette.show: the pin is a user-facing latch, and three callers toggling it
  * around one open left the island stuck open. Holding the panel is `editing`'s
  * job. */
-get("open-palette").onclick = () => { void palette.show(); };
+/* The one way in, from the shortcut and from the header button alike.
+ *
+ * ⚠️ The key that opens it closes it. It used to re-select the field instead,
+ * on the argument that a second press means "I meant something else" — which
+ * is true while you are looking at it and wrong every other time: the palette
+ * is opened from inside another application, and the only way to dismiss it
+ * without running something was Escape, aimed at a window that may never have
+ * taken focus.
+ *
+ * ⚠️ And "hide everything" wins the argument it is in. Opening the palette
+ * behind a hidden island is a shortcut that does nothing whatsoever — the
+ * palette is there, on a surface slid off the screen — so asking for it is
+ * taken as asking for the app back. `show_chrome`, never `toggle_chrome`:
+ * toggling from a caller that has only its own idea of the state is how a
+ * shortcut ends up hiding the island half the time. */
+async function summon() {
+  if (!palette.showing && surface.isHidden) await call("show_chrome").catch(() => {});
+  await palette.toggle();
+}
+get("open-palette").onclick = () => { void summon(); };
+
+/* The global shortcut, for the browser preview.
+ *
+ * ⚠️ Preview only, and it has to exist. `island:palette` is a native event, so
+ * with no Tauri there is NO way to press the key that opens the palette — and
+ * the header button cannot stand in for it, because opening the palette takes
+ * the header out of sight, which is exactly the behaviour that makes the
+ * shortcut the only way to close it again. Without this the toggle is
+ * untestable outside a release build. */
+if (preview) {
+  document.addEventListener("keydown", event => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") return;
+    event.preventDefault();
+    void summon();
+  }, true);
+}
 
 /* ── What the palette can do ──────────────────────────────────────────────
  * Each provider answers with actions; the palette ranks across all of them.
@@ -1032,7 +1067,7 @@ async function boot() {
 
     /* One surface over everything. ⚠️ No pin here either — this listener
      * was the first of the three that latched it. */
-    await listen("island:palette", () => { void palette.show(); });
+    await listen("island:palette", () => { void summon(); });
 
     // Kept in step if the format is changed from another window.
     // ⚠️ Inside the `native` guard with every other listener here. Outside it,

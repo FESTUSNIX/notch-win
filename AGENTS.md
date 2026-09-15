@@ -2072,3 +2072,46 @@ The two halves were the same fault.
      has no room to say "of Work", so it keeps counting the whole day. Home
      follows the filter because its card is a door into the filtered screen.
      Three different answers, one rule.
+257. ⚠️ **One variable has to BE one variable.** The accent became settable
+     while thirty-two declarations still said `#00ff88`, `#22ff9a` or
+     `rgba(0,255,136,…)`, so a purple accent bought a purple tab strip and left
+     green hovers, a green today-cell on Home and a green focus ring — which
+     reads as a half-finished theme rather than as a setting that did not take.
+     Every one is `color-mix(in srgb, var(--accent) N%, …)` now, and the hover
+     and the ink are DERIVED (`--accent-hi`, `--on-accent`) rather than stored:
+     a hover colour the user also has to pick is two settings for one decision,
+     and the pair can be set to disagree.
+258. ⚠️ **Auditing a theme by eye is what misses it.** The test sets a
+     different accent and then walks every element's computed
+     background/color/border/shadow for the default green, rather than checking
+     a list of the places that happened to be wrong. ⚠️ It has to set a
+     non-default accent first, or the default IS that green and the check
+     passes on a sheet with none of the work done.
+259. ⚠️ **Not every green is the accent.** `--good` (a "connected" dot) and the
+     usage notch's `--ample` are traffic lights; a traffic light that turns
+     purple because somebody liked purple has stopped being one. They are
+     deliberately left alone — `--good` is now a token so the next person can
+     see the decision rather than re-derive it.
+260. ⚠️ **Open and close both await Rust, so they can run over each other.**
+     `set_task_input` lifts and restores `WS_EX_NOACTIVATE` and `grab()` spends
+     up to fifteen frames asking for the caret — a quarter of a second in which
+     a second press, a click outside or a fold can arrive. Whichever FINISHED
+     last decided what the native side believed: an `input(true)` landing after
+     an `input(false)` leaves the island in editing mode with no palette on
+     screen, and `editing` blocks folding, so the panel is stuck open with no
+     visible reason. Every entry point queues on one chain now. ⚠️ The chain
+     must not stay rejected, or every later press is dropped.
+261. ⚠️ **The preview cannot reproduce that race,** and the test says so. Its
+     `set_task_input` returns immediately and `grab()` wins on the first frame,
+     so removing the queue leaves the test green — checked, and written down in
+     the test rather than left to look like coverage.
+262. ⚠️ **The header button cannot stand in for the global shortcut.** Opening
+     the palette takes the panel behind it out of sight, header included —
+     which is precisely why the shortcut has to close it — so the browser test
+     needs a key. `island:palette` is a native event, so the island answers
+     Ctrl+K itself under `preview`.
+263. ⚠️ **`show_chrome`, never `toggle_chrome`.** Something that needs the
+     island on screen has to be able to say so; a caller toggling from its own
+     idea of the state hides the island half the time. Asking for the palette
+     while everything is hidden is asking for the app back — opening it behind
+     a hidden island is a shortcut that does nothing whatsoever.
