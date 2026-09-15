@@ -849,51 +849,98 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .small-icon:hover { background:var(--tile-hi); }
 
 
-/* ── System, as a bento ──────────────────────────────────────────────────
-   ⚠️ Fixed shape, not a set of columns that grow. Seven audio endpoints — and
-   a developer's machine has Steam's two virtual ones, every monitor and the
-   real speakers — made a column taller than the island can be, and the tile
-   underneath was cut off with nothing to scroll. Every tile here holds what is
-   *in use*; the rest is one press away, so the screen is the same height with
-   three devices or thirty. */
+/* ── System, as an actual bento ──────────────────────────────────────────
+   Four tiles of one size in a row is a row, not a bento. What differs here is
+   what each thing NEEDS: two sliders want height, a chosen device wants one
+   line, and the machine's three meters want a column. So the grid gives them
+   different shapes rather than the same one four times.
+
+   ⚠️ Every tile still holds what is *in use*. Seven audio endpoints — and a
+   developer's machine has Steam's two virtual ones, every monitor and the real
+   speakers — made a column taller than the island can be. The list is one press
+   away and bounded, so the screen costs the same with three devices or thirty.
+
+       ┌────────┬──────────────┬──────────┐
+       │  caps  │  output      │          │
+       │  ────  ├──────────────┤  machine │
+       │ ○   ○  │  bluetooth   │          │
+       └────────┴──────────────┴──────────┘
+
+   ⚠️ The pills share ONE grid area and stack with flex, rather than taking a
+   row each. As two grid rows, an expanded pill did not size its row — the row
+   came out 50px shorter than the pill and the open list drew straight over the
+   pill below it. A grid item that clips its own overflow is a shape grid row
+   sizing gets wrong; a flex column measures it correctly and needs no second
+   row to go wrong in. */
 .sys-grid { display:grid; gap:10px; padding:4px 16px 14px; overflow:visible;
-  grid-template-columns:158px repeat(3, minmax(0,1fr));
-  /* The day tile runs under the three narrow tiles rather than beside the
-     capsules — spanning the capsules down a second short row left a tile two
-     thirds empty, which is exactly the space the redesign was about. */
-  grid-template-areas:
-    "caps output bt   machine"
-    "day  day    day  machine";
-  align-content:start; }
+  grid-template-columns:auto minmax(190px, 1.15fr) minmax(170px, 1fr);
+  grid-template-areas:"caps pills machine";
+  align-content:start; align-items:start; }
 .sys-controls { grid-area:caps; }
-.sys-output   { grid-area:output; }
-.sys-bluetooth{ grid-area:bt; }
+.sys-pills    { grid-area:pills; display:flex; flex-direction:column; gap:10px; min-width:0; }
 .sys-machine  { grid-area:machine; }
-.sys-day      { grid-area:day; }
 .tile { position:relative; }
 
 .cap-row { display:flex; align-items:stretch; gap:8px; }
-.pip-col { display:flex; flex-direction:column; justify-content:flex-end; gap:6px; }
-.pip { width:34px; height:34px; }
-.pip svg { width:16px; height:16px; }
+/* ⚠️ A row UNDER the capsules. Wedged into the capsule row as a column these
+   were 34px afterthoughts clinging to the brightness slider and overflowing the
+   tile — mute and lock are controls in their own right. */
+.pip-row { display:flex; gap:8px; margin-top:9px; }
+.pip { width:100%; height:38px; align-self:auto; padding:0; border-radius:var(--r-pip);
+  flex:1; }
+.pip svg { width:17px; height:17px; }
 
-/* A tile's lead row: the thing in use, larger than the list behind it. */
-.sys-row.lead { padding:4px 6px; font-size:13px; color:#fff; }
-.sys-row.lead .sys-mark { color:#fff; }
-.tile-more { align-self:flex-start; margin-top:1px; padding:4px 9px; border-radius:999px;
-  font-size:10.5px; color:rgba(255,255,255,.55); background:var(--tile-hi);
-  transition:background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out); }
-.tile-more:hover { background:var(--tile-on); color:#fff; }
-.tile-more[aria-expanded=true] { background:var(--tile-on); color:#fff; }
+/* ── The pills ───────────────────────────────────────────────────────────
+   One line saying what is in use, opening into the rest. These were tiles the
+   size of the machine stats while holding one device and a "6 more" chip —
+   three quarters of each was air. The list is what the tile is for, so the tile
+   is the list's closed state. */
+/* ⚠️ No `align-self` here. It was needed while the pills were grid items —
+   the grid stretched each into a card with one line of text floating in the
+   middle of it — but in the flex COLUMN they live in now, `align-self` is the
+   cross axis, so `start` shrank every pill to the width of its own text and
+   left the column half empty. The flex default is what is wanted. */
+.sys-pill { padding:0; overflow:hidden; }
+.pill-head { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:11px 13px; border-radius:var(--r-tile); background:none; box-shadow:none; }
+.pill-head:hover { background:var(--tile-hi); box-shadow:none; }
+.pill-head:active { transform:none; }
+.pill-mark { display:grid; place-items:center; width:26px; height:26px; flex-shrink:0;
+  border-radius:9px; color:#dcdcdc;
+  background-color:rgba(255,255,255,.07); background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px var(--hair), var(--gloss); }
+.pill-mark svg { width:15px; height:15px; }
+.pill-text { flex:1; min-width:0; font-size:12.5px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.pill-state { font-size:10.5px; color:var(--dim); flex-shrink:0;
+  font-variant-numeric:tabular-nums; }
+.pill-chev { display:grid; place-items:center; flex-shrink:0; color:#5f5f5f;
+  transition:transform var(--duration-fast) var(--ease-smooth-out); }
+.pill-chev svg { width:13px; height:13px; }
+.sys-pill.is-open .pill-chev { transform:rotate(180deg); }
 
-/* The sheet: the full list, over the panel rather than inside the tile. */
-.sheet { position:absolute; top:calc(100% - 4px); left:0; right:0; z-index:5;
-  max-height:190px; overflow-y:auto; padding:5px; border-radius:16px; background:#161616;
-  box-shadow:var(--lift-3), var(--hairline), var(--gloss);
-  display:flex; flex-direction:column; gap:1px;
+/* ⚠️ `max-height`, NOT the `0fr -> 1fr` grid trick this file uses elsewhere.
+   That trick is right when the content's height is unknown — but nested inside
+   a grid ITEM it reports an intrinsic height the outer grid believes, and the
+   outer row came out 50px shorter than the pill: the open list drew straight
+   over the bluetooth pill below it.
+
+   A max-height is honest here because there IS a deliberate cap (thirty audio
+   endpoints must cost what seven do), and the exact value is written by JS from
+   the list's own `scrollHeight` — so the easing runs to the real height rather
+   than to a number somebody guessed. */
+.pill-list { max-height:0; overflow:hidden; }
+.sys-pill.is-open .pill-list { overflow-y:auto;
   scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent;
-  animation:sheet-in var(--duration-fast) var(--ease-smooth-out); }
-@keyframes sheet-in { from { opacity:0; transform:translateY(-6px) scale(.98); } to { opacity:1; transform:none; } }
+  animation:pill-list-in var(--duration-fast) var(--ease-smooth-out); }
+/* The rows arrive over a panel that is already travelling to make room for
+   them — the island's own height spring is the movement here. */
+@keyframes pill-list-in {
+  from { opacity:0; transform:translateY(calc(var(--distance-small) * -1)); }
+  to   { opacity:1; transform:none; }
+}
+.pill-list > * { margin:0 7px; }
+.pill-list > :last-child { margin-bottom:8px; }
 
 /* ── Meters ──────────────────────────────────────────────────────────────
    Amber past 80, red past 92 — a disk at 97% is the one fact on this screen

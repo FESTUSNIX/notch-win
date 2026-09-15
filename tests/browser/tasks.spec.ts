@@ -992,49 +992,46 @@ test("the System screen carries the machine's own controls", async ({page}) => {
   await page.screenshot({path: "test-results/island-system.png"});
 });
 
-test("a long device list stays behind one press instead of growing the panel", async ({page}) => {
+test("a long device list opens in place and the panel travels to fit", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator('[data-tab="system"]').click();
 
-  /* ⚠️ The point of the whole tile shape: seven endpoints used to make a column
-   * taller than the island can be, and the tile underneath was cut off with
-   * nothing to scroll. Closed, the tile shows only what is in use. */
+  /* ⚠️ The whole reason the pills exist. Seven audio endpoints — and this
+   * machine has Steam's two virtual ones, every monitor and the real speakers —
+   * made a column taller than the island can be, and the tile underneath was
+   * cut off with nothing to scroll. Closed, a pill is one line. */
   const output = page.locator(".sys-output");
-  await expect(output.locator(".sys-row")).toHaveCount(1);
-  await expect(output.locator(".sys-row")).toContainText("Mateusz's Buds3 Pro");
-  await expect(output.locator(".tile-more")).toHaveText("6 more");
+  await expect(output.locator(".pill-text")).toHaveText("Mateusz's Buds3 Pro");
+  await expect(output.locator(".sys-row")).toHaveCount(0);
   const closed = (await page.locator("#island").boundingBox())!.height;
 
-  await output.locator(".tile-more").click();
-  const sheet = output.locator(".sheet");
-  await expect(sheet).toBeVisible();
-  await expect(sheet.locator(".sys-row")).toHaveCount(7);
+  await output.locator(".pill-head").click();
+  await expect(output.locator(".sys-row")).toHaveCount(7);
 
-  // Opening it GROWS the island rather than being clipped by it.
+  /* ⚠️ It opens IN PLACE and pushes the panel taller, rather than into a sheet
+   * floating over it — on a screen of four controls a sheet hid most of them.
+   * Polled, because the panel's height is sprung: measured once, it is measured
+   * mid-flight. */
   await expect.poll(() => page.locator("#island").evaluate(el => el.getBoundingClientRect().height))
     .toBeGreaterThan(closed);
-  /* ⚠️ Polled, because the panel's height is SPRUNG. At the moment the height
-   * first exceeds its closed value the island is still travelling, so the sheet
-   * is legitimately taller than it for a few frames — the claim is that the
-   * island ends up containing it, not that it does so on the first frame. */
   await expect.poll(async () => {
-    const box = (await sheet.boundingBox())!;
+    const list = (await output.locator(".pill-list").boundingBox())!;
     const island = (await page.locator("#island").boundingBox())!;
-    return box.y + box.height <= island.y + island.height + 1;
+    return list.y + list.height <= island.y + island.height + 1;
   }).toBe(true);
 
-  // Choosing from it switches and closes.
-  await sheet.locator(".sys-row").nth(1).click();
-  await expect(output.locator(".sheet")).toHaveCount(0);
-  await expect(output.locator(".sys-row")).toContainText("DELL U2724D");
+  /* ⚠️ And it must not draw over the pill below it. As two grid rows it did
+   * exactly that — the row came out 50px shorter than the open pill. */
+  const list = (await output.locator(".pill-list").boundingBox())!;
+  const below = (await page.locator(".sys-bluetooth").boundingBox())!;
+  expect(below.y).toBeGreaterThanOrEqual(list.y + list.height - 1);
 
-  /* Bluetooth is a readout, not a control: Windows exposes no supported way to
-   * connect or disconnect a device from another process. */
-  const bt = page.locator(".sys-bluetooth");
-  await expect(bt.locator(".sys-row")).toHaveCount(2);           // the connected ones
-  await expect(bt.locator(".sys-row").first()).toHaveClass(/static/);
-  await bt.locator(".tile-more").click();
-  await expect(bt.locator(".sheet .sys-row")).toHaveCount(4);    // everything paired
+  // Choosing from it switches and closes.
+  await output.locator(".sys-row", {hasText: "MSI G24C4"}).click();
+  await expect(output.locator(".sys-row")).toHaveCount(0);
+  await expect(output.locator(".pill-text")).toHaveText("MSI G24C4");
+  await page.screenshot({path: "test-results/island-system.png"});
 });
+
 

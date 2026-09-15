@@ -1898,3 +1898,20 @@ The two halves were the same fault.
      anything measured once is measured mid-flight. Two existing tests asserted
      on the first frame and only one of them failed — the other was passing by
      luck.
+219. ⚠️ **`grid-template-rows: 0fr -> 1fr` nested inside a grid ITEM lies
+     about its intrinsic height.** The outer row came out 50px shorter than the
+     open pill and the list drew straight over the pill below it. That trick is
+     right when the content height is unknown and the parent is not a grid; here
+     a `max-height` is honest, because the list has a deliberate cap.
+220. ⚠️ **Set an expanded list's height AT RENDER TIME, not in a
+     `requestAnimationFrame`.** The island measures the screen's content the
+     moment `render()` returns — a height applied a frame later is a height the
+     panel never saw, so the list opened correctly and the panel stayed short
+     around it, clipping a third of it.
+221. ⚠️ **In a flex COLUMN, `align-self` is the horizontal axis.** Carried
+     over from when the pills were grid items, `align-self: start` shrank every
+     pill to the width of its own text and left the column half empty.
+222. ⚠️ **A pill's mark says what the PILL is, never what the device is.**
+     With the tile headings gone it is the only thing telling Output from
+     Bluetooth, and a pair of bluetooth buds made both pills show the same
+     glyph — two rows that read as the same control twice.
