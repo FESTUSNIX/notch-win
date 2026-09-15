@@ -5,7 +5,7 @@
  * header, the tabs and which screen is showing; each screen owns its own body.
  */
 import { IslandSurface } from "./island-surface";
-import { FRAME, cpx } from "./layout";
+import { cpx } from "./layout";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
@@ -72,8 +72,9 @@ const WIDTH: Record<ScreenName, number> = {
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf`. The queue is a second
    * column, and opening it into a panel sized for one is what the per-screen
-   * width was built for. */
-  media: 1320,
+   * width was built for. Both came down after a look at the real thing: at
+   * 1320/1900 the left column was mostly empty either side of a 84px cover. */
+  media: 1130,
   agents: 1620,    // rows carrying project, branch, tokens and a verb
   shelf: 1480,     // rows with a thumbnail and a path
   calendar: 1900,  // the week grid needs seven columns
@@ -88,7 +89,7 @@ const WIDTH: Record<ScreenName, number> = {
  * number at it — which looks, from a test, exactly like the width not changing
  * at all. */
 function widthOf(name: ScreenName): number {
-  if (name === "media" && player.open) return FRAME.islandBodyLong;
+  if (name === "media" && player.open) return 1640;
   return WIDTH[name];
 }
 
@@ -1065,7 +1066,11 @@ let lastSwitch = 0;
  * made a screen change out of a thumb resting on the pad — you would look up to
  * find yourself somewhere else. A mouse notch is ~100px, so one notch still
  * counts and two fingers drifting do not. */
-const WHEEL_TO_SWITCH = 90;
+/* ⚠️ 240, up from 90. A trackpad sends a stream of 2–4px deltas and a mouse
+ * notch is ~100px, so 90 was "one notch, or a thumb resting on the pad for a
+ * third of a second" — which in use meant looking up to find yourself two
+ * screens away. Two notches, or a deliberate swipe, and nothing less. */
+const WHEEL_TO_SWITCH = 240;
 const WHEEL_WINDOW = 400;
 let wheeled = 0;
 let wheeledAt = 0;
@@ -1073,7 +1078,9 @@ let wheeledAt = 0;
 function cycle(direction: number) {
   const now = Date.now();
   // One flick must not run through every tab.
-  if (!direction || now - lastSwitch < 260) return;
+  // ⚠️ And a longer tail on the switch itself: one gesture must not run
+  // through three screens because it had momentum left.
+  if (!direction || now - lastSwitch < 450) return;
   lastSwitch = now;
   wheeled = 0;
   const index = TABS.findIndex(t => t.name === screen);

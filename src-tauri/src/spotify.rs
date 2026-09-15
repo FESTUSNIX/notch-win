@@ -38,11 +38,18 @@ use crate::credentials;
 const AUTH: &str = "https://accounts.spotify.com/authorize";
 const TOKEN: &str = "https://accounts.spotify.com/api/token";
 const QUEUE: &str = "https://api.spotify.com/v1/me/player/queue";
+const SEARCH: &str = "https://api.spotify.com/v1/search";
 
-/// ⚠️ Read-only, and only the one thing that is needed. `user-read-playback-state`
-/// is what `/me/player/queue` requires; nothing here modifies playback, which is
-/// still the system transport's job.
-const SCOPE: &str = "user-read-playback-state";
+/// Reading the queue, and putting something on the end of it.
+///
+/// ⚠️ **Adding a scope invalidates the grant you already have.** A token issued
+/// under the old pair keeps working for reads and answers 403 for the write,
+/// which looks like a Premium problem rather than a stale consent. `enqueue`
+/// says so by name; the fix is to reconnect in Settings.
+///
+/// ⚠️ Nothing here *plays* anything. Transport is still the system session's
+/// job — see the module note.
+const SCOPE: &str = "user-read-playback-state user-modify-playback-state";
 
 /// ⚠️ Registered in the Spotify dashboard EXACTLY, port and path included. See
 /// the module note: Spotify does not accept an arbitrary loopback port.
@@ -438,6 +445,102 @@ pub async fn spotify_queue() -> Result<Queue, String> {
     })
 }
 
+/// A track the user might want to queue. Same shape as a queue row, plus the
+/// URI the add endpoint wants.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Found {
+    pub uri: String,
+    pub title: String,
+    pub artist: String,
+    pub artwork: String,
+}
+
+/// Search Spotify's catalogue, so something can be added to the queue.
+///
+/// ⚠️ Returns an empty list rather than an error for every ordinary miss. This
+/// runs on every few keystrokes; a rejected promise per keystroke would paint
+/// the island red while somebody is still typing.
+#[tauri::command]
+pub async fn spotify_search(query: String) -> Result<Vec<Found>, String> {
+    let query = query.trim();
+    if query.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let http = client();
+    let Some(token) = access_token(&http).await.unwrap_or(None) else {
+        return Ok(Vec::new());
+    };
+    let url = format!("{SEARCH}?type=track&limit=6&q={}", encode(query));
+    let response = http
+        .get(url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|_| "Could not reach Spotify.".to_string())?;
+    if !response.status().is_success() {
+        return Ok(Vec::new());
+    }
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|_| "Spotify's search was not JSON.".to_string())?;
+    Ok(body
+        .get("tracks")
+        .and_then(|t| t.get("items"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let base = track(item)?;
+                    Some(Found {
+                        uri: item.get("uri").and_then(Value::as_str)?.to_string(),
+                        title: base.title,
+                        artist: base.artist,
+                        artwork: base.artwork,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Put a track on the end of the queue.
+///
+/// ⚠️ The END, and only the end. Spotify's Web API has **no** endpoint for
+/// reordering or removing a queued item, and none for inserting one at a
+/// position — `POST /me/player/queue` appends and that is the whole of it. A
+/// "move up" control here would be a button that cannot be implemented, so
+/// there is not one. See TODO.md.
+#[tauri::command]
+pub async fn spotify_enqueue(uri: String) -> Result<String, String> {
+    let http = client();
+    let Some(token) = access_token(&http).await.unwrap_or(None) else {
+        return Err("Connect Spotify in Settings first.".into());
+    };
+    let response = http
+        .post(format!("{QUEUE}?uri={}", encode(&uri)))
+        .bearer_auth(&token)
+        .header("Content-Length", "0")
+        .send()
+        .await
+        .map_err(|_| "Could not reach Spotify.".to_string())?;
+
+    match response.status().as_u16() {
+        200..=299 => Ok(String::new()),
+        /* ⚠️ Named apart, because they look identical from the island and only
+         * one of them is something the user can fix here. A 403 after a scope
+         * change is a grant issued before the scope existed. */
+        403 => Err(
+            "Spotify refused. Adding to the queue needs Premium, and a connection              made before this feature existed has to be reconnected in Settings."
+                .into(),
+        ),
+        404 => Err("Spotify has no active device. Start playing something first.".into()),
+        other => Err(format!("Spotify answered {other}.")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,6 +575,19 @@ mod tests {
     }
 
     /// A track with no album art at all must still be a row.
+    /// ⚠️ The write scope has to be in the consent, or the grant comes back
+    /// able to read the queue and not to add to it — a 403 that looks like a
+    /// Premium problem rather than a stale consent.
+    #[test]
+    fn the_consent_asks_for_both_halves() {
+        assert!(SCOPE.contains("user-read-playback-state"));
+        assert!(SCOPE.contains("user-modify-playback-state"));
+        // Space-separated, not comma: Spotify silently grants nothing for a
+        // comma-separated list.
+        assert!(!SCOPE.contains(','));
+        assert!(auth_url("id", "chal").contains(&encode(SCOPE)));
+    }
+
     #[test]
     fn a_track_without_a_cover_is_still_a_track() {
         let value: Value = serde_json::from_str(r#"{"name":"Habiba"}"#).unwrap();

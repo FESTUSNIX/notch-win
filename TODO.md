@@ -179,12 +179,21 @@ something is playing. What landed:
 
 ### Still open on the player
 
-- [ ] The queue is fetched when the panel opens, never refreshed while it is
-      open. A track change leaves a stale list until it is closed and reopened.
-- [ ] Nothing in the queue is clickable — Spotify can skip to a queued track,
-      but that needs a Premium-only endpoint and a second scope.
-- [ ] Not tried against a real Spotify account yet: it needs a client id, so
-      the whole flow past `connect_spotify` is so far only reasoned about.
+- [x] Add to the queue — a search in the panel, appending to the end.
+- [ ] **Reordering the queue is not possible, and not for want of trying.**
+      Spotify's Web API has **no** endpoint for moving a queued item, removing
+      one, or inserting at a position: `POST /me/player/queue` appends and that
+      is the entire surface. (Playlist items can be reordered —
+      `PUT /v1/playlists/{id}/tracks` — but the queue is not a playlist.) A
+      drag handle here would be a control that cannot be implemented, so there
+      is none. If Spotify ever ships it, this is the one thing to add.
+- [ ] The queue is fetched when the panel opens and after an add, never
+      refreshed while it sits open. A track change leaves a stale list.
+- [ ] Nothing in the queue is clickable — skipping *to* a queued track has no
+      endpoint either.
+- [ ] ⚠️ **The scope changed** (`user-modify-playback-state` was added for the
+      add). A connection made before this has to be reconnected in Settings, or
+      adding answers 403 — which reads like a Premium problem.
 
 ## 4. The calendar — NOT STARTED
 

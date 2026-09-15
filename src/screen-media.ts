@@ -158,6 +158,7 @@ export class MediaSource {
 
 export interface QueueTrack { id: string; title: string; artist: string; artwork: string }
 export interface Queue { connected: boolean; tracks: QueueTrack[]; note: string }
+export interface Found { uri: string; title: string; artist: string; artwork: string }
 
 export interface MediaDeps {
   source: MediaSource;
@@ -174,6 +175,12 @@ export class MediaScreen {
   private asked = 0;
   private devicesOpen = false;
   private devices: AudioDevice[] = [];
+  /** The add-to-queue search: open, what was typed, and what came back. */
+  private adding = false;
+  private term = "";
+  private found: Found[] = [];
+  private searched = 0;
+  private said = "";
 
   constructor(private host: HTMLElement, private deps: MediaDeps, private changed: () => void) {}
 
@@ -188,6 +195,35 @@ export class MediaScreen {
       const queue = await call<Queue>("spotify_queue");
       if (mine === this.asked) { this.queue = queue; this.changed(); }
     } catch { /* the note covers the ordinary failures */ }
+  }
+
+  /** ⚠️ Debounced, and the stale answer is dropped rather than drawn. Every
+   *  few keystrokes is a round trip to Spotify, and they do not come back in
+   *  the order they were asked. */
+  private search(term: string) {
+    this.term = term;
+    const mine = ++this.searched;
+    window.setTimeout(async () => {
+      if (mine !== this.searched) return;
+      try {
+        const found = await call<Found[]>("spotify_search", { query: term });
+        if (mine === this.searched) { this.found = found; this.changed(); }
+      } catch { /* an empty list is the honest answer to a failed search */ }
+    }, 220);
+  }
+
+  private async enqueue(track: Found) {
+    this.said = `Queued ${track.title}`;
+    this.changed();
+    try {
+      await call("spotify_enqueue", { uri: track.uri });
+      // The queue is a round trip behind the write; ask again rather than
+      // guessing where Spotify put it.
+      await this.load();
+    } catch (error) {
+      this.said = String(error).replace(/^invoke error: /i, "");
+      this.changed();
+    }
   }
 
   private toggleQueue() {
@@ -364,9 +400,81 @@ export class MediaScreen {
     return menu;
   }
 
+  /** Type a track, press the plus, it goes on the END of the queue.
+   *
+   * ⚠️ The end, and only the end. Spotify's Web API has no endpoint for
+   * reordering a queued item, removing one, or inserting at a position —
+   * `POST /me/player/queue` appends and that is all of it. A "move up" handle
+   * here would be a control that cannot be implemented, so there is not one.
+   */
+  private searchBox(): HTMLElement {
+    const box = element("div", "media-search");
+    const field = document.createElement("input");
+    field.type = "search";
+    field.placeholder = "Add a track…";
+    field.value = this.term;
+    field.setAttribute("aria-label", "Search Spotify");
+    field.oninput = () => this.search(field.value);
+    box.append(field);
+
+    if (this.found.length) {
+      const results = element("div", "media-results");
+      for (const track of this.found) {
+        const row = element("button", "media-result");
+        (row as HTMLButtonElement).type = "button";
+        const cover = element("span", "media-track-art");
+        if (track.artwork) {
+          const image = element("img") as HTMLImageElement;
+          image.src = track.artwork; image.alt = ""; image.width = 28; image.height = 28;
+          cover.append(image);
+        } else {
+          cover.classList.add("blank");
+          paintIcon(cover, "media");
+        }
+        const copy = element("div", "media-track-copy");
+        copy.append(element("span", "media-track-title", track.title),
+          element("span", "media-track-artist", track.artist));
+        const mark = element("span", "media-result-add");
+        paintIcon(mark, "plus");
+        row.append(cover, copy, mark);
+        row.onclick = () => { void this.enqueue(track); };
+        results.append(row);
+      }
+      box.append(results);
+    } else if (this.term.trim().length >= 2) {
+      box.append(element("p", "media-none", "Nothing found."));
+    }
+    return box;
+  }
+
   private renderQueue(): HTMLElement {
     const panel = element("aside", "media-queue");
-    panel.append(element("h3", "media-queue-head", "Playing Next"));
+
+    const head = element("div", "media-queue-top");
+    head.append(element("h3", "media-queue-head", "Playing Next"));
+    if (this.queue.connected) {
+      const add = element("button", `media-add${this.adding ? " is-on" : ""}`);
+      (add as HTMLButtonElement).type = "button";
+      add.setAttribute("aria-label", "Add to the queue");
+      add.setAttribute("aria-expanded", String(this.adding));
+      add.title = "Add to the queue";
+      paintIcon(add, "plus");
+      add.onclick = () => {
+        this.adding = !this.adding;
+        this.said = "";
+        if (!this.adding) { this.term = ""; this.found = []; }
+        this.changed();
+        if (this.adding) {
+          requestAnimationFrame(() =>
+            this.host.querySelector<HTMLInputElement>(".media-search input")?.focus());
+        }
+      };
+      head.append(add);
+    }
+    panel.append(head);
+
+    if (this.adding) panel.append(this.searchBox());
+    if (this.said) panel.append(element("p", "media-said", this.said));
 
     if (!this.queue.connected) {
       /* ⚠️ Offered, not explained away. Windows' transport session has no

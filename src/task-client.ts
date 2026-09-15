@@ -173,11 +173,25 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   /* ⚠️ A queue with a track that has no artwork in it, on purpose: a cover is
      the one field Spotify legitimately omits, and the row still has to be a
      row. Same reason the shelf fixture carries a missing file. */
+  /* ⚠️ SIX, not three. Three is exactly the number the list is capped at, so
+     a fixture of three proves nothing about the cap — and the cap is the whole
+     reason the panel does not grow to the height of a Spotify queue. */
   if (command === "spotify_queue") return {connected:true, note:"", tracks:[
     {id:"q1", title:"Heroine (Cryogenic's Second Wind)", artist:"CRYOGENIC", artwork:""},
     {id:"q2", title:"Roulette", artist:"Bilal Wahib, Boef", artwork:""},
     {id:"q3", title:"Habiba", artist:"Boef", artwork:""},
+    {id:"q4", title:"Murder To Excellence", artist:"JAY-Z, Kanye West", artwork:""},
+    {id:"q5", title:"No, No, No", artist:"Eve, Stephen Marley", artwork:""},
+    {id:"q6", title:"Winnetka Exit", artist:"Styles Of Beyond", artwork:""},
   ]} as T;
+  if (command === "spotify_search") {
+    const wanted = String(args.query ?? "").toLowerCase();
+    return [
+      {uri:"spotify:track:1", title:"Mr. Carter", artist:"Lil Wayne, JAY-Z", artwork:""},
+      {uri:"spotify:track:2", title:"Ready or Not", artist:"Fugees", artwork:""},
+    ].filter(t => t.title.toLowerCase().includes(wanted)) as T;
+  }
+  if (command === "spotify_enqueue") return undefined as T;
   if (command === "get_app_time") return {day:localDay(), total:16_800, apps:[
     {name:"VS Code", seconds:9000}, {name:"Chrome", seconds:4200},
     {name:"Terminal", seconds:1800}, {name:"Spotify", seconds:900},

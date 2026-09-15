@@ -2205,3 +2205,26 @@ The two halves were the same fault.
      The test polls until the width stops moving before comparing; a
      measurement taken on the click is some arbitrary point on the way there,
      and every comparison against it is then meaningless.
+283. ⚠️ **Spotify cannot reorder its own queue, and neither can we.** The Web
+     API has no endpoint for moving, removing or inserting a queued item;
+     `POST /me/player/queue` appends and that is the whole surface. Playlists
+     can be reordered, the queue cannot. Do not build the drag handle.
+284. ⚠️ **Adding a scope invalidates the grant already stored.** The old token
+     keeps working for reads and answers 403 for the write, which reads as a
+     Premium problem rather than a stale consent. The error says so by name.
+     ⚠️ And the scope list is SPACE-separated; a comma silently grants nothing.
+285. ⚠️ **Cap the list, not the panel.** A Spotify queue is routinely twenty
+     rows and the island would grow to the height of a window. The `max-height`
+     has to sit on the scroller itself: `natural()` adds a clipping child's
+     hidden content back into the measurement and walks the grid's DIRECT
+     children, so an overflow one level up measures the full list again.
+     ⚠️ A fixture of exactly three tracks proves nothing about a cap of three.
+286. ⚠️ **A spring settles within 0.01 of its target, which rounds either
+     way.** A test asserting a width comes back exactly equal after a round
+     trip fails by one pixel, at random. Compare with a tolerance.
+287. ⚠️ **A bezier is not a spring.** Droppy's timings (560ms
+     `cubic-bezier(0.32,1.22,0.36,1)` for size, 460ms
+     `cubic-bezier(0.3,1.6,0.4,1)` for the fold) transfer as a SHAPE, not as
+     numbers: `response` is the period, so the duration carries over, and a
+     control point above 1 means damping below ~0.7. Copying the numbers into
+     a spring means nothing.

@@ -40,10 +40,15 @@ export class IslandSurface {
   private timer = 0;
   private frame = 0;
   private last = 0;
-  /* ⚠️ Shorter and looser than it was (0.42/0.78). This is the one gesture
-   * the whole app is judged by — a pill becoming a panel — and it was arriving
-   * politely rather than snapping into place. */
-  private fold = new Spring(0, 0.34, 0.72);
+  /* The pill becoming a panel, and the one gesture the whole app is judged by.
+   *
+   * ⚠️ Tuned against Droppy's own, which is
+   * `transform 460ms cubic-bezier(0.3, 1.6, 0.4, 1)`. A spring is not a bezier,
+   * so the numbers are not transferable — what carries across is the SHAPE:
+   * about half a second, and a control point of 1.6 is a pronounced overshoot.
+   * `response` is the period, so 0.46 is that duration; `damping` below ~0.7 is
+   * what lets it past its target and back. */
+  private fold = new Spring(0, 0.46, 0.62);
   /* ⚠️ The panel's own size is sprung as well as its opening. `depth` and
    * `body` are recomputed whenever the screen changes, and writing them
    * straight into the geometry made the island SNAP to the new screen's height
@@ -416,7 +421,15 @@ export class IslandSurface {
 
   /** Response and damping for the size springs, by why they are moving. */
   private sizing(): [number, number] {
-    return this.deliberate ? [0.30, 0.74] : [0.34, 0.92];
+    /* ⚠️ Droppy's is `width/height/border-radius 560ms
+     * cubic-bezier(0.32, 1.22, 0.36, 1)` — slower than its transform and with a
+     * smaller overshoot, which is exactly the distinction below: a size change
+     * you asked for may overshoot, and it is allowed to take longer than the
+     * fold because you are watching the CONTENT arrive, not the shape.
+     *
+     * The second pair is unchanged and is not Droppy's: a list that gained a
+     * row under a still pointer must not move the row you were about to press. */
+    return this.deliberate ? [0.56, 0.68] : [0.34, 0.92];
   }
 
   async input(active: boolean) {

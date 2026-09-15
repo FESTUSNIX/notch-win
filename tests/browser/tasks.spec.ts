@@ -850,10 +850,32 @@ test("the player is a screen only while there is a player, and the queue is clos
 
   await page.getByRole("button", {name: "Playing next", exact: true}).click();
   await expect(page.locator(".media-queue-head")).toHaveText("Playing Next");
-  await expect(page.locator(".media-track")).toHaveCount(3);
+  await expect(page.locator(".media-track")).toHaveCount(6);
   // A track with no cover is still a row: artwork is the one field Spotify
   // legitimately omits.
-  await expect(page.locator(".media-track-art.blank")).toHaveCount(3);
+  await expect(page.locator(".media-track-art.blank")).toHaveCount(6);
+
+  /* ⚠️ Three rows, then the LIST scrolls — and only the list. A Spotify
+     queue is routinely twenty tracks, and a panel that grows to fit one is a
+     notch the height of a window. The list clips; nothing above it moves. */
+  const list = page.locator(".media-queue-list");
+  await expect.poll(() => list.evaluate(el => el.scrollHeight > el.clientHeight + 1)).toBe(true);
+  expect(await list.evaluate(el => Math.round(el.clientHeight))).toBeLessThan(150);
+  // The screen itself does not scroll to make room for it.
+  expect(await page.locator("#media-body")
+    .evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+
+  /* Something can be put on the END of the queue. ⚠️ The end and nothing
+     else: Spotify's Web API has no endpoint for reordering a queued item,
+     removing one, or inserting at a position, so there is no handle offered
+     for it. See TODO.md. */
+  await page.getByRole("button", {name: "Add to the queue", exact: true}).click();
+  const field = page.getByRole("searchbox", {name: "Search Spotify"});
+  await expect(field).toBeFocused();
+  await field.fill("carter");
+  await expect(page.locator(".media-result")).toHaveCount(1);
+  await page.locator(".media-result").click();
+  await expect(page.locator(".media-said")).toContainText("Queued Mr. Carter");
   await expect.poll(async () => (await page.locator("#island").boundingBox())!.width)
     .toBeGreaterThan(shut + 100);
   await settle();
@@ -862,7 +884,9 @@ test("the player is a screen only while there is a player, and the queue is clos
   // And it folds back to the narrow panel.
   await page.getByRole("button", {name: "Playing next", exact: true}).click();
   await expect(page.locator(".media-queue")).toHaveCount(0);
-  expect(await settle()).toBe(shut);
+  /* ⚠️ Within a pixel, not equal to it. The width is a spring: it settles
+     when it is within 0.01 of its target, which rounds to either side. */
+  expect(Math.abs(await settle() - shut)).toBeLessThanOrEqual(2);
 
   /* ⚠️ With nothing playing there is no tab — and if it goes while you are
      looking at it, the shell moves you home rather than sitting on a hidden
@@ -1408,8 +1432,14 @@ test("a wheel has to mean it before the screen changes", async ({page}) => {
   for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 4);
   expect(await active()).toBe("Home");
 
-  // One mouse notch is ~100px and still counts.
+  /* ⚠️ ONE mouse notch is not enough either, and that is the point of the
+     second raise: at 90 a single notch switched, which in use meant looking up
+     to find yourself a screen away after brushing the wheel. */
   await page.mouse.wheel(0, 120);
+  expect(await active()).toBe("Home");
+
+  // Two notches, or a deliberate swipe, and it goes.
+  await page.mouse.wheel(0, 140);
   await expect.poll(active).not.toBe("Home");
 });
 
@@ -1417,13 +1447,15 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator(".island-tabs").hover();
-  await page.mouse.wheel(0, 120);
+  /* ⚠️ 260, not 120. The threshold is 240 now — one mouse notch no longer
+     switches, which is the whole of "less sensitive". */
+  await page.mouse.wheel(0, 260);
   await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
   // Past the cooldown: one flick must not run through every tab, so a second
-  // wheel inside 260ms is deliberately ignored. The pointer is NOT re-aimed —
+  // wheel inside 450ms is deliberately ignored. The pointer is NOT re-aimed —
   // the rail has moved out from under it, and the gesture must survive that.
-  await page.waitForTimeout(320);
-  await page.mouse.wheel(0, -120);
+  await page.waitForTimeout(520);
+  await page.mouse.wheel(0, -260);
   await expect(page.locator('[data-tab="home"]')).toHaveAttribute("aria-selected", "true");
 
   /* Vertical scrolling over a list must stay with the list.
@@ -1439,11 +1471,11 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
     .evaluate(el => el.scrollHeight > el.clientHeight + 1)).toBe(true);
   const list = await page.locator("#task-list").boundingBox();
   await page.mouse.move(list!.x + list!.width / 2, list!.y + 20);
-  await page.mouse.wheel(0, 200);
+  await page.mouse.wheel(0, 300);
   await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
   // A horizontal swipe there does change screens.
-  await page.waitForTimeout(320);
-  await page.mouse.wheel(200, 0);
+  await page.waitForTimeout(520);
+  await page.mouse.wheel(300, 0);
   await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "false");
 });
 

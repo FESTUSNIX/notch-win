@@ -560,6 +560,8 @@ pub fn run() {
             spotify::spotify_status,
             spotify::spotify_queue,
             spotify::spotify_redirect,
+            spotify::spotify_search,
+            spotify::spotify_enqueue,
             shortcuts::get_shortcuts,
             shortcuts::set_shortcuts,
             apps::list_apps,

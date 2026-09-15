@@ -386,7 +386,7 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .media-art.blank svg { width:30px; height:30px; }
 .media-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
 .media-title-line { display:flex; align-items:center; gap:8px; min-width:0; }
-.media-title { margin:0; font-size:19px; font-weight:600; letter-spacing:-.4px;
+.media-title { margin:0; font-size:20px; font-weight:650; letter-spacing:-.45px;
   line-height:1.25; min-width:0; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
 /* ⚠️ The SOURCE, not "explicit". Windows' transport session carries no explicit
@@ -410,15 +410,21 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 
 /* ── Where you are in it ─────────────────────────────────────────────── */
 .media-scrub { display:flex; align-items:center; gap:11px; }
-.media-time { font-size:11px; color:#7c7c7c; font-variant-numeric:tabular-nums;
-  min-width:36px; flex-shrink:0; }
+/* ⚠️ Bright, and big enough to read without stopping. It was 11px of #7c7c7c
+   — the same grey as a caption — for the one number on this screen that changes
+   every second and is the reason to look at all. */
+.media-time { font-size:12.5px; font-weight:600; color:#e8e8e8;
+  font-variant-numeric:tabular-nums; letter-spacing:-.2px;
+  min-width:42px; flex-shrink:0; }
+.media-left { color:#9a9a9a; }
 /* ⚠️ Remaining, so it is right-aligned against the rail rather than drifting
    as the number of digits changes. */
 .media-left { text-align:right; }
-.media-rail { position:relative; flex:1; height:6px; border-radius:3px;
+.media-rail { position:relative; flex:1; height:7px; border-radius:4px;
   background:rgba(255,255,255,.10); box-shadow:inset 0 0 0 1px var(--hair);
   overflow:hidden; }
-.media-rail i { display:block; height:100%; border-radius:3px; background:#e8e8e8;
+.media-rail i { display:block; height:100%; border-radius:4px; background:#fff;
+  box-shadow:0 0 10px -2px rgba(255,255,255,.45);
   transition:width var(--duration-quick) linear; }
 .media-rail.can-seek { cursor:pointer; }
 .media-rail.can-seek:hover { height:8px; }
@@ -438,8 +444,12 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .media-key:active:not(:disabled) { scale:.94; transition-duration:90ms; }
 .media-key:disabled { opacity:.35; cursor:default; }
 /* The one you press most is the one that is biggest. */
-.media-key.is-main { width:50px; height:50px; background-color:var(--tile-hi); }
-.media-key.is-main svg { width:23px; height:23px; }
+/* The one you press most is the biggest and the brightest. */
+.media-key.is-main { width:52px; height:52px; color:#fff;
+  background-color:var(--tile-on);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+.media-key.is-main svg { width:24px; height:24px; }
+.media-key.is-main:hover:not(:disabled) { background-color:rgba(255,255,255,.22); }
 
 .media-side { display:grid; place-items:center; width:36px; height:36px; padding:0;
   border-radius:11px; color:#8a8a8a;
@@ -476,9 +486,54 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 /* ── Playing Next ────────────────────────────────────────────────────── */
 .media-queue { display:flex; flex-direction:column; gap:9px; min-width:0;
   align-self:stretch; padding-left:15px; box-shadow:inset 1px 0 0 var(--hair); }
+.media-queue-top { display:flex; align-items:center; justify-content:space-between;
+  gap:10px; }
 .media-queue-head { margin:0; font-size:13px; font-weight:600; letter-spacing:-.2px; }
-.media-queue-list { display:flex; flex-direction:column; gap:3px; min-height:0;
-  overflow-y:auto; }
+.media-add { display:grid; place-items:center; width:26px; height:26px; padding:0;
+  border-radius:8px; color:#8a8a8a; flex-shrink:0; }
+.media-add svg { width:15px; height:15px; }
+.media-add:hover { color:#fff; background:var(--tile-hi); }
+.media-add:active { scale:.94; transition-duration:90ms; }
+.media-add.is-on { color:var(--accent); background:var(--tile-on); }
+
+.media-search { display:flex; flex-direction:column; gap:5px; }
+.media-search input { width:100%; font:inherit; font-size:12px; padding:7px 10px;
+  border:0; border-radius:9px; color:#fff; min-width:0;
+  background:rgba(0,0,0,.32);
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 6px -3px rgba(0,0,0,.9); }
+.media-search input::placeholder { color:#6d6d6d; }
+.media-search input:focus-visible { outline:none;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 2px 6px -3px rgba(0,0,0,.9); }
+/* ⚠️ Capped like the queue below it. Six results in a panel three rows tall
+   is a search box that pushes the thing you are searching for off the screen. */
+.media-results { display:flex; flex-direction:column; gap:2px; max-height:150px;
+  overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
+.media-result { display:flex; align-items:center; gap:9px; width:100%;
+  text-align:left; padding:4px 6px; border-radius:9px; min-width:0; }
+.media-result:hover { background:var(--tile-hi); }
+.media-result:active { scale:.99; transition-duration:90ms; }
+.media-result .media-track-art { width:28px; height:28px; border-radius:6px; }
+.media-result-add { display:grid; place-items:center; flex-shrink:0; color:#6a6a6a; }
+.media-result-add svg { width:14px; height:14px; }
+.media-result:hover .media-result-add { color:var(--accent); }
+.media-said { margin:0; font-size:11px; color:var(--accent); line-height:1.5;
+  overflow-wrap:anywhere; }
+/* ⚠️ Three rows, then this scrolls — and only this. A queue is however long
+   Spotify feels like making it (twenty rows is normal), and a panel that grows
+   to fit one is a notch the height of a window. The cap is on the LIST so the
+   player beside it never moves and the island's own height stops depending on
+   what is queued.
+
+   ⚠️ A max-height, not a row count in JS: `natural()` adds a clipping child's
+   hidden content back into the measurement, and it walks the grid's direct
+   children — `.media-queue` — whose own content is bounded by this. Put the
+   overflow one level up and the panel grows to the full list again. */
+.media-queue-list { --queue-rows:3; display:flex; flex-direction:column; gap:3px;
+  min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  max-height:calc(var(--queue-rows) * 44px + (var(--queue-rows) - 1) * 3px);
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
 .media-track { display:flex; align-items:center; gap:10px; min-width:0;
   padding:5px 6px; border-radius:10px;
   transition:background-color var(--duration-quick) var(--ease-smooth-out); }
