@@ -40,6 +40,17 @@ export class IslandSurface {
   private frame = 0;
   private last = 0;
   private fold = new Spring(0, 0.42, 0.78);
+  /* ⚠️ The panel's own size is sprung as well as its opening. `depth` and
+   * `body` are recomputed whenever the screen changes, and writing them
+   * straight into the geometry made the island SNAP to the new screen's height
+   * while its contents were still fading in — the one motion on the surface
+   * that had no easing at all.
+   *
+   * ⚠️ Damped harder than the fold (0.9 vs 0.78). The fold is a panel arriving
+   * and can afford a little overshoot; this is a panel already on screen
+   * changing size under your cursor, and overshoot there reads as a wobble. */
+  private grow = new Spring(cpx(FRAME.islandMinDepth), 0.34, 0.9);
+  private widen = new Spring(cpx(FRAME.islandBodyLong), 0.34, 0.9);
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   private shell = document.getElementById("notch-shell")!;
   private island = document.getElementById("island")!;
@@ -59,6 +70,8 @@ export class IslandSurface {
     window.addEventListener("resize", () => this.measure());
     this.reduced.addEventListener("change", () => {
       this.fold.snap(this.open ? 1 : 0);
+      this.grow.snap(this.depth);
+      this.widen.snap(this.body);
       this.paint();
     });
   }
@@ -86,8 +99,8 @@ export class IslandSurface {
    * edge. The same relationship `shapeLength()` describes for the usage notch. */
   private geometry(t: number) {
     const curl = lerp(cpx(FRAME.islandPillThin) / 2, cpx(FRAME.islandCurl), t);
-    const body = lerp(cpx(FRAME.islandPillLong), this.body, t);
-    const depth = lerp(cpx(FRAME.islandPillThin), this.depth, t);
+    const body = lerp(cpx(FRAME.islandPillLong), this.widen.value, t);
+    const depth = lerp(cpx(FRAME.islandPillThin), this.grow.value, t);
     const length = body + 2 * curl;
     const vertical = isVertical(this.edge);
     return {
@@ -174,6 +187,18 @@ export class IslandSurface {
     const vertical = isVertical(this.edge);
     this.expanded.style.width = `${vertical ? this.depth : this.body}px`;
     this.expanded.style.height = `${vertical ? this.body : this.depth}px`;
+    /* ⚠️ Snapped while closed, sprung while open. A size change the island is
+     * not showing must not animate: the spring would spend its travel behind a
+     * collapsed pill and the panel would then open at whatever size it had got
+     * to, which is a different wrong size every time. */
+    if (this.open && !this.reduced.matches) {
+      this.grow.setTarget(this.depth);
+      this.widen.setTarget(this.body);
+      if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
+    } else {
+      this.grow.snap(this.depth);
+      this.widen.snap(this.body);
+    }
     this.collapsed.style.width = `${vertical ? cpx(FRAME.islandPillThin) : cpx(FRAME.islandPillLong)}px`;
     this.collapsed.style.height = `${vertical ? cpx(FRAME.islandPillLong) : cpx(FRAME.islandPillThin)}px`;
     this.paint();
@@ -283,11 +308,21 @@ export class IslandSurface {
   }
 
   private tick(now: number) {
-    this.fold.step(this.last ? Math.min((now - this.last) / 1000, 0.05) : 0.016);
+    const dt = this.last ? Math.min((now - this.last) / 1000, 0.05) : 0.016;
+    this.fold.step(dt);
+    this.grow.step(dt);
+    this.widen.step(dt);
     this.last = now;
     this.paint();
-    if (!this.fold.settled) this.frame = requestAnimationFrame(t => this.tick(t));
-    else { this.fold.snap(this.open ? 1 : 0); this.frame = 0; this.paint(); }
+    // ⚠️ All three, not just the fold: a size change can outlast the opening,
+    // and stopping on the fold alone leaves the panel frozen mid-resize.
+    if (!this.fold.settled || !this.grow.settled || !this.widen.settled) {
+      this.frame = requestAnimationFrame(t => this.tick(t));
+    } else {
+      this.fold.snap(this.open ? 1 : 0);
+      this.frame = 0;
+      this.paint();
+    }
   }
 
   private paint() {

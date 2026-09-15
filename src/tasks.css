@@ -267,9 +267,41 @@ h1 { margin:0; }
 .day-meta span:empty { display:none; }
 .day-meta span+span:not(:empty)::before { content:"·"; margin-right:7px; color:#4a4a4a; }
 
-.screens { flex:1; min-height:0; display:flex; flex-direction:column; }
+/* ── Changing screens ────────────────────────────────────────────────────
+   The screens sit on a strip and the selection travels along it, so a screen
+   arriving from the side it sits on is the only movement that agrees with the
+   tab pill. Jumping from Home to Review, the content came from nowhere and the
+   panel's height snapped to meet it.
+
+   ⚠️ The leaving screen goes ABSOLUTE for the length of its exit. In flow it
+   would still be claiming height, so the panel would hold the taller of the two
+   screens until the exit finished and then drop — a lurch at the end of every
+   switch. Out of flow, the arriving screen alone sets the height and the
+   island's own spring carries the panel to it.
+
+   ⚠️ `--dir` is +1 when the selection moved right and -1 when it moved left,
+   written on `.screens` by `show()`. */
+.screens { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; }
 .screen { flex:1; min-height:0; display:none; flex-direction:column; }
 .screen.active { display:flex; }
+.screen.active:not(.is-first) { animation:screen-in var(--duration-fast) var(--ease-smooth-out); }
+.screen.is-leaving { display:flex; position:absolute; inset:0; z-index:0; pointer-events:none;
+  animation:screen-out var(--duration-quick) var(--ease-smooth-out) forwards; }
+.screen.active { z-index:1; }
+
+@keyframes screen-in {
+  from { opacity:0; transform:translateX(calc(var(--dir, 1) * var(--distance-medium)));
+         filter:blur(var(--blur-medium)); }
+  to   { opacity:1; transform:none; filter:blur(0); }
+}
+/* ⚠️ Shorter than the entrance, and travels less far. An exit that matches its
+   entrance reads as the old screen being just as important as the new one —
+   you asked for the new one. */
+@keyframes screen-out {
+  from { opacity:1; transform:none; filter:blur(0); }
+  to   { opacity:0; transform:translateX(calc(var(--dir, 1) * var(--distance-base) * -1));
+         filter:blur(var(--blur-small)); }
+}
 .screen-body { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:8px 14px 12px;
   scrollbar-width:thin; scrollbar-color:#303030 transparent; }
 .screen-error { margin:10px 0 0; font-size:11px; color:#ffab83; line-height:1.5; }

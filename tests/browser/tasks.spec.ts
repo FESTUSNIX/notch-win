@@ -901,6 +901,45 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await expect(page.locator(".cal-row").first()).toBeVisible();
 });
 
+test("changing screens moves, and the panel travels to the new height", async ({page}) => {
+  await page.setViewportSize({width: 1060, height: 560});
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+
+  const dir = () => page.locator(".screens").evaluate(el =>
+    getComputedStyle(el).getPropertyValue("--dir").trim());
+
+  /* ⚠️ The direction comes from the TAB ORDER, not from the order screens were
+   * opened in — the strip is what you are looking at while this happens, so a
+   * screen has to arrive from the side it sits on. */
+  await page.locator('[data-tab="review"]').click();
+  expect(await dir()).toBe("1");
+  await page.locator('[data-tab="today"]').click();
+  expect(await dir()).toBe("-1");
+
+  /* ⚠️ The screen being left goes ABSOLUTE for the length of its exit. Left in
+   * flow it would hold the panel at the taller of the two heights and then drop
+   * — a lurch at the end of every switch. */
+  await page.locator('[data-tab="system"]').click();
+  const leaving = page.locator(".screen.is-leaving");
+  await expect(leaving).toHaveCount(1);
+  expect(await leaving.evaluate(el => getComputedStyle(el).position)).toBe("absolute");
+  // And it is gone once the exit is over, rather than left stacked underneath.
+  await expect(page.locator(".screen.is-leaving")).toHaveCount(0);
+
+  /* The panel's height is SPRUNG rather than set: it travels to the new
+   * screen's height instead of snapping to it. */
+  const height = () => page.locator("#island").evaluate(el => el.getBoundingClientRect().height);
+  await page.locator('[data-tab="home"]').click();
+  const settled = await height();
+  await page.locator('[data-tab="review"]').click();
+  const mid = await height();
+  await expect.poll(height).not.toBe(mid);
+  expect(await height()).not.toBe(settled);
+  await page.screenshot({path: "test-results/island-screen-change.png"});
+});
+
 test("a wheel changes screens unless the thing under it can scroll", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
@@ -975,9 +1014,15 @@ test("a long device list stays behind one press instead of growing the panel", a
   // Opening it GROWS the island rather than being clipped by it.
   await expect.poll(() => page.locator("#island").evaluate(el => el.getBoundingClientRect().height))
     .toBeGreaterThan(closed);
-  const box = await sheet.boundingBox();
-  const island = await page.locator("#island").boundingBox();
-  expect(box!.y + box!.height).toBeLessThanOrEqual(island!.y + island!.height + 1);
+  /* ⚠️ Polled, because the panel's height is SPRUNG. At the moment the height
+   * first exceeds its closed value the island is still travelling, so the sheet
+   * is legitimately taller than it for a few frames — the claim is that the
+   * island ends up containing it, not that it does so on the first frame. */
+  await expect.poll(async () => {
+    const box = (await sheet.boundingBox())!;
+    const island = (await page.locator("#island").boundingBox())!;
+    return box.y + box.height <= island.y + island.height + 1;
+  }).toBe(true);
 
   // Choosing from it switches and closes.
   await sheet.locator(".sys-row").nth(1).click();

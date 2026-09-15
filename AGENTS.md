@@ -1876,3 +1876,25 @@ The two halves were the same fault.
      first.** A workspace is several things; an editor that would not start is
      no reason to leave the browser and the folder unopened, and "3 opened, 1
      would not" is a more useful answer than one error message.
+214. ⚠️ **The panel's SIZE is sprung, not set.** `depth` and `body` are
+     recomputed on every screen change, and writing them into the geometry made
+     the island snap to the new screen's height while its contents were still
+     fading in — the one motion on the surface with no easing at all. Damped
+     harder than the fold (0.9 vs 0.78): the fold is a panel arriving and can
+     afford overshoot, this is a panel already on screen changing size under the
+     cursor, where overshoot reads as a wobble.
+215. ⚠️ **Snap the size while the island is CLOSED.** A size change nobody
+     is looking at must not animate — the spring would spend its travel behind a
+     collapsed pill and the panel would then open at whatever size it had
+     reached, a different wrong size every time.
+216. ⚠️ **`tick()` must watch all three springs.** A size change can outlast
+     the opening; stopping on the fold alone leaves the panel frozen mid-resize.
+217. ⚠️ **The leaving screen goes ABSOLUTE for its exit.** Left in flow it
+     still claims height, so the panel holds the taller of the two screens until
+     the exit finishes and then drops — a lurch at the end of every switch. Out
+     of flow, the arriving screen alone sets the height.
+218. ⚠️ **A sprung height means tests must POLL geometry.** At the moment a
+     height first exceeds its old value the island is still travelling, so
+     anything measured once is measured mid-flight. Two existing tests asserted
+     on the first frame and only one of them failed — the other was passing by
+     luck.

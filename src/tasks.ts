@@ -127,6 +127,7 @@ const home = new HomeScreen(get("home-body"), { today, media, calendar, open: na
  * already carries the title and three controls, and putting the switch at the
  * far edge keeps the top of the panel for what the screen is actually saying. */
 const tabRail = document.querySelector<HTMLElement>(".island-tabs")!;
+const screens = document.querySelector<HTMLElement>(".screens")!;
 for (const tab of TABS) {
   const button = document.createElement("button");
   button.type = "button";
@@ -207,16 +208,49 @@ if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => placeGlide(false)).observe(tabRail);
 }
 
+/** How long a leaving screen is kept on screen. Must match `screen-out`. */
+const SCREEN_EXIT_MS = 150;
+
 function show(name: ScreenName) {
+  const from = screen;
   screen = name;
   // Volume, brightness and the device lists are read when the screen is
   // opened — see screen-system.ts on why none of it is polled.
   if (name === "system") void system.load();
   if (name === "review") void review.load().then(() => render());
+  /* The direction the selection travelled, so the new screen arrives from the
+   * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens
+   * were opened in — the strip is what you are looking at while this happens. */
+  const was = TABS.findIndex(tab => tab.name === from);
+  const now = TABS.findIndex(tab => tab.name === name);
+  const moving = from !== name && was >= 0 && now >= 0;
+  screens.style.setProperty("--dir", String(moving && now < was ? -1 : 1));
+
   for (const section of document.querySelectorAll<HTMLElement>(".screen")) {
     const active = section.dataset.screen === name;
+    /* ⚠️ The screen being left is kept, out of flow, for the length of its
+     * exit. Hidden outright it would vanish mid-gesture; left in flow it would
+     * hold the panel at the taller of the two heights and then drop. */
+    if (!active && moving && section.dataset.screen === from) {
+      section.classList.remove("active");
+      section.classList.add("is-leaving");
+      section.hidden = false;
+      const leaving = section;
+      window.setTimeout(() => {
+        // Checked, not assumed: a fast switch back makes this screen active
+        // again before the timer fires, and hiding it then would blank it.
+        if (!leaving.classList.contains("active")) {
+          leaving.classList.remove("is-leaving");
+          leaving.hidden = true;
+        }
+      }, SCREEN_EXIT_MS);
+      continue;
+    }
     section.classList.toggle("active", active);
+    section.classList.remove("is-leaving");
     section.hidden = !active;
+    // The first paint is not an arrival: nothing was left to come from.
+    if (active) section.classList.toggle("is-first", !moving);
   }
   for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
     button.setAttribute("aria-selected", String(button.dataset.tab === name));
