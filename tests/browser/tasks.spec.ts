@@ -505,6 +505,56 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await expect(rows.nth(0)).not.toHaveClass(/is-quiet/);
   await page.screenshot({path: "test-results/island-agents.png"});
 });
+test("a workspace is made from a row that is already on screen", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  const field = page.locator(".palette-field");
+  const rows = page.locator(".palette-row");
+  const titles = () => rows.locator(".palette-title").allTextContents();
+
+  /* ⚠️ There is no workspace editor, and that is the design: a screen with a
+   * folder picker and an app list is a form to fill in before the feature does
+   * anything. The session already carries its own `cwd`, so making one is a
+   * Tab and an Enter on a row that was going to be there anyway. */
+  await field.fill("codenotch-win");
+  await expect.poll(async () => (await titles())[0]).toBe("codenotch-win");
+  await page.keyboard.press("Tab");
+  expect(await titles()).toContain("Save as a workspace");
+  await page.getByRole("option", {name: /Save as a workspace/}).click();
+  await expect(page.locator(".palette")).toBeHidden();
+
+  // It is then a thing you can reach by name.
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await field.fill("codenotch-win");
+  await expect.poll(async () => (await titles()).includes("codenotch-win")).toBe(true);
+  const space = rows.filter({has: page.locator(".palette-note", {hasText: "workspace"})}).first();
+  await expect(space).toHaveCount(1);
+
+  /* An application is filed into it from the row that launches it — one row per
+   * workspace rather than a picker, because a dialog to choose from a list
+   * inside a list is the form this exists to avoid. */
+  await field.fill("a Brave");
+  await expect(page.locator(".palette-crumb")).toHaveText("Apps");
+  await expect(rows.first().locator(".palette-title")).toHaveText("Brave");
+  await page.keyboard.press("Tab");
+  expect(await titles()).toContain("Add to codenotch-win");
+  await page.getByRole("option", {name: /Add to codenotch-win/}).click();
+
+  /* ⚠️ Saving the same folder twice is the SAME workspace, not a second one
+   * with the same name — the folder is the id.
+   *
+   * ⚠️ Counted by NOTE, not by title. The live session for that folder is a row
+   * called "codenotch-win" too, and it is a different thing you can do with the
+   * same project — counting titles would call that a duplicate. */
+  await page.getByRole("button", {name: "Search and commands"}).click();
+  await field.fill("codenotch");
+  await expect.poll(() => rows.filter({
+    has: page.locator(".palette-note", {hasText: /^workspace/}),
+  }).count()).toBe(1);
+  await page.screenshot({path: "test-results/island-workspace.png"});
+});
+
 test("today's spend is broken down by project", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);

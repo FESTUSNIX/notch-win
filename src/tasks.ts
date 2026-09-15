@@ -27,6 +27,7 @@ import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
 import * as stars from "./palette-stars";
+import * as workspaces from "./workspaces";
 import { Palette, TIER, type Action } from "./palette";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
@@ -536,6 +537,18 @@ palette.add(() => agentsScreen.sessions.map(session => ({
     { id: `agent:path:${session.id}`, title: "Copy the project name",
       keywords: "clipboard folder cd", icon: "copy",
       run: () => call("copy_text", { text: session.project }) },
+    /* ⚠️ Where a workspace comes from. The session already carries its own
+     * `cwd`, so there is nothing to type and nothing to pick — which is the
+     * whole reason there is no workspace editor. */
+    ...(session.folder && !workspaces.has(session.folder)
+      ? [{ id: `ws:save:${session.folder}`, title: "Save as a workspace",
+           note: workspaces.leaf(session.folder),
+           keywords: "workspace project keep start", icon: "folder" as TaskIcon,
+           run: async () => {
+             await workspaces.save(session.folder!);
+             say("Workspace", workspaces.leaf(session.folder!));
+           } }]
+      : []),
     /* The snooze the Agents screen already has, reachable without going there
      * — which is the whole argument for the palette. */
     snooze.isQuiet(`agent:${session.id}`)
@@ -625,6 +638,16 @@ palette.add(query => {
       { id: `app:reveal:${app.path}`, title: "Show the shortcut",
         keywords: "explorer folder locate", icon: "folder" as const,
         run: () => call("found_reveal", { path: app.path }) },
+      /* ⚠️ One row per workspace rather than a picker. The Tab menu is
+       * already a list; a dialog to choose from a list inside a list is the
+       * form this feature exists to avoid. */
+      ...workspaces.all().map(([folder, workspace]) => ({
+        id: `app:ws:${app.path}:${folder}`,
+        title: `Add to ${workspace.name}`,
+        keywords: "workspace project file",
+        icon: "plus" as const,
+        run: async () => { say("Added to", await workspaces.addApp(folder, app.path)); },
+      })),
     ],
   }));
 });
@@ -685,6 +708,47 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
       .catch(() => resolve([]));
   }, 140);
 }));
+
+/* A project, and everything you open to work on it.
+ *
+ * ⚠️ No editor, no settings page. A workspace screen with a folder picker and
+ * an app list is a form to fill in before the feature does anything, which is
+ * how a feature like this gets used once. These are made from rows that are
+ * already on screen — see the session and application providers above. */
+palette.add(() => workspaces.all().map(([folder, workspace]) => ({
+  id: `ws:${folder}`,
+  title: workspace.name,
+  note: workspace.apps.length
+    ? `workspace \u00b7 ${workspace.apps.length} app${workspace.apps.length === 1 ? "" : "s"}`
+    : "workspace",
+  keywords: `${folder} workspace project open start`,
+  icon: "folder" as TaskIcon,
+  hint: "Workspace",
+  keep: { title: workspace.name, note: "workspace", icon: "folder", kind: "", path: folder },
+  run: async () => { say("Opening", await workspaces.open(folder)); },
+  more: () => [
+    { id: `ws:open:${folder}`, title: "Open everything", keywords: "start launch all",
+      icon: "open" as TaskIcon,
+      run: async () => { say("Opening", await workspaces.open(folder)); } },
+    { id: `ws:folder:${folder}`, title: "Just the folder", keywords: "explorer show",
+      icon: "folder" as TaskIcon, run: () => call("found_open", { path: folder }) },
+    /* The session for this folder, if one is running. ⚠️ Matched on the
+     * folder rather than the project name: two checkouts of the same repo have
+     * the same name and are not the same workspace. */
+    ...agentsScreen.sessions
+      .filter(session => session.folder === folder)
+      .map(session => ({
+        id: `ws:raise:${folder}`, title: "Raise its terminal",
+        keywords: "session claude agent focus", icon: "agent" as TaskIcon,
+        run: () => call("focus_session", { pid: session.pid }),
+      })),
+    { id: `ws:copy:${folder}`, title: "Copy the folder path", keywords: "clipboard",
+      icon: "copy" as TaskIcon, run: () => call("copy_text", { text: folder }) },
+    { id: `ws:forget:${folder}`, title: "Forget this workspace",
+      keywords: "remove delete", icon: "close" as TaskIcon,
+      run: () => workspaces.remove(folder) },
+  ],
+})));
 
 /* What you kept.
  *
@@ -865,6 +929,7 @@ async function boot() {
    * second of a run anyway. Awaiting it here would hold the island's first
    * paint behind a Start Menu walk. */
   await stars.boot(() => render());
+  await workspaces.boot(() => render());
   void call<typeof installed>("list_apps")
     .then(list => { installed = list; })
     .catch(() => { /* no applications is a palette without apps, not an error */ });

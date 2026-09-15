@@ -20,6 +20,7 @@ mod runlog;
 mod shelf;
 mod snooze;
 mod stars;
+mod workspaces;
 mod transcript;
 mod weather;
 mod providers;
@@ -468,6 +469,7 @@ pub fn run() {
         .manage(sessions::Sessions::default())
         .manage(snooze::Store::default())
         .manage(stars::Store::default())
+        .manage(workspaces::Store::default())
         .manage(shelf::Store::default())
         .manage(runlog::Store::default())
         .manage(Latest::default())
@@ -527,6 +529,11 @@ pub fn run() {
             snooze::get_snoozed,
             stars::get_stars,
             stars::set_star,
+            workspaces::get_workspaces,
+            workspaces::save_workspace,
+            workspaces::remove_workspace,
+            workspaces::add_to_workspace,
+            workspaces::open_workspace,
             snooze::snooze,
             snooze::unsnooze,
             sessions::get_sessions,
@@ -667,6 +674,7 @@ pub fn run() {
             log::note(&format!("--- codenotch {} starting ---", env!("CARGO_PKG_VERSION")));
             snooze::load(app.handle());
             stars::load(app.handle());
+            workspaces::load(app.handle());
             shelf::load(app.handle());
             runlog::load(app.handle());
             sessions::spawn(app.handle().clone());

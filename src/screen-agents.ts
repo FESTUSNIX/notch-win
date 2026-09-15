@@ -31,6 +31,8 @@ export interface SessionView {
   input: number;
   output: number;
   lastRunSecs: number;
+  /** The session's working directory — what a workspace is made of. */
+  folder?: string | null;
   /** What it is doing right now — `editing palette.ts`. Absent unless it
    *  is working: a phrase that outlives its run is a status that WAS true. */
   doing?: string | null;

@@ -496,7 +496,11 @@ export class Palette {
      * without this you get two Brave rows, and the stored one is the staler of
      * the two. */
     const seen = new Set<string>();
-    const band = this.scope?.tier;
+    /* ⚠️ The scope narrows the TOP-LEVEL search and nothing else. Applied
+     * inside a sub-menu it filtered out every row in it — the verbs for one
+     * thing carry no band of their own, so they all defaulted to `island` and
+     * an `a ` scope emptied the menu it had just opened. */
+    const band = this.inside ? undefined : this.scope?.tier;
     this.pool = raw.filter(action =>
       (band === undefined || (action.tier ?? TIER.island) === band)
       && !seen.has(action.id) && seen.add(action.id));

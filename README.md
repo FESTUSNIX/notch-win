@@ -98,6 +98,15 @@ there is no `es.exe`, no HTTP server to enable and no SDK dll to ship. With
 Everything closed the palette simply has no file results and says nothing about
 it.
 
+**Workspaces.** A project and everything you open to work on it: the folder, the
+apps, and the Claude session if one is running. ⚠️ **There is no editor for
+them, and that is the design** — a screen with a folder picker and an app list is
+a form to fill in before the feature does anything, which is how a feature like
+this gets used once. They are made out of rows that are already on screen: `Tab`
+on a live session offers *Save as a workspace* (its folder is already known),
+`Tab` on an application offers *Add to <workspace>*. The folder is the id, so
+saving the same session twice is the same workspace rather than a second one.
+
 **Ranking prefers the thing you named.** Match *quality* — an exact title, a
 prefix, the initials of a multi-word name, the query appearing whole — counts
 for more than which band a row is in, and bands (an answer, then apps, then the

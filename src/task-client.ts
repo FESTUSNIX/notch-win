@@ -61,6 +61,7 @@ if(new URLSearchParams(location.search).has("single")) demo.tasks=demo.tasks.fil
 const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
 const demoStars: Record<string, Record<string, string>> = {};
+const demoSpaces: Record<string, Record<string, unknown>> = {};
 
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
@@ -90,6 +91,24 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   /* Stars in the preview live for the page's lifetime only — long enough to
      exercise the round trip, short enough that one test cannot colour another. */
   if (command === "get_stars") return structuredClone(demoStars) as T;
+  /* Workspaces in the preview live for the page's lifetime, like the stars:
+     long enough to exercise the round trip, short enough that one test cannot
+     colour another. */
+  if (command === "get_workspaces") return structuredClone(demoSpaces) as T;
+  if (command === "save_workspace") {
+    demoSpaces[String(args.id)] = args.workspace as Record<string, unknown>;
+    return undefined as T;
+  }
+  if (command === "remove_workspace") { delete demoSpaces[String(args.id)]; return undefined as T; }
+  if (command === "add_to_workspace") {
+    const space = demoSpaces[String(args.id)] as {name: string; apps: string[]} | undefined;
+    if (space && !space.apps.includes(String(args.path))) space.apps.push(String(args.path));
+    return (space?.name ?? "") as T;
+  }
+  if (command === "open_workspace") {
+    const space = demoSpaces[String(args.id)] as {apps: string[]} | undefined;
+    return `${1 + (space?.apps.length ?? 0)} opened` as T;
+  }
   if (command === "set_star") {
     const id = String(args.id ?? "");
     if (args.star) demoStars[id] = args.star as Record<string, string>;
@@ -132,12 +151,14 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      agent, which is exactly what happened when this stub was first written. */
   if (command === "get_sessions") return (quiet ? [] : !agentsFixture ? [
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
-     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib"},
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib",
+     folder:"C:/Users/matko/CODE/_personal/codenotch-win"},
   ] : [
     {id:"s1", project:"akcesfonia", branch:"master", pid:4242, state:"waiting",
      forSecs:214, input:1_284_000, output:38_200, lastRunSecs:252},
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
-     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib"},
+     forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib",
+     folder:"C:/Users/matko/CODE/_personal/codenotch-win"},
     {id:"s3", project:"esono", branch:"feat/pdp", pid:4244, state:"idle",
      forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
   ]) as T;

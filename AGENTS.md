@@ -1857,3 +1857,22 @@ The two halves were the same fault.
 209. ⚠️ **New fields on `runlog::Run` need `serde(default)`.** The file holds
      two weeks of history and a parse error throws all of it away to add one
      column.
+210. ⚠️ **A query scope must not reach into a sub-menu.** The scope narrows
+     the top-level search; the verbs inside a Tab menu carry no band of their
+     own, so they all default to `island` — and an `a ` scope filtered out every
+     row of the menu it had just opened. Caught by the workspace test, not by
+     review.
+211. ⚠️ **A workspace has no editor, on purpose.** A screen with a folder
+     picker and an app list is a form to fill in before the feature does
+     anything, which is how a feature like this gets used once. They are built
+     from rows that are already on screen — a live session already carries its
+     own `cwd`, and an application is filed into one from the row that launches
+     it.
+212. ⚠️ **The FOLDER is the workspace's id, never the project name.** Two
+     checkouts of the same repo have the same name and are not the same
+     workspace — and keying on the folder is also what makes "save this session
+     as a workspace" idempotent however many times it is pressed.
+213. ⚠️ **`open_workspace` collects every failure rather than returning the
+     first.** A workspace is several things; an editor that would not start is
+     no reason to leave the browser and the folder unopened, and "3 opened, 1
+     would not" is a more useful answer than one error message.

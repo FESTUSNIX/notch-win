@@ -241,6 +241,9 @@ pub struct SessionView {
     pub output: u64,
     /// How long the last completed run took, 0 if none has been seen.
     pub last_run_secs: u64,
+    /// The session's working directory, which is what a workspace is made of.
+    /// `None` where the session file did not record one.
+    pub folder: Option<String>,
     /// What it is doing right now, in words — `editing palette.ts`.
     ///
     /// ⚠️ `None` whenever the session is not working. A phrase left behind by
@@ -407,6 +410,7 @@ impl Watcher {
                 /* ⚠️ Gated on the state, not just on the phrase. The transcript
                  * goes quiet the moment a tool call is answered, so the last
                  * one seen outlives the run that made it. */
+                folder: session.cwd.clone(),
                 doing: (entry.state == Activity::Working)
                     .then(|| entry.doing.as_ref().map(|d| d.say()))
                     .flatten(),
