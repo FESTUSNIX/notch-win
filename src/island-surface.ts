@@ -160,8 +160,17 @@ export class IslandSurface {
       if (el.classList.contains("spans")) {
         const style = getComputedStyle(el);
         const base = el.getBoundingClientRect();
+        /* ⚠️ A child that CLIPS its own content contributes the content, not
+         * the box. Home's three cards are stretched to one another's height by
+         * the grid, so the tallest one's list can overflow it by a row — and
+         * the union of the boxes then measures the panel eight pixels short,
+         * which is a clipped last row rather than a visible one. */
         const boxes = [...kids, ...el.querySelectorAll<HTMLElement>(".sheet")]
-          .map(child => child.getBoundingClientRect())
+          .map(child => {
+            const box = child.getBoundingClientRect();
+            const hidden = Math.max(0, child.scrollHeight - child.clientHeight);
+            return { height: box.height, bottom: box.bottom + hidden };
+          })
           .filter(box => box.height > 0);
         if (!boxes.length) return parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
         const bottom = Math.max(...boxes.map(box => box.bottom));
@@ -198,7 +207,11 @@ export class IslandSurface {
     this.depth = Math.min(
       available,
       cpx(FRAME.islandBodyDepth),
-      Math.max(cpx(FRAME.islandMinDepth), chrome + content + cpx(FRAME.cardPadding)),
+      /* ⚠️ No `cardPadding` any more. `natural()` counts the scroller's own
+       * padding now, so adding a card's worth on top of it spent that gap
+       * twice — ~30px under the last row of every screen, which is what made
+       * the bottom look nothing like the sides. */
+      Math.max(cpx(FRAME.islandMinDepth), chrome + content),
     );
     // Layers are sized to the BODY, never the element: the flare at each end is
     // shape, not room, and content laid into it would be clipped by the curve.

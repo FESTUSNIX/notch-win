@@ -47,8 +47,21 @@ export class HomeScreen {
    *  has no screen behind it any more, so a chevron promising one would be a
    *  control that goes nowhere. */
   private section(cls: string, title: string, screen: ScreenName | null): HTMLElement {
-    const wrap = element("section", `home-sec ${cls}`);
+    const wrap = element("section", `home-sec ${cls}${screen ? " can-open" : ""}`);
     if (!screen) return wrap;
+    /* ⚠️ The WHOLE card opens the screen, not just the chevron. A card that lit
+     * up under the pointer and then did nothing when pressed is a promise the
+     * screen does not keep — and it was making that promise on every pixel
+     * except one 15px arrow in the corner.
+     *
+     * ⚠️ Anything that is itself a control keeps its own press. The transport,
+     * the checkboxes and the add row all live inside these cards, and a card
+     * that swallowed their clicks would be worse than one that did nothing. */
+    wrap.onclick = event => {
+      if (event.target instanceof HTMLElement
+        && event.target.closest("button, input, label, a")) return;
+      this.deps.open(screen);
+    };
     const go = element("button", "home-go", "›");
     (go as HTMLButtonElement).type = "button";
     go.setAttribute("aria-label", `Open ${title}`);

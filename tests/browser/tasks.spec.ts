@@ -1027,6 +1027,40 @@ test("an event opens into a panel, and nothing is striped", async ({page}) => {
   await page.screenshot({path: "test-results/island-calendar-panel.png"});
 });
 
+test("every screen ends the same way, and a card that lights up goes somewhere", async ({page}) => {
+  await page.setViewportSize({width: 1060, height: 760});
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+
+  /* ⚠️ The gap under the last row must match the gap at the sides. It was the
+   * screen's own padding PLUS a card's worth added by `measure()` — about 30px,
+   * spent twice, which is what made the bottom look nothing like the sides. */
+  for (const tab of ["home", "agents", "shelf", "system", "review"]) {
+    await page.locator(`[data-tab="${tab}"]`).click();
+    await expect.poll(() => page.evaluate(() => {
+      const body = document.querySelector(".screen.active .screen-body") as HTMLElement | null;
+      if (!body) return -1;
+      const box = body.getBoundingClientRect();
+      const last = [...body.children].map(child => child.getBoundingClientRect().bottom)
+        .sort((a, b) => b - a)[0] ?? box.bottom;
+      const side = parseFloat(getComputedStyle(body).paddingLeft);
+      return Math.abs((box.bottom - last) - side);
+    }), {message: `${tab} does not end like it begins`}).toBeLessThanOrEqual(2);
+  }
+
+  /* ⚠️ A card that lights up under the pointer has to GO somewhere. The player
+   * has no screen behind it any more, so it neither lifts nor takes a click —
+   * a hover that leads nowhere is a promise the screen does not keep. */
+  await page.locator('[data-tab="home"]').click();
+  await expect(page.locator(".home-media")).not.toHaveClass(/can-open/);
+  await expect(page.locator(".home-cal")).toHaveClass(/can-open/);
+
+  // And the whole card opens it, not just the 15px arrow in its corner.
+  await page.locator(".home-cal .home-strip").click();
+  await expect(page.locator('[data-tab="calendar"]')).toHaveAttribute("aria-selected", "true");
+});
+
 test("a screen opens at its own height, not already scrolled", async ({page}) => {
   await page.setViewportSize({width: 1060, height: 760});
   await page.goto("/tasks.html");

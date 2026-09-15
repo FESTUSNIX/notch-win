@@ -712,8 +712,10 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 /* Hover, everywhere it means something. One duration for arriving at a thing
    and leaving it; the press is the only motion here quick enough to read as
    mechanical rather than as a surface responding. */
-.home-task { border-radius:8px; padding:2px 4px; margin:-2px -4px;
-  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+/* ⚠️ No negative margins. They were pulling the row out past the tile's own
+   padding so a hover highlight would bleed to the tile's edge — which is what
+   made the column look un-aligned with everything under it. */
+.home-task { transition:background-color var(--duration-quick) var(--ease-smooth-out); }
 .home-day { transition:background-color var(--duration-quick) var(--ease-smooth-out); }
 .home-day:hover:not(.is-today) { background:var(--tile-hi); }
 .media-button, .home-button { transition:background-color var(--duration-quick) var(--ease-smooth-out),
@@ -1265,16 +1267,31 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 /* Stretch puts every tile on the tallest one's height; the content then
    centres inside whatever that turns out to be, so a one-line tile and a
    three-row tile sit on the same baseline grid instead of drifting apart. */
+/* ⚠️ A Home card is an OBJECT, and it was the one surface on the island
+   still painted as a flat fill — no ring, no lit top edge, no shadow. Three
+   large panels sitting flat is most of the screen, which is why the elevation
+   pass was hard to see here at all. */
 .home-sec { position:relative; display:flex; align-items:center; justify-content:center;
-  gap:14px; min-width:0; padding:14px 16px;
-  background:var(--tile); border-radius:var(--r-tile);
-  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
-.home-sec:hover { background:var(--tile-hi); }
+  gap:14px; min-width:0; padding:14px 16px; text-align:left;
+  border-radius:var(--r-tile);
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-fast) var(--ease-smooth-out),
+    transform var(--duration-fast) var(--ease-smooth-out); }
+/* ⚠️ The hover belongs to cards that GO somewhere. A card that lit up under
+   the pointer and then did nothing when pressed is a promise the screen does
+   not keep — and the player, which has no screen behind it any more, was making
+   exactly that promise. */
+.home-sec.can-open { cursor:pointer; }
+.home-sec.can-open:hover { background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+.home-sec.can-open:active { transform:scale(.99); transition-duration:90ms; }
 .home-sec+.home-sec { border-left:0; }
 /* Inside the tile's own padding, not hanging over its corner. */
 .home-go { position:absolute; top:6px; right:8px; opacity:0; color:#4a4a4a; font-size:15px;
   line-height:1; padding:2px 6px; border-radius:6px; }
-.home-sec:hover .home-go { opacity:1; }
+.home-sec.can-open:hover .home-go { opacity:1; }
 .home-go:hover { color:#fff; background:var(--tile-on); }
 /* `auto`, not 0: a tile whose whole content is "Nothing playing" should say so
    in the middle of itself. It works in both directions, so the same rule
@@ -1332,17 +1349,17 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 /* ⚠️ One line, at the foot of the column, opening the day rather than composing
    here. A second composer on Home would be a second place a task can be
    half-typed and a second set of rules for where it lands. */
-.home-add { display:flex; align-items:center; gap:9px; width:100%; margin-top:2px;
-  padding:6px 4px; border-radius:10px; font-size:12px; color:#6a6a6a; }
-.home-add:hover:not(:disabled) { color:#c4c4c4; background:var(--tile);
+/* The last row of the column, and the same row as the others: one circle in
+   the same column as the checkboxes, one line of text on the same baseline. */
+.home-add { font-size:12px; color:#5f5f5f; background:none; box-shadow:none; }
+.home-add:hover:not(:disabled) { color:#c4c4c4; background:var(--tile-hi);
   box-shadow:var(--hairline), var(--gloss); }
 .home-add:active:not(:disabled) { transform:scale(.98); transition-duration:90ms; }
-.home-add-mark { display:grid; place-items:center; width:22px; height:22px; flex-shrink:0;
-  border-radius:50%; color:#4f4f4f;
-  box-shadow:inset 0 0 0 1.5px #2f2f2f; }
-.home-add-mark svg { width:13px; height:13px; }
+.home-add-mark { display:grid; place-items:center; border-radius:50%; color:#4a4a4a;
+  box-shadow:inset 0 0 0 1.4px #2f2f2f; }
+.home-add-mark svg { width:11px; height:11px; }
 .home-add:hover:not(:disabled) .home-add-mark { color:var(--accent);
-  box-shadow:inset 0 0 0 1.5px rgba(0,255,136,.45); }
+  box-shadow:inset 0 0 0 1.4px rgba(0,255,136,.45); }
 .home-next { display:flex; align-items:center; justify-content:center; gap:8px; min-width:0; }
 .home-next-mark { display:grid; place-items:center; color:#4e4e4e; }
 .home-next-mark svg { width:14px; height:14px; }
@@ -1358,10 +1375,15 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .home-ring .arc { fill:none; stroke:var(--accent); stroke-width:4; stroke-linecap:round;
   transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset var(--duration-very-slow) var(--ease-smooth-out); }
 .home-tally-count { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.3px; }
-.home-tasks { display:flex; flex-direction:column; justify-content:center; gap:7px;
+.home-tasks { display:flex; flex-direction:column; justify-content:center; gap:2px;
   min-width:0; flex:1; }
-.home-task { display:flex; align-items:center; gap:9px; min-width:0; }
-.home-task .check { --cs:16px; }
+/* ⚠️ Every row the same shape, including the last one. The add row was a
+   button with its own padding sitting under rows that had negative margins, so
+   nothing in the column lined up with anything else: three checkboxes at one
+   inset, a plus at another, and three different row heights. */
+.home-task, .home-add { display:flex; align-items:center; gap:10px; min-width:0;
+  width:100%; padding:5px 7px; border-radius:9px; margin:0; }
+.home-task .check, .home-add-mark { --cs:17px; width:17px; height:17px; flex-shrink:0; }
 .home-task-title { flex:1; min-width:0; font-size:12px; line-height:1.3;
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .home-task.is-done .home-task-title { color:#6e6e6e; }

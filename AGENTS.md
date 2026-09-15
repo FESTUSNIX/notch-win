@@ -1980,3 +1980,21 @@ The two halves were the same fault.
 237. ⚠️ **Nothing scrolls at rest any more,** so a test about wheeling over a
      scroller has to make one. A wheel over a list with nothing to scroll
      correctly falls through to changing screens.
+238. ⚠️ **The bottom gap was the padding, twice.** `natural()` counts the
+     scroller's own padding now, so the `cardPadding` the depth formula added on
+     top of it spent that gap a second time — about 30px under the last row of
+     every screen, which is exactly why the bottom looked nothing like the
+     sides. The formula adds nothing now.
+239. ⚠️ **A child that CLIPS its own content contributes the content, not the
+     box.** Home's three cards are stretched to each other's height by the grid,
+     so the tallest one's list can overflow it by a row — and a union of the
+     boxes then measures the panel short and clips the last row.
+240. ⚠️ **A hover has to lead somewhere.** Every Home card lit up under the
+     pointer while only a 15px arrow in its corner did anything, and the player
+     — which has no screen behind it at all — was making the same promise. The
+     whole card opens its screen now, `can-open` gates the hover, and anything
+     that is itself a control keeps its own press.
+241. ⚠️ **A row and the row that adds one are the same shape.** Home's add row
+     was a button with its own padding under task rows carrying NEGATIVE
+     margins: three checkboxes at one inset, a plus at another, three different
+     row heights. One padding, one radius, one circle size.
