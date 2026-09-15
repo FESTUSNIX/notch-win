@@ -2496,4 +2496,19 @@ The two halves were the same fault.
      fails with no error — `elementFromPoint` simply returns null. Real windows
      are sized to the island, so this is a preview artefact; a spec that
      touches the far corner needs `test.use({viewport})`.
+346. ⚠️ **A clearance measured to a stroke's CENTRELINE is not the clearance
+     you see.** Half of an eight-pixel line lives in the gap, so a radius set
+     to `corner + gap` draws a gap of `gap - 4`. Measure to the stroke's inner
+     edge, and the number in `layout.ts` means what it says.
+347. ⚠️ **Two sibling shapes need the SAME clearance, not a similar one.**
+     The tool arc and the agents notch's settings orb sit against different
+     curves, so nothing forces them to agree — and at 34 against the orb's 18
+     the arc read as a separate decision rather than the same one. When a
+     measurement exists elsewhere in the app for the same visual job, take the
+     number, do not pick a new one.
+348. ⚠️ **`page.clock` or the test fails at a time of day.** The calendar's
+     week-grid spec asserted the now line, which is drawn only while the hour
+     is inside the grid's axis — so it passed all afternoon and failed every
+     evening, on a change that had nothing to do with the calendar. Anything
+     asserting a clock-derived element pins the clock.
 

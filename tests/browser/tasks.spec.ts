@@ -1477,6 +1477,15 @@ test("Review looks backwards at four things nothing else joined", async ({page})
 });
 
 test("the calendar has a week grid as well as an agenda", async ({page}) => {
+  /* ⚠️ The clock is pinned to the middle of the working day, and the now line
+   * below is why. The week grid draws it only while the current hour is inside
+   * the axis, which ends at 19:00 unless an event runs later — so on the real
+   * clock this test passed all afternoon and failed every evening. Today's
+   * date is kept, because the assertions below compare against the runner's
+   * own `new Date()`. */
+  const morning = new Date();
+  morning.setHours(10, 0, 0, 0);
+  await page.clock.install({time: morning});
   await page.goto("/tasks.html");
   await open(page);
   await page.locator('[data-tab="calendar"]').click();

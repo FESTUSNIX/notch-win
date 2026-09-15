@@ -679,8 +679,13 @@ export class IslandSurface {
     this.toolsSvg.setAttribute("viewBox", `0 0 ${reach.toFixed(2)} ${reach.toFixed(2)}`);
 
     const [from, to] = this.arcTrim();
-    const d = arcPath(ox, oy, radius, from, to);
-    this.toolsArc.setAttribute("d", d);
+    /* ⚠️ The LINE is shorter than the span the actions use. It is a hint that
+     * something is here; run out to the actions' own ends it reaches the
+     * island's straight edges and reads as a badly drawn continuation of
+     * them. */
+    const trim = FRAME.islandArcLineTrim;
+    this.toolsArc.setAttribute("d",
+      arcPath(ox, oy, radius, from + trim, to - trim));
     this.toolsArc.setAttribute("stroke-width", `${cpx(FRAME.islandArcStroke)}`);
     /* ⚠️ The line goes as the actions land on it. Both at once is a track
      * with beads on it, which is a different thing and a busier one. */
@@ -724,7 +729,10 @@ export class IslandSurface {
   private arcSpan(open: boolean): number {
     const corner = notchCorner(this.depth, this.body + 2 * cpx(FRAME.islandCurl),
       cpx(FRAME.islandCurl), cpx(FRAME.cornerRadius));
-    const rest = corner + cpx(FRAME.islandArcGap) + cpx(FRAME.islandArcStroke) / 2;
+    /* ⚠️ Measured to the line's INNER edge, so the clearance is what you
+     * actually see between the island and the line — a radius measured to the
+     * centre of an 8px stroke leaves half of it in the gap. */
+    const rest = corner + cpx(FRAME.islandArcClear) + cpx(FRAME.islandArcStroke) / 2;
     if (!open) return rest;
     const [from, to] = this.arcTrim();
     const step = (to - from) / Math.max(1, this.toolCount) * 2 * Math.PI;
@@ -734,7 +742,7 @@ export class IslandSurface {
     return Math.min(cpx(FRAME.islandArcReach) - 30, Math.max(rest, needed));
   }
 
-  /** Which quarter of the circle the line occupies, as fractions of a turn,
+  /** Which part of the circle the actions spread over, as fractions of a turn,
    *  clockwise from three o'clock with y down. */
   private arcTrim(): [number, number] {
     const from = FRAME.islandArcFrom;

@@ -62,12 +62,17 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
       const at = path.getPointAtLength((total * i) / 20);
       nearest = Math.min(nearest, Math.hypot(at.x, at.y));
     }
-    return {corner: island.right - host.left, nearest};
+    const stroke = parseFloat(getComputedStyle(path).strokeWidth);
+    return {corner: island.right - host.left, nearest, stroke};
   });
   /* ⚠️ Measured on the CURVE, not on its bounding box. The arc wraps the
    * corner, so its box legitimately starts inside the island on one axis —
-   * a box test here passes for a line drawn straight through the panel. */
-  expect(clear.nearest - clear.corner).toBeGreaterThan(10);
+   * a box test here passes for a line drawn straight through the panel.
+   *
+   * ⚠️ And to the stroke's EDGE, not its centreline. The clearance is small
+   * on purpose — it is matched to the settings orb's — and half an eight-pixel
+   * stroke is most of it. */
+  expect(clear.nearest - clear.stroke / 2 - clear.corner).toBeGreaterThan(4);
 
   /* ⚠️ Closed, the arc is BARE. The actions are in the DOM — they have to be,
    * for the keyboard — but nothing of them is on screen until it is reached

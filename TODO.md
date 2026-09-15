@@ -297,6 +297,13 @@ distance: the same idea as the settings orb on the agents notch.
 - [x] ⚠️ **The mask is the quadrant, not a box on the circle.** A masked
       region the page treats as `pointer-events: none` swallows clicks meant
       for the desktop; a centred box is four times the area for the same curve.
+- [x] ⚠️ **Sized and placed off the agents orb's own numbers**, not new ones.
+      18 of clearance and an 18 stroke, the same as the orb; the line is
+      trimmed shorter than the span the actions use, so it reads as a hint
+      rather than as a continuation of the island's straight edges.
+- [x] ⚠️ **Two actions fit at the RESTING radius** — the line swinging out to
+      make room is a fine motion for four and an absurd one for two, and two
+      is what every screen here actually has.
 - [ ] No screen has more than two actions yet, so the line never has to swing
       far. The radius maths for three and four is written but unexercised.
 

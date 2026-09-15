@@ -149,34 +149,41 @@ export const FRAME = {
    * the bezel; this is a notch cut into the island — inverse fillets where it
    * meets it, so it reads as moulded out of the same piece rather than as a bar
    * someone parked underneath. `notchPath` draws both. */
-  /** The gap between the island's corner and the arc, in design pixels.
+  /** The clearance between the island's edge and the line's inner edge.
    *
-   * ⚠️ A GAP, not a join. The whole point of the shape is that it is a
-   * separate thing following the island's contour — welded on, it is a lump
-   * on the corner, and every attempt to make a lump look deliberate failed. */
-  islandArcGap: 34,
-  /** How thick the resting line is. Matched to the settings orb's on the
-   *  agents notch, which is the shape this is a sibling of. */
+   * ⚠️ Matched to the settings orb's on the agents notch, which sits 18 in
+   * from its flare — that is the shape this is a sibling of, and a second
+   * clearance that is merely similar reads as one of the two being wrong. The
+   * first go at 34 put the line a visible distance out on its own. */
+  islandArcClear: 18,
+  /** How thick the resting line is. The orb's, unchanged. */
   islandArcStroke: 18,
-  /** How much of the corner's quarter-turn the line covers, and where it
-   *  starts — as a fraction of the full circle. ⚠️ Held back from the ends:
-   *  a line that runs all the way to the island's straight edges reads as a
-   *  badly drawn continuation of them rather than as its own arc. */
-  islandArcFrom: 0.025,
-  islandArcTo: 0.225,
-  /** The clearance a tool needs on the arc, centre to centre. Sets how far
-   *  out the arc has to swing to hold them all without them touching. */
-  islandArcStep: 78,
+  /** How much of the corner's quarter-turn the ACTIONS spread over, as a
+   *  fraction of the full circle, clockwise from three o'clock. */
+  islandArcFrom: 0.02,
+  islandArcTo: 0.23,
+  /** And how much of it the resting line covers. ⚠️ Shorter than the actions'
+   *  span at both ends: the line is a hint that something is here, and one run
+   *  right up to the island's straight edges reads as a badly drawn
+   *  continuation of them rather than as its own arc. */
+  islandArcLineTrim: 0.028,
+  /** The clearance an action needs on the line, centre to centre. Sets how far
+   *  out the line has to swing to hold them all without them touching.
+   *
+   * ⚠️ Small enough that two fit at the RESTING radius. The line swinging
+   * out to make room is a fine motion for four actions and an absurd one for
+   * two — and two is what every screen here actually has. */
+  islandArcStep: 68,
   /** How far past the outermost action the invisible hit band reaches.
    *
    * ⚠️ The band runs from the island's own corner to here, covering every
    * radius the line can swing through — see the note in `paintTools`. The line
-   * is nine pixels of curve on a screen edge; an exact target is no target. */
+   * is eight pixels of curve on a screen edge; an exact target is no target. */
   islandArcHot: 46,
-  /** Room reserved beyond the island for the arc at its widest. ⚠️ The
-   *  window is sized from this; short, and the arc is cut off at the window's
+  /** Room reserved beyond the island for the line at its widest. ⚠️ The
+   *  window is sized from this; short, and the line is cut off at the window's
    *  edge with nothing to say so. */
-  islandArcReach: 260,
+  islandArcReach: 230,
 
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,
