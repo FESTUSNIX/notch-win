@@ -248,11 +248,19 @@ Month grid and agenda in one view, plus a week that is a time grid:
 
 ---
 
-## 5. The tool tab — DONE
+## 5. The tool arc — DONE
 
-Context-based controls — clear the shelf, show the queue, refresh — in a shape
-hanging off the island's far edge, shaped like the island's own notch and laid
-out on its arc.
+Context-based controls — clear the shelf, show the queue, refresh — on a line
+struck concentric with the island's far corner, a gap out from it. Reached for,
+the line swings out and the actions land on it, each at its own angle.
+
+⚠️ **It took three shapes to get here, and the first two are worth knowing
+about.** In the header beside the pin and the settings gear, they read as
+orphans — the header is the same on every screen and these are the one thing on
+it that is not. Moulded into the island's underside as a reversed notch, they
+read as a lump on a corner, and no amount of filleting makes a lump look
+deliberate. What works is a separate object following the contour at a
+distance: the same idea as the settings orb on the agents notch.
 
 - [x] **A sibling of `#island`, never a child.** `#island` is `overflow: clip`
       with a clip path on it, so anything inside it that reaches past the shape
@@ -279,14 +287,18 @@ out on its arc.
       permanently is a toolbar, and a toolbar is what the header row already
       was. Closed, the tab is a seam that says only that there is something
       here; the shape springs open and the tools arrive with the pointer.
-- [x] ⚠️ **The sweep is capped by the depth.** `clampCorners` caps the flare
-      at `depth - cornerRadius`, so three goes at a longer one changed nothing
-      — hence `islandToolsCorner`, a free-end radius of its own.
-- [x] ⚠️ **The inset must clear the island's own flare**, or the two inverse
-      curves cross and leave a spike of black between them.
-- [x] ⚠️ **The mask is reported at the size it is growing to**, or the tab
-      springs out past it, the pointer lands on click-through, `pointerleave`
-      fires, and it shuts itself in a loop.
+- [x] ⚠️ **Struck concentric with the corner the island ACTUALLY got.**
+      `clampCorners` shrinks `cornerRadius` to fit; at the nominal value the
+      line sits inside the island's own edge.
+- [x] ⚠️ **The hit band does not follow the line.** It spans every radius the
+      line can swing through — otherwise the pointer opens it, the line moves
+      out from under the pointer, `pointerleave` fires, and it shuts and
+      reopens forever without the pointer moving.
+- [x] ⚠️ **The mask is the quadrant, not a box on the circle.** A masked
+      region the page treats as `pointer-events: none` swallows clicks meant
+      for the desktop; a centred box is four times the area for the same curve.
+- [ ] No screen has more than two actions yet, so the line never has to swing
+      far. The radius maths for three and four is written but unexercised.
 
 ---
 

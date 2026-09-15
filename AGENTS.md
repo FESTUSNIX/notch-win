@@ -2474,4 +2474,26 @@ The two halves were the same fault.
      container, so a hover-revealed row closes while the pointer is still
      inside it. `pointerenter`/`pointerleave` do not bubble and are the pair
      that means what this needs.
+342. ⚠️ **Anything struck concentric with a notch's corner must ask what the
+     corner BECAME.** `clampCorners` shrinks `cornerRadius` to fit the depth
+     and the flares, so an arc drawn at the nominal 78.8 sits visibly inside a
+     shallow island's edge — which reads as a mistake, not as a smaller gap.
+     `notchCorner()` returns the clamped value.
+343. ⚠️ **A hit band that follows a moving shape oscillates under a still
+     pointer.** The pointer enters the band, the shape swings outward, the band
+     goes with it, the pointer is left over nothing, `pointerleave` fires, it
+     shuts — and the pointer has not moved, so it opens again. Strike the band
+     across every position the shape can reach and it cannot happen.
+344. ⚠️ **A masked region the page treats as `pointer-events: none` is a
+     DEAD region, not a transparent one.** The Win32 mask decides which pixels
+     the window receives at all; CSS then decides what happens. A mask larger
+     than the live area swallows clicks meant for the desktop behind it. Mask
+     the quadrant the arc occupies, not a box centred on its circle — that is
+     four times the area for the same curve.
+345. ⚠️ **The island is WIDER than the preview viewport at the suite's
+     default 900px.** Its body is a fixed design width, about 935 CSS px, so
+     anything anchored to its far corner is off-screen there and a hover test
+     fails with no error — `elementFromPoint` simply returns null. Real windows
+     are sized to the island, so this is a preview artefact; a spec that
+     touches the far corner needs `test.use({viewport})`.
 

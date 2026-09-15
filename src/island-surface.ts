@@ -15,7 +15,7 @@
  * text is being squeezed rather than revealed.
  */
 import { listen } from "@tauri-apps/api/event";
-import { FRAME, cpx, isVertical, notchPath, notchTransform, type Edge } from "./layout";
+import { FRAME, arcPath, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
 import { call, native } from "./task-client";
@@ -96,7 +96,10 @@ export class IslandSurface {
    * island, never a child: `#island` is `overflow: clip` with a clip path on
    * it, so anything inside it that reaches past the shape is simply erased. */
   private toolsHost = document.getElementById("island-tools")!;
-  private toolsClip = document.getElementById("tools-clip-path") as unknown as SVGPathElement;
+  private toolsSvg = document.getElementById("island-tools-svg") as unknown as SVGSVGElement;
+  private toolsArc = document.getElementById("tools-arc") as unknown as SVGPathElement;
+  private toolsReach = document.getElementById("tools-reach") as unknown as SVGPathElement;
+  private toolsActs = document.getElementById("island-tools-acts")!;
   /** How many tools the open screen has. 0 hides the tab entirely. */
   private toolCount = 0;
   /** Whether the pointer (or the keyboard) is on the tab.
@@ -105,8 +108,8 @@ export class IslandSurface {
    * else. What is in it arrives when you reach for it, which is the only way
    * a row of controls can sit on screen permanently without being a toolbar. */
   private toolsOpen = false;
-  /** The tab's length along the island. Sprung, so it opens the way the island
-   *  itself does rather than snapping to a new width under the cursor. */
+  /** How far out the line is struck. Sprung, so it swings rather than jumping
+   *  to a new radius under the cursor. */
   private shelf = new Spring(0, 0.4, 0.68);
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
@@ -158,13 +161,18 @@ export class IslandSurface {
 
   /** What the window has to be to hold the island at full size. */
   private windowSize() {
-    const length = this.body + 2 * cpx(FRAME.islandCurl);
-    /* ⚠️ Room for the tab BELOW the island, not taken out of it. The window
-     * was exactly the island's full size, so a shape hanging off the bottom had
-     * nowhere to hang — it was cut off at the window's edge, which looks like a
-     * rendering fault rather than a missing window. The strip costs nothing: the
-     * window is click-through everywhere outside the reported masks. */
-    const depth = cpx(FRAME.islandBodyDepth) + cpx(FRAME.islandToolsDepth);
+    /* ⚠️ Room for the arc BEYOND the island, not taken out of it. The window
+     * was exactly the island's full size, so a line struck outside its corner
+     * was cut off at the window's edge — which looks like a rendering fault
+     * rather than a missing window. The margin costs nothing: the window is
+     * click-through everywhere outside the reported masks.
+     *
+     * ⚠️ Twice over along the edge, once across it. `paint` centres the
+     * island in the window along its own axis, so room added on one side only
+     * would move the island rather than make space beside it. */
+    const reach = cpx(FRAME.islandArcReach);
+    const length = this.body + 2 * cpx(FRAME.islandCurl) + 2 * reach;
+    const depth = cpx(FRAME.islandBodyDepth) + reach;
     return isVertical(this.edge)
       ? { width: depth, height: length }
       : { width: length, height: depth };
@@ -634,62 +642,119 @@ export class IslandSurface {
     this.toolsHost.hidden = !show;
     if (!show) return;
 
-    const depth = cpx(FRAME.islandToolsDepth);
-    const curl = cpx(FRAME.islandToolsCurl);
-    const length = Math.max(this.shelfSpan(false), this.shelf.value);
+    /* ⚠️ The corner the island ACTUALLY ended up with. `clampCorners` shrinks
+     * `cornerRadius` to fit the depth and the flares, so an arc struck at the
+     * nominal 78.8 sits visibly inside a shallow island's edge instead of
+     * outside it — and looks like a mistake rather than a smaller gap. */
+    const corner = notchCorner(g.depth, g.length, g.curl, cpx(FRAME.cornerRadius));
+    const radius = Math.max(this.arcSpan(false), this.shelf.value);
+    const reach = cpx(FRAME.islandArcReach);
 
-    /* Pushed to the island's far end, inset so it does not sit under the
-     * island's own flare — which is where the shape is already turning. */
-    const inset = cpx(FRAME.islandToolsInset);
-    const vertical = isVertical(this.edge);
-    /* ⚠️ Overlapped by a pixel, not butted against. Two shapes that meet
-     * exactly leave a hairline of whatever is behind them at most fractional
-     * positions — and the island is placed on a sprung, sub-pixel `top`, so it
-     * is at a fractional position most of the time. The overlap is under the
-     * fillets, where nothing can see it. */
-    const seam = 1;
-    /** Where the tab's near face sits: just inside the island's far edge. */
-    const off = this.edge === "top" || this.edge === "left"
-      ? (vertical ? x + g.width : y + g.height) - seam
-      : (vertical ? x : y) - depth + seam;
-    /** And where it sits ALONG that edge — the far end, less the inset. */
-    const run = (vertical ? y + g.height : x + g.width) - length - inset;
+    /* The centre of the island's far corner — the one the arc is concentric
+     * with. Which corner that is follows the edge: always the far end along
+     * the bezel, on the side the island grows into. */
+    const far = this.edge !== "right";
+    const cx = far ? x + g.width - corner : x + corner;
+    const cy = this.edge === "bottom" ? y + corner : y + g.height - corner;
 
+    /* The host is the quadrant outside that corner, and nothing else. ⚠️ It
+     * is also what `report` masks, and the window is DEAD to clicks wherever a
+     * mask covers it — a box centred on the corner would make a square of
+     * desktop three times this size unclickable for the sake of a quarter
+     * circle of arc. */
     Object.assign(this.toolsHost.style, {
-      left: `${vertical ? off : run}px`,
-      top: `${vertical ? run : off}px`,
-      width: `${vertical ? depth : length}px`,
-      height: `${vertical ? length : depth}px`,
+      left: `${far ? cx : cx - reach}px`,
+      top: `${this.edge === "bottom" ? cy - reach : cy}px`,
+      width: `${reach}px`,
+      height: `${reach}px`,
       // It arrives with the fold rather than after it.
       opacity: String(Math.max(0, Math.min(1, this.fold.value * 1.6 - 0.6))),
     });
     this.toolsHost.dataset.edge = this.edge;
-    /* ⚠️ `islandToolsCorner`, NOT the island's own `cornerRadius`. That is
-     * the radius of a panel's corner — on a shape this small it is the entire
-     * shape, and `clampCorners` spends the depth on it and then has nothing
-     * left for the sweep. See the note in `layout.ts`. */
-    this.toolsClip.setAttribute("d",
-      notchPath(depth, length, curl, cpx(FRAME.islandToolsCorner)));
-    /* ⚠️ The SAME edge as the island, not the opposite one. It is tempting to
-     * reverse it — the tab points away from the bezel — but what the edge picks
-     * is which end the flares are on, and both shapes hang off something above
-     * them: the island off the bezel, the tab off the island. Reversed, the
-     * fillets land at the tab's free end and it reads as a bell dangling on a
-     * stalk instead of a shelf moulded into the island's edge. */
-    this.toolsClip.setAttribute("transform", notchTransform(this.edge, depth));
+
+    /* Everything below is in the host's own coordinates, with the corner's
+     * centre at the quadrant's inner corner — (0,0), or a reflection of it. */
+    const ox = far ? 0 : reach;
+    const oy = this.edge === "bottom" ? reach : 0;
+    this.toolsSvg.setAttribute("viewBox", `0 0 ${reach.toFixed(2)} ${reach.toFixed(2)}`);
+
+    const [from, to] = this.arcTrim();
+    const d = arcPath(ox, oy, radius, from, to);
+    this.toolsArc.setAttribute("d", d);
+    this.toolsArc.setAttribute("stroke-width", `${cpx(FRAME.islandArcStroke)}`);
+    /* ⚠️ The line goes as the actions land on it. Both at once is a track
+     * with beads on it, which is a different thing and a busier one. */
+    this.toolsArc.style.opacity = `${1 - this.toolsOpenness()}`;
+    /* ⚠️ A transparent stroke wide enough to hover, and — the part that
+     * matters — it does NOT move with the line. The line is 9px of curve, which
+     * is not a target, and a rectangle over the corner would swallow presses
+     * meant for the panel behind it; `pointer-events: stroke` makes this a
+     * band instead.
+     *
+     * ⚠️ Struck to cover every radius the line can reach, from the island's
+     * own corner to past the outermost action. A band that followed the line
+     * oscillates: the pointer opens it, the line swings outward, the band goes
+     * with it, the pointer is left over nothing, `pointerleave` fires, it shuts
+     * — and the pointer has not moved, so it opens again. */
+    const inner = corner;
+    const outer = this.arcSpan(true) + cpx(FRAME.islandArcHot);
+    this.toolsReach.setAttribute("d",
+      arcPath(ox, oy, (inner + outer) / 2, from - 0.02, to + 0.02));
+    this.toolsReach.setAttribute("stroke-width", `${Math.max(1, outer - inner)}`);
+
+    /* And the actions, laid ALONG it — which is the whole idea. Each sits at
+     * its own angle on the same circle, so the row curves with the island's
+     * corner rather than running off it in a straight line. */
+    const acts = [...this.toolsActs.children] as HTMLElement[];
+    for (const [index, act] of acts.entries()) {
+      const at = from + (to - from) * ((index + 0.5) / acts.length);
+      const angle = at * 2 * Math.PI;
+      act.style.left = `${ox + radius * Math.cos(angle)}px`;
+      act.style.top = `${oy + radius * Math.sin(angle)}px`;
+    }
   }
 
-  /** How long the tab is: closed, a seam; open, one slot per tool.
+  /** How far out the line is struck: closed, a gap past the corner; open, far
+   *  enough that the actions on it do not touch.
    *
-   * Both ends include the two sweeps, which are most of the closed shape and
-   * a fifth of the open one. Capped at the island's own body — a tab wider
-   * than the thing it hangs off is not a tab. */
-  private shelfSpan(open: boolean): number {
-    const curl = cpx(FRAME.islandToolsCurl);
-    const body = open
-      ? this.toolCount * cpx(FRAME.islandToolsStep)
-      : cpx(FRAME.islandToolsRest);
-    return Math.min(this.body, body + 2 * curl);
+   * ⚠️ One or two tools need no room at all — they fit on the resting circle
+   * — so the arc does not move for them and the actions simply arrive. It
+   * swings out only when it has to, which is what keeps a two-tool screen from
+   * flinging a line across the desktop to hold two buttons. */
+  private arcSpan(open: boolean): number {
+    const corner = notchCorner(this.depth, this.body + 2 * cpx(FRAME.islandCurl),
+      cpx(FRAME.islandCurl), cpx(FRAME.cornerRadius));
+    const rest = corner + cpx(FRAME.islandArcGap) + cpx(FRAME.islandArcStroke) / 2;
+    if (!open) return rest;
+    const [from, to] = this.arcTrim();
+    const step = (to - from) / Math.max(1, this.toolCount) * 2 * Math.PI;
+    /* The chord between two neighbours has to clear `islandArcStep`; on a
+     * circle that is `2r sin(step/2)`, solved for r. */
+    const needed = cpx(FRAME.islandArcStep) / 2 / Math.max(1e-3, Math.sin(step / 2));
+    return Math.min(cpx(FRAME.islandArcReach) - 30, Math.max(rest, needed));
+  }
+
+  /** Which quarter of the circle the line occupies, as fractions of a turn,
+   *  clockwise from three o'clock with y down. */
+  private arcTrim(): [number, number] {
+    const from = FRAME.islandArcFrom;
+    const to = FRAME.islandArcTo;
+    switch (this.edge) {
+      // Bottom-right corner: three o'clock round to six.
+      case "top": case "left": return [from, to];
+      // Top-right: twelve round to three.
+      case "bottom": return [from - 0.25, to - 0.25];
+      // Bottom-left: six round to nine.
+      case "right": return [from + 0.25, to + 0.25];
+    }
+  }
+
+  /** 0 while the line is at rest, 1 once it is all the way out. */
+  private toolsOpenness(): number {
+    const shut = this.arcSpan(false);
+    const open = this.arcSpan(true);
+    if (open - shut < 0.5) return this.toolsOpen ? 1 : 0;
+    return Math.max(0, Math.min(1, (this.shelf.value - shut) / (open - shut)));
   }
 
   /** How many tools the open screen has, so the tab can size itself — or not
@@ -700,7 +765,7 @@ export class IslandSurface {
     /* ⚠️ Snapped, not sprung. The count changes when the SCREEN changes, and
      * the two animations on top of each other read as the tab flinching. It
      * springs for the one thing the tab does on its own: opening. */
-    if (!this.toolsOpen) this.shelf.snap(this.shelfSpan(false));
+    if (!this.toolsOpen) this.shelf.snap(this.arcSpan(false));
     this.paint();
     this.report();
   }
@@ -714,8 +779,8 @@ export class IslandSurface {
     if (this.toolsOpen === on) return;
     this.toolsOpen = on;
     this.toolsHost.classList.toggle("is-open", on);
-    if (still()) this.shelf.snap(this.shelfSpan(on));
-    else this.shelf.setTarget(this.shelfSpan(on));
+    if (still()) this.shelf.snap(this.arcSpan(on));
+    else this.shelf.setTarget(this.arcSpan(on));
     /* ⚠️ Reported NOW on the way in, so the mask is already the size the tab
      * is growing to. Reported on settle on the way out — `tick` does that — so
      * the pointer is never outside the window while the shape is still under
@@ -745,23 +810,13 @@ export class IslandSurface {
      * outside these rects, so a shape drawn past the island's box would be
      * visible, unhoverable, and unclickable — and the island would fold the
      * moment the pointer reached for it. */
-    if (!this.toolsHost.hidden) {
-      const t = box(this.toolsHost);
-      /* ⚠️ Sized to where the tab is GOING, not where it is. It grows away
-       * from its anchored end, so the grown rect contains the shrunk one and
-       * reporting the larger of the two can never leave the pointer outside
-       * the window while the shape is still under it. */
-      const span = Math.max(t.width || t.height, this.shelfSpan(this.toolsOpen));
-      const wide = !isVertical(this.edge);
-      const width = wide ? span : t.width;
-      const height = wide ? t.height : span;
-      this.masks.push({
-        x: (wide ? t.x + t.width - width : t.x) - pad,
-        y: (wide ? t.y : t.y + t.height - height),
-        width: width + 2 * pad,
-        height: height + pad,
-      });
-    }
+    /* ⚠️ The arc is its OWN mask, and it is the whole quadrant rather than a
+     * band around the line. The window is click-through outside these rects,
+     * so a line drawn past the island's box would be visible, unhoverable and
+     * unclickable — and the island would fold the moment the pointer reached
+     * for it. The quadrant is fixed whether the line is in or out, so nothing
+     * has to be re-reported mid-swing. */
+    if (!this.toolsHost.hidden) this.masks.push(box(this.toolsHost));
     const origin = box(this.shell);
     if (native) {
       void call("set_interactive_rects", {

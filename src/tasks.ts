@@ -115,8 +115,19 @@ function widthOf(name: ScreenName): number {
 
 const app = document.getElementById("task-app")!;
 app.innerHTML = `<div id="notch-shell">
-  <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath><clipPath id="tools-clip" clipPathUnits="userSpaceOnUse"><path id="tools-clip-path"/></clipPath></defs></svg>
-  <div id="island-tools" role="toolbar" aria-label="What this screen can do" hidden></div>
+  <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath></defs></svg>
+  <!-- What the open screen can do. At rest a line struck concentric with the
+       island's own far corner, a gap out from it; reached for, the line swings
+       out and the actions land on it. One circle, two states — the same idea
+       as the settings orb on the agents notch, which is the shape this is a
+       sibling of. -->
+  <div id="island-tools" hidden>
+    <svg id="island-tools-svg" aria-hidden="true">
+      <path id="tools-arc" fill="none" stroke-linecap="round"/>
+      <path id="tools-reach" fill="none" stroke="transparent"/>
+    </svg>
+    <div id="island-tools-acts" role="toolbar" aria-label="What this screen can do"></div>
+  </div>
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
@@ -575,7 +586,7 @@ function render() {
    * The header is the same on every screen — tabs, pin, settings, close — and
    * putting a control that changes with the screen among four that never do is
    * what made these read as orphans wherever they were put. */
-  surface.setTools(paintTools(get("island-tools"), tools[screen]?.() ?? {}));
+  surface.setTools(paintTools(get("island-tools-acts"), tools[screen]?.() ?? {}));
 
   const live = claims();
   paintPill(live);

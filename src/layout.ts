@@ -149,41 +149,34 @@ export const FRAME = {
    * the bezel; this is a notch cut into the island — inverse fillets where it
    * meets it, so it reads as moulded out of the same piece rather than as a bar
    * someone parked underneath. `notchPath` draws both. */
-  /** How far the tab hangs below the island, in design pixels. ~42 CSS px. */
-  islandToolsDepth: 88,
-  /** The sweep where it meets the island — most of the shape, by design.
+  /** The gap between the island's corner and the arc, in design pixels.
    *
-   * ⚠️ `clampCorners` caps this at `depth - cornerRadius`, so asking for a
-   * longer sweep than the depth allows is SILENTLY granted as a shorter one.
-   * That is what held the first three attempts at ~37 whatever was written
-   * here: the island's own 78.8 corner radius left nothing to spend. Hence
-   * `islandToolsCorner` below — a long sweep needs a small free end AND a
-   * depth to draw it in. */
-  islandToolsCurl: 60,
-  /** The rounding at the tab's free end. ⚠️ NOT the island's `cornerRadius`:
-   *  that is the radius of a panel's corner, and on a shape this small it is
-   *  the entire shape. Small here buys the sweep above. */
-  islandToolsCorner: 26,
-  /** One tool's slot along the tab, once it is open. */
-  islandToolsStep: 104,
-  /** What is left when it is closed: the two sweeps, and a tongue between them.
+   * ⚠️ A GAP, not a join. The whole point of the shape is that it is a
+   * separate thing following the island's contour — welded on, it is a lump
+   * on the corner, and every attempt to make a lump look deliberate failed. */
+  islandArcGap: 34,
+  /** How thick the resting line is. Matched to the settings orb's on the
+   *  agents notch, which is the shape this is a sibling of. */
+  islandArcStroke: 18,
+  /** How much of the corner's quarter-turn the line covers, and where it
+   *  starts — as a fraction of the full circle. ⚠️ Held back from the ends:
+   *  a line that runs all the way to the island's straight edges reads as a
+   *  badly drawn continuation of them rather than as its own arc. */
+  islandArcFrom: 0.025,
+  islandArcTo: 0.225,
+  /** The clearance a tool needs on the arc, centre to centre. Sets how far
+   *  out the arc has to swing to hold them all without them touching. */
+  islandArcStep: 78,
+  /** How far past the outermost action the invisible hit band reaches.
    *
-   * ⚠️ Deliberately too small for a single tool. The tab at rest says only
-   * that there is something here — it is a seam in the island's edge, not a
-   * toolbar with the labels rubbed off. Wide enough to hold one icon and it
-   * reads as a button that failed to draw.
-   *
-   * ⚠️ But not much smaller, either. At 34 the two sweeps met almost
-   * immediately, `clampCorners` rounded off what little was between them, and
-   * the tab read as a drip running off the island's underside. */
-  islandToolsRest: 90,
-  /** The tab's inset from the island's far end.
-   *
-   * ⚠️ At LEAST the island's own `islandCurl`, or the two flares intersect:
-   * the island's sweeps up and out, the tab's sweeps up and in, and where they
-   * cross they leave a spike of black pointing down into the gap. It is a
-   * valid path and nothing complains about it — it just looks broken. */
-  islandToolsInset: 120,
+   * ⚠️ The band runs from the island's own corner to here, covering every
+   * radius the line can swing through — see the note in `paintTools`. The line
+   * is nine pixels of curve on a screen edge; an exact target is no target. */
+  islandArcHot: 46,
+  /** Room reserved beyond the island for the arc at its widest. ⚠️ The
+   *  window is sized from this; short, and the arc is cut off at the window's
+   *  edge with nothing to say so. */
+  islandArcReach: 260,
 
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,
@@ -290,6 +283,22 @@ function clampCorners(
   const curl = Math.max(0, Math.min(flare, length / 2, depth - wanted));
   const corner = Math.max(0, Math.min(wanted, (length - 2 * curl) / 2));
   return { curl, corner };
+}
+
+/** The radius the notch's far corners actually end up with.
+ *
+ * ⚠️ Not `FRAME.cornerRadius` — `clampCorners` shrinks it to fit the depth
+ * and the flares, so anything drawn concentric with a corner has to ask what
+ * the corner became rather than what was asked for. An arc struck at the
+ * nominal radius sits visibly inside the shape on a shallow island.
+ */
+export function notchCorner(
+  depth: number,
+  length: number,
+  flare: number,
+  cornerRadius: number = FRAME.cornerRadius,
+): number {
+  return clampCorners(depth, length, flare, cornerRadius).corner;
 }
 
 /** The notch body: a pill welded to one edge, with *inverse* rounded corners

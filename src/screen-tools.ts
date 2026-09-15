@@ -1,4 +1,4 @@
-/* What the open screen can do, in a tab hanging off the island's bottom edge.
+/* What the open screen can do, on an arc struck off the island's far corner.
  *
  * Every screen had grown a footer: a sync line, a sentence about how dragging
  * works, a "Clear all". Each was a whole row of 10px grey text at the foot of
@@ -8,10 +8,13 @@
  * ⚠️ They are NOT in the header. That was the first home for them, beside the
  * pin, the settings and the close, and it is the wrong one: those four are the
  * same on every screen, and a control that changes with the screen mixed in
- * among four that never do reads as an orphan wherever you put it. The tab is
- * a place of its own, whose contents are allowed to change — and it is only
- * drawn when there is something in it, so a screen with no tools costs no
- * chrome at all.
+ * among four that never do reads as an orphan wherever you put it.
+ *
+ * ⚠️ And they are not welded to the island either. The second home was a
+ * shape moulded into its underside, and a lump on a corner cannot be made to
+ * look deliberate however it is filleted. A line a gap out from the corner,
+ * following its contour, reads as its own object — the same idea as the
+ * settings orb on the agents notch.
  *
  * ⚠️ And there is no `?`. A sentence explaining a gesture is worth saying
  * once, in the docs — a permanent button whose only job is to re-explain
@@ -49,24 +52,15 @@ export function paintTools(host: HTMLElement, spec: ScreenTools): number {
     paintIcon(button, tool.icon);
     if (tool.run) button.onclick = tool.run;
 
-    /* ⚠️ Laid on the ARC, not in a row. The tab is a curve, and a straight
-     * line of buttons inside a curved shape reads as a row that happens to have
-     * a curved background — which is the thing this replaced. Each one sits a
-     * little deeper the nearer it is to the middle of the span, which is where
-     * the shape has the most room: a circle's sagitta, in miniature.
+    /* The order they arrive in when the arc opens. ⚠️ From the island
+     * OUTWARD: the line swings away from the corner, so the action nearest the
+     * corner is the one it reaches first. Counting the other way makes the far
+     * ones appear over a line that has not got to them yet.
      *
-     * ⚠️ A distance, not a direction. Which way is "deeper" depends on which
-     * edge the island is on, and only the stylesheet knows that — so this hands
-     * over a length and `#island-tools[data-edge]` picks the axis and the sign.
-     * Written as a custom property rather than as `translate` for that reason. */
-    const middle = (tools.length - 1) / 2;
-    const away = tools.length > 1 ? (index - middle) / (middle || 1) : 0;
-    button.style.setProperty("--tool-dip", `${Math.round((1 - away * away) * 5)}px`);
-    /* The order they arrive in when the tab opens. ⚠️ From the OUTSIDE in:
-     * the tab grows from its anchored end, so the tool nearest that end is the
-     * one the shape uncovers first. Counting the other way makes the middle
-     * ones appear over a shape that has not reached them yet. */
-    button.style.setProperty("--tool-i", String(tools.length - 1 - index));
+     * ⚠️ Where each one SITS is not decided here. The angle depends on the
+     * arc's radius, which is sprung, so it is written by the paint loop in
+     * `island-surface.ts` every frame — this only builds the buttons. */
+    button.style.setProperty("--tool-i", String(index));
     host.append(button);
   }
   /* The count, so the shell can size the tab — or not draw it at all. A tab
