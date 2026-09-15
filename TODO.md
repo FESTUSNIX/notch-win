@@ -153,9 +153,10 @@ width actually changed, plus the existing height-travel test extended to width.
 
 ---
 
-## 3. The music widget — NOT STARTED
+## 3. The music widget — DONE
 
-Waiting for the word. Shape agreed from the reference shots:
+Shipped as a screen of its own, with its tab on the strip only while
+something is playing. What landed:
 
 - Large artwork, title with badges (explicit / lyrics), artist underneath.
 - A scrubber with elapsed on the left and **remaining** (`-2:22`) on the right.
@@ -165,15 +166,25 @@ Waiting for the word. Shape agreed from the reference shots:
 - **"Playing Next"** — a queue panel to the _right_ of the player, **closed by
   default**, opened by the list button at bottom-left. Opening it widens the
   panel; that is exactly what item 2's per-screen width has to support.
-- **Spotify integration.** Today's source is the Windows `GlobalSystemMediaTransportControls`
-  session (`media.rs`), which gives title/artist/artwork/position and transport
-  but **has no queue** — "Playing Next" is the reason to talk to Spotify's Web
-  API directly.
-  ⚠️ That needs OAuth, and the token goes in **Windows Credential Manager**
-  beside the TickTick and Google secrets — never into a WebView, never into a
-  log or an error message. Same pattern as `calendar.rs`.
-  ⚠️ Queue reads need an active Spotify device; decide what the panel says when
-  there is none, rather than showing an empty list.
+- **Spotify**, for the queue and nothing else. PKCE, so there is no client
+  secret to keep; the token is in Windows Credential Manager beside TickTick's
+  and Google's and is never read back into a WebView.
+  ⚠️ **The redirect URI is fixed at `http://127.0.0.1:5733/callback`** and has
+  to be registered in the Spotify dashboard character for character. Google
+  accepts any loopback port; Spotify does not, and gets you
+  `INVALID_CLIENT: Invalid redirect URI` — which reads like a bad client id.
+  Settings → Connections prints the string with a Copy button.
+  ⚠️ With Spotify disconnected the panel loses its right-hand column and
+  nothing else: every other control comes from Windows' own transport session.
+
+### Still open on the player
+
+- [ ] The queue is fetched when the panel opens, never refreshed while it is
+      open. A track change leaves a stale list until it is closed and reopened.
+- [ ] Nothing in the queue is clickable — Spotify can skip to a queued track,
+      but that needs a Premium-only endpoint and a second scope.
+- [ ] Not tried against a real Spotify account yet: it needs a client id, so
+      the whole flow past `connect_spotify` is so far only reasoned about.
 
 ## 4. The calendar — NOT STARTED
 

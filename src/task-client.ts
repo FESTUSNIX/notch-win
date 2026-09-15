@@ -165,6 +165,19 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "copy_text") return undefined as T;
   if (command === "open_external") return undefined as T;
   if (command === "google_status") return true as T;
+  if (command === "spotify_status") return true as T;
+  if (command === "spotify_redirect") return "http://127.0.0.1:5733/callback" as T;
+  if (command === "connect_spotify" || command === "disconnect_spotify") {
+    throw new Error("Connect Spotify in the desktop app. This is sample data.");
+  }
+  /* ⚠️ A queue with a track that has no artwork in it, on purpose: a cover is
+     the one field Spotify legitimately omits, and the row still has to be a
+     row. Same reason the shelf fixture carries a missing file. */
+  if (command === "spotify_queue") return {connected:true, note:"", tracks:[
+    {id:"q1", title:"Heroine (Cryogenic's Second Wind)", artist:"CRYOGENIC", artwork:""},
+    {id:"q2", title:"Roulette", artist:"Bilal Wahib, Boef", artwork:""},
+    {id:"q3", title:"Habiba", artist:"Boef", artwork:""},
+  ]} as T;
   if (command === "get_app_time") return {day:localDay(), total:16_800, apps:[
     {name:"VS Code", seconds:9000}, {name:"Chrome", seconds:4200},
     {name:"Terminal", seconds:1800}, {name:"Spotify", seconds:900},

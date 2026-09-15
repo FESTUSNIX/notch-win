@@ -16,6 +16,7 @@ mod dropprobe;
 mod log;
 mod model;
 mod notify;
+mod spotify;
 mod runlog;
 mod shelf;
 mod snooze;
@@ -554,6 +555,11 @@ pub fn run() {
             calendar::disconnect_google,
             calendar::google_status,
             calendar::open_external,
+            spotify::connect_spotify,
+            spotify::disconnect_spotify,
+            spotify::spotify_status,
+            spotify::spotify_queue,
+            spotify::spotify_redirect,
             shortcuts::get_shortcuts,
             shortcuts::set_shortcuts,
             apps::list_apps,

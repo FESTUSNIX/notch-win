@@ -2166,3 +2166,42 @@ The two halves were the same fault.
 273. ⚠️ **A preference has to repaint the screens, not only the pill.**
      `applyPrefs` called `paintPill()` alone, so the week strip and the calendar
      grid kept the old first day until something unrelated redrew them.
+274. ⚠️ **Spotify matches the redirect URI character for character, port
+     included.** Google accepts any loopback port and `calendar.rs` binds
+     `127.0.0.1:0`; copying that pattern gets `INVALID_CLIENT: Invalid redirect
+     URI`, which reads like a bad client id and sends you looking in the wrong
+     place. The port is fixed (5733), it is one constant shared by the auth URL
+     and the string the settings window tells you to register, and a test
+     asserts they are the same one. `127.0.0.1`, never `localhost`.
+275. ⚠️ **PKCE, so there is no client secret to keep.** A desktop app cannot
+     hold one, and it halves what the user has to paste.
+276. ⚠️ **`/me/player/queue` answers 204 with NO BODY** when nothing is
+     playing. Parsing that as JSON turned an ordinary paused Spotify into a red
+     error across the screen. 403 (the account will not share it) and every
+     other status are answers too — the command returns a `note`, never an
+     `Err`, because a rejected promise in the island is a banner and "Spotify is
+     not playing on any device" is not an error.
+277. ⚠️ **Spotify rotates the refresh token on some responses and omits it on
+     others.** Keeping the old one when a new one arrives is how a connection
+     works for weeks and then stops for no visible reason.
+278. ⚠️ **Album art comes largest-first, so the thumbnail is the LAST entry.**
+     A queue of twenty 640px covers is megabytes fetched to draw them at 34px.
+279. ⚠️ **Do not invent the badges.** The reference shows "E" and "L"
+     (explicit, lyrics); Windows' transport session carries neither flag and
+     Spotify is not the source for the player. The slot holds the SOURCE
+     instead, which is a real fact. A badge that is always on is decoration
+     claiming to be data.
+280. ⚠️ **A screen body needs `scrolls` or `spans`, or the panel measures the
+     wrong height.** `natural()` falls back to `offsetHeight` for anything else,
+     and a `flex:1` body reports whatever the flex gave it — which is the
+     PREVIOUS screen's height. The player came out flush against the header
+     with its queue heading clipped off the top, which looks like a padding bug
+     and is a measurement one.
+281. ⚠️ **`measure()` clamps the cap to `islandBodyLong`,** so asking for a
+     width above it is silently the same as asking for the width at it — which
+     from a test looks exactly like the width not changing at all. The open
+     queue asks for `FRAME.islandBodyLong`, not a bigger number.
+282. ⚠️ **A sprung width cannot be sampled on the frame it was asked for.**
+     The test polls until the width stops moving before comparing; a
+     measurement taken on the click is some arbitrary point on the way there,
+     and every comparison against it is then meaningless.

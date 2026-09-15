@@ -5,7 +5,9 @@
  * YouTube tab and a desktop player look identical from up here.
  */
 import { call, native } from "./task-client";
-import { sourceName } from "./media-format";
+import { clock, sourceName } from "./media-format";
+import { element } from "./dom";
+import { paintIcon } from "./task-icons";
 
 // Re-exported so the screens that already import them from here keep working.
 export { clock, sourceName } from "./media-format";
@@ -136,4 +138,274 @@ export class MediaSource {
     void call("media_seek", { seconds: target }).catch(e => { this.error = String(e); this.changed(); });
   }
 
+}
+
+/* ── The player ───────────────────────────────────────────────────────────
+ *
+ * ⚠️ A screen again, and the tab exists only while something is playing.
+ *
+ * It had one, it was removed, and the removal was right: the tab held a title,
+ * an artist and three buttons, permanently, competing with Spotify and the
+ * media keys on a far bigger surface. What makes it worth a screen now is the
+ * one thing nothing else on the machine offers in a glance — where you are in
+ * the track, and what is coming after it.
+ *
+ * ⚠️ It still does not own the playback. `media.rs` reads Windows' own
+ * transport session, so this draws whatever answers the media keys. Spotify is
+ * consulted for the queue and for nothing else; with it disconnected the panel
+ * loses its right-hand column and every other control still works.
+ */
+
+export interface QueueTrack { id: string; title: string; artist: string; artwork: string }
+export interface Queue { connected: boolean; tracks: QueueTrack[]; note: string }
+
+export interface MediaDeps {
+  source: MediaSource;
+  /** Ask the shell for a wider or narrower panel. The queue needs the room. */
+  width: (queueOpen: boolean) => void;
+}
+
+export class MediaScreen {
+  readonly name = "media" as const;
+  /** ⚠️ Closed by default. The queue answers a question you have occasionally;
+   *  the track you are listening to is the one you have now. */
+  private queueOpen = false;
+  private queue: Queue = { connected: false, tracks: [], note: "" };
+  private asked = 0;
+  private devicesOpen = false;
+  private devices: AudioDevice[] = [];
+
+  constructor(private host: HTMLElement, private deps: MediaDeps, private changed: () => void) {}
+
+  get open(): boolean { return this.queueOpen; }
+
+  /** ⚠️ Fetched on OPEN rather than polled: it is a network round trip to
+   *  another service, and a panel nobody has asked for should cost nothing. */
+  async load() {
+    if (!this.queueOpen) return;
+    const mine = ++this.asked;
+    try {
+      const queue = await call<Queue>("spotify_queue");
+      if (mine === this.asked) { this.queue = queue; this.changed(); }
+    } catch { /* the note covers the ordinary failures */ }
+  }
+
+  private toggleQueue() {
+    this.queueOpen = !this.queueOpen;
+    this.deps.width(this.queueOpen);
+    this.changed();
+    void this.load();
+  }
+
+  title$() { return "Playing"; }
+  activity(): Activity | null { return null; }
+
+  tools() {
+    return {
+      tools: [{
+        icon: "list" as const,
+        label: this.queueOpen ? "Hide what is next" : "Show what is next",
+        run: () => this.toggleQueue(),
+      }],
+    };
+  }
+
+  render() {
+    const media = this.deps.source.media;
+    this.host.replaceChildren();
+    this.host.classList.toggle("has-queue", this.queueOpen);
+
+    if (!media.active) {
+      const empty = element("div", "day-empty");
+      empty.append(element("h3", "", "Nothing playing"),
+        element("p", "", "Start something and the controls appear here."));
+      this.host.append(empty);
+      return;
+    }
+
+    /* ── What is playing ──────────────────────────────────────────────── */
+    const now = element("div", "media-now");
+
+    const head = element("div", "media-head");
+    const art = element("div", "media-art");
+    if (media.artwork) {
+      const image = element("img") as HTMLImageElement;
+      image.src = media.artwork; image.alt = ""; image.width = 84; image.height = 84;
+      art.append(image);
+    } else {
+      art.classList.add("blank");
+      paintIcon(art, "media");
+    }
+
+    const copy = element("div", "media-copy");
+    const line = element("div", "media-title-line");
+    line.append(element("h2", "media-title", media.title || "Unknown track"));
+    /* ⚠️ The SOURCE, not an "explicit" badge. Windows' transport session
+     * carries no explicit flag and no lyrics flag, and a badge that is always
+     * on is worse than no badge — it would be decoration claiming to be data.
+     * Which app is playing is a real fact, in the same slot. */
+    const source = sourceName(media.source);
+    if (source) line.append(element("span", "media-badge", source));
+    copy.append(line, element("p", "media-artist", media.artist || "Unknown artist"));
+
+    const bars = element("div", `media-eq${media.playing ? " on" : ""}`);
+    for (let i = 0; i < 4; i++) bars.append(element("i"));
+    head.append(art, copy, bars);
+
+    /* ── Where you are in it ──────────────────────────────────────────── */
+    const at = this.deps.source.position();
+    const scrub = element("div", "media-scrub");
+    scrub.append(element("span", "media-time", clock(at)));
+    const rail = element("div", "media-rail");
+    const fill = element("i");
+    fill.style.width = media.duration > 0
+      ? `${Math.max(0, Math.min(100, (at / media.duration) * 100))}%` : "0%";
+    rail.append(fill);
+    if (media.canSeek && media.duration > 0) {
+      rail.classList.add("can-seek");
+      rail.onclick = event => {
+        const box = rail.getBoundingClientRect();
+        this.deps.source.seek((event.clientX - box.left) / box.width);
+      };
+    }
+    /* ⚠️ Remaining, written as a negative — not the total. The total is the
+     * same number every time you look at it; how much is left is the one you
+     * were actually asking for. */
+    const left = media.duration > 0 ? Math.max(0, media.duration - at) : 0;
+    scrub.append(rail, element("span", "media-time media-left",
+      media.duration > 0 ? `-${clock(left)}` : ""));
+
+    /* ── The controls ─────────────────────────────────────────────────── */
+    const transport = element("div", "media-transport");
+
+    const queueButton = element("button", `media-side${this.queueOpen ? " is-on" : ""}`);
+    (queueButton as HTMLButtonElement).type = "button";
+    queueButton.setAttribute("aria-label", "Playing next");
+    queueButton.setAttribute("aria-expanded", String(this.queueOpen));
+    queueButton.title = "Playing next";
+    paintIcon(queueButton, "list");
+    queueButton.onclick = () => this.toggleQueue();
+
+    const keys = element("div", "media-keys");
+    for (const [icon, label, action, enabled] of [
+      ["previous", "Previous track", "previous", media.canPrevious],
+      [media.playing ? "pause" : "play", media.playing ? "Pause" : "Play", "playpause", media.canPlayPause],
+      ["next", "Next track", "next", media.canNext],
+    ] as const) {
+      const button = element("button", `media-key${action === "playpause" ? " is-main" : ""}`);
+      (button as HTMLButtonElement).type = "button";
+      (button as HTMLButtonElement).disabled = !enabled;
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      paintIcon(button, icon);
+      button.onclick = () => this.deps.source.control(action);
+      keys.append(button);
+    }
+
+    const output = element("button", `media-side${this.devicesOpen ? " is-on" : ""}`);
+    (output as HTMLButtonElement).type = "button";
+    output.setAttribute("aria-label", "Output device");
+    output.setAttribute("aria-expanded", String(this.devicesOpen));
+    output.title = this.devices.find(d => d.isDefault)?.name || "Output device";
+    paintIcon(output, "speaker");
+    output.onclick = event => { event.stopPropagation(); void this.pickDevice(); };
+
+    transport.append(queueButton, keys, output);
+    now.append(head, scrub, transport);
+    if (this.devicesOpen) now.append(this.deviceMenu());
+    this.host.append(now);
+
+    if (this.queueOpen) this.host.append(this.renderQueue());
+  }
+
+  /** The output picker, on the same grammar as the composer's chips. */
+  private async pickDevice() {
+    this.devicesOpen = !this.devicesOpen;
+    this.changed();
+    if (!this.devicesOpen) return;
+    try {
+      this.devices = await call<AudioDevice[]>("get_audio_devices");
+      this.changed();
+    } catch { /* the menu says so below */ }
+    /* ⚠️ Anything outside closes it, and the press has to be TESTED rather
+     * than assumed: a press inside would otherwise tear the row down before
+     * its own click could land on it. */
+    const away = (event: PointerEvent) => {
+      if (event.target instanceof Node
+        && (event.target as HTMLElement).closest?.(".media-devices, .media-side")) return;
+      document.removeEventListener("pointerdown", away, true);
+      if (!this.devicesOpen) return;
+      this.devicesOpen = false;
+      this.changed();
+    };
+    window.setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
+  }
+
+  private deviceMenu(): HTMLElement {
+    const menu = element("div", "media-devices");
+    if (!this.devices.length) {
+      menu.append(element("p", "media-none", "No output devices."));
+      return menu;
+    }
+    for (const device of this.devices) {
+      const row = element("button", `media-device${device.isDefault ? " is-on" : ""}`);
+      (row as HTMLButtonElement).type = "button";
+      const mark = element("span", "media-device-mark");
+      paintIcon(mark, device.isBluetooth ? "bluetooth" : "speaker");
+      row.append(mark, element("span", "", device.name));
+      row.onclick = () => {
+        this.devicesOpen = false;
+        void call("set_audio_device", { id: device.id }).catch(() => {});
+        this.devices = this.devices.map(d => ({ ...d, isDefault: d.id === device.id }));
+        this.changed();
+      };
+      menu.append(row);
+    }
+    return menu;
+  }
+
+  private renderQueue(): HTMLElement {
+    const panel = element("aside", "media-queue");
+    panel.append(element("h3", "media-queue-head", "Playing Next"));
+
+    if (!this.queue.connected) {
+      /* ⚠️ Offered, not explained away. Windows' transport session has no
+       * concept of a queue, so this is the one part of the player that needs
+       * an account — and the way to give it one is two clicks from here. */
+      const ask = element("div", "media-ask");
+      ask.append(element("p", "", "Connect Spotify to see what is coming next."));
+      const connect = element("button", "media-connect", "Open settings");
+      (connect as HTMLButtonElement).type = "button";
+      connect.onclick = () => { void call("open_task_editor").catch(() => {}); };
+      ask.append(connect);
+      panel.append(ask);
+      return panel;
+    }
+
+    if (!this.queue.tracks.length) {
+      panel.append(element("p", "media-none", this.queue.note || "Nothing queued."));
+      return panel;
+    }
+
+    const list = element("div", "media-queue-list scrolls");
+    for (const track of this.queue.tracks) {
+      const row = element("div", "media-track");
+      const cover = element("span", "media-track-art");
+      if (track.artwork) {
+        const image = element("img") as HTMLImageElement;
+        image.src = track.artwork; image.alt = ""; image.width = 34; image.height = 34;
+        cover.append(image);
+      } else {
+        cover.classList.add("blank");
+        paintIcon(cover, "media");
+      }
+      const copy = element("div", "media-track-copy");
+      copy.append(element("span", "media-track-title", track.title),
+        element("span", "media-track-artist", track.artist));
+      row.append(cover, copy);
+      list.append(row);
+    }
+    panel.append(list);
+    return panel;
+  }
 }

@@ -63,7 +63,7 @@ const PANES = [
   { id: "pill", icon: "clock", label: "The pill", sub: "What the resting strip is allowed to say beside the time." },
   { id: "search", icon: "search", label: "Search", sub: "What the command palette is allowed to look through." },
   { id: "keys", icon: "keyboard", label: "Shortcuts", sub: "Global, so they work while another app has focus." },
-  { id: "accounts", icon: "link", label: "Connections", sub: "TickTick, Google Calendar and the forecast." },
+  { id: "accounts", icon: "link", label: "Connections", sub: "TickTick, Google Calendar, Spotify and the forecast." },
 ] as const;
 
 type PaneId = (typeof PANES)[number]["id"];
@@ -208,6 +208,13 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Calendar", "", `<span class="set-value" id="google-state" style="min-width:0;text-align:right">…</span>`)}
       ${row("OAuth client", "In Google Cloud Console create a client of type <strong>Desktop app</strong> and enable the Calendar API. Connecting opens your normal browser — Codenotch never sees your password and asks only to read.",
         `<input id="google-id" autocomplete="off" spellcheck="false" maxlength="400" placeholder="…apps.googleusercontent.com"><input id="google-secret" type="password" autocomplete="off" maxlength="400" placeholder="Client secret"><button type="button" class="set-btn is-accent" id="google-connect">Connect</button><button type="button" class="set-btn" id="google-disconnect">Disconnect</button>`, "stack")}
+    </div></div>
+    <div><p class="set-label">Spotify</p><div class="set-group">
+      ${row("Queue", "", `<span class="set-value" id="spotify-state" style="min-width:0;text-align:right">…</span>`)}
+      ${row("Client ID", "Only for “Playing Next”. Everything else the player shows comes from Windows itself, so this is optional. Create an app at developer.spotify.com, and add the redirect URI below to it <strong>exactly</strong>.",
+        `<input id="spotify-id" autocomplete="off" spellcheck="false" maxlength="200" placeholder="32 hex characters"><button type="button" class="set-btn is-accent" id="spotify-connect">Connect</button><button type="button" class="set-btn" id="spotify-disconnect">Disconnect</button>`, "stack")}
+      ${row("Redirect URI", "Paste this into the app’s settings. Spotify matches it character for character, port included.",
+        `<code class="set-code" id="spotify-redirect">…</code><button type="button" class="set-btn" id="spotify-copy">Copy</button>`)}
     </div></div>
     <div><p class="set-label">Weather</p><div class="set-group">
       ${row("Place", "Left empty, nothing is ever requested. This is the one thing here that reaches the network without an account.",
@@ -710,6 +717,34 @@ get("ticktick-connect").onclick = async () => {
 };
 get("ticktick-disconnect").onclick = () => void run("disconnect_ticktick", {}, "TickTick disconnected.");
 
+async function paintSpotify() {
+  const connected = await call<boolean>("spotify_status").catch(() => false);
+  get("spotify-state").textContent = connected
+    ? "Connected · the player shows what is next"
+    : "Not connected · the player has no queue";
+  get<HTMLButtonElement>("spotify-disconnect").disabled = !connected;
+  get("spotify-redirect").textContent = await call<string>("spotify_redirect").catch(() => "");
+}
+
+get("spotify-connect").onclick = async () => {
+  say("Waiting for Spotify in your browser…");
+  if (await run("connect_spotify", { clientId: get<HTMLInputElement>("spotify-id").value })) {
+    say("Spotify connected.", "good");
+  }
+  await paintSpotify();
+};
+get("spotify-disconnect").onclick = async () => {
+  await run("disconnect_spotify", {}, "Spotify disconnected.");
+  await paintSpotify();
+};
+get("spotify-copy").onclick = async () => {
+  /* ⚠️ Through Rust, not `navigator.clipboard`. The settings window can lose
+   * focus between the press and the write, and the browser API rejects on an
+   * unfocused document — silently, in a way that looks like the button doing
+   * nothing. Same reason the shelf copies this way. */
+  await run("copy_text", { text: get("spotify-redirect").textContent ?? "" }, "Redirect URI copied.");
+};
+
 async function paintGoogle() {
   const connected = await call<boolean>("google_status").catch(() => false);
   get("google-state").textContent = connected
@@ -812,7 +847,8 @@ async function boot() {
   get<HTMLInputElement>("autostart").checked = await call<boolean>("get_autostart").catch(() => false);
 
   await watchTasks(value => { snapshot = value; paintTickTick(); });
-  await Promise.all([paintDisplays(), paintProviders(), paintGoogle(), paintKeys(), paintSnoozed(), paintEverything()]);
+  await Promise.all([paintDisplays(), paintProviders(), paintGoogle(), paintSpotify(),
+    paintKeys(), paintSnoozed(), paintEverything()]);
   try { sayWeather(await call<Weather>("get_weather")); } catch { sayWeather(null); }
 
   if (preview) say("Interactive preview · nothing here is saved.");

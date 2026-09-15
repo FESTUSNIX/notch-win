@@ -811,6 +811,67 @@ test("click mode: leaving does not close it, and the pill carries a control", as
   await page.screenshot({path: "test-results/island-click-mode.png"});
 });
 
+test("the player is a screen only while there is a player, and the queue is closed until asked", async ({page}) => {
+  await page.goto("/tasks.html?nocal");
+  await open(page);
+
+  /* ⚠️ The tab exists only while something is playing. A permanent tab
+     holding a title and three buttons is what got the last one removed; this
+     one carries the playhead and the queue, and appears with the first track. */
+  const tab = page.locator('[data-tab="media"]');
+  await expect(tab).toBeVisible();
+  await tab.click();
+
+  await expect(page.locator(".media-title")).toHaveText(/potion shop/);
+  // The source, never a fabricated "explicit" badge: Windows' transport
+  // session carries no such flag, and a badge that is always on is decoration
+  // claiming to be data.
+  await expect(page.locator(".media-badge")).toHaveText("Brave");
+  // Elapsed on the left, REMAINING on the right — the total is the same number
+  // every time you look at it.
+  await expect(page.locator(".media-left")).toHaveText(/^-\d+:\d{2}$/);
+
+  /* Closed by default, and the panel is narrower for it. */
+  await expect(page.locator(".media-queue")).toHaveCount(0);
+  /* ⚠️ Settled, not sampled. The width is sprung, so a measurement taken on
+     the frame the tab was pressed is some arbitrary point on the way there —
+     which then makes every comparison against it meaningless. */
+  const settle = async () => {
+    let last = -1, same = 0;
+    for (let i = 0; i < 60 && same < 3; i++) {
+      const width = Math.round((await page.locator("#island").boundingBox())!.width);
+      same = width === last ? same + 1 : 0;
+      last = width;
+      await page.waitForTimeout(50);
+    }
+    return last;
+  };
+  const shut = await settle();
+
+  await page.getByRole("button", {name: "Playing next", exact: true}).click();
+  await expect(page.locator(".media-queue-head")).toHaveText("Playing Next");
+  await expect(page.locator(".media-track")).toHaveCount(3);
+  // A track with no cover is still a row: artwork is the one field Spotify
+  // legitimately omits.
+  await expect(page.locator(".media-track-art.blank")).toHaveCount(3);
+  await expect.poll(async () => (await page.locator("#island").boundingBox())!.width)
+    .toBeGreaterThan(shut + 100);
+  await settle();
+  await page.screenshot({path: "test-results/island-player.png"});
+
+  // And it folds back to the narrow panel.
+  await page.getByRole("button", {name: "Playing next", exact: true}).click();
+  await expect(page.locator(".media-queue")).toHaveCount(0);
+  expect(await settle()).toBe(shut);
+
+  /* ⚠️ With nothing playing there is no tab — and if it goes while you are
+     looking at it, the shell moves you home rather than sitting on a hidden
+     tab showing an empty screen. */
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await expect(page.locator('[data-tab="media"]')).toBeHidden();
+});
+
 test("the palette closes with the control that opened it, however fast it is pressed", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);

@@ -129,7 +129,7 @@ fn stored() -> Result<Option<Stored>, String> {
 ///
 /// Deliberately the real browser and not a WebView: Google blocks sign-in from
 /// embedded browsers, and it is the wrong thing to ask of someone anyway.
-fn open_browser(url: &str) -> Result<(), String> {
+pub(crate) fn open_browser(url: &str) -> Result<(), String> {
     // ShellExecuteW may delegate to a Shell extension, which needs COM. Already
     // initialised on this thread is fine — the error is ignored on purpose.
     let result = unsafe {

@@ -13,6 +13,7 @@ use windows::Win32::Security::Credentials::{
 
 pub const TICKTICK: &str = "codenotch-win/ticktick";
 pub const GOOGLE: &str = "codenotch-win/google-oauth";
+pub const SPOTIFY: &str = "codenotch-win/spotify-oauth";
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -20,10 +21,10 @@ fn wide(value: &str) -> Vec<u16> {
 
 /// A human name for the credential, used only in error copy.
 fn label(target: &str) -> &'static str {
-    if target == GOOGLE {
-        "Google Calendar"
-    } else {
-        "TickTick"
+    match target {
+        GOOGLE => "Google Calendar",
+        SPOTIFY => "Spotify",
+        _ => "TickTick",
     }
 }
 

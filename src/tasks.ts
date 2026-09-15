@@ -5,7 +5,7 @@
  * header, the tabs and which screen is showing; each screen owns its own body.
  */
 import { IslandSurface } from "./island-surface";
-import { cpx } from "./layout";
+import { FRAME, cpx } from "./layout";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
@@ -21,7 +21,7 @@ import { HomeScreen } from "./screen-home";
  * was the only one of the three that duplicated what Spotify, a browser and
  * the media keys already do better on a bigger surface. What it keeps is the
  * part nothing else had: the pill saying what is playing at a glance. */
-import { MediaSource } from "./screen-media";
+import { MediaScreen, MediaSource } from "./screen-media";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
@@ -41,6 +41,11 @@ import "./tasks.css";
 const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "home", icon: "home", label: "Home" },
   { name: "today", icon: "today", label: "Today" },
+  /* ⚠️ The player's tab exists only while something is playing — see
+   * `paintMediaTab`. It was removed for being a permanent tab holding a title
+   * and three buttons; it earns one again now that it carries the playhead and
+   * the queue, but only while there is something to carry. */
+  { name: "media", icon: "media", label: "Playing" },
   { name: "agents", icon: "agent", label: "Agents" },
   { name: "shelf", icon: "shelf", label: "Shelf" },
   { name: "calendar", icon: "calendar", label: "Calendar" },
@@ -65,12 +70,27 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
 const WIDTH: Record<ScreenName, number> = {
   home: 1900,      // three cards side by side
   today: 1420,     // one column of rows, and the composer under it
+  /* ⚠️ The player has TWO widths — see `widthOf`. The queue is a second
+   * column, and opening it into a panel sized for one is what the per-screen
+   * width was built for. */
+  media: 1320,
   agents: 1620,    // rows carrying project, branch, tokens and a verb
   shelf: 1480,     // rows with a thumbnail and a path
   calendar: 1900,  // the week grid needs seven columns
   system: 1900,    // a bento
   review: 1480,    // a few stacked cards
 };
+
+/** What the panel should be, allowing for a screen that changes its own mind.
+ *
+ * ⚠️ The open queue asks for the FULL body, not more. `measure()` clamps the
+ * cap to `islandBodyLong`, so a number above it is silently the same as the
+ * number at it — which looks, from a test, exactly like the width not changing
+ * at all. */
+function widthOf(name: ScreenName): number {
+  if (name === "media" && player.open) return FRAME.islandBodyLong;
+  return WIDTH[name];
+}
 
 const app = document.getElementById("task-app")!;
 app.innerHTML = `<div id="notch-shell">
@@ -87,6 +107,7 @@ app.innerHTML = `<div id="notch-shell">
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
+        <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
         <section class="screen" data-screen="agents" role="tabpanel" aria-label="Agents" hidden><div class="screen-body scrolls" id="agents-body"></div></section>
         <section class="screen" data-screen="shelf" role="tabpanel" aria-label="Shelf" hidden><div class="screen-body scrolls" id="shelf-body"></div></section>
@@ -169,10 +190,16 @@ const palette = new Palette(surface, () => {
     /* ⚠️ The screen's own width, given back. The palette narrows the panel
      * while it is up; what it hands back has to be what the screen underneath
      * asked for, or every search leaves the island stuck at its full width. */
-    surface.capBody(cpx(WIDTH[screen]));
+    surface.capBody(cpx(widthOf(screen)));
     render();
   },
   (what, why) => say(`${what} failed`, why.replace(/^invoke error: /i, "").slice(0, 120)));
+const player = new MediaScreen(get("media-body"), {
+  source: media,
+  /* ⚠️ Asked for, so it springs. The queue opening is the clearest case there
+   * is of a size change you pressed a button for. */
+  width: () => { surface.capBody(cpx(widthOf("media"))); surface.deliberately(); },
+}, () => render());
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -313,11 +340,26 @@ function show(name: ScreenName) {
    * the end of `render()`, and measuring a screen at the previous screen's
    * width gets the wrapping — and therefore the height — right for a layout
    * that is about to change. */
-  surface.capBody(cpx(WIDTH[name]));
+  surface.capBody(cpx(widthOf(name)));
   placeGlide(true);
   // You pressed a tab: this one is allowed to bounce. See `sizing()`.
   surface.deliberately();
   render();
+}
+
+/** The player's tab, which is there only while there is a player.
+ *
+ * ⚠️ A tab that is always present and usually empty is what got the last
+ * one removed. This one appears with the first track and goes with the last,
+ * and ⚠️ if it goes while you are LOOKING at it the shell moves you home —
+ * otherwise the island sits on a hidden tab showing an empty screen with no
+ * way to tell what happened. */
+function paintMediaTab() {
+  const tab = document.querySelector<HTMLElement>('[data-tab="media"]');
+  if (!tab) return;
+  const playing = media.media.active;
+  tab.hidden = !playing;
+  if (!playing && screen === "media") show("home");
 }
 
 /* ── The resting pill ─────────────────────────────────────────────────────
@@ -482,6 +524,8 @@ function render() {
   shelf.render();
   review.render();
   home.render();
+  player.render();
+  paintMediaTab();
 
   /* What the OPEN screen can do, in the header. ⚠️ Only the open one: these
    * are the tools for what you are looking at, and a header carrying every
@@ -489,6 +533,7 @@ function render() {
   const tools: Partial<Record<ScreenName, () => ScreenTools>> = {
     today: () => today.tools(),
     shelf: () => shelf.tools(),
+    media: () => player.tools(),
   };
   paintTools(get("screen-tools"), tools[screen]?.() ?? {});
 

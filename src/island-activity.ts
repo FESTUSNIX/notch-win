@@ -16,7 +16,11 @@ import type { ModuleReading } from "./pill-modules";
 
 export type ScreenName =
   | "home" | "today" | "agents" | "shelf"
-  | "calendar" | "system" | "review";
+  | "calendar" | "system" | "review"
+  /** ⚠️ Real, but its tab is only on screen while something is playing — see
+   *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
+   *  that is not there. */
+  | "media";
 
 /** What the resting pill shows: the date, the time, and at most one module. */
 export interface Resting {
