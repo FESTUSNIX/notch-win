@@ -232,8 +232,19 @@ test("day screen: overdue in place, nesting, and a completion that settles into 
 
   await day(page).getByLabel("Complete Get outside for a walk", {exact: true}).check();
   await expect(page.locator("#day-left")).toHaveText("2 left");
-  await expect(page.getByRole("button", {name: "1 done today"})).toBeVisible();
   await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeHidden();
+
+  /* ⚠️ Finished work is behind the header's switch, not a drawer under the
+   * list. The drawer put "1 done today" in the one place nobody looks — below
+   * everything else — and opening it made a long list longer, which is the
+   * opposite of what looking back over the day is for. */
+  const done = page.getByRole("tab", {name: "Done 1"});
+  await expect(done).toBeVisible();
+  await done.click();
+  await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeVisible();
+  await expect(day(page).getByText("Book a haircut", {exact: true})).toBeHidden();
+  await page.getByRole("tab", {name: "Open"}).click();
+  await expect(day(page).getByText("Book a haircut", {exact: true})).toBeVisible();
 });
 
 test("the composer is a live field: no reveal, and Enter leaves it ready for the next", async ({page}) => {
@@ -252,6 +263,36 @@ test("the composer is a live field: no reveal, and Enter leaves it ready for the
   await page.keyboard.press("Enter");
   await expect(page.locator("#day-left")).toHaveText("6 left");
   expect(page.context().pages()).toHaveLength(1);
+});
+
+test("the composer is one row, and says where a task will go only while typing", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await openToday(page);
+  const chips = page.locator(".composer-chips");
+  const field = page.getByRole("textbox", {name: "Task name"});
+
+  /* ⚠️ Only while the field has focus. Where a task goes is a decision you make
+   * while typing, not a permanent fixture — on a screen you look at all day two
+   * chips sitting there saying nothing is two more things to read past. */
+  expect(await chips.evaluate(el => getComputedStyle(el).opacity)).toBe("0");
+  await field.click();
+  await expect.poll(() => chips.evaluate(el => getComputedStyle(el).opacity)).toBe("1");
+
+  /* ⚠️ Not a native `<select>` or `<input type=date>`. Windows paints those,
+   * not us, and a second row of them was the single biggest reason this screen
+   * looked like a different application below the fold. */
+  await expect(page.locator("#inline-composer select, #inline-composer input[type=date]")).toHaveCount(0);
+  await expect(page.locator("#chip-day")).toHaveText("Today");
+
+  // The day is a name, never an ISO date: a chip is read at a glance or not read.
+  await page.locator("#chip-day").click();
+  const options = page.locator(".chip-menu .chip-option");
+  await expect(options).toHaveCount(7);
+  await expect(options.nth(1)).toHaveText("Tomorrow");
+  await options.nth(1).click();
+  await expect(page.locator("#chip-day")).toHaveText("Tomorrow");
+  await expect(page.locator(".chip-menu")).toHaveCount(0);
+  await page.screenshot({path: "test-results/island-composer.png"});
 });
 
 test("a draft survives the island folding, and renaming happens in place", async ({page}) => {

@@ -6,6 +6,7 @@
  */
 import { FocusTimer, timerText } from "./focus-timer";
 import { paintIcon } from "./task-icons";
+import { element } from "./task-list";
 import { call, native, preview } from "./task-client";
 import {
   emptySnapshot, localDay, nodeDone, overdueDays, progress, taskForest, taskId,
@@ -16,13 +17,15 @@ import type { Activity } from "./island-activity";
 import type { IslandSurface } from "./island-surface";
 
 const HTML = `
-  <div class="day-meta"><span id="day-date"></span><span id="day-left"></span></div>
+  <div class="day-head">
+    <div class="day-meta"><span id="day-date"></span><span id="day-left"></span></div>
+    <div class="day-switch" id="day-switch" role="tablist" aria-label="Which tasks" hidden><button type="button" id="day-open" role="tab" aria-selected="true">Open</button><button type="button" id="day-done-tab" role="tab" aria-selected="false"></button></div>
+  </div>
   <div class="day-rail"><i id="day-rail-fill"></i></div>
   <section id="focus-session" hidden><div id="focus-task-title"></div><div class="focus-controls"><time id="focus-elapsed" title="Elapsed focus time">00:00</time><button id="focus-others" aria-label="Show other tasks" title="Show other tasks" aria-expanded="false"></button><button id="focus-pause" aria-label="Pause focus timer" title="Pause"></button><button id="focus-end" aria-label="End focus session" title="End session"></button><button id="focus-finish" aria-label="Complete focused task" title="Complete task"></button></div><span id="focus-state" class="sr-only"></span></section>
   <div id="task-status" role="status"></div>
   <div id="task-list" class="task-list scrolls"><div id="task-list-content"></div><div id="task-done"></div></div>
-  <form id="inline-composer"><span class="plus" aria-hidden="true">+</span><input id="inline-title" aria-label="Task name" maxlength="1000" required autocomplete="off" placeholder="Add a task"><span class="enter-hint" aria-hidden="true">&#8629;</span><button type="button" id="composer-options" class="small-icon" aria-label="Task list and day" aria-expanded="false" title="List and day"></button></form>
-  <div id="composer-fields" hidden><select id="inline-project" aria-label="Task list" required></select><input id="inline-date" aria-label="Scheduled day" type="date"></div>
+  <form id="inline-composer"><span class="plus" aria-hidden="true">+</span><input id="inline-title" aria-label="Task name" maxlength="1000" required autocomplete="off" placeholder="Add a task"><div class="composer-chips" id="composer-chips"><button type="button" class="chip" id="chip-list" aria-haspopup="listbox" aria-expanded="false"></button><button type="button" class="chip" id="chip-day" aria-haspopup="listbox" aria-expanded="false"></button></div><span class="enter-hint" aria-hidden="true">&#8629;</span></form>
   <footer class="task-footer"><button id="sync-line" aria-label="Refresh tasks"></button></footer>`;
 
 export class TodayScreen {
@@ -48,7 +51,17 @@ export class TodayScreen {
   private outbox: { id: string; title: string }[] = [];
   private editing: string | null = null;
   private editCaret: number | null = null;
-  private doneOpen = false;
+  /** Which half of the day is on screen. ⚠️ A switch, not a drawer: an
+   *  inline "3 done today" row was invisible where it sat — under everything
+   *  else — and opening it made a long list longer, which is the opposite of
+   *  what looking at finished work is for. */
+  private showing: "open" | "done" = "open";
+  /** The list and day the composer will file into. Held here rather than read
+   *  off a `<select>`, because there is no longer one. */
+  private toList = "";
+  private toDay = localDay();
+  /** Which composer chip has its menu open. */
+  private picking: "list" | "day" | null = null;
   private othersOpen = false;
   /** False when the day is read-only: no account, an error, or fixtures mode. */
   private writable = false;
@@ -57,8 +70,7 @@ export class TodayScreen {
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   private composer!: HTMLFormElement;
   private title!: HTMLInputElement;
-  private project!: HTMLSelectElement;
-  private date!: HTMLInputElement;
+
   private list!: HTMLElement;
   private doneTarget!: HTMLElement;
   private status!: HTMLElement;
@@ -68,18 +80,17 @@ export class TodayScreen {
     const get = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
     this.composer = get<HTMLFormElement>("inline-composer");
     this.title = get<HTMLInputElement>("inline-title");
-    this.project = get<HTMLSelectElement>("inline-project");
-    this.date = get<HTMLInputElement>("inline-date");
+
     this.list = get("task-list-content");
     this.doneTarget = get("task-done");
     this.status = get("task-status");
     this.focusTimer = new FocusTimer(() => { this.othersOpen = false; this.changed(); });
-    paintIcon(get("composer-options"), "down");
+
     paintIcon(this.host.querySelector("#inline-composer .plus") as HTMLElement, "plus");
     paintIcon(get("focus-others"), "list");
     paintIcon(get("focus-end"), "stop");
     paintIcon(get("focus-finish"), "check");
-    this.date.value = localDay();
+
     this.wire();
   }
 
@@ -290,12 +301,12 @@ export class TodayScreen {
       this.busy ? "Syncing with TickTick…" : shown.updatedAt ? `TickTick · ${ago ? `${ago} min ago` : "just synced"}` : "TickTick · connect in settings";
     (this.get("sync-line") as HTMLButtonElement).disabled = this.busy;
 
-    const selected = this.project.value;
+    /* The list the composer files into. ⚠️ Held as an id and checked against
+     * what still exists — a list closed in TickTick would otherwise leave the
+     * chip naming something the next create would be rejected for. */
     const projects = shown.projects.filter(p => !p.closed && p.kind !== "NOTE");
-    if (this.project.options.length !== projects.length || projects.some((p, i) => this.project.options[i]?.value !== p.id || this.project.options[i]?.text !== p.name)) {
-      this.project.replaceChildren(...projects.map(p => new Option(p.name, p.id)));
-      if (projects.some(p => p.id === selected)) this.project.value = selected;
-    }
+    if (!projects.some(p => p.id === this.toList)) this.toList = projects[0]?.id ?? "";
+    this.paintChips(projects);
 
     const frozen = this.busy || !shown.connected || !!shown.error || (native && !!shown.demo);
     /* ⚠️ The composer field is NOT disabled by demo mode, only by a missing
@@ -307,18 +318,34 @@ export class TodayScreen {
     this.title.placeholder = shown.connected ? "Add a task" : "Connect TickTick in settings";
     this.writable = !frozen;
 
-    renderDay(this.list, this.doneTarget, shown, {
+    const drawn = renderDay(this.list, this.doneTarget, shown, {
       focus: task => this.focusTimer.start(task),
       focused: session ? `${session.projectId}:${session.id}` : undefined,
       view: this.view, disabled: frozen,
       settling: this.settling, leaving: this.leaving, expanded: this.expanded, collapsed: this.collapsed,
-      editing: this.editing, editCaret: this.editCaret, doneOpen: this.doneOpen, outbox: this.outbox,
+      editing: this.editing, editCaret: this.editCaret, showing: this.showing, outbox: this.outbox,
       redraw: this.changed, complete: t => this.complete(t), check: (t, i, d) => this.checkItem(t, i, d),
       rename: (t, n) => this.rename(t, n),
       connect: () => { void this.action("open_task_editor"); },
       setEditing: key => { this.editing = key; this.editCaret = null; this.changed(); },
-      setDoneOpen: open => { this.doneOpen = open; this.changed(); },
+      setShowing: which => { this.showing = which; this.changed(); },
     });
+
+    /* ⚠️ The switch appears only once something is finished, and its count
+     * comes from the draw that just happened. A "Done 0" tab is a control that
+     * does nothing sitting where the day's summary goes — which on a fresh
+     * morning is every morning — and a count taken separately from the list it
+     * switches disagrees with it the moment either rule changes. */
+    const sw = this.get("day-switch");
+    sw.hidden = drawn.finished === 0;
+    if (drawn.finished) {
+      this.get("day-done-tab").textContent = `Done ${drawn.finished}`;
+      this.get("day-open").setAttribute("aria-selected", String(this.showing === "open"));
+      this.get("day-done-tab").setAttribute("aria-selected", String(this.showing === "done"));
+    } else if (this.showing === "done") {
+      // The last finished task was un-ticked while its own half was on screen.
+      this.showing = "open";
+    }
   }
 
   setView(view: TaskView) { this.view = view; this.changed(); }
@@ -390,11 +417,116 @@ export class TodayScreen {
     return listColor(this.local().projects.find(p => p.id === task.projectId));
   }
 
+  /** `Today`, `Tomorrow`, or the weekday — never `2026-09-18`.
+   *
+   * ⚠️ A chip is read at a glance or it is not read. An ISO date in a 60px pill
+   * is four numbers to parse before you know whether it is soon. */
+  private dayName(iso: string): string {
+    const today = localDay();
+    if (iso === today) return "Today";
+    const [y, m, d] = iso.split("-").map(Number);
+    const when = new Date(y, m - 1, d);
+    const days = Math.round((when.getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000);
+    if (days === 1) return "Tomorrow";
+    if (days > 1 && days < 7) return when.toLocaleDateString(undefined, { weekday: "long" });
+    return when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+
+  /** The chips that say where a new task will go. */
+  private paintChips(projects: TaskSnapshot["projects"]) {
+    const list = this.get("chip-list");
+    const named = projects.find(p => p.id === this.toList);
+    list.replaceChildren();
+    const dot = element("span", "chip-dot");
+    dot.style.background = listColor(named) || "var(--dim)";
+    list.append(dot, element("span", "", named?.name ?? "No list"));
+    list.setAttribute("aria-label", `List: ${named?.name ?? "none"}`);
+
+    const day = this.get("chip-day");
+    day.replaceChildren(element("span", "", this.dayName(this.toDay)));
+    day.setAttribute("aria-label", `Day: ${this.dayName(this.toDay)}`);
+
+    /* ⚠️ The menu is rebuilt on every paint rather than kept and toggled. The
+     * screen redraws on every keystroke into the composer, so a kept menu is a
+     * node with a stale list of projects in it. */
+    this.host.querySelectorAll(".chip-menu").forEach(menu => menu.remove());
+    list.setAttribute("aria-expanded", String(this.picking === "list"));
+    day.setAttribute("aria-expanded", String(this.picking === "day"));
+    if (!this.picking) return;
+    /* ⚠️ The menu hangs off the chips CONTAINER, never off the chip. A chip is
+     * a <button> and so is every option in the menu — nesting them is invalid
+     * HTML, and the live consequence was that a press on an option bubbled to
+     * the chip and re-opened the menu it had just chosen from. */
+    const anchor = this.get("composer-chips");
+    const menu = element("div", "chip-menu");
+    const rows = this.picking === "list"
+      ? projects.map(project => ({
+          label: project.name, colour: listColor(project), on: project.id === this.toList,
+          take: () => { this.toList = project.id; },
+        }))
+      : this.week().map(iso => ({
+          label: this.dayName(iso), colour: "", on: iso === this.toDay,
+          take: () => { this.toDay = iso; },
+        }));
+    for (const row of rows) {
+      const item = element("button", `chip-option${row.on ? " is-on" : ""}`);
+      (item as HTMLButtonElement).type = "button";
+      if (row.colour) {
+        const mark = element("span", "chip-dot");
+        mark.style.background = row.colour;
+        item.append(mark);
+      }
+      item.append(element("span", "", row.label));
+      item.onclick = (event: MouseEvent) => {
+        event.stopPropagation();
+        row.take();
+        this.picking = null;
+        this.changed();
+        this.title.focus();
+      };
+      menu.append(item);
+    }
+    anchor.append(menu);
+  }
+
+  /** Today and the six days after it. Past a week, the task editor. */
+  private week(): string[] {
+    const out: string[] = [];
+    const base = new Date(`${localDay()}T00:00:00`);
+    for (let i = 0; i < 7; i++) {
+      const when = new Date(base);
+      when.setDate(base.getDate() + i);
+      out.push(localDay(when));
+    }
+    return out;
+  }
+
+  /** Open a chip's menu, closing the other. */
+  private pick(which: "list" | "day") {
+    this.picking = this.picking === which ? null : which;
+    this.changed();
+    if (this.picking) {
+      /* Anything outside closes it. ⚠️ The press has to be tested rather than
+       * assumed: a press INSIDE the menu would otherwise tear the option down
+       * before its own click could land on it, and the click would then fall
+       * through to whatever was underneath. */
+      const away = (event: PointerEvent) => {
+        if (event.target instanceof Node
+          && (event.target as HTMLElement).closest?.(".chip-menu, .chip")) return;
+        document.removeEventListener("pointerdown", away, true);
+        if (!this.picking) return;
+        this.picking = null;
+        this.changed();
+      };
+      window.setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
+    }
+  }
+
   /** The minute hand: refresh across midnight and re-age the sync line. */
   tick() {
     if (this.day !== localDay()) {
       this.day = localDay();
-      this.date.value = this.day;
+      this.toDay = this.day;
       void call("refresh_tasks").catch(() => {});
     }
   }
@@ -410,12 +542,10 @@ export class TodayScreen {
       const task = this.snapshot.tasks.find(t => t.id === s?.id && t.projectId === s?.projectId);
       if (task) this.complete(task);
     };
-    get("composer-options").onclick = () => {
-      const fields = get("composer-fields");
-      fields.hidden = !fields.hidden;
-      get("composer-options").setAttribute("aria-expanded", String(!fields.hidden));
-      this.surface.measure();
-    };
+    get("day-open").onclick = () => { this.showing = "open"; this.changed(); };
+    get("day-done-tab").onclick = () => { this.showing = "done"; this.changed(); };
+    get("chip-list").onclick = event => { event.stopPropagation(); this.pick("list"); };
+    get("chip-day").onclick = event => { event.stopPropagation(); this.pick("day"); };
 
     /* ── The composer ──────────────────────────────────────────────────────
      * A live field at all times, never a button that becomes one, and it lives
@@ -435,15 +565,14 @@ export class TodayScreen {
         this.changed();
         return;
       }
-      if (!this.project.value) {
+      if (!this.toList) {
         this.actionError = "Choose a list first.";
-        get("composer-fields").hidden = false;
-        this.changed();
+        this.pick("list");
         return;
       }
       let scheduled: string | null = null;
-      if (this.date.value) {
-        const [y, m, d] = this.date.value.split("-").map(Number);
+      if (this.toDay) {
+        const [y, m, d] = this.toDay.split("-").map(Number);
         scheduled = new Date(y, m - 1, d).toISOString();
       }
       const ticket = { id: `${Date.now()}`, title: value };
@@ -453,7 +582,7 @@ export class TodayScreen {
       this.changed();
       this.title.focus();   // stays open: the next task is typed, not clicked into
       try {
-        await call("create_task", { projectId: this.project.value, name: value, date: scheduled, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        await call("create_task", { projectId: this.toList, name: value, date: scheduled, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       } catch (error) {
         this.actionError = String(error);
         // Hand the words back rather than losing them to a failed write.
@@ -471,15 +600,12 @@ export class TodayScreen {
     };
     this.composer.addEventListener("pointerdown", event => {
       if (this.surface.editing || !(event.target instanceof HTMLElement)) return;
-      if (event.target.closest("#composer-options")) return;
-      const field = (event.target.closest("input,select") as HTMLElement | null) ?? this.title;
+      /* ⚠️ A chip is not a field. Lifting the caret for it would take focus
+       * off the half-typed title, and the chips only exist while that title has
+       * focus — so the lift would close the very thing being pressed. */
+      if (event.target.closest(".chip, .chip-menu")) return;
       event.preventDefault();
-      lift(field);
-    });
-    get("composer-fields").addEventListener("pointerdown", event => {
-      if (this.surface.editing || !(event.target instanceof HTMLElement) || !event.target.matches("input,select")) return;
-      event.preventDefault();
-      lift(event.target);
+      lift(this.title);
     });
     // Renaming in place needs the same exception; it starts from a title click.
     this.list.addEventListener("pointerdown", event => {

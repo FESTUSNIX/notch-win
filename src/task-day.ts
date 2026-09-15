@@ -33,7 +33,7 @@ export interface DayOptions {
   editing: string | null;
   /** Caret inside the rename field, carried across redraws. Null means fresh. */
   editCaret: number | null;
-  doneOpen: boolean;
+  showing: "open" | "done";
   /** Tasks typed into the composer that TickTick has not confirmed yet. */
   outbox: { id: string; title: string }[];
   redraw: () => void;
@@ -42,7 +42,7 @@ export interface DayOptions {
   check: (task: Task, itemId: string, done: boolean) => void;
   rename: (task: Task, name: string) => void;
   setEditing: (key: string | null) => void;
-  setDoneOpen: (open: boolean) => void;
+  setShowing: (which: "open" | "done") => void;
 }
 
 /* TickTick gives most lists a colour and some none, so there has to be a
@@ -241,7 +241,14 @@ function clearCard(done: number): HTMLElement {
   return card;
 }
 
-export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapshot: TaskSnapshot, o: DayOptions) {
+/** Draws the day, and says how much of it is finished.
+ *
+ * ⚠️ The count is RETURNED rather than recomputed by the caller. The header's
+ * Open/Done switch is shown from it, and a switch counted separately from the
+ * list it switches disagrees with it the moment either rule changes — a task
+ * held back for its completion animation is finished by one count and not the
+ * other, which is a "Done 1" tab leading to an empty list. */
+export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapshot: TaskSnapshot, o: DayOptions): { finished: number } {
   content.replaceChildren();
   doneTarget.replaceChildren();
 
@@ -251,6 +258,16 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
   const held = (n: TaskNode) => o.settling.has(taskId(n.task)) || o.leaving.has(taskId(n.task));
   const live = shown.filter(n => !nodeDone(n) || held(n));
   const finished = shown.filter(n => nodeDone(n) && !held(n));
+
+  /* ⚠️ The two halves are exclusive. The switch says which one you asked
+   * for, so drawing the open list underneath the finished one would make
+   * "Done" an addition to the day rather than a view of it — which is the
+   * drawer this replaced, wearing a tab. */
+  if (o.showing === "done") {
+    for (const node of finished) doneTarget.append(drawRow(node, snapshot, o, 1));
+    if (!finished.length) doneTarget.append(element("p", "day-none", "Nothing finished yet today."));
+    return { finished: finished.length };
+  }
 
   live.sort((a, b) => overdueDays(b.task) - overdueDays(a.task) ||
     (a.task.sortOrder || 0) - (b.task.sortOrder || 0) || a.task.title.localeCompare(b.task.title));
@@ -290,14 +307,9 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
     content.append(ghost);
   }
 
-  if (finished.length) {
-    const toggle = element("button", "day-done-toggle");
-    (toggle as HTMLButtonElement).type = "button";
-    toggle.setAttribute("aria-expanded", String(o.doneOpen));
-    toggle.append(element("span", "cv", "▸"),
-      element("span", "", `${finished.length} done today`));
-    toggle.onclick = () => o.setDoneOpen(!o.doneOpen);
-    doneTarget.append(toggle);
-    if (o.doneOpen) for (const node of finished) doneTarget.append(drawRow(node, snapshot, o, 1));
-  }
+  /* ⚠️ Finished work is behind the header's switch, not a drawer down here. A
+   * drawer put "3 done today" underneath everything else — the one place you
+   * would not look for it — and opening it made a long list longer, which is
+   * the opposite of what looking back over the day is for. */
+  return { finished: finished.length };
 }

@@ -1915,3 +1915,20 @@ The two halves were the same fault.
      With the tile headings gone it is the only thing telling Output from
      Bluetooth, and a pair of bluetooth buds made both pills show the same
      glyph — two rows that read as the same control twice.
+223. ⚠️ **A menu must not hang off the control that opens it when both are
+     `<button>`s.** `.chip-menu` was appended to the chip, so every option was a
+     button inside a button — invalid HTML, and the live consequence was that a
+     press on an option bubbled to the chip and re-opened the menu it had just
+     chosen from. It hangs off the chips container now.
+224. ⚠️ **A dismiss-on-press handler has to TEST the press.** Registered as
+     a blanket `once` listener it tore the option down before that option's own
+     click could land, and the click then fell through to whatever was
+     underneath. Same shape as the palette's `outside`.
+225. ⚠️ **The Open/Done count comes from the draw, not from a second
+     filter.** A switch counted separately from the list it switches disagrees
+     with it the moment either rule changes — a task held back for its
+     completion animation is finished by one count and not the other, which is a
+     "Done 1" tab leading to an empty list. `renderDay` returns its own split.
+226. ⚠️ **The two halves are exclusive.** Drawing the open list underneath
+     the finished one makes "Done" an addition to the day rather than a view of
+     it — which is the drawer this replaced, wearing a tab.
