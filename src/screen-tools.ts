@@ -1,14 +1,20 @@
-/* What the open screen can do, in the header rather than in a row of its own.
+/* What the open screen can do, at the right-hand end of the header.
  *
  * Every screen had grown a footer: a sync line, a sentence about how dragging
  * works, a "Clear all". Each was a whole row of 10px grey text at the foot of
  * the panel — the place nothing is read — and each one broke the bottom padding
  * it sat inside, so no two screens ended the same way.
  *
- * ⚠️ They are TOOLS, not content. An instruction is a thing you want once and
- * then never again, and an action is a button; neither is worth a row of the
- * screen it describes. Both live in the header now, beside the tabs, in the one
- * place that is the same on every screen.
+ * ⚠️ They belong with the OTHER buttons, not floating after the tabs. Sat
+ * next to the tab strip they read as orphans: a couple of glyphs adrift in the
+ * middle of a header with empty space on both sides and nothing to say what
+ * they were attached to. Pushed to the right they join the pin, the settings
+ * and the close — one cluster of controls, divided from the panel's own by a
+ * hairline because these change with the screen and those never do.
+ *
+ * ⚠️ And there is no `?`. A sentence explaining a gesture is worth saying
+ * once, in the docs — a permanent button whose only job is to re-explain
+ * dragging is a footer that learned to hide.
  */
 import { element } from "./task-list";
 import { paintIcon, type TaskIcon } from "./task-icons";
@@ -24,8 +30,6 @@ export interface Tool {
 }
 
 export interface ScreenTools {
-  /** The sentence that used to be a footer. Shown from a `?`, on hover. */
-  help?: string;
   tools?: Tool[];
 }
 
@@ -43,15 +47,5 @@ export function paintTools(host: HTMLElement, spec: ScreenTools) {
     paintIcon(button, tool.icon);
     if (tool.run) button.onclick = tool.run;
     host.append(button);
-  }
-  if (spec.help) {
-    /* ⚠️ A `?` rather than the sentence. The words are the same words; what
-     * changes is that they cost nothing until wanted. A title attribute is
-     * enough here — this is a hint about a gesture, not a document. */
-    const ask = element("button", "screen-tool screen-help small-icon", "?");
-    (ask as HTMLButtonElement).type = "button";
-    ask.setAttribute("aria-label", spec.help);
-    ask.title = spec.help;
-    host.append(ask);
   }
 }

@@ -183,7 +183,6 @@ export class ShelfScreen {
    *  and the sentence above it explained a gesture you want told once. */
   tools() {
     return {
-      help: "Drag a row out to drop the file somewhere, or copy it and paste it.",
       tools: this.items.length
         ? [{ icon: "close" as const, label: `Clear the shelf (${this.items.length})`,
              run: () => { void call("shelf_remove", { id: "" }).catch(() => {}); } }]

@@ -135,7 +135,12 @@ export const FRAME = {
    *  a list of one-line results — at that width it reads as a window someone
    *  left open rather than as a bar you typed into. ~620 CSS px. */
   islandPaletteLong: 1290,
-  islandBodyDepth: 810,
+  /** The tallest the panel may be. ⚠️ Raised from 810 (≈388 CSS px): most
+   *  screens opened at the cap and scrolled from the first frame, for the sake
+   *  of a row or two — and a list that arrives already scrolled reads as cut
+   *  off rather than as long. This is ~470 CSS px, which fits every screen's
+   *  natural content while still being a fraction of a 1080p display. */
+  islandBodyDepth: 980,
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,
   /** The inverse fillet where the island meets the bezel. Smaller than the

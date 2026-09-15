@@ -112,9 +112,14 @@ export class HomeScreen {
     const today = localDay();
     const busy = new Set(feed.events.map(e => (e.allDay ? e.start.slice(0, 10) : localDay(startOf(e)))));
 
+    /* ⚠️ The month is a CAPTION over the strip, not a word beside it. Set as
+     * a display-size "Sep" in its own column it took four tenths of the width
+     * of the section and left the seven days it was labelling squeezed into
+     * what was left — and the month is the one thing on a week strip you
+     * already know. */
     const strip = element("div", "home-strip");
     strip.append(element("span", "home-month",
-      new Date().toLocaleDateString(undefined, { month: "short" })));
+      new Date().toLocaleDateString(undefined, { month: "long" })));
     const days = element("div", "home-days");
     for (let offset = -STRIP_BACK; offset <= STRIP_FORWARD; offset++) {
       const date = new Date();
@@ -126,6 +131,7 @@ export class HomeScreen {
       cell.append(
         element("span", "home-day-name", date.toLocaleDateString(undefined, { weekday: "narrow" })),
         element("span", "home-day-num", String(date.getDate())),
+        element("span", "home-day-dot"),
       );
       days.append(cell);
     }
@@ -168,7 +174,7 @@ export class HomeScreen {
     const ns = "http://www.w3.org/2000/svg";
 
     const list = element("div", "home-tasks");
-    const next = this.deps.today.upNext(3);
+    const next = this.deps.today.upNext(4);
     if (!next.length) {
       list.append(element("span", "home-empty", reliable && total ? "All done" : "Nothing scheduled"));
     }
@@ -202,6 +208,23 @@ export class HomeScreen {
       }
       list.append(row);
     }
+    /* ⚠️ One line, at the foot of the column, and it opens the DAY rather than
+     * composing here. A second composer on Home would be a second place a task
+     * can be half-typed and a second set of rules for where it lands — and the
+     * screen it opens has the field already focused, so the cost is the same
+     * keystroke either way. */
+    const add = element("button", "home-add");
+    (add as HTMLButtonElement).type = "button";
+    add.disabled = !this.deps.today.writeable;
+    const plus = element("span", "home-add-mark");
+    paintIcon(plus, "plus");
+    add.append(plus, element("span", "", "Add a task"));
+    add.onclick = () => this.deps.open("today");
+    /* ⚠️ Inside the LIST, not beside it. `.home-sec` is a flex row — the three
+     * Home columns are its children — so a second child here is a second
+     * column, and it squeezed every task title to zero width while leaving the
+     * checkboxes and the chip exactly where they were. */
+    list.append(add);
     wrap.append(list);
     return wrap;
   }

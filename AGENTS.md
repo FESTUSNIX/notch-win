@@ -1955,3 +1955,28 @@ The two halves were the same fault.
      screen, so the thing being read moves while it is read. Anchored to the
      screen rather than the row, or an event near the bottom opens a panel half
      off the island.
+232. ⚠️ **`measure()` must count MARGINS, not just `offsetHeight`.** The
+     agents, shelf and calendar lists all space themselves with
+     `.row + .row { margin-top }`, so a five-row list was measured about thirty
+     pixels short and the screen opened already scrolled — which reads as cut
+     off rather than as long. Its own padding counts too.
+233. ⚠️ **A wheel has to be GATHERED before it switches screens.** A trackpad
+     sends a stream of 2-4px deltas, so acting on the first one made a screen
+     change out of a thumb resting on the pad. 90px one way inside 400ms; a run
+     that stalls or reverses starts over.
+234. ⚠️ **Screen tools go at the RIGHT-hand end of the header.** Left where
+     they fell after the tab strip they read as orphans — two glyphs adrift in
+     the middle with space on both sides and nothing saying what they belonged
+     to. `margin-left: auto` puts them with the pin, the settings and the close.
+235. ⚠️ **`.home-sec` is a flex ROW.** Appending a second child to a Home
+     column makes it a second column: the add row took its half and squeezed
+     every task title to zero width while leaving the checkboxes and the chip
+     exactly where they were, which looks like missing text rather than a
+     layout fault.
+236. ⚠️ **A taller panel invalidates every fixed "move away" point in the
+     tests.** A full day is 436px now, so `mouse.move(0, 400)` — written when
+     the panel capped at ~330 — lands INSIDE the island and the pointer never
+     leaves. Measure the box.
+237. ⚠️ **Nothing scrolls at rest any more,** so a test about wheeling over a
+     scroller has to make one. A wheel over a list with nothing to scroll
+     correctly falls through to changing screens.

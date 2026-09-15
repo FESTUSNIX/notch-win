@@ -301,7 +301,12 @@ test("a draft survives the island folding, and renaming happens in place", async
   const field = page.getByRole("textbox", {name: "Task name"});
   await field.click();
   await field.fill("Half a thought");
-  await page.mouse.move(0, 400);
+  /* ⚠️ BELOW the island, measured rather than guessed. A fixed (0, 400) used
+   * to be off the panel and is not any more: the island measures itself to its
+   * content now and a full day is 436px tall, so the old "away" point is inside
+   * it and the pointer never left. */
+  const box = (await page.locator("#island").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 60);
   await expect(field).toBeVisible();            // a live field holds it open
   await page.keyboard.press("Escape");          // releases the field, keeps the draft
   await expect(page.locator("#island-expanded")).toBeHidden();
@@ -477,7 +482,7 @@ test("Home gathers the other three onto one row, and opens into them", async ({p
    * any more — it cost a third of the section to say "1/1", which the resting
    * pill already says and the Today screen says properly. */
   await expect(page.locator(".home-tally")).toHaveCount(0);
-  await expect(page.locator(".home-task")).toHaveCount(3);
+  await expect(page.locator(".home-task")).toHaveCount(4);
   const late = page.locator(".home-task").filter({hasText: "Book a haircut"});
   // click(), not check(): the row is disabled the instant it is completed, and
   // check() waits for a checkbox it can still toggle.
@@ -1022,6 +1027,47 @@ test("an event opens into a panel, and nothing is striped", async ({page}) => {
   await page.screenshot({path: "test-results/island-calendar-panel.png"});
 });
 
+test("a screen opens at its own height, not already scrolled", async ({page}) => {
+  await page.setViewportSize({width: 1060, height: 760});
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+
+  /* ⚠️ `measure()` summed each row's `offsetHeight` and missed every margin
+   * between them — the agents, shelf and calendar lists all space themselves
+   * with `.row + .row { margin-top }`, so a five-row list came out about thirty
+   * pixels short and opened already scrolled. A list that arrives scrolled
+   * reads as cut off rather than as long. */
+  for (const tab of ["home", "agents", "shelf", "calendar", "system", "review"]) {
+    await page.locator(`[data-tab="${tab}"]`).click();
+    await expect.poll(() => page.evaluate(() => {
+      const body = document.querySelector(".screen.active .screen-body") as HTMLElement | null;
+      if (!body) return 0;
+      return body.scrollHeight - body.clientHeight;
+    }), {message: `${tab} opened scrolled`}).toBeLessThanOrEqual(1);
+  }
+});
+
+test("a wheel has to mean it before the screen changes", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  await page.locator('[data-tab="home"]').click();
+  const active = () => page.locator(".island-tab[aria-selected=true] span").textContent();
+
+  const head = page.locator(".island-head");
+  /* ⚠️ A trackpad sends a stream of 2-4px deltas, so acting on the first one
+   * made a screen change out of a thumb resting on the pad — you would look up
+   * to find yourself somewhere else. */
+  await head.hover();
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 4);
+  expect(await active()).toBe("Home");
+
+  // One mouse notch is ~100px and still counts.
+  await page.mouse.wheel(0, 120);
+  await expect.poll(active).not.toBe("Home");
+});
+
 test("a wheel changes screens unless the thing under it can scroll", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
@@ -1035,8 +1081,17 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
   await page.mouse.wheel(0, -120);
   await expect(page.locator('[data-tab="home"]')).toHaveAttribute("aria-selected", "true");
 
-  // Vertical scrolling over a list must stay with the list.
+  /* Vertical scrolling over a list must stay with the list.
+   *
+   * ⚠️ The list is CAPPED here on purpose. The panel measures itself to its
+   * content now, so on a real day nothing scrolls — and a wheel over a list
+   * with nothing to scroll correctly falls through to changing screens, which
+   * is the rule rather than a bug. The rule under test is about scrollers, not
+   * about how one came to be scrollable, so the test makes one. */
+  await page.addStyleTag({content: "#task-list { max-height: 90px; }"});
   await page.locator('[data-tab="today"]').click();
+  await expect.poll(() => page.locator("#task-list")
+    .evaluate(el => el.scrollHeight > el.clientHeight + 1)).toBe(true);
   const list = await page.locator("#task-list").boundingBox();
   await page.mouse.move(list!.x + list!.width / 2, list!.y + 20);
   await page.mouse.wheel(0, 200);

@@ -168,7 +168,25 @@ export class IslandSurface {
         // `bottom - base.top` already carries the top padding.
         return bottom - base.top + parseFloat(style.paddingBottom);
       }
-      if (el.classList.contains("scrolls")) return kids.reduce((n, c) => n + c.offsetHeight, 0);
+      /* ⚠️ Children's heights PLUS their margins, plus the scroller's own
+       * padding. `offsetHeight` alone misses every gap between rows — the
+       * agents, shelf and calendar lists all space themselves with
+       * `.row + .row { margin-top }`, so a five-row list was measured about
+       * thirty pixels short and opened already scrolled. A list that arrives
+       * scrolled reads as cut off rather than as long.
+       *
+       * ⚠️ Adjacent margins collapse, so counting both sides over-measures
+       * where both are set. Nothing here sets both, and erring tall is the
+       * harmless direction: a few spare pixels beat a scrollbar. */
+      if (el.classList.contains("scrolls")) {
+        const style = getComputedStyle(el);
+        const inner = kids.reduce((n, kid) => {
+          const box = getComputedStyle(kid);
+          return n + kid.offsetHeight
+            + parseFloat(box.marginTop || "0") + parseFloat(box.marginBottom || "0");
+        }, 0);
+        return inner + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      }
       return el.offsetHeight;
     };
     this.body = this.cap && !isVertical(this.edge)

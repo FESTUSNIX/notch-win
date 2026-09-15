@@ -443,7 +443,6 @@ function render() {
    * screen's would be four buttons that mostly do nothing here. */
   const tools: Partial<Record<ScreenName, () => ScreenTools>> = {
     today: () => today.tools(),
-    agents: () => agentsScreen.tools(),
     shelf: () => shelf.tools(),
   };
   paintTools(get("screen-tools"), tools[screen]?.() ?? {});
@@ -900,11 +899,24 @@ document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => bu
  * does nothing. Measured — the rail dropped 71px going from Home to Today.
  * "Can this thing under me scroll?" needs no aiming at all. */
 let lastSwitch = 0;
+/* How much wheel has to go one way before the screen changes, and how long the
+ * gesture is allowed to gather.
+ *
+ * ⚠️ A trackpad sends a stream of 2-4px deltas, so acting on the first one
+ * made a screen change out of a thumb resting on the pad — you would look up to
+ * find yourself somewhere else. A mouse notch is ~100px, so one notch still
+ * counts and two fingers drifting do not. */
+const WHEEL_TO_SWITCH = 90;
+const WHEEL_WINDOW = 400;
+let wheeled = 0;
+let wheeledAt = 0;
+
 function cycle(direction: number) {
   const now = Date.now();
   // One flick must not run through every tab.
   if (!direction || now - lastSwitch < 260) return;
   lastSwitch = now;
+  wheeled = 0;
   const index = TABS.findIndex(t => t.name === screen);
   show(TABS[(index + direction + TABS.length) % TABS.length].name);
 }
@@ -925,7 +937,16 @@ get("island-expanded").addEventListener("wheel", event => {
   const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
   if (!horizontal && scrollableUnder(event.target, get("island-expanded"))) return;
   event.preventDefault();
-  cycle(Math.sign(horizontal ? event.deltaX : event.deltaY));
+  const delta = horizontal ? event.deltaX : event.deltaY;
+  const now = Date.now();
+  /* ⚠️ Gathered, not acted on. A run that stalls or reverses starts over, so
+   * a wheel nudged both ways never lands on a switch — only a deliberate push
+   * one way does. */
+  if (now - wheeledAt > WHEEL_WINDOW || Math.sign(delta) !== Math.sign(wheeled)) wheeled = 0;
+  wheeled += delta;
+  wheeledAt = now;
+  if (Math.abs(wheeled) < WHEEL_TO_SWITCH) return;
+  cycle(Math.sign(wheeled));
 }, { passive: false });
 
 window.addEventListener("blur", () => { void surface.input(false).catch(() => {}); });

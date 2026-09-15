@@ -78,17 +78,6 @@ export class AgentsScreen {
    * want you. Priority 55 puts it under a meeting about to start and over a
    * focus timer — a blocked agent is the most interruptible thing on this list
    * and the cheapest to deal with. */
-  /** ⚠️ The caveat that used to be a footer. It is true, it matters once, and
-   *  it was a row of grey text under everything else — which is where a thing
-   *  goes to not be read. */
-  tools() {
-    return {
-      help: "Tokens are counted since Codenotch started, not for the session's life. "
-        + "Click a session to raise its terminal.",
-      tools: [],
-    };
-  }
-
   activity(): Activity | null {
     const waiting = this.sessions.filter(s => s.state === "waiting" && !isQuiet(`agent:${s.id}`));
     if (!waiting.length) return null;
