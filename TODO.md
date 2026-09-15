@@ -301,6 +301,12 @@ distance: the same idea as the settings orb on the agents notch.
       18 of clearance and an 18 stroke, the same as the orb; the line is
       trimmed shorter than the span the actions use, so it reads as a hint
       rather than as a continuation of the island's straight edges.
+- [x] ⚠️ **Concentric with the corner's real centre**, which is a flare in
+      from the island's end — not the box's corner. Off by that, it reads as
+      both too far out and crooked, and every radius is still correct.
+- [x] ⚠️ **The line and the actions share a CLEARANCE, not a radius.** A disc
+      is three times the line's thickness; on the line's own circle its inner
+      edge lands inside the island's corner.
 - [x] ⚠️ **Two actions fit at the RESTING radius** — the line swinging out to
       make room is a fine motion for four and an absurd one for two, and two
       is what every screen here actually has.

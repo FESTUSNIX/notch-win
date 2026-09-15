@@ -2511,4 +2511,23 @@ The two halves were the same fault.
      is inside the grid's axis — so it passed all afternoon and failed every
      evening, on a change that had nothing to do with the calendar. Anything
      asserting a clock-derived element pins the clock.
+349. ⚠️ **A notch's rounded corners are a FLARE in from each end, not at the
+     box's corners.** `notchPath` turns back out to the bezel at both ends, so
+     the corner centre is at `length - curl - corner` along the edge and only
+     `depth - corner` across it. Take the box's corner instead and anything
+     concentric with it is a flare's width — about 30px — out of place, which
+     reads as being both too far out and crooked while every radius involved
+     is still correct.
+350. ⚠️ **Clearance is measured to whatever is ON the circle, not to the
+     circle.** A line and a 28px disc on the same radius do not have the same
+     gap: half the stroke is 4px and half the disc is 14. Put them on different
+     radii that share one clearance — kept on the line's own circle, the discs'
+     inner edges land inside the island's corner and the row looks welded on.
+351. ⚠️ **Every measurement taken from a shape's own centre is blind to that
+     centre being wrong.** Radius, clearance and stroke all checked out while
+     the arc was struck about the wrong point, because they were all measured
+     from it. What catches it is walking inward at several angles and finding
+     where the other shape actually begins: concentric, that distance is the
+     same every time. (Hide the invisible hit band first, or
+     `elementFromPoint` answers in the island's place.)
 

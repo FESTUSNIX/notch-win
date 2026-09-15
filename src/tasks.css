@@ -346,7 +346,7 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    The paint loop writes `left`/`top` as the point on the circle, and this is
    what makes that point the button's CENTRE — without it every action hangs
    off the arc by half its own width and the curve stops reading as a curve. */
-.screen-tool { position:absolute; width:28px; height:28px; padding:0;
+.screen-tool { position:absolute; width:var(--tool-size,28px); height:var(--tool-size,28px); padding:0;
   border-radius:50%; display:grid; place-items:center; color:#8a8a8a;
   background:#000; translate:-50% -50%;
   opacity:0; scale:.25; filter:blur(4px); pointer-events:none;

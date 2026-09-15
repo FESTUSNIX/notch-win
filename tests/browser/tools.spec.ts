@@ -53,7 +53,12 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
     const island = document.getElementById("island")!.getBoundingClientRect();
     /* The host's inner corner IS the centre of the island's corner arc, which
      * is what makes the two concentric — so the island's own corner radius is
-     * the distance from there to its right edge. */
+     * the distance from there to its bottom edge.
+     *
+     * ⚠️ Its BOTTOM edge, not its right one. `notchPath` sets the rounded
+     * corners a flare in from each end along the bezel, because the ends are
+     * where the shape turns back out — so the along-axis distance is
+     * `corner + flare` and only the across-axis is the corner alone. */
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
     const path = document.getElementById("tools-arc") as unknown as SVGPathElement;
     const total = path.getTotalLength();
@@ -63,7 +68,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
       nearest = Math.min(nearest, Math.hypot(at.x, at.y));
     }
     const stroke = parseFloat(getComputedStyle(path).strokeWidth);
-    return {corner: island.right - host.left, nearest, stroke};
+    return {corner: island.bottom - host.top, nearest, stroke};
   });
   /* ⚠️ Measured on the CURVE, not on its bounding box. The arc wraps the
    * corner, so its box legitimately starts inside the island on one axis —
@@ -73,6 +78,44 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
    * on purpose — it is matched to the settings orb's — and half an eight-pixel
    * stroke is most of it. */
   expect(clear.nearest - clear.stroke / 2 - clear.corner).toBeGreaterThan(4);
+
+  /* ⚠️ And the gap is the SAME all the way along, which is the claim the two
+   * measurements above cannot make. They both start from the arc's own centre,
+   * so they hold just as well for a circle struck about the wrong point — and
+   * `notchPath` puts the rounded corners a flare in from each end, about 30px,
+   * which is exactly the sort of offset that leaves the arc looking too far
+   * out AND crooked while every radius involved is still correct.
+   *
+   * So: walk inward from the line at several angles and find where the island
+   * actually begins. Concentric, that distance is the corner radius every
+   * time; struck about the wrong point it ranges over tens of pixels. */
+  const walk = await page.evaluate(() => {
+    const host = document.getElementById("island-tools")!;
+    const at = host.getBoundingClientRect();
+    const path = document.getElementById("tools-arc") as unknown as SVGPathElement;
+    const total = path.getTotalLength();
+    const rays: number[] = [];
+    for (let i = 0; i <= 8; i++) {
+      const point = path.getPointAtLength((total * i) / 8);
+      rays.push(Math.atan2(point.y, point.x));
+    }
+    /* ⚠️ Out of the way first. The invisible hit band lies over this very
+     * region and would answer `elementFromPoint` in the island's place. */
+    host.style.display = "none";
+    const island = document.getElementById("island")!;
+    const hits = rays.map(angle => {
+      for (let r = 110; r > 4; r -= 0.5) {
+        const el = document.elementFromPoint(
+          at.left + r * Math.cos(angle), at.top + r * Math.sin(angle));
+        if (el && island.contains(el)) return r;
+      }
+      return -1;
+    });
+    host.style.display = "";
+    return hits;
+  });
+  expect(Math.min(...walk)).toBeGreaterThan(0);
+  expect(Math.max(...walk) - Math.min(...walk)).toBeLessThan(3);
 
   /* ⚠️ Closed, the arc is BARE. The actions are in the DOM — they have to be,
    * for the keyboard — but nothing of them is on screen until it is reached
@@ -109,7 +152,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
     const mid = Number(/A([\d.]+)/.exec(reach.getAttribute("d")!)![1]);
     const wide = Number(reach.getAttribute("stroke-width"));
-    return {inner: mid - wide / 2, outer: mid + wide / 2, corner: island.right - host.left};
+    return {inner: mid - wide / 2, outer: mid + wide / 2, corner: island.bottom - host.top};
   });
   expect(band.inner).toBeLessThanOrEqual(band.corner + 2);
   expect(band.outer - band.inner).toBeGreaterThan(30);
@@ -122,13 +165,21 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
       const b = t.getBoundingClientRect();
       const dx = b.left + b.width / 2 - host.left;
       const dy = b.top + b.height / 2 - host.top;
-      return {r: Math.hypot(dx, dy), turn: Math.atan2(dy, dx) / (2 * Math.PI)};
+      return {r: Math.hypot(dx, dy), turn: Math.atan2(dy, dx) / (2 * Math.PI), size: b.width};
     });
   });
   expect(Math.abs(laid[0].r - laid[1].r)).toBeLessThan(1);
   expect(laid[1].turn - laid[0].turn).toBeGreaterThan(0.04);
-  // On the line itself, not floating off it by half a button.
-  expect(Math.abs(laid[0].r - grab.radius)).toBeLessThan(6);
+
+  /* ⚠️ And they keep the LINE'S CLEARANCE, not its radius. An action is a
+   * disc three times the line's thickness; parked on the line's own circle its
+   * inner edge lands inside the island's corner and the row looks welded on.
+   * The shared invariant is the gap you can see, so that is what is asserted. */
+  const gap = (r: number, size: number) => r - size / 2 - clear.corner;
+  const onLine = gap(grab.radius, clear.stroke);
+  const onDisc = gap(laid[0].r, laid[0].size);
+  expect(Math.abs(onDisc - onLine)).toBeLessThan(1.5);
+  expect(onDisc).toBeGreaterThan(4);
 
   /* It follows the screen, and Home has nothing to do — so there is no arc at
    * all rather than a bare one. */

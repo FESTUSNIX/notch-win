@@ -158,6 +158,12 @@ export const FRAME = {
   islandArcClear: 18,
   /** How thick the resting line is. The orb's, unchanged. */
   islandArcStroke: 18,
+  /** How big one action is. ⚠️ The geometry has to know this, not just the
+   *  stylesheet: an action is a disc on the same circle as the line, and it is
+   *  three times the thickness — so kept on the line's own radius its inner
+   *  edge lands INSIDE the island's corner and the row looks welded on. The
+   *  actions sit further out, by exactly enough to keep the clearance above. */
+  islandArcActSize: 58,
   /** How much of the corner's quarter-turn the ACTIONS spread over, as a
    *  fraction of the full circle, clockwise from three o'clock. */
   islandArcFrom: 0.02,

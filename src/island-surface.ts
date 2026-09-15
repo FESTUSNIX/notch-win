@@ -647,15 +647,29 @@ export class IslandSurface {
      * nominal 78.8 sits visibly inside a shallow island's edge instead of
      * outside it — and looks like a mistake rather than a smaller gap. */
     const corner = notchCorner(g.depth, g.length, g.curl, cpx(FRAME.cornerRadius));
+    const vertical = isVertical(this.edge);
     const radius = Math.max(this.arcSpan(false), this.shelf.value);
     const reach = cpx(FRAME.islandArcReach);
 
     /* The centre of the island's far corner — the one the arc is concentric
      * with. Which corner that is follows the edge: always the far end along
-     * the bezel, on the side the island grows into. */
+     * the bezel, on the side the island grows into.
+     *
+     * ⚠️ The FLARE comes off the along-axis too, and leaving it out is the
+     * whole width of an island's flare of error — about 30px. `notchPath` puts
+     * the rounded corners at `curl` in from each end, because the ends are
+     * where the shape turns back out to the bezel; only the across-axis runs
+     * to the box's own edge. The arc then sits a flare's width past the corner
+     * and is visibly not concentric with it, which reads as it being too far
+     * out AND crooked at the same time. */
     const far = this.edge !== "right";
-    const cx = far ? x + g.width - corner : x + corner;
-    const cy = this.edge === "bottom" ? y + corner : y + g.height - corner;
+    const along = (vertical ? y + g.height : x + g.width) - g.curl - corner;
+    const cx = vertical
+      ? (this.edge === "left" ? x + g.width - corner : x + corner)
+      : along;
+    const cy = vertical
+      ? along
+      : (this.edge === "bottom" ? y + corner : y + g.height - corner);
 
     /* The host is the quadrant outside that corner, and nothing else. ⚠️ It
      * is also what `report` masks, and the window is DEAD to clicks wherever a
@@ -671,6 +685,8 @@ export class IslandSurface {
       opacity: String(Math.max(0, Math.min(1, this.fold.value * 1.6 - 0.6))),
     });
     this.toolsHost.dataset.edge = this.edge;
+    // One definition of how big an action is: the geometry above needs it too.
+    this.toolsHost.style.setProperty("--tool-size", `${cpx(FRAME.islandArcActSize)}px`);
 
     /* Everything below is in the host's own coordinates, with the corner's
      * centre at the quadrant's inner corner — (0,0), or a reflection of it. */
@@ -729,17 +745,21 @@ export class IslandSurface {
   private arcSpan(open: boolean): number {
     const corner = notchCorner(this.depth, this.body + 2 * cpx(FRAME.islandCurl),
       cpx(FRAME.islandCurl), cpx(FRAME.cornerRadius));
-    /* ⚠️ Measured to the line's INNER edge, so the clearance is what you
-     * actually see between the island and the line — a radius measured to the
-     * centre of an 8px stroke leaves half of it in the gap. */
-    const rest = corner + cpx(FRAME.islandArcClear) + cpx(FRAME.islandArcStroke) / 2;
-    if (!open) return rest;
+    /* ⚠️ Measured to whatever is on the circle, not to its centreline. The
+     * clearance is the gap you can SEE between the island and the thing, and
+     * half of an eight-pixel stroke — or half of a 28px disc — lives inside
+     * it. So the line and the actions sit on different radii and share the one
+     * clearance, which is the invariant that actually matters. */
+    const clear = corner + cpx(FRAME.islandArcClear);
+    if (!open) return clear + cpx(FRAME.islandArcStroke) / 2;
+    const sits = clear + cpx(FRAME.islandArcActSize) / 2;
     const [from, to] = this.arcTrim();
     const step = (to - from) / Math.max(1, this.toolCount) * 2 * Math.PI;
-    /* The chord between two neighbours has to clear `islandArcStep`; on a
-     * circle that is `2r sin(step/2)`, solved for r. */
+    /* And far enough out that two neighbours do not touch: the chord between
+     * them has to clear `islandArcStep`, which on a circle is `2r sin(step/2)`,
+     * solved for r. */
     const needed = cpx(FRAME.islandArcStep) / 2 / Math.max(1e-3, Math.sin(step / 2));
-    return Math.min(cpx(FRAME.islandArcReach) - 30, Math.max(rest, needed));
+    return Math.min(cpx(FRAME.islandArcReach) - 30, Math.max(sits, needed));
   }
 
   /** Which part of the circle the actions spread over, as fractions of a turn,
