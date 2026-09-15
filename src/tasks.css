@@ -351,13 +351,33 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 #island-tools[data-edge="left"] .screen-tool { translate:var(--tool-dip, 0px) 0; }
 #island-tools[data-edge="right"] .screen-tool { translate:calc(var(--tool-dip, 0px) * -1) 0; }
 
-.screen-tool { width:28px; height:28px; padding:0; border-radius:9px;
-  display:grid; place-items:center; color:#8a8a8a; flex-shrink:0;
-  transition:color var(--duration-quick) var(--ease-smooth-out),
+/* ⚠️ EMPTY until you reach for it. A row of icons parked under the island
+   permanently is a toolbar, and a toolbar is the thing the header row already
+   was. Closed, the tab is a seam in the island's edge that says only that
+   there is something here; the contents arrive with the pointer.
+
+   The shape's own width is sprung from `island-surface.ts` — these are just
+   the things inside it. */
+.screen-tool { opacity:0; scale:.25; filter:blur(4px); pointer-events:none;
+  transition:opacity var(--duration-fast) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-smooth-out),
+    filter var(--duration-fast) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out),
     background-color var(--duration-quick) var(--ease-smooth-out); }
+#island-tools.is-open .screen-tool { opacity:1; scale:1; filter:blur(0px);
+  pointer-events:auto;
+  /* Staggered in, unstaggered out: an exit that counts down through four
+     items reads as the tab struggling to close. */
+  transition-delay:calc(var(--tool-i, 0) * 40ms); }
+/* ⚠️ At (1,1,1) to beat the rule above — which sets `scale` too, and would
+   otherwise hold the button at 1 through the press. */
+#island-tools.is-open .screen-tool:active:not(:disabled) {
+  scale:.96; transition-duration:90ms; transition-delay:0s; }
+
+.screen-tool { width:28px; height:28px; padding:0; border-radius:9px;
+  display:grid; place-items:center; color:#8a8a8a; flex-shrink:0; }
 .screen-tool svg { width:16px; height:16px; }
 .screen-tool:hover:not(:disabled) { color:#fff; background:var(--tile-hi); }
-.screen-tool:active:not(:disabled) { scale:.96; transition-duration:90ms; }
 .screen-tool:disabled { color:#4f4f4f; cursor:default; }
 .screen-tool.is-warn { color:var(--warn); }
 .panel-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; }

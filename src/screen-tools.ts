@@ -62,6 +62,11 @@ export function paintTools(host: HTMLElement, spec: ScreenTools): number {
     const middle = (tools.length - 1) / 2;
     const away = tools.length > 1 ? (index - middle) / (middle || 1) : 0;
     button.style.setProperty("--tool-dip", `${Math.round((1 - away * away) * 5)}px`);
+    /* The order they arrive in when the tab opens. ⚠️ From the OUTSIDE in:
+     * the tab grows from its anchored end, so the tool nearest that end is the
+     * one the shape uncovers first. Counting the other way makes the middle
+     * ones appear over a shape that has not reached them yet. */
+    button.style.setProperty("--tool-i", String(tools.length - 1 - index));
     host.append(button);
   }
   /* The count, so the shell can size the tab — or not draw it at all. A tab

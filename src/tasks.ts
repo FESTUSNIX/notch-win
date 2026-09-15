@@ -1073,6 +1073,26 @@ for (const event of ["pointerup", "pointercancel", "pointerleave"] as const) {
   collapsedLayer.addEventListener(event, () => press(false));
 }
 
+/* ── Reaching for the tool tab ─────────────────────────────────────
+ * The tab is a bare seam until the pointer is on it, and then it is what the
+ * screen can do. ⚠️ `pointerenter`/`pointerleave`, not `mouseover` — the
+ * latter fires again for every button inside it, and the pair that matches it
+ * fires a `mouseout` on the way between two of them, so the tab would shut
+ * while the pointer was crossing from one tool to the next.
+ *
+ * ⚠️ And `focusin`/`focusout` as well. The tools are `opacity: 0` while it is
+ * closed; without this they are focusable and invisible, which is the worst of
+ * both. */
+const toolTab = get("island-tools");
+toolTab.addEventListener("pointerenter", () => surface.setToolsHover(true));
+toolTab.addEventListener("pointerleave", () => {
+  if (!toolTab.contains(document.activeElement)) surface.setToolsHover(false);
+});
+toolTab.addEventListener("focusin", () => surface.setToolsHover(true));
+toolTab.addEventListener("focusout", () => {
+  if (!toolTab.matches(":hover")) surface.setToolsHover(false);
+});
+
 collapsedLayer.addEventListener("click", () => {
   /* ⚠️ A second press closes it ONLY in click mode. With hover opening, the
    * pointer has already opened the panel before a click can possibly land, so

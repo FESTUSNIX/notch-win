@@ -275,6 +275,18 @@ out on its arc.
       how one of them goes stale.
 - [x] Every screen that had tools kept them; Calendar gained a refresh and a
       link out, which were previously reachable only by knowing they existed.
+- [x] **Bare at rest, filled on hover.** A row of icons parked under the island
+      permanently is a toolbar, and a toolbar is what the header row already
+      was. Closed, the tab is a seam that says only that there is something
+      here; the shape springs open and the tools arrive with the pointer.
+- [x] ⚠️ **The sweep is capped by the depth.** `clampCorners` caps the flare
+      at `depth - cornerRadius`, so three goes at a longer one changed nothing
+      — hence `islandToolsCorner`, a free-end radius of its own.
+- [x] ⚠️ **The inset must clear the island's own flare**, or the two inverse
+      curves cross and leave a spike of black between them.
+- [x] ⚠️ **The mask is reported at the size it is growing to**, or the tab
+      springs out past it, the pointer lands on click-through, `pointerleave`
+      fires, and it shuts itself in a loop.
 
 ---
 

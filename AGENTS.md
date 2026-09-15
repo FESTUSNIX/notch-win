@@ -2451,3 +2451,27 @@ The two halves were the same fault.
      meant the screens' actions had no home at all on a left or right edge —
      no error, no fallback, just controls that cease to exist when the island
      is moved.
+338. ⚠️ **`clampCorners` silently grants a shorter sweep than you asked
+     for.** The flare is capped at `depth - cornerRadius`, so with the island's
+     own 78.8 corner radius a 75-deep tab could never sweep further than ~37
+     whatever number was written — three attempts at tuning it changed
+     nothing, and the path stayed valid the whole time. A long sweep needs a
+     small free-end radius AND a depth to draw it in.
+339. ⚠️ **Two inverse flares that meet leave a spike, not a joint.** The
+     island's end sweeps up and out; the tab's sweeps up and in. Set the tab's
+     inset below the island's own `islandCurl` and they cross, leaving a wedge
+     of black pointing down into the gap between them. Valid geometry, no
+     warning, looks like a rendering fault.
+340. ⚠️ **Chrome revealed on hover must report its GROWN mask before it
+     grows.** The notch window is click-through outside the reported rects, so
+     a shape that springs open under the pointer is briefly larger than the
+     mask — and the pointer, now over a click-through region, fires
+     `pointerleave`, which closes it, which is a loop. Report the target size
+     on the way in and the settled size on the way out, so the mask is always
+     a superset of what is painted.
+341. ⚠️ **`mouseover`/`mouseout` on a container with buttons in it fire on
+     every child.** Crossing from one tool to the next raises `mouseout` on the
+     container, so a hover-revealed row closes while the pointer is still
+     inside it. `pointerenter`/`pointerleave` do not bubble and are the pair
+     that means what this needs.
+

@@ -99,6 +99,15 @@ export class IslandSurface {
   private toolsClip = document.getElementById("tools-clip-path") as unknown as SVGPathElement;
   /** How many tools the open screen has. 0 hides the tab entirely. */
   private toolCount = 0;
+  /** Whether the pointer (or the keyboard) is on the tab.
+   *
+   * ⚠️ The tab is BARE at rest — a seam in the island's edge and nothing
+   * else. What is in it arrives when you reach for it, which is the only way
+   * a row of controls can sit on screen permanently without being a toolbar. */
+  private toolsOpen = false;
+  /** The tab's length along the island. Sprung, so it opens the way the island
+   *  itself does rather than snapping to a new width under the cursor. */
+  private shelf = new Spring(0, 0.4, 0.68);
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
@@ -476,13 +485,20 @@ export class IslandSurface {
     this.fold.step(dt);
     this.grow.step(dt);
     this.widen.step(dt);
+    this.shelf.step(dt);
     this.last = now;
     this.paint();
     // ⚠️ All three, not just the fold: a size change can outlast the opening,
     // and stopping on the fold alone leaves the panel frozen mid-resize.
-    if (!this.fold.settled || !this.grow.settled || !this.widen.settled) {
+    if (!this.fold.settled || !this.grow.settled || !this.widen.settled
+      || !this.shelf.settled) {
       this.frame = requestAnimationFrame(t => this.tick(t));
     } else {
+      /* ⚠️ The mask follows the tab to its SHRUNK size only once it has got
+       * there. On the way out it is reported early and the pointer can fall
+       * out of the window mid-animation; on the way in it is reported early on
+       * purpose — see `report`. */
+      this.report();
       this.fold.snap(this.open ? 1 : 0);
       this.frame = 0;
       this.paint();
@@ -620,10 +636,7 @@ export class IslandSurface {
 
     const depth = cpx(FRAME.islandToolsDepth);
     const curl = cpx(FRAME.islandToolsCurl);
-    const length = Math.min(
-      g.body,
-      this.toolCount * cpx(FRAME.islandToolsStep) + 2 * curl,
-    );
+    const length = Math.max(this.shelfSpan(false), this.shelf.value);
 
     /* Pushed to the island's far end, inset so it does not sit under the
      * island's own flare — which is where the shape is already turning. */
@@ -651,8 +664,12 @@ export class IslandSurface {
       opacity: String(Math.max(0, Math.min(1, this.fold.value * 1.6 - 0.6))),
     });
     this.toolsHost.dataset.edge = this.edge;
+    /* ⚠️ `islandToolsCorner`, NOT the island's own `cornerRadius`. That is
+     * the radius of a panel's corner — on a shape this small it is the entire
+     * shape, and `clampCorners` spends the depth on it and then has nothing
+     * left for the sweep. See the note in `layout.ts`. */
     this.toolsClip.setAttribute("d",
-      notchPath(depth, length, curl, cpx(FRAME.cornerRadius)));
+      notchPath(depth, length, curl, cpx(FRAME.islandToolsCorner)));
     /* ⚠️ The SAME edge as the island, not the opposite one. It is tempting to
      * reverse it — the tab points away from the bezel — but what the edge picks
      * is which end the flares are on, and both shapes hang off something above
@@ -662,13 +679,50 @@ export class IslandSurface {
     this.toolsClip.setAttribute("transform", notchTransform(this.edge, depth));
   }
 
+  /** How long the tab is: closed, a seam; open, one slot per tool.
+   *
+   * Both ends include the two sweeps, which are most of the closed shape and
+   * a fifth of the open one. Capped at the island's own body — a tab wider
+   * than the thing it hangs off is not a tab. */
+  private shelfSpan(open: boolean): number {
+    const curl = cpx(FRAME.islandToolsCurl);
+    const body = open
+      ? this.toolCount * cpx(FRAME.islandToolsStep)
+      : cpx(FRAME.islandToolsRest);
+    return Math.min(this.body, body + 2 * curl);
+  }
+
   /** How many tools the open screen has, so the tab can size itself — or not
    *  be drawn at all. */
   setTools(count: number) {
     if (this.toolCount === count) return;
     this.toolCount = count;
+    /* ⚠️ Snapped, not sprung. The count changes when the SCREEN changes, and
+     * the two animations on top of each other read as the tab flinching. It
+     * springs for the one thing the tab does on its own: opening. */
+    if (!this.toolsOpen) this.shelf.snap(this.shelfSpan(false));
     this.paint();
     this.report();
+  }
+
+  /** Reaching for the tab is what fills it.
+   *
+   * ⚠️ Focus counts as well as the pointer, or the tools are keyboard-
+   * unreachable: they are `opacity: 0` at rest, and a control you can tab to
+   * but cannot see is worse than one you cannot tab to at all. */
+  setToolsHover(on: boolean) {
+    if (this.toolsOpen === on) return;
+    this.toolsOpen = on;
+    this.toolsHost.classList.toggle("is-open", on);
+    if (still()) this.shelf.snap(this.shelfSpan(on));
+    else this.shelf.setTarget(this.shelfSpan(on));
+    /* ⚠️ Reported NOW on the way in, so the mask is already the size the tab
+     * is growing to. Reported on settle on the way out — `tick` does that — so
+     * the pointer is never outside the window while the shape is still under
+     * it. Either way the mask is a superset of what is painted, which is the
+     * only arrangement that cannot drop the pointer mid-animation. */
+    if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
+    if (on) this.report();
   }
 
   private report() {
@@ -693,7 +747,20 @@ export class IslandSurface {
      * moment the pointer reached for it. */
     if (!this.toolsHost.hidden) {
       const t = box(this.toolsHost);
-      this.masks.push({ x: t.x - pad, y: t.y, width: t.width + 2 * pad, height: t.height + pad });
+      /* ⚠️ Sized to where the tab is GOING, not where it is. It grows away
+       * from its anchored end, so the grown rect contains the shrunk one and
+       * reporting the larger of the two can never leave the pointer outside
+       * the window while the shape is still under it. */
+      const span = Math.max(t.width || t.height, this.shelfSpan(this.toolsOpen));
+      const wide = !isVertical(this.edge);
+      const width = wide ? span : t.width;
+      const height = wide ? t.height : span;
+      this.masks.push({
+        x: (wide ? t.x + t.width - width : t.x) - pad,
+        y: (wide ? t.y : t.y + t.height - height),
+        width: width + 2 * pad,
+        height: height + pad,
+      });
     }
     const origin = box(this.shell);
     if (native) {

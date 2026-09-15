@@ -44,9 +44,32 @@ test("the tool tab hangs off the island and follows the screen", async ({page}) 
   expect(seam.inside).toBe(true);
   expect(seam.deep).toBeGreaterThan(20);
 
+  /* ⚠️ Closed, the tab is BARE. The tools are in the DOM — they have to be,
+   * for the keyboard — but nothing of them is on screen until it is reached
+   * for, and the shape is too narrow to have held them anyway. */
+  const seen = () => page.evaluate(() => {
+    const tools = [...document.querySelectorAll("#island-tools .screen-tool")];
+    return tools.filter(t => getComputedStyle(t).opacity !== "0").length;
+  });
+  expect(await seen()).toBe(0);
+  const shut = (await tab.boundingBox())!.width;
+
+  await tab.hover();
+  await expect.poll(seen).toBe(2);
+  const open = (await tab.boundingBox())!.width;
+  // It does not merely reveal them — the shape itself makes room.
+  expect(open).toBeGreaterThan(shut + 30);
+
+  /* And it closes again when the pointer leaves, back to the seam. */
+  await page.mouse.move(pill!.x + pill!.width / 2, pill!.y + 10);
+  await expect.poll(seen).toBe(0);
+  await expect.poll(async () => Math.round((await tab.boundingBox())!.width)).toBe(Math.round(shut));
+
   /* It follows the screen. Home has nothing to do, so the tab is not drawn at
    * all rather than drawn empty. */
   await page.locator('[data-tab="media"]').click();
+  await expect(tab.locator(".screen-tool")).toHaveCount(1);
+  await tab.hover();
   await expect(tab.getByRole("button", {name: "Show what is next"})).toBeVisible();
   await page.locator('[data-tab="home"]').click();
   await expect(tab).toBeHidden();

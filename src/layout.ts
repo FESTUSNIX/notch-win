@@ -149,26 +149,41 @@ export const FRAME = {
    * the bezel; this is a notch cut into the island — inverse fillets where it
    * meets it, so it reads as moulded out of the same piece rather than as a bar
    * someone parked underneath. `notchPath` draws both. */
-  /** How far the tab hangs below the island, in design pixels. ~36 CSS px.
+  /** How far the tab hangs below the island, in design pixels. ~42 CSS px. */
+  islandToolsDepth: 88,
+  /** The sweep where it meets the island — most of the shape, by design.
    *
-   * ⚠️ SHALLOW, and it took two goes. At 92 the flare at each end was more
-   * than half the depth, so the sides never straightened out and the whole
-   * thing read as a bell hanging off the island rather than as a piece of it. A
-   * tab wider than it is deep by three to one is a mound; one that is square is
-   * an ornament. */
-  islandToolsDepth: 75,
-  /** The fillet where it meets the island. Smaller than the island's own 62:
-   *  the tab is a fifth of the width, and the same flare on it eats the whole
-   *  shape. */
-  /** ⚠️ Comfortably SMALLER than the depth. A fillet whose radius is most of
-   *  the depth never lets the sides straighten out, and the tab reads as a bell
-   *  hanging off the island instead of a shelf cut into it. At 30 of 75 the
-   *  curve is the top third and the rest is a straight drop. */
-  islandToolsCurl: 30,
-  /** One tool's slot along the tab. */
+   * ⚠️ `clampCorners` caps this at `depth - cornerRadius`, so asking for a
+   * longer sweep than the depth allows is SILENTLY granted as a shorter one.
+   * That is what held the first three attempts at ~37 whatever was written
+   * here: the island's own 78.8 corner radius left nothing to spend. Hence
+   * `islandToolsCorner` below — a long sweep needs a small free end AND a
+   * depth to draw it in. */
+  islandToolsCurl: 60,
+  /** The rounding at the tab's free end. ⚠️ NOT the island's `cornerRadius`:
+   *  that is the radius of a panel's corner, and on a shape this small it is
+   *  the entire shape. Small here buys the sweep above. */
+  islandToolsCorner: 26,
+  /** One tool's slot along the tab, once it is open. */
   islandToolsStep: 104,
-  /** The tab's inset from the island's right-hand end. */
-  islandToolsInset: 150,
+  /** What is left when it is closed: the two sweeps, and a tongue between them.
+   *
+   * ⚠️ Deliberately too small for a single tool. The tab at rest says only
+   * that there is something here — it is a seam in the island's edge, not a
+   * toolbar with the labels rubbed off. Wide enough to hold one icon and it
+   * reads as a button that failed to draw.
+   *
+   * ⚠️ But not much smaller, either. At 34 the two sweeps met almost
+   * immediately, `clampCorners` rounded off what little was between them, and
+   * the tab read as a drip running off the island's underside. */
+  islandToolsRest: 90,
+  /** The tab's inset from the island's far end.
+   *
+   * ⚠️ At LEAST the island's own `islandCurl`, or the two flares intersect:
+   * the island's sweeps up and out, the tab's sweeps up and in, and where they
+   * cross they leave a spike of black pointing down into the gap. It is a
+   * valid path and nothing complains about it — it just looks broken. */
+  islandToolsInset: 120,
 
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,
