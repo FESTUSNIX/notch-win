@@ -19,6 +19,8 @@ export default defineConfig({
         notch: resolve(__dirname, "index.html"),
         tasks: resolve(__dirname, "tasks.html"),
         taskEditor: resolve(__dirname, "task-editor.html"),
+        // One window per pinned note, all the same page with a different `?id`.
+        note: resolve(__dirname, "note.html"),
       },
     },
   },

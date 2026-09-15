@@ -118,6 +118,20 @@ export class NotesScreen {
     }
   }
 
+  /** Stick it to the desktop, or take it off again.
+   *
+   * ⚠️ The whole list comes back, because pinning is stored ON the note — so
+   * this is the same round trip a save is, not a separate flag to keep in
+   * step. */
+  private async pin(id: string, pinned: boolean) {
+    try { this.notes = await call<Note[]>("pin_note", { id, pinned }); }
+    catch (error) {
+      this.deps.say(pinned ? "Could not pin" : "Could not unpin",
+        String(error).replace(/^invoke error: /i, ""));
+    }
+    this.changed();
+  }
+
   private async remove(id: string) {
     try { this.notes = await call<Note[]>("remove_note", { id }); }
     catch (error) { this.deps.say("Could not delete", String(error)); }
@@ -269,7 +283,8 @@ export class NotesScreen {
     const list = element("div", "note-wall");
     const now = Date.now();
     for (const note of found) {
-      const card = element("article", `note-card${note.id === this.editing ? " is-editing" : ""}`);
+      const card = element("article", `note-card${note.id === this.editing ? " is-editing" : ""}`
+        + (note.pinned ? " is-pinned" : ""));
 
       const open = element("button", "note-open");
       (open as HTMLButtonElement).type = "button";
@@ -282,12 +297,19 @@ export class NotesScreen {
       foot.append(element("span", "note-when", noteWhen(note.written, now)));
       const doing = element("div", "note-doing");
       for (const [icon, label, run] of [
+        /* ⚠️ Pin is FIRST and stays visible while it is on. The other two are
+         * revealed by the pointer; a pinned note has to say so at rest, or the
+         * only way to know which of nine notes is on your desktop is to go and
+         * look at the desktop. */
+        ["pin", note.pinned ? "Unpin" : "Pin to the desktop",
+          () => { void this.pin(note.id, !note.pinned); }],
         ["copy", "Copy", () => { void call("copy_text", { text: note.body }).catch(() => {}); }],
         ["close", "Delete", () => { void this.remove(note.id); }],
       ] as const) {
-        const button = element("button", "note-do");
+        const button = element("button",
+          `note-do${icon === "pin" ? " note-pin" : ""}${icon === "pin" && note.pinned ? " is-on" : ""}`);
         (button as HTMLButtonElement).type = "button";
-        button.setAttribute("aria-label", `${label} note`);
+        button.setAttribute("aria-label", icon === "pin" ? label : `${label} note`);
         button.title = label;
         paintIcon(button, icon);
         button.onclick = run;

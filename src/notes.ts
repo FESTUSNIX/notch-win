@@ -12,6 +12,13 @@ export interface Note {
   body: string;
   written: number;
   edited: number;
+  /** Whether it has a window of its own on the desktop. ⚠️ Window state, kept
+   *  on the note because the two are one to one — see notes.rs. */
+  pinned?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
 }
 
 /** The first line, which is the closest thing a note has to a title.

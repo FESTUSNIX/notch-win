@@ -530,6 +530,8 @@ pub fn run() {
             notes::get_notes,
             notes::save_note,
             notes::remove_note,
+            notes::pin_note,
+            notes::place_note,
             stars::get_stars,
             stars::set_star,
             workspaces::get_workspaces,
@@ -682,6 +684,7 @@ pub fn run() {
             prefs::load(app.handle());
             stars::load(app.handle());
             notes::load(app.handle());
+            notes::restore(app.handle());
             workspaces::load(app.handle());
             shelf::load(app.handle());
             runlog::load(app.handle());

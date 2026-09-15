@@ -264,6 +264,11 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     }
     return structuredClone(demoNotes) as T;
   }
+  if (command === "pin_note") {
+    demoNotes = demoNotes.map(n => n.id === String(args.id) ? {...n, pinned: !!args.pinned} : n);
+    return structuredClone(demoNotes) as T;
+  }
+  if (command === "place_note") return undefined as T;
   if (command === "remove_note") {
     demoNotes = demoNotes.filter(n => n.id !== String(args.id));
     return structuredClone(demoNotes) as T;

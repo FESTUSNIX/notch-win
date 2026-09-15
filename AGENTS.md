@@ -2397,3 +2397,32 @@ The two halves were the same fault.
      test adds notes and then asserted how many matched `pi` — a number that
      changes every time an earlier step in the same test adds one, and that
      `Shopping` happens to contain.
+326. ⚠️ **The sticky note is the one window here that MUST take focus.** The
+     island is `WS_EX_NOACTIVATE` so a glance never steals the caret, and every
+     field on it pays for that in plumbing — copying that pattern to a note you
+     click into and type in would make it unwritable. Ordinary focusable
+     window; undecorated, always-on-top and off the taskbar is the whole of it.
+327. ⚠️ **`data-tauri-drag-region` on the body makes every press a drag.** The
+     body is what you click to edit, so the note becomes unwritable and it
+     presents as the click doing nothing. A strip at the top, and only that.
+328. ⚠️ **A drag started on a drag region is handled by the OS from mouse-down
+     onwards** — the WebView never sees the move or the release. So a
+     `pointerup` listener fires for clicks and never for drags, which is
+     exactly backwards; the window's own `onMoved` is the only signal.
+     ⚠️ And it fires per PIXEL, so it has to be debounced or one drag is four
+     hundred writes to disk.
+329. ⚠️ **Escape must remove the blur handler before it re-renders.** The
+     re-render removes the textarea, removing it fires `blur`, and `blur` saves
+     — so "discard" saved the very words it was discarding. Caught by a test
+     that typed something and pressed Escape.
+330. ⚠️ **`position(0, 0)` is a real position**, and it is the top-left corner
+     of the primary monitor — under the island, where Windows already puts
+     everything else. A never-placed window must take the default instead, so
+     0/0 has to mean "unplaced" and be checked for.
+331. ⚠️ **A position is saved but NOT emitted.** `notch:notes` redraws every
+     note in every window; emitting on a drag would repaint the island's whole
+     wall for a window moving on another monitor.
+332. ⚠️ **Closing the window is part of deleting the note.** A sticky note
+     whose note has been deleted is a square of text on the desktop that
+     nothing can reach — and the same is true of a note emptied to nothing,
+     which goes through `save_note` rather than `remove_note`.

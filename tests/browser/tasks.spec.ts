@@ -1375,11 +1375,53 @@ test("notes: one key to write one, and the pile stays findable", async ({page}) 
 
   await page.screenshot({path: "test-results/island-notes.png"});
 
+  /* A note can be stuck to the desktop. ⚠️ The pin stays lit while the other
+     two tools wait for the pointer — otherwise the only way to know which of
+     nine notes is on your desktop is to go and look at the desktop. */
+  await rows.first().hover();
+  await rows.first().getByLabel("Pin to the desktop").click();
+  await expect(rows.first()).toHaveClass(/is-pinned/);
+  await expect.poll(() => rows.first().locator(".note-pin")
+    .evaluate(el => getComputedStyle(el).opacity)).toBe("1");
+  await rows.first().getByLabel("Unpin").click();
+  await expect(rows.first()).not.toHaveClass(/is-pinned/);
+
   // Delete takes it back off the pile.
   const before = await rows.count();
   await rows.first().hover();
   await rows.first().getByLabel("Delete note").click();
   await expect(rows).toHaveCount(before - 1);
+});
+
+test("a pinned note is the same note, in a window of its own", async ({page}) => {
+  /* The sticky window is its own page — one per pinned note, told which it is
+     by `?id`. It reads and writes through the same commands the island does,
+     so this is a second window onto one store, not a second copy. */
+  await page.setViewportSize({width: 240, height: 240});
+  await page.goto("/note.html?id=n1");
+
+  await expect(page.locator(".note-body")).toContainText("ssh key for the pi");
+  // The same formatter as the wall: markers are read, not shown.
+  await expect(page.locator(".sticky-open")).not.toContainText("**");
+
+  /* ⚠️ A drag STRIP, not the whole window. `data-tauri-drag-region` on the
+     body would make every press a drag — and the body is what you click to
+     edit, so the note would be unwritable and it would look like the click
+     doing nothing. */
+  await expect(page.locator(".sticky-bar[data-tauri-drag-region]")).toHaveCount(1);
+  await expect(page.locator(".sticky-open[data-tauri-drag-region]")).toHaveCount(0);
+
+  // Pressing the paper opens it for editing, with the markers back.
+  await page.locator(".sticky-open").click();
+  const field = page.getByLabel("Note", {exact: true});
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(/ssh key for the pi/);
+
+  // Escape leaves it alone rather than saving.
+  await field.fill("changed my mind");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".note-body")).toContainText("ssh key for the pi");
+  await page.screenshot({path: "test-results/sticky-note.png"});
 });
 
 test("the shelf parks things and hands them back", async ({page}) => {

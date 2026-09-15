@@ -10,7 +10,12 @@
   folds accents and matches every word anywhere. Palette: "Write a note".
   - [ ] No global shortcut of its own — the palette command is the fast path.
         One would mean a seventh key and a seventh row in Settings.
+  - [x] Pin a note to the desktop — its own always-on-top, undecorated,
+        draggable window. Position and size are remembered; pinned notes come
+        back when the app restarts.
   - [ ] Notes are not searchable *from the palette* yet, only from the screen.
+  - [ ] A pinned note has no colour of its own — they are all the same paper.
+        A colour per note is the obvious next thing if the desktop gets busy.
   - [x] Simple formatting — `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
         `-` and `1.` lists, `>` quotes, `#` headings, ``` fences. Stored as the
         text you typed; parsed on the way out.
