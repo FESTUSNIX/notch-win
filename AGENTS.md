@@ -1932,3 +1932,26 @@ The two halves were the same fault.
 226. ⚠️ **The two halves are exclusive.** Drawing the open list underneath
      the finished one makes "Done" an addition to the day rather than a view of
      it — which is the drawer this replaced, wearing a tab.
+227. ⚠️ **A footer is where a thing goes to not be read.** Every screen had
+     grown one — a sync line, a sentence about dragging, a "Clear all" — each a
+     row of 10px grey text at the foot of the panel, and each breaking the
+     bottom padding it sat inside so no two screens ended the same way. They are
+     tools in the header now: an instruction behind a `?`, an action as a
+     button. `screen-tools.ts` is the one place that draws them.
+228. ⚠️ **One padding value for the sides and the bottom of every screen.**
+     It was 14/12 on `.screen-body` and 16/14 on the bento, with a footer row
+     inside making the gap under the last thing different again per screen.
+     `--screen-pad`.
+229. ⚠️ **A second `box-shadow` on the same rule silently replaces the
+     first.** `.cal-next` carried its coloured strip that way and threw the
+     whole elevation recipe away with it — the rule above it looked correct and
+     did nothing.
+230. ⚠️ **Tint the card, never stripe it.** A 3px coloured rail down a dark
+     card is the shape every generated calendar has, and it says nothing the
+     card's own colour cannot. `color-mix` against the tile rather than a flat
+     alpha, so a pale calendar and a dark one land at the same weight.
+231. ⚠️ **An event opens into a PANEL, not a row that grows.** The detail is
+     five lines; growing a row by that much pushes every event under it down the
+     screen, so the thing being read moves while it is read. Anchored to the
+     screen rather than the row, or an event near the bottom opens a panel half
+     off the island.

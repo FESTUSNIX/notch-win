@@ -250,6 +250,21 @@ h1 { margin:0; }
 .island-tab.live::after { content:""; position:absolute; top:3px; right:4px; width:5px; height:5px;
   border-radius:50%; background:var(--accent); }
 .island-tab.live[aria-selected=true]::after { display:none; }
+/* ── What the open screen can do ───────────────────────────────────
+   Between the tabs and the panel's own controls, and separated from them by a
+   hairline: these change with the screen, those never do. Every one of these
+   was a row at the foot of a screen before — a sync line, a sentence about
+   dragging, a "Clear all" — each in the one place nothing is read, each
+   breaking the bottom padding it sat inside. */
+.screen-tools { display:flex; align-items:center; gap:1px; flex-shrink:0; }
+.screen-tools:not(:empty) { margin-right:7px; padding-right:7px;
+  border-right:1px solid var(--hair); }
+.screen-tool { color:#565656; }
+.screen-tool:disabled { opacity:.45; }
+.screen-tool.is-warn { color:var(--warn); }
+/* ⚠️ The `?` is type, not an icon — the set has no question mark, and a
+   glyph that meant "help" would be one more thing to learn. */
+.screen-help { font-size:12px; font-weight:600; line-height:1; }
 .panel-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; }
 .small-icon { width:26px; height:26px; padding:0; color:#565656; font-size:15px; line-height:1; }
 .small-icon:hover { color:#fff; background:var(--tile-hi);
@@ -325,7 +340,13 @@ h1 { margin:0; }
   to   { opacity:0; transform:translateX(calc(var(--dir, 1) * var(--distance-base) * -1));
          filter:blur(var(--blur-small)); }
 }
-.screen-body { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:8px 14px 12px;
+/* ⚠️ ONE padding value on the sides and the bottom. Every screen had grown
+   its own — 14 at the sides and 12 below here, 16 and 14 on the bento — and a
+   footer row sitting inside it made the gap under the last thing different
+   again on every screen. Nothing ends the same way unless the number is one
+   number. */
+.screen-body { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden;
+  padding:8px var(--screen-pad) var(--screen-pad);
   scrollbar-width:thin; scrollbar-color:#303030 transparent; }
 .screen-error { margin:10px 0 0; font-size:11px; color:#ffab83; line-height:1.5; }
 
@@ -478,18 +499,8 @@ h1 { margin:0; }
 /* ── Finished work ─────────────────────────────────────────────────────── */
 #task-done:empty { display:none; }
 #task-done { margin:4px 3px 2px; border-top:1px solid #161616; padding-top:5px; }
-.day-done-toggle { display:flex; align-items:center; gap:9px; width:100%; padding:8px 9px; border-radius:10px; font-size:12px; color:#6e6e6e; }
-.day-done-toggle:hover { background:var(--tile); color:#9a9a9a;
-  box-shadow:var(--hairline), var(--gloss); }
-.day-done-toggle .cv { display:inline-block; font-size:9px; transition:transform var(--duration-fast) var(--ease-smooth-out); }
-.day-done-toggle[aria-expanded=true] .cv { transform:rotate(90deg); }
 #task-done .day-row { min-height:38px; }
 #task-done .day-row .task-title { font-size:13px; }
-
-.task-footer { display:flex; padding:5px 11px 9px; flex-shrink:0; }
-#sync-line { font-size:10px; color:#6d6d6d; padding:4px 7px; }
-#sync-line:hover { color:#bdbdbd; background:var(--tile);
-  box-shadow:var(--hairline), var(--gloss); }
 
 /* ── Day clear ─────────────────────────────────────────────────────────── */
 .day-clear { display:flex; flex-direction:column; align-items:center; text-align:center; gap:3px; padding:32px 24px 28px; background:radial-gradient(58% 60% at 50% 38%,rgba(0,255,136,.10),rgba(0,0,0,0) 72%); }
@@ -510,8 +521,7 @@ h1 { margin:0; }
 
 button { transition:background-color var(--duration-quick) var(--ease-smooth-out),color var(--duration-quick) var(--ease-smooth-out); }
 button:active:not(:disabled) { background:var(--tile-on); }
-.day-row .task-title:active,.day-sub:active,#sync-line:active { background:transparent; }
-
+.day-row .task-title:active,.day-sub:active,
 /* ── The editor window ───────────────────────────────────────────────────
    A settings page, not the product: grouped by list, dense, its own renderer
    in task-list.ts. These rules serve only that page. */
@@ -744,6 +754,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
   --r-tile: 18px;
   --r-row: 12px;
   --r-pip: 999px;
+  /* The gap at the sides and the bottom of every screen. */
+  --screen-pad: 15px;
 }
 
 /* ── Elevation ─────────────────────────────────────────────────
@@ -868,10 +880,14 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .home-late { border-radius:var(--r-pip); }
 
 /* ── Calendar and Media, same grammar ──────────────────────────────────── */
-.cal-next { background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
-  border-left:0; border-radius:var(--r-tile); padding:11px 14px;
-  box-shadow:inset 3px 0 0 var(--cal,var(--accent)); }
+/* ⚠️ The strip lived in a SECOND `box-shadow` on the same rule, which won
+   over the first and quietly threw the elevation away with it. Tinted like
+   every other event now, and there is one box-shadow. */
+.cal-next { background-image:var(--sheen);
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 12%, var(--tile));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 26%, transparent),
+    var(--gloss), var(--lift-1);
+  border-left:0; border-radius:var(--r-tile); padding:12px 14px; }
 .cal-row { border-radius:var(--r-row); }
 .cal-row:hover { background:var(--tile-hi); }
 .cal-wcol { background-color:var(--tile); background-image:var(--sheen);
@@ -879,9 +895,7 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-wcol.is-today { background-color:var(--tile-hi);
   box-shadow:inset 0 0 0 1px rgba(0,255,136,.18), var(--gloss), var(--lift-1); }
 .cal-whead { border-bottom:1px solid var(--hair); }
-.cal-chip { background-color:rgba(255,255,255,.08); background-image:var(--sheen);
-  box-shadow:inset 0 0 0 1px var(--hair), var(--gloss);
-  border-radius:8px; border-left-width:2.5px; }
+
 .cal-view { background:var(--tile); border-radius:10px; }
 .cal-view:hover { background:var(--tile-hi); }
 .cal-view[aria-pressed=true] { background:var(--tile-on);
@@ -890,7 +904,6 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .media-button:hover:not(:disabled) { background:var(--tile-hi);
   box-shadow:var(--hairline), var(--gloss); }
 .day-row:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
-.day-done-toggle:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
 #inline-composer:hover { background:var(--tile); }
 /* ⚠️ A WELL with an accent hairline, not a filled accent box. Anything that
    receives input is sunk on this surface, and the composer is the one field you
@@ -936,7 +949,8 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
    pill below it. A grid item that clips its own overflow is a shape grid row
    sizing gets wrong; a flex column measures it correctly and needs no second
    row to go wrong in. */
-.sys-grid { display:grid; gap:10px; padding:4px 16px 14px; overflow:visible;
+.sys-grid { display:grid; gap:10px; overflow:visible;
+  padding:4px var(--screen-pad) var(--screen-pad);
   grid-template-columns:auto minmax(190px, 1.15fr) minmax(170px, 1fr);
   grid-template-areas:"caps pills machine";
   align-content:start; align-items:start; }
@@ -1116,22 +1130,44 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .media-button:disabled { opacity:.28; }
 
 /* ── Calendar ──────────────────────────────────────────────────────────── */
-.cal-next { display:flex; flex-direction:column; gap:2px; padding:11px 13px; margin-bottom:12px;
-  border-radius:12px; background:#0d0d0d; border-left:3px solid var(--cal,var(--accent)); }
+.cal-next { display:flex; flex-direction:column; gap:2px; padding:12px 14px; margin-bottom:12px;
+  border-radius:var(--r-tile); border-left:0; }
 .cal-next-when { font-size:11px; font-weight:600; color:var(--cal,var(--accent)); letter-spacing:.02em; }
 .cal-next-title { font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
 .cal-day { margin:16px 0 6px; font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:#5f5f5f; font-weight:600; }
 .cal-day:first-child { margin-top:2px; }
-.cal-row { display:flex; align-items:flex-start; gap:11px; padding:8px 8px 8px 10px; border-radius:10px;
-  position:relative; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
-.cal-row::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:2.5px;
-  border-radius:2px; background:var(--cal); }
-.cal-row:hover { background-color:var(--tile-hi);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+/* ── An event ────────────────────────────────────────────────────────────
+   ⚠️ TINTED, not striped. The 3px rail down the left edge was the one
+   decoration on this surface saying nothing its colour could not say by
+   itself — and a coloured bar on a dark card is the shape every generated
+   calendar in the world has. The card carries the calendar's colour as a wash
+   through the whole of itself instead, which is both quieter and more of it.
+
+   ⚠️ `color-mix` against the tile rather than a flat alpha, so a pale calendar
+   and a dark one land at the same weight instead of one washing the card out
+   and the other doing nothing. */
+.cal-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+  padding:11px 12px; border-radius:var(--r-tile); min-height:52px;
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 9%, var(--tile));
+  background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 22%, transparent),
+    var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-fast) var(--ease-smooth-out); }
+.cal-row + .cal-row { margin-top:6px; }
+.cal-row:hover { background-color:color-mix(in srgb, var(--cal, var(--cool)) 15%, var(--tile-hi));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 32%, transparent),
+    var(--gloss), var(--lift-2); }
+.cal-row:active { transform:scale(.99); transition-duration:90ms; }
+.cal-row.is-open { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 55%, transparent),
+    var(--gloss), var(--lift-2); }
 .cal-row.declined { opacity:.45; }
 .cal-row.declined .cal-title { text-decoration:line-through; }
-.cal-time { font-size:11.5px; color:#9a9a9a; font-variant-numeric:tabular-nums; white-space:nowrap;
-  padding-top:1px; min-width:44px; }
+/* The time takes the calendar's colour: it is the one field that is always
+   there, so it is the one that can carry the identity. */
+.cal-time { font-size:11.5px; font-weight:600; white-space:nowrap; min-width:46px;
+  color:color-mix(in srgb, var(--cal, var(--cool)) 72%, #fff);
+  font-variant-numeric:tabular-nums; }
 .cal-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .cal-title { font-size:13.5px; line-height:1.35; overflow-wrap:anywhere; }
 .cal-detail { font-size:10.5px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1140,6 +1176,54 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-join svg { width:16px; height:16px; }
 .cal-join:hover { color:var(--accent); background:rgba(0,255,136,.12);
   box-shadow:inset 0 0 0 1px rgba(0,255,136,.26), var(--gloss); }
+
+/* ── One event, in full ──────────────────────────────────────────────────
+   ⚠️ A panel OVER the list, not a row that grows. The detail is five lines —
+   when, how long, which calendar, where, and a way in — and growing a row by
+   that much pushes every event under it down the screen, so the thing being
+   read moves while it is read. Over the list, nothing moves.
+
+   ⚠️ Anchored to the screen rather than to the row. A row near the bottom would
+   otherwise open a panel half off the island. */
+.cal-panel { position:absolute; left:var(--screen-pad); right:var(--screen-pad);
+  bottom:var(--screen-pad); z-index:20;
+  display:flex; flex-direction:column; gap:9px; padding:14px 15px;
+  border-radius:18px;
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 10%, #131313);
+  background-image:var(--sheen);
+  box-shadow:var(--lift-3), var(--gloss),
+    inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 30%, transparent);
+  animation:cal-panel-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes cal-panel-in {
+  from { opacity:0; transform:translateY(var(--distance-medium)); filter:blur(var(--blur-small)); }
+  to   { opacity:1; transform:none; filter:blur(0); }
+}
+.cal-panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.cal-panel-when { font-size:11px; font-weight:600; letter-spacing:.02em;
+  color:color-mix(in srgb, var(--cal, var(--cool)) 72%, #fff); }
+.cal-panel-close { width:24px; height:24px; color:#7d7d7d; }
+.cal-panel-title { margin:0; font-size:16px; font-weight:600; line-height:1.3;
+  letter-spacing:-.2px; overflow-wrap:anywhere; }
+.cal-panel-facts { display:flex; flex-direction:column; gap:5px; }
+.cal-fact { display:flex; align-items:center; gap:8px; font-size:12px; color:#a8a8a8;
+  overflow-wrap:anywhere; }
+.cal-fact-mark { display:grid; place-items:center; flex-shrink:0; color:#6a6a6a; }
+.cal-fact-mark svg { width:14px; height:14px; }
+.cal-panel-actions { display:flex; gap:7px; margin-top:2px; flex-wrap:wrap; }
+.cal-panel-join, .cal-panel-open { display:flex; align-items:center; gap:7px;
+  font-size:11.5px; padding:7px 12px; border-radius:10px; }
+.cal-panel-join svg { width:15px; height:15px; }
+.cal-panel-join { color:#04140c; font-weight:600;
+  background-color:var(--accent);
+  background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
+    0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
+.cal-panel-join:hover { background-color:#22ff9a; }
+.cal-panel-open { color:#c4c4c4;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.cal-panel-open:hover { background-color:var(--tile-hi); }
+.cal-panel-join:active, .cal-panel-open:active { transform:scale(.96); transition-duration:90ms; }
 
 .options-hint { margin:12px 0 0; font-size:10.5px; color:#5f5f5f; line-height:1.55; }
 
@@ -1271,8 +1355,10 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .cal-wnum { font-size:13px; font-variant-numeric:tabular-nums; color:#c4c4c4; }
 .cal-wcol.is-today .cal-wnum { color:var(--accent); font-weight:600; }
 .cal-wnone { text-align:center; font-size:11px; color:#333; padding-top:4px; }
-.cal-chip { display:flex; flex-direction:column; gap:1px; padding:4px 5px; border-radius:6px;
-  background:#141414; border-left:2px solid var(--cal,#5ac8fa); min-width:0; }
+.cal-chip { display:flex; flex-direction:column; gap:1px; padding:5px 6px; border-radius:8px;
+  min-width:0; border-left:0;
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 14%, var(--tile));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 26%, transparent); }
 .cal-chip[onclick],.cal-chip:hover { cursor:default; }
 .cal-chip.declined { opacity:.45; }
 .cal-chip-time { font-size:8.5px; color:var(--cal,#5ac8fa); font-variant-numeric:tabular-nums; font-weight:600; }
@@ -1319,7 +1405,6 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .agent-row.is-working .agent-mark { color:var(--accent); background-color:rgba(0,255,136,.1);
   box-shadow:inset 0 0 0 1px rgba(0,255,136,.24), var(--gloss); }
 .agent-row.is-idle { opacity:.62; }
-.agent-note { margin:12px 2px 0; font-size:10px; color:#4f4f4f; line-height:1.5; }
 
 /* ── The shelf ───────────────────────────────────────────────────────────
    A row is not a button: it carries three or four actions and the useful one
@@ -1359,9 +1444,6 @@ html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge
 .shelf-empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:6px; padding:26px 20px; text-align:center; }
 .shelf-hint { margin:0; font-size:11px; color:#4f4f4f; line-height:1.6; max-width:340px; }
-.shelf-foot { display:flex; justify-content:flex-end; margin-top:10px; }
-.shelf-clear { font-size:11px; color:#6a6a6a; padding:5px 9px; }
-.shelf-clear:hover { color:#ff6961; background:rgba(255,105,97,.1); }
 /* While a file is held over the island. */
 
 /* ── Review ──────────────────────────────────────────────────────────────
@@ -1482,7 +1564,6 @@ html.dragging-files #island {
 .shelf-row.can-drag { cursor: grab; }
 .shelf-row.can-drag:active { cursor: grabbing; }
 .shelf-row.is-leaving { opacity: .45; }
-.shelf-hint-out { margin:10px 2px 0; font-size:10px; color:#4f4f4f; line-height:1.5; }
 
 /* ── The palette ─────────────────────────────────────────────────────────
    Over the screens, not beside them: it is a mode, and the panel behind it is

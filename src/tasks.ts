@@ -29,6 +29,7 @@ import * as snooze from "./snooze";
 import * as stars from "./palette-stars";
 import * as workspaces from "./workspaces";
 import { Palette, TIER, type Action } from "./palette";
+import { paintTools, type ScreenTools } from "./screen-tools";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
@@ -56,6 +57,7 @@ app.innerHTML = `<div id="notch-shell">
     <div id="island-expanded" inert>
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
+        <div class="screen-tools" id="screen-tools"></div>
         <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Island settings" aria-expanded="false" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
       <div id="surface-options" hidden><span>Screen edge</span><div class="edge-choices" role="group" aria-label="Screen edge"><button type="button" data-task-edge="top" aria-pressed="false">Top</button><button type="button" data-task-edge="bottom" aria-pressed="false">Bottom</button><button type="button" data-task-edge="left" aria-pressed="false">Left</button><button type="button" data-task-edge="right" aria-pressed="false">Right</button></div><span>Clock</span><div class="edge-choices" role="group" aria-label="Clock format"><button type="button" data-clock="24" aria-pressed="true">24 h</button><button type="button" data-clock="12" aria-pressed="false">12 h</button></div><span>Tasks showing</span><div class="edge-choices" role="group" aria-label="Task view"><button type="button" data-view="day" aria-pressed="true">Today</button><button type="button" data-view="all" aria-pressed="false">All lists</button></div><p id="snoozed-line" class="options-hint" hidden></p><p id="shortcut-hint" class="options-hint"></p><button id="account-settings">Accounts &amp; connections &#8599;</button></div>
@@ -435,6 +437,16 @@ function render() {
   shelf.render();
   review.render();
   home.render();
+
+  /* What the OPEN screen can do, in the header. ⚠️ Only the open one: these
+   * are the tools for what you are looking at, and a header carrying every
+   * screen's would be four buttons that mostly do nothing here. */
+  const tools: Partial<Record<ScreenName, () => ScreenTools>> = {
+    today: () => today.tools(),
+    agents: () => agentsScreen.tools(),
+    shelf: () => shelf.tools(),
+  };
+  paintTools(get("screen-tools"), tools[screen]?.() ?? {});
 
   const live = claims();
   paintPill(live);

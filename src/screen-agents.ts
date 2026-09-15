@@ -78,6 +78,17 @@ export class AgentsScreen {
    * want you. Priority 55 puts it under a meeting about to start and over a
    * focus timer — a blocked agent is the most interruptible thing on this list
    * and the cheapest to deal with. */
+  /** ⚠️ The caveat that used to be a footer. It is true, it matters once, and
+   *  it was a row of grey text under everything else — which is where a thing
+   *  goes to not be read. */
+  tools() {
+    return {
+      help: "Tokens are counted since Codenotch started, not for the session's life. "
+        + "Click a session to raise its terminal.",
+      tools: [],
+    };
+  }
+
   activity(): Activity | null {
     const waiting = this.sessions.filter(s => s.state === "waiting" && !isQuiet(`agent:${s.id}`));
     if (!waiting.length) return null;
@@ -222,11 +233,6 @@ export class AgentsScreen {
     for (const session of this.sessions) this.host.append(this.row(session));
     const spend = this.spendBlock();
     if (spend) this.host.append(spend);
-    /* ⚠️ Said once, at the foot, rather than per row. The totals are what this
-     * app has watched, not the sessions' lifetimes: scanning every open
-     * transcript's history at launch would read hundreds of megabytes to learn
-     * what the last few kilobytes already say. */
-    this.host.append(element("p", "agent-note", "Tokens counted since Codenotch started. Click a session to raise its terminal."));
     if (this.error) this.host.append(element("p", "screen-error", this.error));
   }
 }

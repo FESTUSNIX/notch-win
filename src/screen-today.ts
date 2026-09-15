@@ -26,7 +26,7 @@ const HTML = `
   <div id="task-status" role="status"></div>
   <div id="task-list" class="task-list scrolls"><div id="task-list-content"></div><div id="task-done"></div></div>
   <form id="inline-composer"><span class="plus" aria-hidden="true">+</span><input id="inline-title" aria-label="Task name" maxlength="1000" required autocomplete="off" placeholder="Add a task"><div class="composer-chips" id="composer-chips"><button type="button" class="chip" id="chip-list" aria-haspopup="listbox" aria-expanded="false"></button><button type="button" class="chip" id="chip-day" aria-haspopup="listbox" aria-expanded="false"></button></div><span class="enter-hint" aria-hidden="true">&#8629;</span></form>
-  <footer class="task-footer"><button id="sync-line" aria-label="Refresh tasks"></button></footer>`;
+`;
 
 export class TodayScreen {
   readonly name = "today" as const;
@@ -62,6 +62,8 @@ export class TodayScreen {
   private toDay = localDay();
   /** Which composer chip has its menu open. */
   private picking: "list" | "day" | null = null;
+  /** What the sync tool says when pointed at. */
+  private syncWord = "";
   private othersOpen = false;
   /** False when the day is read-only: no account, an error, or fixtures mode. */
   private writable = false;
@@ -297,9 +299,12 @@ export class TodayScreen {
     this.status.classList.toggle("error", !!(this.actionError || shown.error));
 
     const ago = shown.updatedAt ? Math.max(0, Math.floor((Date.now() - new Date(shown.updatedAt).getTime()) / 60000)) : null;
-    this.get("sync-line").textContent = preview ? "Interactive preview · sample tasks" : shown.demo ? "Demo · sample tasks · read only" :
+    /* ⚠️ Kept as a STRING, drawn in the header. It was a row of 10px grey text
+     * at the foot of the panel — the place nothing is read — and it broke the
+     * bottom padding it sat inside. The words still exist; they are a tooltip
+     * on the button that does the thing they describe. */
+    this.syncWord = preview ? "Interactive preview · sample tasks" : shown.demo ? "Demo · sample tasks · read only" :
       this.busy ? "Syncing with TickTick…" : shown.updatedAt ? `TickTick · ${ago ? `${ago} min ago` : "just synced"}` : "TickTick · connect in settings";
-    (this.get("sync-line") as HTMLButtonElement).disabled = this.busy;
 
     /* The list the composer files into. ⚠️ Held as an id and checked against
      * what still exists — a list closed in TickTick would otherwise leave the
@@ -354,6 +359,21 @@ export class TodayScreen {
    * Home shows a stripped version of this screen rather than keeping its own
    * copy of the day: one optimistic layer, one definition of "open", one
    * completion path. */
+
+  /** The header's tools for this screen. */
+  tools(): { help?: string; tools: { icon: "clock"; label: string; run?: () => void; disabled?: boolean }[] } {
+    /* ⚠️ One tool, not two. A "Connect TickTick" button here would be the
+     * SECOND one on screen — the empty state already offers it, in the middle
+     * of the panel where somebody with no tasks is actually looking. */
+    return {
+      tools: [{
+        icon: "clock",
+        label: this.syncWord || "Refresh tasks",
+        disabled: this.busy,
+        run: () => { void this.action("refresh_tasks"); },
+      }],
+    };
+  }
 
   /** Today's tally, exactly as the ring and the pill read it. */
   tally(): { done: number; total: number; reliable: boolean } {
@@ -533,7 +553,6 @@ export class TodayScreen {
 
   private wire() {
     const get = (id: string) => this.get(id);
-    get("sync-line").onclick = () => this.action("refresh_tasks");
     get("focus-pause").onclick = () => this.focusTimer.toggle();
     get("focus-end").onclick = () => this.focusTimer.stop();
     get("focus-others").onclick = () => { this.othersOpen = !this.othersOpen; this.changed(); };

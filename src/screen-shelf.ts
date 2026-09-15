@@ -178,6 +178,19 @@ export class ShelfScreen {
     return row;
   }
 
+  /** ⚠️ "Clear all" is a BUTTON, not a row at the foot of the list. It was a
+   *  whole band of the screen for one destructive action nobody uses daily —
+   *  and the sentence above it explained a gesture you want told once. */
+  tools() {
+    return {
+      help: "Drag a row out to drop the file somewhere, or copy it and paste it.",
+      tools: this.items.length
+        ? [{ icon: "close" as const, label: `Clear the shelf (${this.items.length})`,
+             run: () => { void call("shelf_remove", { id: "" }).catch(() => {}); } }]
+        : [],
+    };
+  }
+
   render() {
     this.host.replaceChildren();
     if (!this.items.length) {
@@ -191,16 +204,6 @@ export class ShelfScreen {
     }
     for (const item of this.items) this.host.append(this.row(item));
 
-    // ⚠️ Not `.shelf-note` — that is the per-row size line.
-    this.host.append(element("p", "shelf-hint-out",
-      "Drag a row out to drop the file somewhere, or Copy and paste it."));
-
-    const foot = element("div", "shelf-foot");
-    const clear = element("button", "shelf-clear", `Clear all (${this.items.length})`);
-    (clear as HTMLButtonElement).type = "button";
-    clear.onclick = () => { void call("shelf_remove", { id: "" }).catch(() => {}); };
-    foot.append(clear);
-    this.host.append(foot);
     if (this.error) this.host.append(element("p", "screen-error", this.error));
   }
 }

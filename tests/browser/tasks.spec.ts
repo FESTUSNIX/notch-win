@@ -981,6 +981,47 @@ test("changing screens moves, and the panel travels to the new height", async ({
   await page.screenshot({path: "test-results/island-screen-change.png"});
 });
 
+test("an event opens into a panel, and nothing is striped", async ({page}) => {
+  await page.goto("/tasks.html");
+  await open(page);
+  await page.locator('[data-tab="calendar"]').click();
+
+  /* ⚠️ No left rails anywhere. A 3px coloured bar down the edge of a dark card
+   * is the shape every generated calendar has, and it says nothing the card's
+   * own tint cannot. The next-up card carried its strip as a SECOND box-shadow
+   * on the same rule, which won over the first and threw the elevation away
+   * with it. */
+  const strips = await page.locator(".cal-row, .cal-next, .cal-chip").evaluateAll(nodes =>
+    nodes.map(node => {
+      const style = getComputedStyle(node);
+      return `${style.borderLeftWidth}|${style.boxShadow}`;
+    }));
+  expect(strips.length).toBeGreaterThan(1);
+  for (const shape of strips) {
+    expect(shape.startsWith("0px")).toBe(true);
+    // An inset shadow offset sideways is a strip wearing a different hat.
+    expect(/inset\s+\d+px\s+0px\s+0px/.test(shape)).toBe(false);
+  }
+
+  /* ⚠️ A panel over the list, not a row that grows. The detail is five lines,
+   * and growing a row by that much pushes every event under it down the screen
+   * — so the thing being read moves while it is read. */
+  const before = await page.locator(".cal-row").first().boundingBox();
+  await page.locator(".cal-row").first().click();
+  const panel = page.locator(".cal-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".cal-panel-title")).toHaveText("Design review");
+  // How long, not two clock times to subtract.
+  await expect(panel.locator(".cal-fact").first()).toContainText("min");
+  await expect(panel.getByRole("button", {name: "Join"})).toBeVisible();
+  const after = await page.locator(".cal-row").first().boundingBox();
+  expect(Math.round(after!.y)).toBe(Math.round(before!.y));
+
+  await panel.getByRole("button", {name: "Close event"}).click();
+  await expect(panel).toHaveCount(0);
+  await page.screenshot({path: "test-results/island-calendar-panel.png"});
+});
+
 test("a wheel changes screens unless the thing under it can scroll", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
