@@ -9,6 +9,7 @@ import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import { isoWeek, localDay, weekStart } from "./task-model";
+import { still } from "./motion-pref";
 import type { Activity } from "./island-activity";
 
 export interface CalEvent {
@@ -148,7 +149,15 @@ export class CalendarScreen {
   constructor(
     private host: HTMLElement,
     private changed: () => void,
-    private deps: { create: (title: string, day: string) => void } = { create: () => {} },
+    private deps: {
+      create: (title: string, day: string) => void;
+      /** ⚠️ Lift `WS_EX_NOACTIVATE`, or a field here cannot be typed into.
+       *  The island never takes focus — that is the whole point of it — so a
+       *  `focus()` on its own puts the caret in the DOM and leaves the
+       *  keystrokes going to whatever application is actually in front. It is
+       *  the same round trip Today's composer makes; see `set_task_input`. */
+      focus: (active: boolean) => Promise<void>;
+    } = { create: () => {}, focus: async () => {} },
   ) {}
 
   async boot() {
@@ -265,8 +274,13 @@ export class CalendarScreen {
    *  ⚠️ An offset rather than a Date, so "today" moving over midnight cannot
    *  strand the view on a month nobody chose. */
   private monthOffset = 0;
-  /** The day the agenda is scrolled to, or "" for today. */
+  /** The day the grid has ringed, or "" for today. */
   private chosenDay = "";
+  /** Set for exactly one render: the day the agenda should jump to. ⚠️ Not
+   *  `chosenDay` itself, or every unrelated redraw — a minute ticking over, a
+   *  task completing — would drag the agenda back to it while you were reading
+   *  something else. */
+  private scrollTo = "";
   /** Whether the New Task popover is up, and what is in it. */
   private composing = false;
 
@@ -298,9 +312,16 @@ export class CalendarScreen {
     add.onclick = () => {
       this.composing = !this.composing;
       this.changed();
+      /* ⚠️ The lift FIRST, then the caret — and both awaited. Focusing before
+       * the window can take focus is what made this popover a field you could
+       * see, click, and not type into: the caret was in the island and every
+       * keystroke went to the window behind it. */
       if (this.composing) {
-        requestAnimationFrame(() =>
-          this.host.querySelector<HTMLInputElement>(".cal-new input")?.focus());
+        void this.deps.focus(true).then(() => {
+          this.host.querySelector<HTMLInputElement>(".cal-new input")?.focus();
+        }).catch(() => {});
+      } else {
+        void this.deps.focus(false).catch(() => {});
       }
     };
     const pager = element("div", "cal-pager");
@@ -365,7 +386,11 @@ export class CalendarScreen {
        * ⚠️ The agenda is continuous on purpose: "what is next" does not stop
        * at midnight, and a day with nothing on it would otherwise answer with
        * an empty panel rather than with the next thing that is. */
-      cell.onclick = () => { this.chosenDay = key; this.changed(); };
+      cell.onclick = () => {
+        this.chosenDay = key;
+        this.scrollTo = key;
+        this.changed();
+      };
       grid.append(cell);
     }
     panel.append(grid);
@@ -395,17 +420,23 @@ export class CalendarScreen {
       dayHeading(this.chosenDay || localDay(now), localDay(now)));
     const add = element("button", "cal-new-add", "Add");
     (add as HTMLButtonElement).type = "button";
+    const close = () => {
+      this.composing = false;
+      // Hand the keyboard back, or the island stays unfoldable and the next
+      // thing you type still goes to it.
+      void this.deps.focus(false).catch(() => {});
+      this.changed();
+    };
     const commit = () => {
       const value = field.value.trim();
       if (!value) return;
       this.deps.create(value, this.chosenDay || localDay(now));
-      this.composing = false;
-      this.changed();
+      close();
     };
     add.onclick = commit;
     field.onkeydown = event => {
       if (event.key === "Enter") { event.preventDefault(); commit(); }
-      if (event.key === "Escape") { this.composing = false; this.changed(); }
+      if (event.key === "Escape") close();
     };
     row.append(when, field, add);
     sheet.append(row);
@@ -417,19 +448,23 @@ export class CalendarScreen {
   private agenda(now: Date): HTMLElement {
     const panel = element("div", "cal-agenda scrolls");
     const today = localDay(now);
-    /* From the chosen day, or from today. ⚠️ `endOf`, not `startOf`: a meeting
-     * that began twenty minutes ago has not finished, and dropping it while you
-     * are in it is the one moment the agenda is being looked at. */
-    const from = this.chosenDay || today;
+    /* ⚠️ Always from TODAY, never from the chosen day. Choosing a day scrolls
+     * the agenda to it; it does not cut the list down to it. Filtering looks
+     * identical the moment you click a day with something on it and is wrong
+     * every other time — a day with nothing on it would answer with an empty
+     * panel rather than with the next thing that is, and there would be no way
+     * back to the rest of the week except pressing today again.
+     *
+     * ⚠️ `endOf`, not `startOf`: a meeting that began twenty minutes ago has
+     * not finished, and dropping it while you are in it is the one moment the
+     * agenda is actually being looked at. */
     const shown = this.feed.events.filter(e =>
-      (e.allDay ? e.start.slice(0, 10) : localDay(endOf(e))) >= from);
+      (e.allDay ? e.start.slice(0, 10) : localDay(endOf(e))) >= today);
 
     if (!shown.length) {
       const empty = element("div", "day-empty");
       empty.append(element("h3", "", "Nothing ahead"),
-        element("p", "", from === today
-          ? "No events in the next few weeks."
-          : "Nothing from this day on."));
+        element("p", "", "No events in the next few weeks."));
       panel.append(empty);
       return panel;
     }
@@ -652,14 +687,31 @@ export class CalendarScreen {
       else this.chosen = null;
     }
 
-    /* ⚠️ After the paint, not during it. The agenda is a scroller and the
-     * heading only exists once it has been appended — and `scrollIntoView` on
-     * a node that is not in the document yet does nothing at all, silently. */
-    if (this.chosenDay) {
-      requestAnimationFrame(() => {
-        this.host.querySelector<HTMLElement>(`.cal-day[data-day="${this.chosenDay}"]`)
-          ?.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (this.scrollTo) this.scrollAgenda(this.scrollTo);
+    this.scrollTo = "";
+  }
+
+  /** Put a day's heading at the top of the agenda.
+   *
+   * ⚠️ The nearest heading AT OR AFTER the day, not the day's own. Most days
+   * have nothing on them, so most clicks have no heading to scroll to — and
+   * the version that looked one up by date did nothing at all on those days,
+   * which is indistinguishable from the click not registering.
+   *
+   * ⚠️ Scrolled by arithmetic, not `scrollIntoView`. The headings are sticky,
+   * so the browser considers one already in view when it is stuck to the top
+   * over a completely different day — and then does not move. */
+  private scrollAgenda(day: string) {
+    const panel = this.host.querySelector<HTMLElement>(".cal-agenda");
+    if (!panel) return;
+    const heads = [...panel.querySelectorAll<HTMLElement>(".cal-day")];
+    const target = heads.find(head => (head.dataset.day ?? "") >= day) ?? heads[heads.length - 1];
+    if (!target) return;
+    requestAnimationFrame(() => {
+      panel.scrollTo({
+        top: Math.max(0, target.offsetTop - panel.offsetTop),
+        behavior: still() ? "auto" : "smooth",
       });
-    }
+    });
   }
 }

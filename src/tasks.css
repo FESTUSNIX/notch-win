@@ -363,7 +363,7 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    ⚠️ One view, not two. A grid says WHICH days have something on them; the
    agenda says what. A grid on its own answers neither question, which is why
    the standalone agenda view is gone rather than joined by a month one. */
-.cal-split { display:grid; grid-template-columns:minmax(0,300px) minmax(0,1fr);
+.cal-split { display:grid; grid-template-columns:minmax(0,282px) minmax(0,1fr);
   gap:16px; align-items:start; min-width:0; }
 
 .cal-month { display:flex; flex-direction:column; gap:9px; min-width:0;
@@ -396,11 +396,17 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 
 .cal-grid { display:grid; grid-template-columns:repeat(7, 1fr);
   grid-auto-rows:1fr; gap:2px; }
+/* ⚠️ A little smaller than the track it sits in, not the whole of it. A
+   circle filling a 1:1 cell makes today's fill a disc as wide as the column,
+   and seven of those in a row read as a heavier grid than the numbers in them
+   deserve. The cell keeps its 1:1 for the layout; the mark inside is 30px. */
 .cal-cell { position:relative; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:3px; aspect-ratio:1;
-  padding:0; border-radius:50%; font-size:12.5px; font-weight:500; color:#d4d4d4;
-  background:none; }
-.cal-cell:hover { background:var(--tile-hi); color:#fff; }
+  align-items:center; justify-content:center; gap:2px; aspect-ratio:1;
+  padding:0; font-size:12px; font-weight:500; color:#cfcfcf; background:none; }
+.cal-cell-num { display:grid; place-items:center; width:30px; height:30px;
+  border-radius:50%; }
+.cal-cell:hover .cal-cell-num { background:var(--tile-hi); }
+.cal-cell:hover { color:#fff; }
 .cal-cell:active { scale:.9; transition-duration:90ms; }
 /* Days from the months either side are DRAWN, not blank: a grid that starts
    mid-row loses the one thing a grid is for, which is that a column is always
@@ -409,13 +415,15 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 /* Today is filled; the day you chose is ringed. ⚠️ Two different marks, not
    two shades of one: they are frequently the same day, and a ring inside a
    fill still reads as both. */
-.cal-cell.is-today { color:var(--on-accent); font-weight:700;
-  background-color:var(--accent); box-shadow:var(--glow-accent); }
-.cal-cell.is-chosen:not(.is-today) { color:#fff;
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
-.cal-cell.is-today.is-chosen { box-shadow:var(--glow-accent),
+.cal-cell.is-today { color:var(--on-accent); font-weight:700; }
+.cal-cell.is-today .cal-cell-num { background-color:var(--accent);
+  box-shadow:var(--glow-accent); }
+.cal-cell.is-chosen:not(.is-today) { color:#fff; }
+.cal-cell.is-chosen:not(.is-today) .cal-cell-num {
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.cal-cell.is-today.is-chosen .cal-cell-num { box-shadow:var(--glow-accent),
   0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
-.cal-dots { display:flex; gap:2px; position:absolute; bottom:5px; }
+.cal-dots { display:flex; gap:2px; position:absolute; bottom:2px; }
 .cal-dots i { width:3px; height:3px; border-radius:50%;
   background:color-mix(in srgb, var(--accent) 70%, transparent); }
 .cal-cell.is-today .cal-dots i { background:var(--on-accent); }
@@ -1572,12 +1580,9 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
   box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 26%, transparent),
     var(--gloss), var(--lift-1);
   border-left:0; border-radius:var(--r-tile); padding:12px 14px; }
-.cal-row { border-radius:var(--r-row); }
-.cal-row:hover { background:var(--tile-hi); }
-/* ⚠️ Dimmed, not dropped. The grid is a real week now, so on a Friday two
-   thirds of it is behind you — and a column that is simply missing would put
-   Friday where Wednesday was, which is the thing week-alignment exists to
-   stop. */
+/* (`.cal-row` is drawn where the rest of the agenda is, ~270 lines down. It
+   had a radius and a hover here as well — two rules for one thing is how the
+   pair drifts apart and only one of them gets the fix.) */
 .cal-view { background:var(--tile); border-radius:10px; }
 .cal-view:hover { background:var(--tile-hi); }
 .cal-view[aria-pressed=true] { background:var(--tile-on);
@@ -1844,30 +1849,39 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    ⚠️ `color-mix` against the tile rather than a flat alpha, so a pale calendar
    and a dark one land at the same weight instead of one washing the card out
    and the other doing nothing. */
+/* ⚠️ Mixed into BLACK, not into the tile. `--tile` is white at 5.5%, so
+   mixing a colour into it gave every card the same washed-out grey-with-a-hint
+   whatever calendar it came from — a purple event and a green one were the
+   same card at a glance, which is the one thing the colour is there to stop.
+   Against near-black the hue survives at a much lower percentage and the card
+   still reads as a dark surface rather than as a coloured block.
+   ⚠️ And no `--sheen`: a top-lit gradient over a tint is what turned the
+   colour milky in the first place. */
 .cal-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
-  padding:11px 12px; border-radius:var(--r-tile); min-height:52px;
-  background-color:color-mix(in srgb, var(--cal, var(--cool)) 9%, var(--tile));
-  background-image:var(--sheen);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 22%, transparent),
-    var(--gloss), var(--lift-1);
+  padding:10px 12px; border-radius:11px; min-height:48px;
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 22%, #08080a);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 34%, transparent);
   transition:background-color var(--duration-quick) var(--ease-smooth-out),
     box-shadow var(--duration-fast) var(--ease-smooth-out); }
-.cal-row + .cal-row { margin-top:6px; }
-.cal-row:hover { background-color:color-mix(in srgb, var(--cal, var(--cool)) 15%, var(--tile-hi));
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 32%, transparent),
-    var(--gloss), var(--lift-2); }
+.cal-row + .cal-row { margin-top:5px; }
+.cal-row:hover { background-color:color-mix(in srgb, var(--cal, var(--cool)) 32%, #08080a);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 45%, transparent); }
 .cal-row:active { transform:scale(.99); transition-duration:90ms; }
-.cal-row.is-open { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 55%, transparent),
-    var(--gloss), var(--lift-2); }
+.cal-row.is-open { box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--cal, var(--cool)) 70%, transparent); }
 .cal-row.declined { opacity:.45; }
 .cal-row.declined .cal-title { text-decoration:line-through; }
-/* The time takes the calendar's colour: it is the one field that is always
-   there, so it is the one that can carry the identity. */
-.cal-time { font-size:11.5px; font-weight:600; white-space:nowrap; min-width:46px;
-  color:color-mix(in srgb, var(--cal, var(--cool)) 72%, #fff);
-  font-variant-numeric:tabular-nums; }
-.cal-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
-.cal-title { font-size:13.5px; line-height:1.35; overflow-wrap:anywhere; }
+/* ⚠️ The TIME carries the colour; the title stays white. The title is what
+   you are reading — tinting it costs contrast for a fact the card already
+   makes with its whole background — and the time is the one field that is
+   always there, so it is the one that can afford to be the identity.
+   ⚠️ At full strength, not mixed toward white: the card behind it is now dark
+   enough to carry a saturated colour, and 72% toward #fff was the washed-out
+   pastel that went with the washed-out card. */
+.cal-time { font-size:11.5px; font-weight:600; white-space:nowrap;
+  color:var(--cal, var(--cool)); font-variant-numeric:tabular-nums; }
+.cal-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.cal-title { font-size:13.5px; font-weight:600; line-height:1.3; color:#fff;
+  overflow-wrap:anywhere; }
 .cal-detail { font-size:10.5px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cal-join { width:28px; height:28px; padding:0; display:grid; place-items:center; border-radius:8px;
   color:#5f5f5f; flex-shrink:0; }

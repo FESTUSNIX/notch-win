@@ -2294,3 +2294,39 @@ The two halves were the same fault.
      nothing, silently.** Choosing a day scrolls the agenda to it, and the
      heading only exists once the render has appended it — so the scroll is
      queued for the frame after.
+302. ⚠️ **A field on the island cannot be typed into until NOACTIVATE is
+     lifted.** The calendar's New Task popover called `focus()` and nothing
+     else, so the caret was in the island and every keystroke went to the
+     window behind it — a field you can see, click, and not type in. The lift is
+     a round trip (`set_task_input`) and has to be AWAITED before the focus.
+     Today's composer has done this for ages; anything new that takes text has
+     to do it too, and hand the keyboard back on close or the island cannot
+     fold.
+303. ⚠️ **Scroll to the nearest heading AT OR AFTER the day, not the day's
+     own.** Most days have nothing on them, so most clicks have no heading — and
+     looking one up by date did nothing at all on those days, which is
+     indistinguishable from the click not registering. ⚠️ And scroll by
+     arithmetic: the headings are sticky, so `scrollIntoView` considers one
+     already in view when it is stuck to the top over a different day, and does
+     not move.
+304. ⚠️ **Scrolling on a flag set for ONE render, never on the state itself.**
+     Keyed on `chosenDay`, every unrelated redraw — a minute ticking over, a
+     task completing — dragged the agenda back to it while you were reading
+     something else.
+305. ⚠️ **Mixing a tint into `--tile` washes the hue out.** `--tile` is white
+     at 5.5%, so a purple event and a green one came out the same grey-with-a-
+     hint at a glance — which is the one thing the colour is there to stop.
+     Mixed into near-black the hue survives at a lower percentage and the card
+     still reads as a dark surface. And no `--sheen` over a tint.
+306. ⚠️ **Presence and a computed style have to be read in ONE round trip.**
+     `await expect(locator).toHaveCount(1)` followed by `locator.evaluate(...)`
+     is two, and a 150ms exit animation can finish in between — so the style
+     comes back for an element that is no longer in the state being asserted.
+     It failed only after the calendar grew a 42-cell grid, i.e. for a reason
+     with nothing to do with what broke.
+307. ⚠️ **Never mutate a string inside a loop over its own match offsets.** A
+     sweep that deleted dead CSS rules did `for m in finditer(s)` and sliced `s`
+     on each iteration — every match after the first used an offset into a
+     string that no longer existed, so the second cut lands wherever that
+     happens to be now. Re-scan after each edit, or collect the spans and apply
+     them back to front.

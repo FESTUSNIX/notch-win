@@ -1341,6 +1341,18 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   // 42 cells: six weeks, always, so paging cannot change the panel's height.
   await expect(page.locator(".cal-cell")).toHaveCount(42);
 
+  /* ⚠️ Choosing a day SCROLLS the agenda to it, and does not cut the list
+     down to it. Filtering looks identical the moment you click a day with
+     something on it and is wrong every other time: a day with nothing on it
+     answers with an empty panel rather than with the next thing that is, and
+     there is no way back to the rest of the week. */
+  const headings = () => page.locator(".cal-agenda .cal-day").allTextContents();
+  const before = await headings();
+  expect(before.length).toBeGreaterThan(1);
+  await page.locator(".cal-cell").nth(20).click();
+  await expect(page.locator(".cal-cell.is-chosen")).toHaveCount(1);
+  expect(await headings()).toEqual(before);
+
   /* Paging is arithmetic, and the grid keeps its shape. */
   await page.getByRole("button", {name: "Next month", exact: true}).click();
   await expect(page.locator(".cal-cell")).toHaveCount(42);
@@ -1378,10 +1390,17 @@ test("changing screens moves, and the panel travels to the new height", async ({
   /* ⚠️ The screen being left goes ABSOLUTE for the length of its exit. Left in
    * flow it would hold the panel at the taller of the two heights and then drop
    * — a lurch at the end of every switch. */
+  /* ⚠️ Presence and position read in ONE round trip. Asserting the count and
+     then evaluating on the locator is two, and the exit is 150ms — so on a
+     slower render the class is gone by the second call and `getComputedStyle`
+     answers `static` for a screen that was absolute throughout its exit. The
+     test failed on a calendar that had grown a 42-cell grid, which is a slower
+     render and nothing else. */
   await page.locator('[data-tab="system"]').click();
-  const leaving = page.locator(".screen.is-leaving");
-  await expect(leaving).toHaveCount(1);
-  expect(await leaving.evaluate(el => getComputedStyle(el).position)).toBe("absolute");
+  await expect.poll(() => page.evaluate(() => {
+    const el = document.querySelector(".screen.is-leaving");
+    return el ? getComputedStyle(el).position : "";
+  })).toBe("absolute");
   // And it is gone once the exit is over, rather than left stacked underneath.
   await expect(page.locator(".screen.is-leaving")).toHaveCount(0);
 
