@@ -3,8 +3,8 @@ export class Spring {
   value: number;
   private velocity = 0;
   private target: number;
-  private readonly omega: number;
-  private readonly zeta: number;
+  private omega: number;
+  private zeta: number;
 
   constructor(value: number, response: number, damping: number) {
     this.value = value;
@@ -34,6 +34,17 @@ export class Spring {
       this.velocity += accel * h;
       this.value += this.velocity * h;
     }
+  }
+
+  /** Change the shape of the spring without moving it.
+   *
+   * ⚠️ Velocity is KEPT. This is called mid-flight — a panel that is already
+   * travelling is told the reason it is travelling has changed — and zeroing
+   * the velocity there would stop it dead and start again, which is the one
+   * thing a spring is supposed to make impossible. */
+  retune(response: number, damping: number) {
+    this.omega = (2 * Math.PI) / response;
+    this.zeta = damping;
   }
 
   snap(value: number) {

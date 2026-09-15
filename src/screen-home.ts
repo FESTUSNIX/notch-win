@@ -11,15 +11,19 @@
  */
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
-import { localDay, overdueDays } from "./task-model";
+import { localDay, overdueDays, weekStart } from "./task-model";
 import { sourceName, type MediaSource } from "./screen-media";
 import { countdown, dayHeading, endOf, nextEvent, startOf, type CalendarScreen } from "./screen-calendar";
 import type { TodayScreen } from "./screen-today";
 import type { Activity, ScreenName } from "./island-activity";
 
 /** Days either side of today in the date strip. */
-const STRIP_BACK = 2;
-const STRIP_FORWARD = 4;
+/* ⚠️ A WEEK, not a window. It used to be the two days behind today and the
+ * four ahead, which is seven cells that are never the same seven twice — the
+ * strip shifted under you every midnight and the column a date sat in meant
+ * nothing. It is Monday to Sunday now (or Sunday to Saturday; see prefs), so
+ * the position of a day is information. */
+const STRIP_DAYS = 7;
 
 export interface HomeDeps {
   today: TodayScreen;
@@ -34,6 +38,13 @@ export class HomeScreen {
   // No `changed` callback: Home owns no state. Every control it draws calls
   // the screen that owns the thing, and that screen redraws the shell.
   constructor(private host: HTMLElement, private deps: HomeDeps) {}
+
+  /** Whether the week strip runs Monday to Sunday. ⚠️ Pushed in by the shell
+   *  rather than read here: `prefs` lives in tasks.ts, and a screen fetching
+   *  its own would need the change listener too. No redraw — Home has no
+   *  `changed`; the shell renders after it applies a preference. */
+  private mondayFirst = true;
+  setWeekStart(mondayFirst: boolean) { this.mondayFirst = mondayFirst; }
 
   /** Home never claims the pill. It is a view of the other three, and a claim
    *  from here would compete with the screen that actually owns the thing. */
@@ -134,9 +145,10 @@ export class HomeScreen {
     strip.append(element("span", "home-month",
       new Date().toLocaleDateString(undefined, { month: "long" })));
     const days = element("div", "home-days");
-    for (let offset = -STRIP_BACK; offset <= STRIP_FORWARD; offset++) {
-      const date = new Date();
-      date.setDate(date.getDate() + offset);
+    const first = weekStart(new Date(), this.mondayFirst);
+    for (let offset = 0; offset < STRIP_DAYS; offset++) {
+      const date = new Date(first);
+      date.setDate(first.getDate() + offset);
       const key = localDay(date);
       const weekend = date.getDay() === 0 || date.getDay() === 6;
       const cell = element("div",

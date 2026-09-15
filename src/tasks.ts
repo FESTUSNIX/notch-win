@@ -5,6 +5,7 @@
  * header, the tabs and which screen is showing; each screen owns its own body.
  */
 import { IslandSurface } from "./island-surface";
+import { cpx } from "./layout";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
@@ -46,6 +47,30 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "system", icon: "system", label: "System" },
   { name: "review", icon: "review", label: "Review" },
 ];
+
+/** How wide each screen wants to be, in DESIGN pixels — `cpx()` converts.
+ *
+ * ⚠️ A panel is only as wide as what is in it. One width for everything meant
+ * a column of one-line tasks laid out across 909 CSS px with two thirds of the
+ * row empty, which reads as a window somebody left open rather than as a notch.
+ * The machinery already existed: `capBody` is what narrows the panel for the
+ * palette.
+ *
+ * ⚠️ Horizontal edges only, and `capBody` enforces that. On a left or right
+ * edge the "body" is the panel's HEIGHT, and capping that cuts the list short
+ * instead of making it narrower.
+ *
+ * 1900 design px is the full body (~909 CSS px); anything smaller is a choice
+ * about content, not about the shape. */
+const WIDTH: Record<ScreenName, number> = {
+  home: 1900,      // three cards side by side
+  today: 1420,     // one column of rows, and the composer under it
+  agents: 1620,    // rows carrying project, branch, tokens and a verb
+  shelf: 1480,     // rows with a thumbnail and a path
+  calendar: 1900,  // the week grid needs seven columns
+  system: 1900,    // a bento
+  review: 1480,    // a few stacked cards
+};
 
 const app = document.getElementById("task-app")!;
 app.innerHTML = `<div id="notch-shell">
@@ -89,6 +114,7 @@ let clock24 = true;
  */
 interface Prefs {
   accent: string;
+  weekStartsMonday: boolean;
   fahrenheit: boolean;
   openOnHover: boolean;
   foldDelayMs: number;
@@ -102,7 +128,7 @@ interface Prefs {
 }
 
 let prefs: Prefs = {
-  accent: "#00ff88", fahrenheit: false, openOnHover: true, foldDelayMs: 450,
+  accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
   motion: "system", panelWidth: 0, useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -139,7 +165,13 @@ const shelf = new ShelfScreen(get("shelf-body"), () => render());
  * end in `.catch(() => {})` — a file that had moved, an app whose shortcut was
  * stale, a session that had exited all did nothing and said nothing. They throw
  * now, and this turns the throw into the pill's own notice. */
-const palette = new Palette(surface, () => render(),
+const palette = new Palette(surface, () => {
+    /* ⚠️ The screen's own width, given back. The palette narrows the panel
+     * while it is up; what it hands back has to be what the screen underneath
+     * asked for, or every search leaves the island stuck at its full width. */
+    surface.capBody(cpx(WIDTH[screen]));
+    render();
+  },
   (what, why) => say(`${what} failed`, why.replace(/^invoke error: /i, "").slice(0, 120)));
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
@@ -277,7 +309,14 @@ function show(name: ScreenName) {
   for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
     button.setAttribute("aria-selected", String(button.dataset.tab === name));
   }
+  /* ⚠️ The width lands BEFORE the render. The panel measures its content at
+   * the end of `render()`, and measuring a screen at the previous screen's
+   * width gets the wrapping — and therefore the height — right for a layout
+   * that is about to change. */
+  surface.capBody(cpx(WIDTH[name]));
   placeGlide(true);
+  // You pressed a tab: this one is allowed to bounce. See `sizing()`.
+  surface.deliberately();
   render();
 }
 
@@ -901,12 +940,22 @@ function applyPrefs(next: Prefs) {
   document.documentElement.style.setProperty("--accent", next.accent);
   setMotion(next.motion);
   surface.setOpenOnHover(next.openOnHover);
+  /* ⚠️ On <html>, where the stylesheet can read it. Click mode is not only a
+   * behaviour — it is what makes the pill able to hold controls at all, because
+   * the pointer resting on it no longer means "open". */
+  document.documentElement.dataset.open = next.openOnHover ? "hover" : "click";
   surface.setFoldDelay(next.foldDelayMs);
   surface.setBodyLong(next.panelWidth);
   today.setView(next.taskView === "all" ? "all" : "day");
-  // The pill reads `prefs` itself through moduleContext(); this is what makes
-  // a muted module or a moved threshold visible without waiting for a tick.
+  home.setWeekStart(next.weekStartsMonday);
+  calendar.setWeekStart(next.weekStartsMonday);
+  /* ⚠️ Both. The pill reads `prefs` through `moduleContext()`, so a muted
+   * module or a moved threshold needs `paintPill`; the week strip and the
+   * calendar grid are drawn by their screens, so they need a render. A
+   * preference that only takes effect on the next unrelated redraw is a
+   * settings window that looks broken. */
   paintPill();
+  render();
 }
 
 /* ── Controls ─────────────────────────────────────────────────────────── */
@@ -925,7 +974,34 @@ get("surface-settings").onclick = () => { void today.action("open_task_editor");
  * the pill's claim is Media all afternoon, which would mean the task list — the
  * reason this thing exists — was never what opening it showed. The tab dot
  * points at the live screen instead, and the tabs do the moving. */
-collapsedLayer.addEventListener("click", () => { if (!surface.open) surface.toggle(); });
+/* ── Pressing the pill ─────────────────────────────────────────
+ * ⚠️ `pointerdown`/`pointerup`, not `:active`. A CSS `:active` on the island
+ * would also fire for a press on anything inside the expanded panel — every
+ * task row, every tab — and the whole shape would flinch each time. */
+const island = get("island");
+const press = (down: boolean) => island.classList.toggle("is-pressed", down);
+collapsedLayer.addEventListener("pointerdown", () => press(true));
+for (const event of ["pointerup", "pointercancel", "pointerleave"] as const) {
+  collapsedLayer.addEventListener(event, () => press(false));
+}
+
+collapsedLayer.addEventListener("click", () => {
+  /* ⚠️ A second press closes it ONLY in click mode. With hover opening, the
+   * pointer has already opened the panel before a click can possibly land, so
+   * a plain toggle here means "point at it, it opens, press it, it shuts" —
+   * which is what the original `if (!open)` guard was there to stop. */
+  if (!surface.open || !surface.opensOnHover) surface.toggle();
+});
+
+/* The equaliser is the player's play/pause in click mode. ⚠️ The press must
+ * not reach the pill underneath, or toggling the track would open the island
+ * every time. */
+collapsedLayer.addEventListener("click", event => {
+  const eq = (event.target as HTMLElement).closest(".pill-eq");
+  if (!eq) return;
+  event.stopPropagation();
+  media.control("playpause");
+}, true);
 
 /* ── Changing screens with a wheel ────────────────────────────────────────
  * A wheel anywhere in the panel changes screen, UNLESS the pointer is over
@@ -1081,6 +1157,14 @@ async function boot() {
     /* ⚠️ Emitted to every window by `set_prefs`, so this is the island being
      * told rather than the island polling. */
     await listen<Prefs>("notch:prefs", event => applyPrefs(event.payload));
+
+    /* A click anywhere else. ⚠️ The palette first: it is the surface ON the
+     * island, and its own outside-click handler is a document `pointerdown`
+     * that can only ever see clicks that landed on the island. */
+    await listen("island:dismiss", () => {
+      if (palette.open) { void palette.hide(); return; }
+      void surface.dismiss();
+    });
   }
   try {
     const placement = await call<{ clock24: boolean }>("get_task_placement");

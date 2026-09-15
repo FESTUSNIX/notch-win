@@ -34,6 +34,7 @@ import "./tasks.css";
 
 interface Prefs {
   accent: string;
+  weekStartsMonday: boolean;
   fahrenheit: boolean;
   openOnHover: boolean;
   foldDelayMs: number;
@@ -147,6 +148,7 @@ const PANE_HTML: Record<PaneId, string> = {
     </div></div>
     <div><p class="set-label">Clock &amp; units</p><div class="set-group">
       ${row("Clock", "", seg("clock", [["24", "24 h"], ["12", "12 h"]], "Clock format"))}
+      ${row("Week starts on", "Home's week strip and the Calendar's grid.", seg("week", [["mon", "Monday"], ["sun", "Sunday"]], "First day of the week"))}
       ${row("Temperature", "", seg("units", [["c", "°C"], ["f", "°F"]], "Temperature units"))}
     </div></div>
     <div><p class="set-label">Motion</p><div class="set-group">
@@ -294,7 +296,7 @@ for (const spec of PANES) {
  * it as one; a window with twenty controls sending twenty partial writes is
  * twenty chances to save a stale copy of the other nineteen. */
 let prefs: Prefs = {
-  accent: "#00ff88", fahrenheit: false,
+  accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
   useEverything: true, indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -420,6 +422,7 @@ get<HTMLInputElement>("accent-custom").oninput = event => {
 };
 
 onSeg("clock", value => { clock24 = value === "24"; void run("set_clock_format", { clock24 }); });
+onSeg("week", value => { prefs.weekStartsMonday = value === "mon"; savePrefs(); });
 onSeg("units", value => {
   prefs.fahrenheit = value === "f";
   savePrefs();
@@ -769,6 +772,7 @@ get("weather-clear").onclick = async () => {
 function paintPrefs() {
   applyAccent(prefs.accent);
   markSeg("units", prefs.fahrenheit ? "f" : "c");
+  markSeg("week", prefs.weekStartsMonday ? "mon" : "sun");
   markSeg("motion", prefs.motion);
   markSeg("view", prefs.taskView === "all" ? "all" : "day");
   get<HTMLInputElement>("open-on-hover").checked = prefs.openOnHover;

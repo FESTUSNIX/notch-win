@@ -2115,3 +2115,54 @@ The two halves were the same fault.
      idea of the state hides the island half the time. Asking for the palette
      while everything is hidden is asking for the app back — opening it behind
      a hidden island is a shortcut that does nothing whatsoever.
+264. ⚠️ **`openOnHover` only ever stopped the OPENING.** The fold timer was
+     armed on every `hover(false)` whatever the preference said, so click mode
+     still shut the panel the moment the pointer wandered off — which is the one
+     thing somebody turning hover off is trying to stop. Half a mode reads as a
+     broken setting, not as a missing feature.
+265. ⚠️ **A click outside the island cannot be seen by the island.** It is
+     `WS_EX_TRANSPARENT` everywhere it is not painted, so the click goes to
+     whatever is behind and the page's own `pointerdown` never fires. It is
+     watched from `hover.rs`'s existing poll with `GetAsyncKeyState`, on the
+     button-down TRANSITION — held down, the state would fire ten times a second
+     and the second one would land on an island that had already closed. Not a
+     `WH_MOUSE_LL` hook: that runs on every mouse message on the machine.
+266. ⚠️ **A plain toggle on the pill is wrong in hover mode.** The pointer has
+     already opened the panel before a click can land, so "press the pill to
+     close" becomes "point at it, it opens, press it, it shuts". The toggle is
+     gated on click mode; the original `if (!open)` guard existed for this.
+267. ⚠️ **Press-scale goes on `scale`, never `transform`.** `#island`'s
+     transform is spent on the hide/reveal slide and would have to restate the
+     translate for all four edges; `.island-tab`'s is rewritten every frame by
+     `placeGlide`. The independent `scale` property composes with both.
+     ⚠️ And its origin is the EDGE: scaling a shape welded to the top of the
+     screen about its middle lifts it off the bezel.
+268. ⚠️ **A second `transition` rule for the same element silently drops the
+     properties the other one listed.** The press-scale was declared beside the
+     press, 600 lines before the hide/reveal block that already owned
+     `#island`'s transition — so the later rule won and `scale` animated not at
+     all. Style each thing once, where it is defined. (`.day-row:hover` was
+     written out twice as well; the copy is gone.)
+269. ⚠️ **The bounce belongs to the INTENT, not to the call site.** A size
+     change you asked for (a tab press) can overshoot; one under a still
+     pointer (a list gained a row) must not, or the row you were about to press
+     moves out from under you. `deliberately()` arms the next measure and
+     `measure()` consumes it — a flag rather than a parameter, because the
+     measure that matters is the one at the END of the render, not the one the
+     caller makes.
+270. ⚠️ **`Spring.retune()` keeps the velocity.** It is called mid-flight;
+     zeroing there stops the panel dead and starts again, which is the one
+     thing a spring exists to make impossible.
+271. ⚠️ **Per-screen widths make "about 910px" false everywhere.** A test
+     asserting the palette is `full - 100` narrower broke the moment a screen
+     was narrower than that; it derives the expected width from `FRAME` now.
+     ⚠️ And `capBody(0)` means "the full body", so the palette handing back a
+     zero left the island stuck at its widest over a narrow screen.
+272. ⚠️ **`getDay()` is 0 for SUNDAY**, so Monday-first is `(day + 6) % 7` days
+     back, never `day - 1` — which is `-1` on a Sunday and walks the week
+     FORWARD into one that has not happened. Both week views are aligned now,
+     which is also why `week_starts_monday` came back: it finally has something
+     on the other end of it.
+273. ⚠️ **A preference has to repaint the screens, not only the pill.**
+     `applyPrefs` called `paintPill()` alone, so the week strip and the calendar
+     grid kept the old first day until something unrelated redrew them.

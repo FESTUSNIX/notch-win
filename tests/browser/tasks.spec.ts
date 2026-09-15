@@ -1,4 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
+import { FRAME, cpx } from "../../src/layout";
+
+/** What the island measures when something has capped its body, curls included.
+ *  ⚠️ Derived from the app's own constants rather than written down here: every
+ *  screen asks for its own width now, so "about 910px" is no longer true of
+ *  anything and a hardcoded margin rots the moment a width is tuned. */
+const capped = (design: number) => cpx(design) + 2 * cpx(FRAME.islandCurl);
 
 /** Hovering the pill is how the island opens; the surface reports its own rect
  *  as the hot zone, so aim at the shape rather than at a fixed point. */
@@ -759,6 +766,51 @@ test("a working session says what it is doing, not that it is working", async ({
 });
 
 
+test("click mode: leaving does not close it, and the pill carries a control", async ({page}) => {
+  await page.goto("/tasks.html?nocal&click");
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.open)).toBe("click");
+
+  // Pointing at it does nothing. That half already worked.
+  const pill = (await page.locator("#island").boundingBox())!;
+  await page.mouse.move(pill.x + pill.width / 2, pill.y + pill.height / 2);
+  await page.waitForTimeout(400);
+  await expect(page.locator("#island-expanded")).toBeHidden();
+
+  await page.locator("#island-collapsed").click();
+  await expect(page.locator("#island-expanded")).toBeVisible();
+
+  /* ⚠️ This is the whole of click mode, and it was the half that was missing.
+     `openOnHover: false` only ever stopped the panel OPENING under the
+     pointer — the fold timer was armed on every leave regardless, so the panel
+     still shut the moment the pointer wandered off, which is precisely what
+     somebody turning hover off is trying to stop. */
+  await page.mouse.move(4, 690);
+  // Twice the old 450ms fold delay, so a timer that is still armed has fired.
+  await page.waitForTimeout(1100);
+  await expect(page.locator("#island-expanded")).toBeVisible();
+
+  /* And something still ends it. In the app that is a click anywhere else,
+     seen natively (`island:dismiss` — hover.rs), which a preview cannot
+     produce: the island is click-through out there and the event never
+     reaches a page. Escape is the same exit through the same code. */
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#island-expanded")).toBeHidden();
+
+  /* The pill can hold a control now, because the pointer resting on it no
+     longer means "open". The bars are decoration until hovered, then they are
+     play/pause. */
+  const eq = page.locator(".pill-eq");
+  await expect(eq).toHaveCSS("pointer-events", "auto");
+  await expect.poll(() => eq.locator(".pill-eq-mark").evaluate(el => getComputedStyle(el).opacity)).toBe("0");
+  await eq.hover();
+  await expect.poll(() => eq.locator(".pill-eq-mark").evaluate(el => getComputedStyle(el).opacity)).toBe("1");
+  // ⚠️ And pressing it must not open the island: a play/pause that also
+  // expands the panel is a control you can only use once.
+  await eq.click();
+  await expect(page.locator("#island-expanded")).toBeHidden();
+  await page.screenshot({path: "test-results/island-click-mode.png"});
+});
+
 test("the palette closes with the control that opened it, however fast it is pressed", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
@@ -911,9 +963,9 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await expect(page.getByRole("button", {name: "Pin the island open", exact: true}))
     .toHaveAttribute("aria-pressed", "false");
 
-  /* Narrower while it is up. The full panel is ~910px, which is right for a
-   * screen of content and reads as a window someone left open when all it
-   * holds is a list of one-line results. */
+  /* Narrower while it is up, whatever the screen behind it was: a list of
+   * one-line results in a panel sized for a bento reads as a window someone
+   * left open. */
   const full = (await page.locator("#island").boundingBox())!.width;
   await page.getByRole("button", {name: "Search and commands"}).click();
   await expect(page.locator(".palette")).toBeVisible();
@@ -927,7 +979,9 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await expect(page.locator(".screens")).toBeHidden();
 
   await expect.poll(async () => (await page.locator("#island").boundingBox())!.width)
-    .toBeLessThan(full - 100);
+    .toBeLessThan(full);
+  await expect.poll(async () => Math.round((await page.locator("#island").boundingBox())!.width))
+    .toBe(Math.round(capped(FRAME.islandPaletteLong)));
   await page.screenshot({path: "test-results/island-palette.png"});
 
   /* A click anywhere else closes it. It used to be closable only by RUNNING

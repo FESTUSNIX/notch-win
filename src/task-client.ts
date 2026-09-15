@@ -62,7 +62,13 @@ const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
 const demoStars: Record<string, Record<string, string>> = {};
 let demoPrefs: Record<string, unknown> = {
-  accent: "#00ff88", fahrenheit: false, openOnHover: true,
+  accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
+  /* ⚠️ Staged from the query string, like `?edge=`. Click mode changes what
+     the pill IS — a surface that can hold controls, because the pointer resting
+     on it no longer means "open" — and there is no other way to reach it in a
+     preview: `notch:prefs` is a native event and the settings window is a
+     different page. */
+  openOnHover: !new URLSearchParams(location.search).has("click"),
   foldDelayMs: 450, motion: "system", panelWidth: 0, useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };

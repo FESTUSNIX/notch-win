@@ -8,7 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
-import { localDay } from "./task-model";
+import { localDay, weekStart } from "./task-model";
 import type { Activity } from "./island-activity";
 
 export interface CalEvent {
@@ -119,6 +119,16 @@ export class CalendarScreen {
   /** Agenda answers "what is next"; week answers "how is the week shaped".
    *  Both off the same seven-day fetch — no second request, no second model. */
   view: CalendarView = "agenda";
+  /** Whether the week runs Monday to Sunday. ⚠️ A preference, pushed in by
+   *  the shell rather than read here: `prefs` lives in tasks.ts, and a screen
+   *  that fetched its own would need the event listener as well. */
+  private mondayFirst = true;
+
+  setWeekStart(mondayFirst: boolean) {
+    if (this.mondayFirst === mondayFirst) return;
+    this.mondayFirst = mondayFirst;
+    this.changed();
+  }
 
   constructor(private host: HTMLElement, private changed: () => void) {}
 
@@ -226,15 +236,24 @@ export class CalendarScreen {
     return bar;
   }
 
-  /** Seven columns from today. Not a Monday-aligned week: the island is a
-   *  glance forward, and half a grid of days already gone is half a grid. */
+  /** The week today falls in, Monday first.
+   *
+   * ⚠️ This used to be "seven columns FROM today", on the argument that the
+   * island is a glance forward and half a grid of days already gone is half a
+   * grid. That is a fair argument and it lost to a simpler one: a column whose
+   * weekday changes every morning cannot be read at a glance at all, because
+   * the thing you are glancing at is where Thursday is. Days already gone are
+   * dimmed rather than dropped. */
   private renderWeek(now: Date) {
     const grid = element("div", "cal-week");
+    const today = localDay(now);
+    const first = weekStart(now, this.mondayFirst);
     for (let offset = 0; offset < 7; offset++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() + offset);
+      const date = new Date(first);
+      date.setDate(first.getDate() + offset);
       const key = localDay(date);
-      const column = element("div", `cal-wcol${offset === 0 ? " is-today" : ""}`);
+      const column = element("div",
+        `cal-wcol${key === today ? " is-today" : ""}${key < today ? " is-past" : ""}`);
       const head = element("div", "cal-whead");
       head.append(
         element("span", "cal-wday", date.toLocaleDateString([], { weekday: "short" })),

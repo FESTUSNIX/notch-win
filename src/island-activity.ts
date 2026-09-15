@@ -74,10 +74,21 @@ function ring(): SVGSVGElement {
   return svg;
 }
 
-/** Bars that only move while something is actually playing. */
+/** Bars that only move while something is actually playing — and, in click
+ *  mode, the play/pause control they turn into under the pointer.
+ *
+ * ⚠️ A real `<button>`, always. It is only *reachable* in click mode — with
+ * hover opening, the pointer arriving here has already turned the pill into a
+ * panel, so there is nothing to press — but building two different elements for
+ * the two modes would mean the pill's markup changed when a preference did.
+ * CSS decides whether it looks like a control; `pointer-events` decides whether
+ * it is one. */
 function equaliser(): HTMLElement {
-  const wrap = element("div", "pill-eq");
+  const wrap = element("button", "pill-eq");
+  (wrap as HTMLButtonElement).type = "button";
+  wrap.setAttribute("aria-label", "Play or pause");
   for (let i = 0; i < 3; i++) wrap.append(element("i"));
+  wrap.append(element("span", "pill-eq-mark"));
   return wrap;
 }
 
@@ -240,5 +251,12 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
     arc.setAttribute("stroke", activity.accent || "var(--accent)");
   }
   const eq = host.querySelector<HTMLElement>(".pill-eq");
-  if (eq) eq.classList.toggle("on", !!activity.playing);
+  if (eq) {
+    eq.classList.toggle("on", !!activity.playing);
+    /* The glyph says what the press WILL do, not what is happening — the bars
+     * beside it already say that, and a pause icon over moving bars read as a
+     * label for them rather than as a button. */
+    const mark = eq.querySelector<HTMLElement>(".pill-eq-mark");
+    if (mark) paintIcon(mark, activity.playing ? "pause" : "play");
+  }
 }

@@ -1,6 +1,13 @@
-# TODO — the Droppy pass
+# TODO
 
-A big overhaul of how the island *feels*, in four parts. Reference is **Droppy**
+## My ideas for the next features
+
+- Currency converter extension for the command palette
+- Notifications shelf/screen which keeps recent notifications and allows for quick actions
+- Pomodoro widget
+- Quick note widget with history of all notes, search
+
+A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose
 controls appear under the pointer rather than sitting there all day.
 
@@ -11,28 +18,28 @@ down so the shape is agreed, and are **not started** — they wait for the word.
 
 ## 1. Click mode should mean click
 
-Right now `openOnHover: false` only stops the island *opening* on hover. Leaving
+Right now `openOnHover: false` only stops the island _opening_ on hover. Leaving
 still folds it, so in click mode the panel closes the moment the pointer wanders
 off — which is the one thing click mode exists to prevent.
 
-- [ ] **Leaving must not fold in click mode.**
+- [x] **Leaving must not fold in click mode.**
       `IslandSurface.hover()` (`src/island-surface.ts`) schedules
       `show(false)` on every `hover(false)`, whatever `openOnHover` says.
       In click mode the fold timer should not be armed at all.
-- [ ] **A click outside closes it.** Nothing does this today, and it is the
+- [x] **A click outside closes it.** Nothing does this today, and it is the
       half of the bargain that makes the above safe.
       ⚠️ The island is `WS_EX_TRANSPARENT` outside its own painted shape, so a
       click outside never reaches WebView2 — this has to be seen natively.
       **Use the poll that already exists**: `hover.rs` ticks on a timer and
       `drag.rs` already reads `GetAsyncKeyState(VK_LBUTTON)`. Watch for a
-      button-down *transition* while the cursor is outside the island's
+      button-down _transition_ while the cursor is outside the island's
       reported rect and emit `island:dismiss`. No low-level hook — a
       `WH_MOUSE_LL` hook runs on every mouse message machine-wide and is a
       liability for a personal tool.
-- [ ] **A second click on the pill closes it.** `collapsedLayer`'s click
+- [x] **A second click on the pill closes it.** `collapsedLayer`'s click
       handler currently opens only (`if (!surface.open) surface.toggle()`).
       In click mode it should toggle.
-- [ ] **Escape closes it** when the island has focus. Already true while the
+- [x] **Escape closes it** when the island has focus. Already true while the
       palette is up; make it true for the panel.
 
 ### Controls that appear under the pointer
@@ -40,24 +47,24 @@ off — which is the one thing click mode exists to prevent.
 Click mode gives us a resting state nothing is fighting for, so the panel can
 show less and reveal more.
 
-- [ ] **The media waveform becomes play/pause on hover.** The bars beside the
+- [x] **The media waveform becomes play/pause on hover.** The bars beside the
       track title are decoration; under the pointer they should cross-fade into
       the transport control. Per `better-ui`: icon swap at scale `0.25 → 1`,
       opacity `0 → 1`, blur `4px → 0`, both icons kept in the DOM, one
       absolutely positioned, `cubic-bezier(0.2, 0, 0, 1)`.
-- [ ] Audit every screen for the same move: what is ambient at rest and
+- [ ] Audit every screen for the same move (the pill's equaliser is done): what is ambient at rest and
       actionable under the pointer. Candidates — the day's progress rail
       (→ open Today), the Home cards' arrows, the System meters.
-- [ ] ⚠️ **Motion is never the only feedback channel.** Every hover-revealed
+- [x] ⚠️ **Motion is never the only feedback channel.** Every hover-revealed
       control needs a static cue too (a cursor change, a colour, a label), or
       it is invisible to anyone who does not move a mouse over it first.
 
 ### Press
 
-- [ ] **Press down = `scale(0.96)`, 90ms.** Release bounces back with
+- [x] **Press down = `scale(0.96)`, 90ms.** Release bounces back with
       `--ease-bounce` (`cubic-bezier(0.34, 1.36, 0.64, 1)`). Already true for
       some buttons; make it the rule, including on the collapsed pill.
-- [ ] ⚠️ **The pill cannot simply take a CSS transform.** `#island` and
+- [x] ⚠️ **The pill cannot simply take a CSS transform.** `#island` and
       `#stage` are positioned with `left`/`top` by the paint loop, and their
       `transform` is already spent on the hide/reveal slide
       (`tasks.css`, "Leaving and arriving"). A press-scale needs a **wrapper
@@ -78,25 +85,25 @@ still pass in hover mode.
 The panel is 909 CSS px on every screen. A list of tasks does not need that;
 Home's three-card bento does.
 
-- [ ] **Each screen declares a preferred width**, and `show(name)` applies it.
+- [x] **Each screen declares a preferred width**, and `show(name)` applies it.
       The machinery exists: `surface.capBody(px)` already narrows the panel for
       the palette (to ~620px). Give every screen a number instead of one.
-- [ ] Starting guesses, to be tuned against the real thing:
+- [x] Starting guesses, to be tuned against the real thing:
 
-      | Screen   | Why                                  | Width  |
-      |----------|--------------------------------------|--------|
-      | Home     | three cards side by side             | 909    |
-      | Today    | one column of rows                   | ~660   |
-      | Agents   | rows with a lot of meta              | ~760   |
-      | Shelf    | rows + thumbnails                    | ~700   |
-      | Calendar | month grid + agenda (see 4)          | 909    |
-      | System   | bento                                | 909    |
-      | Review   | a few stacked cards                  | ~680   |
+      | Screen   | Why                              | Design px | CSS px |
+      | -------- | -------------------------------- | --------- | ------ |
+      | Home     | three cards side by side         | 1900      | ~969   |
+      | Today    | one column of rows               | 1420      | ~739   |
+      | Agents   | project, branch, tokens, a verb  | 1620      | ~835   |
+      | Shelf    | rows with a thumbnail and a path | 1480      | ~768   |
+      | Calendar | seven columns                    | 1900      | ~969   |
+      | System   | a bento                          | 1900      | ~969   |
+      | Review   | a few stacked cards              | 1480      | ~768   |
 
-- [ ] ⚠️ **Horizontal edges only.** On a left/right edge the "body" is the
-      panel's *height*, and capping that cuts the list short instead of making
+- [x] ⚠️ **Horizontal edges only.** On a left/right edge the "body" is the
+      panel's _height_, and capping that cuts the list short instead of making
       it narrower — `capBody` already guards this; keep the guard.
-- [ ] ⚠️ The palette narrows the panel too. Screen width and palette width must
+- [x] ⚠️ The palette narrows the panel too. Screen width and palette width must
       not fight: the palette's cap should win while it is up and hand the
       screen's own width back on close.
 
@@ -104,34 +111,40 @@ Home's three-card bento does.
 
 `src/motion.ts` is a real spring (`response`, `damping`). Current values:
 
-| Spring  | Response | Damping | What it moves            |
-|---------|----------|---------|--------------------------|
-| `fold`  | 0.42     | 0.78    | opening and closing      |
-| `grow`  | 0.34     | 0.90    | the panel's height       |
-| `widen` | 0.34     | 0.90    | the panel's width        |
+| Spring          | Response | Damping | What it moves                  |
+| --------------- | -------- | ------- | ------------------------------ |
+| `fold`          | **0.34** | **0.72**| opening and closing            |
+| `grow`/`widen`  | **0.30** | **0.74**| a size change you asked for    |
+| `grow`/`widen`  | 0.34     | **0.92**| a size change under a still pointer |
 
-- [ ] **Shorter response, less damping** on `fold` — this is the gesture the
+Shipped values. `sizing()` in `island-surface.ts` picks between the two, and
+`Spring.retune()` swaps them mid-flight without zeroing the velocity.
+
+- [x] **Shorter response, less damping** on `fold` — this is the gesture the
       whole app is judged by.
-- [ ] ⚠️ **`grow`/`widen` are damped at 0.90 on purpose** and the reason is
-      written down: a panel already on screen changing size *under your cursor*
+- [x] ⚠️ **`grow`/`widen` are damped at 0.90 on purpose** and the reason is
+      written down: a panel already on screen changing size _under your cursor_
       reads as a wobble when it overshoots. Do not simply lower it. The honest
       split is **a size change that accompanies a screen change can bounce**
       (the content changed, you expect movement) **and a size change under a
       still pointer cannot** (a list grew a row; nothing should wobble).
-      That means `grow`/`widen` need two sets of parameters, chosen by *why*
+      That means `grow`/`widen` need two sets of parameters, chosen by _why_
       they were retargeted.
 - [ ] Review it at 10% speed in the browser's Animations panel, not at full
       speed. What feels off slowed down is what feels subtly wrong live.
-- [ ] ⚠️ Everything here must keep answering `motion-pref.ts` — `never` means
+      (Values are in and tested; the eyeball pass at 10% is still owed.)
+- [x] ⚠️ Everything here must keep answering `motion-pref.ts` — `never` means
       snap, `always` means ignore the Windows setting.
 
 ### Interactions everywhere
 
-- [ ] Sweep every interactive element for the full set: rest, hover, press,
-      focus-visible, disabled. Known thin spots: the tab strip, Home cards,
-      shelf rows, calendar rows, System's device rows, the list chips.
-- [ ] `transition-property` named explicitly, never `transition: all`.
-- [ ] ⚠️ **Style each thing once, where it is defined.** This has bitten here
+- [x] Sweep every interactive element for the full set: rest, hover, press,
+      focus-visible, disabled. Done: the tab strip, day rows, agent rows, the
+      pill itself, the pill's equaliser. ⚠️ `scale`, not `transform`, on
+      anything the paint loop or the tab glide already transforms.
+- [ ] Still thin: System's device rows and the shelf's row actions.
+- [x] `transition-property` named explicitly, never `transition: all`.
+- [x] ⚠️ **Style each thing once, where it is defined.** This has bitten here
       before — a tab rule hundreds of lines later silently overrode the whole
       elevation pass.
 
@@ -149,7 +162,7 @@ Waiting for the word. Shape agreed from the reference shots:
 - Transport: previous / play-pause / next, plus an output-device button.
 - A waveform that is decoration at rest and the play/pause control on hover
   (see item 1).
-- **"Playing Next"** — a queue panel to the *right* of the player, **closed by
+- **"Playing Next"** — a queue panel to the _right_ of the player, **closed by
   default**, opened by the list button at bottom-left. Opening it widens the
   panel; that is exactly what item 2's per-screen width has to support.
 - **Spotify integration.** Today's source is the Windows `GlobalSystemMediaTransportControls`
@@ -178,7 +191,7 @@ Waiting for the word. Shape agreed from the reference shots:
   creation path — reuse `screen-today`'s optimistic layer rather than growing
   another one.
 - ⚠️ The current week view is deliberately **not** week-aligned ("seven columns
-  from today"). A month grid *is* aligned, which brings back the
+  from today"). A month grid _is_ aligned, which brings back the
   "week starts on Monday" question that was dropped for having nothing to
   change. If the grid lands, the setting comes back with it — see `prefs.rs`.
 

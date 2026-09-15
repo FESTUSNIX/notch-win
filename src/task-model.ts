@@ -102,6 +102,24 @@ export function progress(nodes: TaskNode[]): { done: number; total: number } {
   return { done, total };
 }
 
+/** The first day of the week `date` falls in.
+ *
+ * ⚠️ `getDay()` is 0 for SUNDAY. Monday-first is therefore `(day + 6) % 7`
+ * days back, never `day - 1` — which is `-1` on a Sunday and walks the week
+ * FORWARD into the one that has not happened yet. The Sunday case is the whole
+ * reason this is a function with a test rather than a line in two screens.
+ *
+ * Returned at local midnight, so the caller can add days without a DST hour
+ * creeping in.
+ */
+export function weekStart(date: Date, mondayFirst: boolean): Date {
+  const back = mondayFirst ? (date.getDay() + 6) % 7 : date.getDay();
+  const first = new Date(date);
+  first.setDate(date.getDate() - back);
+  first.setHours(0, 0, 0, 0);
+  return first;
+}
+
 /** How many rows each list holds, keyed on project id.
  *
  * ⚠️ ROOTS, not tasks. The day draws one row per root and folds its subtasks

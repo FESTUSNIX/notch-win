@@ -91,6 +91,10 @@ pub fn spawn(app: AppHandle, label: &'static str) {
         let mut was_hovering: Option<bool> = None;
     let mut was_zone = false;
         let mut last_work: Option<(i32, i32, i32, i32)> = None;
+        // See the dismiss block below: the TRANSITION is the event, not the
+        // state. Starts true so a launch with the button already held cannot
+        // fire one.
+        let mut was_down = true;
 
         loop {
             std::thread::sleep(POLL);
@@ -158,6 +162,33 @@ pub fn spawn(app: AppHandle, label: &'static str) {
              * under a drag the shell is in the middle of. */
             if crate::dragout::DRAGGING.load(std::sync::atomic::Ordering::SeqCst) {
                 continue;
+            }
+
+            /* ── A click somewhere else ──────────────────────────────────
+             *
+             * In click mode the pointer leaving no longer folds the panel — that
+             * is the whole point of the mode — so something else has to end it.
+             *
+             * ⚠️ It has to be seen from OUT HERE. The island is
+             * `WS_EX_TRANSPARENT` everywhere it is not painted, so a click
+             * anywhere else is delivered to whatever is behind it and this
+             * window never hears about it at all. The web layer's own
+             * `pointerdown` only ever fires for clicks ON the island.
+             *
+             * ⚠️ `GetAsyncKeyState` in the poll that already runs, not a
+             * `WH_MOUSE_LL` hook. A low-level hook runs on every mouse message
+             * on the machine and holds up the input queue if it is slow; this
+             * is one read per 100ms, and `drag.rs` already does it.
+             *
+             * ⚠️ On the transition only. Held down, this would fire ten times a
+             * second — and the second one would land on an island that had
+             * already closed. */
+            if label == "tasks" {
+                let down = crate::drag::left_button_down();
+                if down && !was_down && !hovering {
+                    let _ = app.emit_to(label, "island:dismiss", ());
+                }
+                was_down = down;
             }
 
             let changed = was_hovering != Some(hovering);

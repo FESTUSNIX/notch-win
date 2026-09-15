@@ -32,12 +32,13 @@ pub struct Prefs {
     /// The one colour the whole surface is tinted by. Every elevation value is
     /// white or black at low alpha over it, so this is genuinely one variable.
     pub accent: String,
-    /// ⚠️ There is no `week_starts_monday` here, and it is not an oversight.
-    /// Neither week on the island is week-ALIGNED: Home's strip is the days
-    /// either side of today and the Calendar's grid is seven columns from
-    /// today, both on purpose. A first-day setting would have had nothing to
-    /// change, and a switch with nothing on the other end of it is worse than
-    /// no switch — it makes you doubt the ones beside it.
+    /// ⚠️ This was removed once, correctly: neither week on the island was
+    /// week-ALIGNED — Home's strip was the days either side of today and the
+    /// Calendar's was seven columns from today — so the switch had nothing on
+    /// the other end of it. Both are real weeks now, so it is back, and it
+    /// defaults to MONDAY: Sunday is the platform default and wrong in most of
+    /// Europe.
+    pub week_starts_monday: bool,
     pub fahrenheit: bool,
 
     /* ── Behaviour ──────────────────────────────────────────────────────── */
@@ -95,6 +96,7 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             accent: "#00ff88".into(),
+            week_starts_monday: true,
             fahrenheit: false,
             open_on_hover: true,
             fold_delay_ms: 450,

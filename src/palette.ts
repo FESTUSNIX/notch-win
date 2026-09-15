@@ -285,6 +285,8 @@ export class Palette {
      * See task_window::set_task_input. */
     await this.surface.input(true).catch(() => {});
     await this.grab();
+    // Asked for, so the narrowing springs rather than slides.
+    this.surface.deliberately();
     this.surface.measure();
   }
 
@@ -332,10 +334,15 @@ export class Palette {
     this.gen++;
     document.removeEventListener("keydown", this.keys, true);
     document.removeEventListener("pointerdown", this.away, true);
-    this.surface.capBody(0);
+    /* ⚠️ The width is handed BACK to the screen, not zeroed. `capBody(0)`
+     * means "the full body", which was right when every screen WAS the full
+     * body — now each asks for its own, and closing the palette over Today
+     * would snap the panel out to 909px and leave it there. `onClose` restores
+     * it, which is also why the measure that matters is the one after it. */
     await this.surface.input(false).catch(() => {});
-    this.surface.measure();
+    this.surface.deliberately();
     this.onClose();
+    this.surface.measure();
   }
 
   /* ── Choosing ─────────────────────────────────────────────────────────── */

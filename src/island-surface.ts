@@ -40,18 +40,34 @@ export class IslandSurface {
   private timer = 0;
   private frame = 0;
   private last = 0;
-  private fold = new Spring(0, 0.42, 0.78);
+  /* ⚠️ Shorter and looser than it was (0.42/0.78). This is the one gesture
+   * the whole app is judged by — a pill becoming a panel — and it was arriving
+   * politely rather than snapping into place. */
+  private fold = new Spring(0, 0.34, 0.72);
   /* ⚠️ The panel's own size is sprung as well as its opening. `depth` and
    * `body` are recomputed whenever the screen changes, and writing them
    * straight into the geometry made the island SNAP to the new screen's height
    * while its contents were still fading in — the one motion on the surface
    * that had no easing at all.
    *
-   * ⚠️ Damped harder than the fold (0.9 vs 0.78). The fold is a panel arriving
-   * and can afford a little overshoot; this is a panel already on screen
-   * changing size under your cursor, and overshoot there reads as a wobble. */
+   * ⚠️ TWO sets of parameters, chosen by WHY the size changed — and this is
+   * the distinction the old single damping of 0.9 was standing in for.
+   *
+   *   * A size change you ASKED FOR — you pressed a tab, the screen behind it
+   *     is a different shape — can bounce. The content is changing at the same
+   *     time; movement is the point, and a panel that merely slides to the new
+   *     size reads as sluggish beside the tab pill that just sprang.
+   *   * A size change under a STILL POINTER — a list gained a row, a device
+   *     list opened, the day ticked over — must not. You are reading; overshoot
+   *     there is a wobble, and the row you were about to press moves out from
+   *     under you.
+   *
+   * The old comment was right about the second case and paid for it in the
+   * first. `sizing()` picks. */
   private grow = new Spring(cpx(FRAME.islandMinDepth), 0.34, 0.9);
   private widen = new Spring(cpx(FRAME.islandBodyLong), 0.34, 0.9);
+  /** Set for one measure by `resize()`: the next size change was asked for. */
+  private deliberate = false;
   /** The full body along the edge, in CSS px. ⚠️ Not `cpx(FRAME.islandBodyLong)`
    *  inline any more: the width is a preference, and a constant read at three
    *  call sites is a preference that can only be changed in two of them. */
@@ -231,6 +247,9 @@ export class IslandSurface {
      * collapsed pill and the panel would then open at whatever size it had got
      * to, which is a different wrong size every time. */
     if (this.open && !still()) {
+      const [response, damping] = this.sizing();
+      this.grow.retune(response, damping);
+      this.widen.retune(response, damping);
       this.grow.setTarget(this.depth);
       this.widen.setTarget(this.body);
       if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
@@ -240,8 +259,12 @@ export class IslandSurface {
     }
     this.collapsed.style.width = `${vertical ? cpx(FRAME.islandPillThin) : cpx(FRAME.islandPillLong)}px`;
     this.collapsed.style.height = `${vertical ? cpx(FRAME.islandPillLong) : cpx(FRAME.islandPillThin)}px`;
+    this.deliberate = false;
     this.paint();
   }
+
+  /** Whether pointing at the pill is what opens it. */
+  get opensOnHover(): boolean { return this.openOnHover; }
 
   /** Whether the whole chrome is slid off the screen. */
   get isHidden(): boolean { return this.hidden; }
@@ -273,10 +296,33 @@ export class IslandSurface {
     clearTimeout(this.timer);
     if (!value) {
       this.suppressed = false;
-      this.timer = window.setTimeout(() => this.show(false), this.foldDelay);
+      /* ⚠️ In CLICK MODE, leaving does not fold. That is the whole of the
+       * mode, and it was only half implemented: `openOnHover` stopped the
+       * panel opening under the pointer but the timer was armed on every
+       * leave, so the panel still shut the moment the pointer wandered off —
+       * which is exactly what somebody turning hover off is trying to stop.
+       *
+       * What ends it instead: a click outside (`island:dismiss`, seen
+       * natively — see hover.rs), Escape, the collapse button, the shortcut,
+       * or clicking the pill again. */
+      if (this.openOnHover) this.timer = window.setTimeout(() => this.show(false), this.foldDelay);
     } else if (!this.suppressed && this.openOnHover) {
       this.show(true);
     }
+  }
+
+  /** A click somewhere else on the screen.
+   *
+   * ⚠️ Honours the pin and nothing else. The pin is the one control whose
+   * entire meaning is "stay open"; `editing` is not — a caret in the composer
+   * and a click on another window is somebody who has finished here, so the
+   * field is released rather than used as a reason to stay. */
+  async dismiss() {
+    if (!this.open || this.pinned) return;
+    this.suppressed = true;
+    await this.input(false).catch(() => {});
+    clearTimeout(this.timer);
+    this.show(false);
   }
 
   /* ── What the settings window can change ─────────────────────────────
@@ -355,6 +401,22 @@ export class IslandSurface {
     if (this.cap === px) return;
     this.cap = px;
     this.measure();
+  }
+
+  /** The NEXT measure was asked for, so its size springs may bounce.
+   *
+   * ⚠️ A flag rather than a parameter on `measure()`, because the measure that
+   * matters is not the one the caller makes — a screen switch caps the body,
+   * re-renders, and only the measure at the END of the render sees the real
+   * content. The flag rides across the two.
+   *
+   * ⚠️ Cleared inside `measure()`, so a stray measure in between consumes it
+   * rather than leaving a bounce armed for whatever happens next. */
+  deliberately() { this.deliberate = true; }
+
+  /** Response and damping for the size springs, by why they are moving. */
+  private sizing(): [number, number] {
+    return this.deliberate ? [0.30, 0.74] : [0.34, 0.92];
   }
 
   async input(active: boolean) {

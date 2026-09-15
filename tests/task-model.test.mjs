@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey, listTally, inList } from '../src/task-model.ts';
+import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey, listTally, inList, weekStart } from '../src/task-model.ts';
 
 const today = '2026-09-08';
 const date = `${today}T12:00:00Z`;
@@ -116,4 +116,28 @@ test('filtering to a list keeps the whole row, subtasks included', () => {
   assert.equal(inList(tree, '').length, 2);
   // A list nothing is in comes back empty rather than throwing.
   assert.deepEqual(inList(tree, 'nowhere'), []);
+});
+
+test('a Monday-first week does not walk forward on a Sunday', () => {
+  const iso = (d) => localDay(d);
+  // 2026-09-13 is a Sunday. ⚠️ `getDay()` is 0 there, so `day - 1` is -1 and
+  // the week would start on the MONDAY AFTER — a grid of days that have not
+  // happened, presented as this week.
+  const sunday = new Date(2026, 8, 13, 15, 0);
+  assert.equal(sunday.getDay(), 0);
+  assert.equal(iso(weekStart(sunday, true)), '2026-09-07');
+  assert.equal(iso(weekStart(sunday, false)), '2026-09-13');
+
+  // A Monday is its own week start, and stays there.
+  const monday = new Date(2026, 8, 14, 9, 0);
+  assert.equal(iso(weekStart(monday, true)), '2026-09-14');
+  assert.equal(iso(weekStart(monday, false)), '2026-09-13');
+
+  // Midway through: Thursday belongs to the Monday behind it.
+  const thursday = new Date(2026, 8, 17, 23, 59);
+  assert.equal(iso(weekStart(thursday, true)), '2026-09-14');
+
+  // Local midnight, so seven `setDate` steps cannot drift across a DST hour.
+  const start = weekStart(thursday, true);
+  assert.deepEqual([start.getHours(), start.getMinutes(), start.getSeconds()], [0, 0, 0]);
 });

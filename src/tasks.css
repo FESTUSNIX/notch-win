@@ -116,6 +116,28 @@ h1 { margin:0; }
    exist. */
 #island { position:absolute; overflow:clip; background:#000;
   clip-path:url(#island-clip); will-change:width,height,transform; }
+/* ── The press ───────────────────────────────────────────────
+   The whole shape goes down under a finger and springs back as it opens.
+
+   ⚠️ `scale`, the INDEPENDENT property — never `transform`. The island's
+   `transform` is already spent on the hide/reveal slide, and a press-scale
+   written there would have to restate the translate for all four edges or
+   silently cancel it. `scale` composes with it instead, so the two gestures
+   cannot fight even if they somehow overlapped.
+
+   ⚠️ The origin is the EDGE, not the centre. Scaling a shape welded to the
+   top of the screen about its middle lifts it off the bezel, which is the one
+   thing the whole design is built on.
+
+   ⚠️ Down fast, back with a bounce. The two halves of a press are not the
+   same gesture: 90ms of ease-out going down reads as the surface taking the
+   weight, and the bounce coming back is the panel arriving. */
+#island[data-edge=top] { transform-origin:top center; }
+#island[data-edge=bottom] { transform-origin:bottom center; }
+#island[data-edge=left] { transform-origin:left center; }
+#island[data-edge=right] { transform-origin:right center; }
+#island.is-pressed { scale:.96;
+  transition-duration:90ms; transition-timing-function:var(--ease-smooth-out); }
 #island-defs { position:absolute; width:0; height:0; overflow:hidden; }
 /* Placed in pixels by island-surface.ts every frame — see the note there on
    why neither layer is anchored with a percentage. */
@@ -146,8 +168,38 @@ h1 { margin:0; }
   font-variant-numeric:tabular-nums; }
 /* Only animates while something is genuinely playing; a frozen equaliser
    would say "playing" about a paused track. */
-.pill-eq { display:flex; align-items:flex-end; gap:2px; height:13px; flex-shrink:0; }
-.pill-eq i { width:2.5px; height:4px; border-radius:2px; background:#4a4a4a; }
+/* ── The equaliser, and what it becomes ─────────────────────────────
+   Three bars at rest; play/pause under the pointer.
+
+   ⚠️ Only in CLICK MODE. With hover opening, the pointer reaching these bars
+   has already turned the pill into a panel — there is nothing here to press,
+   and an affordance that appears for one frame on the way to somewhere else is
+   worse than none. `pointer-events` is what gates it; the markup is the same
+   either way, so a preference cannot change the pill's DOM. */
+.pill-eq { position:relative; display:flex; align-items:flex-end;
+  justify-content:center; gap:2px; height:15px; width:15px; padding:0;
+  flex-shrink:0; background:none; border-radius:5px; pointer-events:none; }
+.pill-eq i { width:2.5px; height:4px; border-radius:2px; background:#4a4a4a;
+  transition:opacity var(--duration-quick) var(--ease-in-out),
+    scale var(--duration-quick) var(--ease-in-out); }
+.pill-eq-mark { position:absolute; inset:0; display:grid; place-items:center;
+  opacity:0; scale:.25; filter:blur(4px); color:var(--accent);
+  transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
+.pill-eq-mark svg { width:13px; height:13px; }
+html[data-open=click] .pill-eq { pointer-events:auto; cursor:pointer; }
+/* ⚠️ Declared, not inherited. `button:hover` paints `--tile-hi` on every
+   button in the app, and this happened to look right — which means a change to
+   that rule would have altered a control on the resting pill by accident. */
+html[data-open=click] .pill-eq:hover, html[data-open=click] .pill-eq:focus-visible {
+  background:rgba(255,255,255,.10); box-shadow:var(--hairline); }
+html[data-open=click] .pill-eq:hover i,
+html[data-open=click] .pill-eq:focus-visible i { opacity:0; scale:.4; }
+html[data-open=click] .pill-eq:hover .pill-eq-mark,
+html[data-open=click] .pill-eq:focus-visible .pill-eq-mark {
+  opacity:1; scale:1; filter:blur(0); }
+html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .pill-eq.on i { background:var(--accent); animation:eq 900ms ease-in-out infinite; }
 .pill-eq.on i:nth-child(2) { animation-delay:-300ms; }
 .pill-eq.on i:nth-child(3) { animation-delay:-600ms; }
@@ -240,6 +292,10 @@ h1 { margin:0; }
     margin-left var(--duration-fast) var(--ease-smooth-out),
     opacity var(--duration-quick) var(--ease-smooth-out); }
 .island-tab:hover { color:#c4c4c4; background:rgba(255,255,255,.05); box-shadow:none; }
+/* ⚠️ `scale`, not `transform`. The glide pill under the tabs is positioned
+   with a transform, and a press written there would be overwritten by the next
+   frame of `placeGlide`. */
+.island-tab:active { scale:.94; transition-duration:90ms; }
 /* ⚠️ The selected tab is NOT painted — the pill behind it is. Painting both
    means the new tab lights up instantly while the pill is still on its way, so
    there are two selections on screen for a quarter of a second, every switch. */
@@ -440,6 +496,10 @@ h1 { margin:0; }
 
 .day-row { display:flex; align-items:center; gap:13px; min-height:var(--row-height); padding:7px 9px; border-radius:12px; transition:background-color var(--duration-quick) var(--ease-smooth-out); }
 .day-row:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
+/* ⚠️ The TITLE, not the whole row. The circle beside it runs its own press,
+   and scaling the row under a finger aimed at that circle moves the target
+   away from the finger mid-press. */
+.day-row .task-title:active { scale:.99; transition-duration:90ms; }
 .day-row.nested { min-height:0; padding:4px 9px; }
 .day-row.ghost { opacity:.5; }
 .check.placeholder { border:1.5px dashed #333; border-radius:50%; width:22px; height:22px; }
@@ -782,7 +842,14 @@ input[type=checkbox].switch:disabled { opacity:.45; cursor:default; }
    they are positioned with left/top — so a transition here cannot be fought
    frame by frame. Anything that starts writing transform to them must move
    this to a wrapper. */
-#island, #stage { transition:transform var(--duration-medium) var(--ease-smooth-out), opacity var(--duration-quick) var(--ease-in-out) var(--duration-stagger); }
+/* ⚠️ `scale` is in this list, and it belongs to the PRESS, not to hiding — see
+   "The press" above. It is declared here because this is the one rule that
+   owns #island's transition, and a second one nearer the press would win the
+   cascade and silently drop the hide slide's own timing. Style each thing
+   once, where it is defined. */
+#island, #stage { transition:transform var(--duration-medium) var(--ease-smooth-out),
+  scale var(--duration-fast) var(--ease-bounce),
+  opacity var(--duration-quick) var(--ease-in-out) var(--duration-stagger); }
 html.chrome-hidden #island, html.chrome-hidden #stage { opacity:0; pointer-events:none; }
 html.chrome-hidden #island[data-edge=top], html.chrome-hidden #stage[data-edge=top] { transform:translateY(-118%); }
 html.chrome-hidden #island[data-edge=bottom], html.chrome-hidden #stage[data-edge=bottom] { transform:translateY(118%); }
@@ -1087,6 +1154,11 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 .cal-row:hover { background:var(--tile-hi); }
 .cal-wcol { background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); border-radius:14px; }
+/* ⚠️ Dimmed, not dropped. The grid is a real week now, so on a Friday two
+   thirds of it is behind you — and a column that is simply missing would put
+   Friday where Wednesday was, which is the thing week-alignment exists to
+   stop. */
+.cal-wcol.is-past { opacity:.55; }
 .cal-wcol.is-today { background-color:var(--tile-hi);
   box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), var(--gloss), var(--lift-1); }
 .cal-whead { border-bottom:1px solid var(--hair); }
@@ -1098,7 +1170,8 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
 
 .media-button:hover:not(:disabled) { background:var(--tile-hi);
   box-shadow:var(--hairline), var(--gloss); }
-.day-row:hover { background:var(--tile); box-shadow:var(--hairline), var(--gloss); }
+/* (`.day-row:hover` lives with the rest of the row, ~670 lines up. It was
+   written twice; the copy that was here has gone.) */
 #inline-composer:hover { background:var(--tile); }
 /* ⚠️ A WELL with an accent hairline, not a filled accent box. Anything that
    receives input is sunk on this surface, and the composer is the one field you
@@ -1630,6 +1703,7 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    One row per live Claude Code session, whoever wants you first. The row is a
    button because the useful thing to do with "akcesfonia is waiting" is to go
    there — see win::raise_process for what that costs on Windows. */
+.agent-row:active { scale:.99; transition-duration:90ms; }
 .agent-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
   padding:11px 13px; border-radius:var(--r-tile);
   background-color:var(--tile); background-image:var(--sheen);

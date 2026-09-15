@@ -32,7 +32,10 @@ pub fn is_dragging() -> bool {
     DRAGGING.load(Ordering::SeqCst)
 }
 
-fn left_button_down() -> bool {
+/// ⚠️ Shared with `hover.rs`, which watches for a click OUTSIDE the island.
+/// One reader of the mouse button, so the two cannot disagree about what "down"
+/// means — and the comment about the low bit stays in one place.
+pub(crate) fn left_button_down() -> bool {
     // The high bit is "currently down"; the low bit is "pressed since last
     // call" and would latch a release for a frame.
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
