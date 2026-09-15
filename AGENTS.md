@@ -2055,3 +2055,20 @@ The two halves were the same fault.
      every descendant of `.island-head`; on a vertical edge the 7-tab strip is a
      112px horizontal scroller, so a scrolled-out tab fails a test that was
      written about `.panel-actions`.
+254. ⚠️ **A chip's count has to be rows, not tasks.** The day folds subtasks
+     into their parent, so counting tasks puts `7` on a chip that opens three
+     rows — and the count is the half of a filter you believe. `listTally`
+     counts roots, and the browser test compares against
+     `#task-list-content > .slot`, never `.day-row`, which matches nested rows
+     too.
+255. ⚠️ **The chosen chip has to survive its own filter emptying the day.**
+     Drawing the rail from "lists that have rows" makes the active chip vanish
+     the moment you finish the last task in it — leaving an empty day, no
+     explanation, and no way back but guessing. It is pushed back in, and the
+     rail stays up whenever a filter is set even below two lists.
+256. ⚠️ **Scope has to follow whether the control can name itself.** The
+     Today header sits directly above the rows it counts, so it follows the
+     list filter and prints the list's name beside the number; the resting pill
+     has no room to say "of Work", so it keeps counting the whole day. Home
+     follows the filter because its card is a door into the filtered screen.
+     Three different answers, one rule.

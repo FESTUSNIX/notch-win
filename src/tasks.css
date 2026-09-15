@@ -303,6 +303,41 @@ h1 { margin:0; }
 .day-switch button[aria-selected=true] { color:#fff;
   background-color:var(--tile-hi); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+/* ── The list rail ───────────────────────────────────────────
+   Which TickTick list the day is scoped to.
+
+   ⚠️ CHIPS, not tabs. The island's own tab strip is six inches above this one
+   and switches screens; a second row of tabs underneath it would be two
+   controls that look identical and mean different things. A chip carries its
+   list's colour and its count, which a tab cannot.
+
+   ⚠️ A scroller, so a long list of lists never wraps to a second row and
+   changes the panel's height as you filter. */
+.day-lists { display:flex; gap:5px; padding:9px 15px 0; flex-shrink:0;
+  overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.day-lists::-webkit-scrollbar { display:none; }
+.list-chip { display:flex; align-items:center; gap:6px; flex-shrink:0;
+  font-size:11px; padding:4px 10px; border-radius:9px; color:#8a8a8a;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss); }
+.list-chip:hover { color:#dcdcdc; background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.list-chip:active { transform:scale(.96); transition-duration:90ms; }
+/* ⚠️ The chosen chip is TINTED with its own list's colour, not merely lit.
+   Every chip carries a dot already, so a selected state made only of "slightly
+   brighter" is one grey pill among several grey pills — which is exactly how
+   the tab strip above reads until you notice the glide. The colour is the one
+   thing each chip has that the others do not. */
+.list-chip.is-on { color:#fff;
+  background-color:color-mix(in srgb, var(--chip, var(--accent)) 16%, var(--tile-hi));
+  background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--chip, var(--accent)) 34%, transparent),
+    var(--gloss), var(--lift-1); }
+.list-chip-name { white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis; }
+/* The count is the quiet half of the chip: it is what you check after you have
+   read the name, never before. */
+.list-chip-count { font-size:10px; color:#6a6a6a; font-variant-numeric:tabular-nums; }
+.list-chip.is-on .list-chip-count { color:#9a9a9a; }
 .day-none { margin:22px 0; text-align:center; font-size:12px; color:#5f5f5f; }
 .day-meta span:empty { display:none; }
 .day-meta span+span:not(:empty)::before { content:"·"; margin-right:7px; color:#4a4a4a; }

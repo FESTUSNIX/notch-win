@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey } from '../src/task-model.ts';
+import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey, listTally, inList } from '../src/task-model.ts';
 
 const today = '2026-09-08';
 const date = `${today}T12:00:00Z`;
@@ -83,4 +83,37 @@ test('optimistic identity survives the completion it is tracking', () => {
   const open = task('x'), closed = {...open,status:2,completedTime:date};
   assert.equal(taskId(open),taskId(closed));
   assert.notEqual(taskKey(open),taskKey(closed));
+});
+
+test('a list count is rows, not tasks, and the order is the order the rows came in', () => {
+  const rows = [
+    task('work-1', {projectId: 'work'}),
+    task('sub', {projectId: 'work', parentId: 'work-1'}),
+    task('home-1', {projectId: 'home'}),
+    task('work-2', {projectId: 'work'}),
+  ];
+  const tree = taskForest(rows, 'today', today);
+  // Three roots: the subtask is folded into work-1 rather than counted beside it.
+  assert.equal(tree.length, 3);
+  // Insertion order, which is the order the rows are drawn in — the forest
+  // sorts by sortOrder then title, so `home-1` leads.
+  const counts = listTally(tree);
+  assert.deepEqual([...counts], [['home', 1], ['work', 2]]);
+});
+
+test('filtering to a list keeps the whole row, subtasks included', () => {
+  const rows = [
+    task('work-1', {projectId: 'work'}),
+    task('sub', {projectId: 'work', parentId: 'work-1'}),
+    task('home-1', {projectId: 'home'}),
+  ];
+  const tree = taskForest(rows, 'today', today);
+  const work = inList(tree, 'work');
+  assert.deepEqual(work.map(n => n.task.id), ['work-1']);
+  assert.equal(work[0].children.length, 1);
+  // An empty id is "all lists", not "the list with no name". Two roots, not
+  // three: the subtask is inside work-1.
+  assert.equal(inList(tree, '').length, 2);
+  // A list nothing is in comes back empty rather than throwing.
+  assert.deepEqual(inList(tree, 'nowhere'), []);
 });

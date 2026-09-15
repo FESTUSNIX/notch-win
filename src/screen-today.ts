@@ -10,19 +10,34 @@ import { element } from "./dom";
 import { still } from "./motion-pref";
 import { call, native, preview } from "./task-client";
 import {
-  emptySnapshot, localDay, nodeDone, overdueDays, progress, taskForest, taskId,
+  emptySnapshot, inList, localDay, nodeDone, overdueDays, progress, taskForest, taskId,
   type Task, type TaskNode, type TaskSnapshot, type TaskView,
 } from "./task-model";
 import { listColor, renderDay } from "./task-day";
 import type { Activity } from "./island-activity";
 import type { IslandSurface } from "./island-surface";
 
+/** Where the chosen list is kept.
+ *
+ * ⚠️ Every read and write guarded. `localStorage` does not merely come back
+ * empty when site data is blocked — the accessor itself throws, and this runs
+ * at module scope, so an unguarded read takes the whole screen down before it
+ * has drawn anything. Same rule as the palette's recency store. */
+const LIST_KEY = "codenotch.today.list";
+function readList(): string {
+  try { return window.localStorage.getItem(LIST_KEY) ?? ""; } catch { return ""; }
+}
+function writeList(id: string) {
+  try { if (id) window.localStorage.setItem(LIST_KEY, id); else window.localStorage.removeItem(LIST_KEY); } catch { /* not remembered, still works */ }
+}
+
 const HTML = `
   <div class="day-head">
-    <div class="day-meta"><span id="day-date"></span><span id="day-left"></span></div>
+    <div class="day-meta"><span id="day-date"></span><span id="day-list"></span><span id="day-left"></span></div>
     <div class="day-switch" id="day-switch" role="tablist" aria-label="Which tasks" hidden><button type="button" id="day-open" role="tab" aria-selected="true">Open</button><button type="button" id="day-done-tab" role="tab" aria-selected="false"></button></div>
   </div>
   <div class="day-rail"><i id="day-rail-fill"></i></div>
+  <div class="day-lists" id="day-lists" role="tablist" aria-label="Lists" hidden></div>
   <section id="focus-session" hidden><div id="focus-task-title"></div><div class="focus-controls"><time id="focus-elapsed" title="Elapsed focus time">00:00</time><button id="focus-others" aria-label="Show other tasks" title="Show other tasks" aria-expanded="false"></button><button id="focus-pause" aria-label="Pause focus timer" title="Pause"></button><button id="focus-end" aria-label="End focus session" title="End session"></button><button id="focus-finish" aria-label="Complete focused task" title="Complete task"></button></div><span id="focus-state" class="sr-only"></span></section>
   <div id="task-status" role="status"></div>
   <div id="task-list" class="task-list scrolls"><div id="task-list-content"></div><div id="task-done"></div></div>
@@ -57,6 +72,13 @@ export class TodayScreen {
    *  else — and opening it made a long list longer, which is the opposite of
    *  what looking at finished work is for. */
   private showing: "open" | "done" = "open";
+  /** Which TickTick list the day is filtered to, or "" for all of them.
+   *
+   * ⚠️ Remembered across restarts, and that is only safe because the rail is
+   * always on screen with the chosen chip lit. A filter you cannot see is the
+   * mute button you forgot you pressed; this one says what it is doing every
+   * time you look at the day. */
+  private listId = readList();
   /** The list and day the composer will file into. Held here rather than read
    *  off a `<select>`, because there is no longer one. */
   private toList = "";
@@ -281,14 +303,22 @@ export class TodayScreen {
     }
     this.paintTimer();
 
-    // ⚠️ Progress is `today`, never `day`. Overdue work is listed and badged
-    // but not scored — a backlog must not hold the ring at 2/15 all week.
-    const today = progress(taskForest(shown.tasks, "today"));
+    /* ⚠️ Progress is `today`, never `day`. Overdue work is listed and badged
+     * but not scored — a backlog must not hold the ring at 2/15 all week.
+     *
+     * ⚠️ And it is scoped to the chosen list, because it sits above the list it
+     * is describing. Counting the whole day over a rail reading `Work` is a
+     * header that contradicts what is under it — so the list is NAMED beside
+     * the count as well, or "2 left" over three visible rows reads as a bug. */
+    const today = progress(inList(taskForest(shown.tasks, "today"), this.listId));
     const reliable = !!shown.updatedAt && shown.historyComplete && shown.day === localDay();
     const percent = reliable && today.total ? (today.done / today.total) * 100 : 0;
     this.get("day-rail-fill").style.width = `${percent}%`;
     // The shell has no title bar any more, so the day says the date itself.
     this.get("day-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    this.get("day-list").textContent = this.listId
+      ? shown.projects.find(project => project.id === this.listId)?.name ?? ""
+      : "";
     this.get("day-left").textContent = !reliable ? ""
       : today.total === 0 ? "nothing scheduled"
       : today.done === today.total ? "all done"
@@ -310,6 +340,10 @@ export class TodayScreen {
      * what still exists — a list closed in TickTick would otherwise leave the
      * chip naming something the next create would be rejected for. */
     const projects = shown.projects.filter(p => !p.closed && p.kind !== "NOTE");
+    /* ⚠️ A chosen list wins. Filtering to Work and then filing a new task into
+     * whatever list happens to be first is a task you never see land — the rail
+     * you are looking at filters it straight back out. */
+    if (this.listId && projects.some(p => p.id === this.listId)) this.toList = this.listId;
     if (!projects.some(p => p.id === this.toList)) this.toList = projects[0]?.id ?? "";
     this.paintChips(projects);
 
@@ -326,7 +360,7 @@ export class TodayScreen {
     const drawn = renderDay(this.list, this.doneTarget, shown, {
       focus: task => this.focusTimer.start(task),
       focused: session ? `${session.projectId}:${session.id}` : undefined,
-      view: this.view, disabled: frozen,
+      view: this.view, list: this.listId, disabled: frozen,
       settling: this.settling, leaving: this.leaving, expanded: this.expanded, collapsed: this.collapsed,
       editing: this.editing, editCaret: this.editCaret, showing: this.showing, outbox: this.outbox,
       redraw: this.changed, complete: t => this.complete(t), check: (t, i, d) => this.checkItem(t, i, d),
@@ -341,6 +375,8 @@ export class TodayScreen {
      * does nothing sitting where the day's summary goes — which on a fresh
      * morning is every morning — and a count taken separately from the list it
      * switches disagrees with it the moment either rule changes. */
+    this.paintLists(shown, drawn.lists);
+
     const sw = this.get("day-switch");
     sw.hidden = drawn.finished === 0;
     if (drawn.finished) {
@@ -354,6 +390,67 @@ export class TodayScreen {
   }
 
   setView(view: TaskView) { this.view = view; this.changed(); }
+
+  /** The chips that scope the day to one TickTick list.
+   *
+   * ⚠️ Drawn from the counts the draw just produced, never from a second walk
+   * of the snapshot. See `renderDay` — a chip counted separately from the list
+   * it opens disagrees with it as soon as either rule moves.
+   */
+  private paintLists(snapshot: TaskSnapshot, counts: Map<string, number>) {
+    const rail = this.get("day-lists");
+    const named = (id: string) => snapshot.projects.find(project => project.id === id);
+    /* ⚠️ The chosen list keeps its chip even at zero. Losing it would leave
+     * you looking at an empty day with the one control that explains why gone
+     * from the screen — and no way back except guessing at All. */
+    const ids = [...counts.keys()].filter(id => named(id));
+    if (this.listId && !ids.includes(this.listId) && named(this.listId)) ids.push(this.listId);
+
+    /* One list is a label, not a filter. ⚠️ Unless one is CHOSEN: a rail that
+     * vanishes once its filter has emptied the day is a trap. */
+    rail.hidden = ids.length < 2 && !this.listId;
+    if (rail.hidden) { rail.replaceChildren(); return; }
+
+    const chips: { id: string; label: string; colour: string; count: number }[] = [
+      { id: "", label: "All", colour: "", count: [...counts.values()].reduce((n, c) => n + c, 0) },
+      ...ids.map(id => ({ id, label: named(id)!.name, colour: listColor(named(id)), count: counts.get(id) ?? 0 })),
+    ];
+
+    rail.replaceChildren();
+    for (const chip of chips) {
+      const on = chip.id === this.listId;
+      const button = element("button", `list-chip${on ? " is-on" : ""}`);
+      (button as HTMLButtonElement).type = "button";
+      // What the selected state is tinted with. All has no list, so it takes
+      // the app's own colour rather than nothing.
+      if (chip.colour) button.style.setProperty("--chip", chip.colour);
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", String(on));
+      if (chip.colour) {
+        const dot = element("span", "chip-dot");
+        dot.style.background = chip.colour;
+        button.append(dot);
+      }
+      button.append(element("span", "list-chip-name", chip.label));
+      if (chip.count) button.append(element("span", "list-chip-count", String(chip.count)));
+      button.onclick = () => this.setList(chip.id);
+      rail.append(button);
+      if (on) requestAnimationFrame(() => button.scrollIntoView({ block: "nearest", inline: "nearest" }));
+    }
+  }
+
+  /** Scope the day to one list, or to all of them. */
+  setList(id: string) {
+    if (this.listId === id) return;
+    this.listId = id;
+    writeList(id);
+    /* ⚠️ The composer follows the filter. Filtering to Work and then typing a
+     * task that files into whatever list happened to be first is a task you
+     * will not see land — the rail you are looking at filters it straight back
+     * out again. */
+    if (id) this.toList = id;
+    this.changed();
+  }
 
   /* ── What the Home screen borrows ──────────────────────────────────────
    * Home shows a stripped version of this screen rather than keeping its own
@@ -375,7 +472,13 @@ export class TodayScreen {
     };
   }
 
-  /** Today's tally, exactly as the ring and the pill read it. */
+  /** Today's tally, exactly as the ring and the pill read it.
+   *
+   * ⚠️ The WHOLE day, never the chosen list. The pill is ambient and has no
+   * room to say "of Work" — a number there that quietly stopped counting two
+   * thirds of the day would be wrong in the one place nothing explains it.
+   * The Today header is the opposite case: it sits directly above the rows it
+   * counts, so it follows the filter and names the list beside the number. */
   tally(): { done: number; total: number; reliable: boolean } {
     const shown = this.local();
     const { done, total } = progress(taskForest(shown.tasks, "today"));
@@ -417,7 +520,11 @@ export class TodayScreen {
      * something the filter above can save. It has to hold its place until the
      * timer moves it. */
     const ranked = (task: Task) => (this.settling.has(taskId(task)) ? { ...task, status: 0 } : task);
-    return taskForest(shown.tasks, "day")
+    /* ⚠️ Scoped to the chosen list, unlike `tally()`. Home's card is a door
+     * into this screen: showing four tasks there that the rail filters out the
+     * moment you click through is a door into somewhere else. The pill is the
+     * opposite case — it has no room to say which list it is counting. */
+    return inList(taskForest(shown.tasks, "day"), this.listId)
       .filter(node => !nodeDone(node) || this.settling.has(taskId(node.task)))
       .flatMap(node => (node.children.length ? node.children.filter(c => c.selected && alive(c.task)) : [node]))
       .filter(node => alive(node.task))

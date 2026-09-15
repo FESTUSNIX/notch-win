@@ -14,7 +14,7 @@
 import { taskIcon } from "./task-icons";
 import { element } from "./dom";
 import {
-  nodeDone, overdueDays, progress, taskForest, taskId, visibleNode,
+  inList, listTally, nodeDone, overdueDays, progress, taskForest, taskId, visibleNode,
   type Project, type Task, type TaskNode, type TaskSnapshot, type TaskView,
 } from "./task-model";
 
@@ -37,6 +37,8 @@ export interface DayOptions {
   /** Caret inside the rename field, carried across redraws. Null means fresh. */
   editCaret: number | null;
   showing: "open" | "done";
+  /** Which TickTick list to show, or "" for all of them. */
+  list: string;
   /** Tasks typed into the composer that TickTick has not confirmed yet. */
   outbox: { id: string; title: string }[];
   redraw: () => void;
@@ -246,12 +248,17 @@ function clearCard(done: number): HTMLElement {
 
 /** Draws the day, and says how much of it is finished.
  *
- * ⚠️ The count is RETURNED rather than recomputed by the caller. The header's
- * Open/Done switch is shown from it, and a switch counted separately from the
- * list it switches disagrees with it the moment either rule changes — a task
- * held back for its completion animation is finished by one count and not the
- * other, which is a "Done 1" tab leading to an empty list. */
-export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapshot: TaskSnapshot, o: DayOptions): { finished: number } {
+ * ⚠️ The counts are RETURNED rather than recomputed by the caller. The header's
+ * Open/Done switch and the list rail are both drawn from them, and a control
+ * counted separately from the list it switches disagrees with it the moment
+ * either rule changes — a task held back for its completion animation is
+ * finished by one count and not the other, which is a "Done 1" tab leading to
+ * an empty list.
+ *
+ * `lists` counts the half the switch is on, BEFORE the list filter: it is what
+ * each chip would reveal if it were pressed, which is the only number a chip
+ * can honestly wear. */
+export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapshot: TaskSnapshot, o: DayOptions): { finished: number; lists: Map<string, number> } {
   content.replaceChildren();
   doneTarget.replaceChildren();
 
@@ -260,7 +267,12 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
   // A finished root leaves the day, unless it is still being celebrated.
   const held = (n: TaskNode) => o.settling.has(taskId(n.task)) || o.leaving.has(taskId(n.task));
   const live = shown.filter(n => !nodeDone(n) || held(n));
-  const finished = shown.filter(n => nodeDone(n) && !held(n));
+  const everyFinished = shown.filter(n => nodeDone(n) && !held(n));
+  /* ⚠️ Counted on the half that is SHOWING. A chip wearing the number of open
+   * tasks while the Done half is on screen is a chip that leads somewhere else
+   * than it says. */
+  const lists = listTally(o.showing === "done" ? everyFinished : live);
+  const finished = inList(everyFinished, o.list);
 
   /* ⚠️ The two halves are exclusive. The switch says which one you asked
    * for, so drawing the open list underneath the finished one would make
@@ -269,13 +281,14 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
   if (o.showing === "done") {
     for (const node of finished) doneTarget.append(drawRow(node, snapshot, o, 1));
     if (!finished.length) doneTarget.append(element("p", "day-none", "Nothing finished yet today."));
-    return { finished: finished.length };
+    return { finished: finished.length, lists };
   }
 
-  live.sort((a, b) => overdueDays(b.task) - overdueDays(a.task) ||
+  const open = inList(live, o.list);
+  open.sort((a, b) => overdueDays(b.task) - overdueDays(a.task) ||
     (a.task.sortOrder || 0) - (b.task.sortOrder || 0) || a.task.title.localeCompare(b.task.title));
 
-  if (!live.length && !o.outbox.length) {
+  if (!open.length && !o.outbox.length) {
     const todayDone = progress(taskForest(snapshot.tasks, "today")).done;
     if (!snapshot.connected) {
       const empty = element("div", "day-empty");
@@ -288,14 +301,20 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
     } else if (todayDone > 0) {
       content.append(clearCard(todayDone));
     } else {
+      /* ⚠️ Names the list when one is chosen. "Nothing scheduled" under a
+       * rail with `Work` lit reads as an empty DAY, and the way out — press
+       * All — is the one thing the copy does not mention. */
+      const named = o.list ? snapshot.projects.find(p => p.id === o.list) : undefined;
       const empty = element("div", "day-empty");
-      empty.append(element("h3", "", "Nothing scheduled"),
-        element("p", "", "Add one below, or plan the day in TickTick."));
+      empty.append(element("h3", "", named ? `Nothing in ${named.name}` : "Nothing scheduled"),
+        element("p", "", named
+          ? "Press All to see the rest of the day."
+          : "Add one below, or plan the day in TickTick."));
       content.append(empty);
     }
   }
 
-  for (const node of live) {
+  for (const node of open) {
     const slot = drawRow(node, snapshot, o, 0);
     content.append(slot);
     // Collapse on the frame after the row exists at full height — set the class
@@ -314,5 +333,5 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
    * drawer put "3 done today" underneath everything else — the one place you
    * would not look for it — and opening it made a long list longer, which is
    * the opposite of what looking back over the day is for. */
-  return { finished: finished.length };
+  return { finished: finished.length, lists };
 }

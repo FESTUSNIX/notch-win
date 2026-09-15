@@ -416,6 +416,53 @@ test("settings: one window, seven pages, and nothing that can show a token", asy
   await expect(page.locator("#day-left")).toHaveText("");
 });
 
+test("the day can be scoped to one TickTick list, and says which", async ({page}) => {
+  await page.goto("/tasks.html?nocal");
+  await openToday(page);
+
+  const rail = page.locator("#day-lists");
+  const chips = rail.locator(".list-chip");
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toContainText("All");
+
+  /* ⚠️ The count on a chip is ROWS, not tasks: the day folds subtasks into
+     their parent, so a chip wearing the task count would promise rows it does
+     not open. All is the sum of the others. */
+  /* ⚠️ Direct children. `.day-row` matches subtask rows too — they are drawn
+     INSIDE their parent's slot — so counting all of them compares six rows
+     against a chip that correctly says four. */
+  const rows = day(page).locator("#task-list-content > .slot");
+  const before = await rows.count();
+  await expect(chips.nth(0).locator(".list-chip-count")).toHaveText(String(before));
+
+  const first = await chips.nth(1).locator(".list-chip-name").textContent();
+  const mine = Number(await chips.nth(1).locator(".list-chip-count").textContent());
+  await chips.nth(1).click();
+  await expect(chips.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(rows).toHaveCount(mine);
+
+  // The header sits directly above the rows it counts, so it follows the
+  // filter — and names the list, or "2 left" over two rows of six reads as a bug.
+  await expect(page.locator("#day-list")).toHaveText(first);
+
+  // A new task files into the list you are looking at, not into whichever one
+  // happens to be first — otherwise it lands somewhere the rail hides.
+  await expect(page.locator("#chip-list")).toContainText(first);
+
+  await page.screenshot({path: "test-results/island-lists.png"});
+
+  // The choice survives a reload: the rail is always on screen with the chosen
+  // chip lit, so remembering it is not a filter anyone can forget.
+  await page.reload();
+  await openToday(page);
+  await expect(page.locator("#day-lists .list-chip").nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(day(page).locator("#task-list-content > .slot")).toHaveCount(mine);
+
+  await page.locator("#day-lists .list-chip").first().click();
+  await expect(day(page).locator("#task-list-content > .slot")).toHaveCount(before);
+  await expect(page.locator("#day-list")).toHaveText("");
+});
+
 test("long titles stay inside the island", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await openToday(page);

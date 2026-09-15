@@ -102,6 +102,34 @@ export function progress(nodes: TaskNode[]): { done: number; total: number } {
   return { done, total };
 }
 
+/** How many rows each list holds, keyed on project id.
+ *
+ * ⚠️ ROOTS, not tasks. The day draws one row per root and folds its subtasks
+ * inside it, so counting tasks would put "7" on a chip that reveals three
+ * rows — and a count that disagrees with the list it labels is worse than no
+ * count, because it is the half of the control you believe.
+ *
+ * Insertion-ordered, so a caller walking it gets the lists in the order the
+ * rows came in rather than by id.
+ */
+export function listTally(nodes: TaskNode[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    counts.set(node.task.projectId, (counts.get(node.task.projectId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** One list's rows, or all of them when `projectId` is empty.
+ *
+ * ⚠️ Matched on the ROOT only. A subtask lives in its parent's list in every
+ * case TickTick allows, and testing each child as well would drop a row whose
+ * parent is the thing being looked for.
+ */
+export function inList(nodes: TaskNode[], projectId: string): TaskNode[] {
+  return projectId ? nodes.filter(node => node.task.projectId === projectId) : nodes;
+}
+
 export function visibleNode(node: TaskNode, hideDone: boolean): boolean {
   return (node.selected && (!hideDone || node.task.status !== 2)) || node.children.some(n => visibleNode(n, hideDone));
 }
