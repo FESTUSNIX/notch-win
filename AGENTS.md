@@ -2228,3 +2228,22 @@ The two halves were the same fault.
      numbers: `response` is the period, so the duration carries over, and a
      control point above 1 means damping below ~0.7. Copying the numbers into
      a spring means nothing.
+288. ⚠️ **A transition needs both states to be the same SHAPE.** The queue
+     column went `minmax(0,1fr) 0fr` → `minmax(0,1.35fr) minmax(0,1fr)`: two
+     different value types on both tracks, which cannot be interpolated, so it
+     jumped. Both sides are `minmax()` then a length now.
+289. ⚠️ **And the element has to exist on both sides of it.** The panel was
+     appended only while open, so on the way in it arrived at full size in the
+     same frame the column was told to grow, and on the way out it was gone
+     before the column could shrink. It is always in the DOM; the column opens
+     and closes, the panel is clipped by it, and `inert` + `aria-hidden` keep a
+     closed panel out of Tab order.
+290. ⚠️ **A fraction chases a moving target.** `0fr → 1fr` interpolates, but
+     what a fraction RESOLVES to depends on the island's own width — which is
+     springing at the same time — so the column arrives at a different speed
+     from the shape carrying it. A fixed length, and an island that grows by
+     exactly that length plus the gap, leaves the other column standing still.
+291. ⚠️ **Content in an animating track must be a fixed width.** Left to fill
+     the column, three track titles re-wrap through eight line-breaks each on
+     the way in and out, which reads as a glitch rather than as a panel
+     arriving. Fixed width inside an `overflow:hidden` track, so it slides.

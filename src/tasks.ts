@@ -89,7 +89,11 @@ const WIDTH: Record<ScreenName, number> = {
  * number at it — which looks, from a test, exactly like the width not changing
  * at all. */
 function widthOf(name: ScreenName): number {
-  if (name === "media" && player.open) return 1640;
+  /* ⚠️ Exactly the queue column plus its gap wider, so the player on the left
+   * does not move while the panel arrives: 260 + 14 CSS px is 573 design px,
+   * and 1130 + 573 is this. Any other number slides the transport row sideways
+   * under the pointer that just pressed it. */
+  if (name === "media" && player.open) return 1703;
   return WIDTH[name];
 }
 

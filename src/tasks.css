@@ -363,14 +363,31 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    Two columns: what is playing, and what is next. The second is closed by
    default and the panel is narrower without it — see `widthOf` in tasks.ts.
 
-   ⚠️ A grid whose second track is `0fr` when closed, not `display:none`. The
-   panel's width is sprung, and a column that pops into existence at full size
-   arrives before the shape that is supposed to be carrying it. */
-.media-body { display:grid; grid-template-columns:minmax(0,1fr) 0fr;
+   ⚠️ Both states are the SAME SHAPE — `minmax()` then a length — and that is
+   what makes it animate at all. It was `minmax(0,1fr) 0fr` opening to
+   `minmax(0,1.35fr) minmax(0,1fr)`: two different value types on the two
+   tracks, which cannot be interpolated, so the column jumped. (The panel was
+   also in the DOM only while open, so on the way out there was nothing left to
+   animate either — see screen-media.ts.)
+
+   ⚠️ A LENGTH, not a fraction. `0fr → 1fr` does interpolate, but the width a
+   fraction RESOLVES to depends on the island's own width — which is springing
+   at the same time — so the column would chase a moving target and arrive at a
+   different speed from the shape carrying it. A fixed 260px, and an island that
+   grows by exactly 260 + 14, means the player on the left does not move.
+
+   ⚠️ 560ms on Droppy's own curve, the same shape as the size springs: the
+   outer shape and the inner column are one movement, and two durations read as
+   two. */
+.media-body { display:grid; grid-template-columns:minmax(0,1fr) 0px;
   gap:0; min-width:0; align-items:start;
-  transition:grid-template-columns var(--duration-fast) var(--ease-smooth-out),
-    gap var(--duration-fast) var(--ease-smooth-out); }
-.media-body.has-queue { grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:15px; }
+  transition:grid-template-columns 560ms cubic-bezier(0.32, 1.22, 0.36, 1),
+    gap 560ms cubic-bezier(0.32, 1.22, 0.36, 1); }
+.media-body.has-queue { grid-template-columns:minmax(0,1fr) 260px; gap:14px; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .media-body { transition:none; }
+}
+html[data-motion=never] .media-body { transition:none; }
 
 .media-now { display:flex; flex-direction:column; gap:15px; min-width:0;
   position:relative; }
@@ -484,8 +501,12 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .media-device-mark svg { width:15px; height:15px; }
 
 /* ── Playing Next ────────────────────────────────────────────────────── */
-.media-queue { display:flex; flex-direction:column; gap:9px; min-width:0;
-  align-self:stretch; padding-left:15px; box-shadow:inset 1px 0 0 var(--hair); }
+/* The panel is always in the DOM; the column above is what opens. It clips,
+   and its contents are a fixed width so nothing re-wraps on the way. */
+.media-queue { overflow:hidden; align-self:stretch; min-width:0; }
+.media-queue-in { display:flex; flex-direction:column; gap:9px;
+  width:260px; height:100%; padding-left:14px;
+  box-shadow:inset 1px 0 0 var(--hair); }
 .media-queue-top { display:flex; align-items:center; justify-content:space-between;
   gap:10px; }
 .media-queue-head { margin:0; font-size:13px; font-weight:600; letter-spacing:-.2px; }

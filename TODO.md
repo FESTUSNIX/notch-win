@@ -111,11 +111,11 @@ Home's three-card bento does.
 
 `src/motion.ts` is a real spring (`response`, `damping`). Current values:
 
-| Spring          | Response | Damping | What it moves                  |
-| --------------- | -------- | ------- | ------------------------------ |
-| `fold`          | **0.34** | **0.72**| opening and closing            |
-| `grow`/`widen`  | **0.30** | **0.74**| a size change you asked for    |
-| `grow`/`widen`  | 0.34     | **0.92**| a size change under a still pointer |
+| Spring         | Response | Damping  | What it moves                       |
+| -------------- | -------- | -------- | ----------------------------------- |
+| `fold`         | **0.34** | **0.72** | opening and closing                 |
+| `grow`/`widen` | **0.30** | **0.74** | a size change you asked for         |
+| `grow`/`widen` | 0.34     | **0.92** | a size change under a still pointer |
 
 Shipped values. `sizing()` in `island-surface.ts` picks between the two, and
 `Spring.retune()` swaps them mid-flight without zeroing the velocity.
@@ -189,7 +189,7 @@ something is playing. What landed:
       is none. If Spotify ever ships it, this is the one thing to add.
 - [ ] The queue is fetched when the panel opens and after an add, never
       refreshed while it sits open. A track change leaves a stale list.
-- [ ] Nothing in the queue is clickable — skipping *to* a queued track has no
+- [ ] Nothing in the queue is clickable — skipping _to_ a queued track has no
       endpoint either.
 - [ ] ⚠️ **The scope changed** (`user-modify-playback-state` was added for the
       add). A connection made before this has to be reconnected in Settings, or

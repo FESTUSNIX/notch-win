@@ -831,8 +831,13 @@ test("the player is a screen only while there is a player, and the queue is clos
   // every time you look at it.
   await expect(page.locator(".media-left")).toHaveText(/^-\d+:\d{2}$/);
 
-  /* Closed by default, and the panel is narrower for it. */
-  await expect(page.locator(".media-queue")).toHaveCount(0);
+  /* Closed by default, and the panel is narrower for it.
+     ⚠️ The panel is IN THE DOM when closed — it has to be, or there is
+     nothing to animate on the way out. Closed means a zero-width column. */
+  const column = () => page.locator(".media-queue").evaluate(el => el.getBoundingClientRect().width);
+  await expect(page.locator(".media-queue")).toHaveCount(1);
+  await expect.poll(column).toBe(0);
+  await expect(page.locator(".media-queue")).toHaveAttribute("aria-hidden", "true");
   /* ⚠️ Settled, not sampled. The width is sprung, so a measurement taken on
      the frame the tab was pressed is some arbitrary point on the way there —
      which then makes every comparison against it meaningless. */
@@ -850,6 +855,7 @@ test("the player is a screen only while there is a player, and the queue is clos
 
   await page.getByRole("button", {name: "Playing next", exact: true}).click();
   await expect(page.locator(".media-queue-head")).toHaveText("Playing Next");
+  await expect.poll(column).toBeGreaterThan(200);
   await expect(page.locator(".media-track")).toHaveCount(6);
   // A track with no cover is still a row: artwork is the one field Spotify
   // legitimately omits.
@@ -861,6 +867,10 @@ test("the player is a screen only while there is a player, and the queue is clos
   const list = page.locator(".media-queue-list");
   await expect.poll(() => list.evaluate(el => el.scrollHeight > el.clientHeight + 1)).toBe(true);
   expect(await list.evaluate(el => Math.round(el.clientHeight))).toBeLessThan(150);
+  /* ⚠️ And the CLOSED panel is not as tall as the open one. A column clipped
+     to nothing still reports its content's height, and the island's measure
+     adds a clipping child's hidden pixels back in — so without discounting
+     zero-width children the closed player measured as tall as the open one. */
   // The screen itself does not scroll to make room for it.
   expect(await page.locator("#media-body")
     .evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
@@ -883,7 +893,7 @@ test("the player is a screen only while there is a player, and the queue is clos
 
   // And it folds back to the narrow panel.
   await page.getByRole("button", {name: "Playing next", exact: true}).click();
-  await expect(page.locator(".media-queue")).toHaveCount(0);
+  await expect.poll(column).toBe(0);
   /* ⚠️ Within a pixel, not equal to it. The width is a spring: it settles
      when it is within 0.01 of its target, which rounds to either side. */
   expect(Math.abs(await settle() - shut)).toBeLessThanOrEqual(2);

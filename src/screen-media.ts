@@ -351,7 +351,12 @@ export class MediaScreen {
     if (this.devicesOpen) now.append(this.deviceMenu());
     this.host.append(now);
 
-    if (this.queueOpen) this.host.append(this.renderQueue());
+    /* ⚠️ ALWAYS appended, even closed. It used to be added and removed with
+     * the toggle, which is why nothing could animate: on the way in the panel
+     * appeared at full size in the same frame the column was told to grow, and
+     * on the way out it was gone before the column could shrink. The column is
+     * what opens and closes; the panel just sits in it and is clipped. */
+    this.host.append(this.renderQueue());
   }
 
   /** The output picker, on the same grammar as the composer's chips. */
@@ -449,6 +454,15 @@ export class MediaScreen {
 
   private renderQueue(): HTMLElement {
     const panel = element("aside", "media-queue");
+    /* ⚠️ The contents are a FIXED width inside a track that animates. Left to
+     * fill the column they would re-wrap every frame on the way in and out —
+     * three titles reflowing through eight line-breaks each, which reads as a
+     * glitch rather than as a panel arriving. Clipped, it slides. */
+    const inner = element("div", "media-queue-in");
+    panel.append(inner);
+    panel.setAttribute("aria-hidden", String(!this.queueOpen));
+    // Nothing inside a closed panel is reachable by Tab either.
+    (panel as HTMLElement).inert = !this.queueOpen;
 
     const head = element("div", "media-queue-top");
     head.append(element("h3", "media-queue-head", "Playing Next"));
@@ -471,10 +485,10 @@ export class MediaScreen {
       };
       head.append(add);
     }
-    panel.append(head);
+    inner.append(head);
 
-    if (this.adding) panel.append(this.searchBox());
-    if (this.said) panel.append(element("p", "media-said", this.said));
+    if (this.adding) inner.append(this.searchBox());
+    if (this.said) inner.append(element("p", "media-said", this.said));
 
     if (!this.queue.connected) {
       /* ⚠️ Offered, not explained away. Windows' transport session has no
@@ -486,12 +500,12 @@ export class MediaScreen {
       (connect as HTMLButtonElement).type = "button";
       connect.onclick = () => { void call("open_task_editor").catch(() => {}); };
       ask.append(connect);
-      panel.append(ask);
+      inner.append(ask);
       return panel;
     }
 
     if (!this.queue.tracks.length) {
-      panel.append(element("p", "media-none", this.queue.note || "Nothing queued."));
+      inner.append(element("p", "media-none", this.queue.note || "Nothing queued."));
       return panel;
     }
 
@@ -513,7 +527,7 @@ export class MediaScreen {
       row.append(cover, copy);
       list.append(row);
     }
-    panel.append(list);
+    inner.append(list);
     return panel;
   }
 }

@@ -198,9 +198,15 @@ export class IslandSurface {
           .map(child => {
             const box = child.getBoundingClientRect();
             const hidden = Math.max(0, child.scrollHeight - child.clientHeight);
-            return { height: box.height, bottom: box.bottom + hidden };
+            return { height: box.height, width: box.width, bottom: box.bottom + hidden };
           })
-          .filter(box => box.height > 0);
+          /* ⚠️ Zero WIDTH counts as not on screen, and that is not pedantry: a
+           * column clipped to nothing still reports its content's height, and
+           * the rule above then adds every hidden pixel of it back in. The
+           * player's queue is exactly that — closed, it is a 0px track holding
+           * three rows, and without this the closed panel measured as tall as
+           * the open one. */
+          .filter(box => box.height > 0 && box.width > 0);
         if (!boxes.length) return parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
         const bottom = Math.max(...boxes.map(box => box.bottom));
         // `bottom - base.top` already carries the top padding.
