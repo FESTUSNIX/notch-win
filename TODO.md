@@ -5,7 +5,12 @@
 - Currency converter extension for the command palette
 - Notifications shelf/screen which keeps recent notifications and allows for quick actions
 - Pomodoro widget
-- Quick note widget with history of all notes, search
+- ~~Quick note widget with history of all notes, search~~ — **done**. A Notes
+  screen: a field that saves on Enter, the pile newest-first, and a search that
+  folds accents and matches every word anywhere. Palette: "Write a note".
+  - [ ] No global shortcut of its own — the palette command is the fast path.
+        One would mean a seventh key and a seventh row in Settings.
+  - [ ] Notes are not searchable *from the palette* yet, only from the screen.
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose

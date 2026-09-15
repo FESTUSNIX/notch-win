@@ -15,6 +15,7 @@ mod guard;
 mod dropprobe;
 mod log;
 mod model;
+mod notes;
 mod notify;
 mod spotify;
 mod runlog;
@@ -463,6 +464,7 @@ pub fn run() {
         .manage(weather::Latest::default())
         .manage(sessions::Sessions::default())
         .manage(snooze::Store::default())
+        .manage(notes::Store::default())
         .manage(stars::Store::default())
         .manage(prefs::Store::default())
         .manage(workspaces::Store::default())
@@ -525,6 +527,9 @@ pub fn run() {
             snooze::get_snoozed,
             prefs::get_prefs,
             prefs::set_prefs,
+            notes::get_notes,
+            notes::save_note,
+            notes::remove_note,
             stars::get_stars,
             stars::set_star,
             workspaces::get_workspaces,
@@ -676,6 +681,7 @@ pub fn run() {
             snooze::load(app.handle());
             prefs::load(app.handle());
             stars::load(app.handle());
+            notes::load(app.handle());
             workspaces::load(app.handle());
             shelf::load(app.handle());
             runlog::load(app.handle());

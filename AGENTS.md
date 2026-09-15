@@ -2330,3 +2330,33 @@ The two halves were the same fault.
      string that no longer existed, so the second cut lands wherever that
      happens to be now. Re-scan after each edit, or collect the spans and apply
      them back to front.
+308. ⚠️ **Truncate a user's text on a CHARACTER boundary.** `&body[..MAX]`
+     panics the moment a note contains anything outside ASCII, which on a
+     Polish machine is most of them — and the panic takes the note with it.
+     `.chars().take(n)`.
+309. ⚠️ **A textarea must not be re-rendered on its own keystrokes.** A
+     redraw replaces the element and takes the caret, the selection and the
+     undo stack with it. The draft lives in the field and is read on save; only
+     the list redraws.
+310. ⚠️ **Search folds the accents off both ways.** `Krakow` has to find
+     `Kraków` and the reverse, or the search is one you have to already know the
+     answer to use. `NFD` then strip `̀-ͯ`.
+     ⚠️ And it is NOT the palette's subsequence matcher: that one turns three
+     letters into a command (`agt` → `Agents`), and against prose it matches
+     almost everything — a search that returns the whole list has answered
+     nothing.
+311. ⚠️ **A highlight built from the folded string is sliced at offsets that
+     may not line up.** Composed `ó` folds to one character and the offsets
+     survive; text that arrives already DECOMPOSED folds shorter than it is, and
+     the mark then lands on the wrong characters. The length is compared and
+     the body handed back whole when they differ — a missing highlight is a
+     nicety lost, a wrong one is a lie.
+312. ⚠️ **Never `innerHTML` for a note.** It is arbitrary text the user pasted
+     from somewhere; the one thing you must not do with that is hand it to a
+     parser. Text nodes, and a test that pastes an `<img onerror>`.
+313. ⚠️ **`weekday: "short"` is not two to four characters.** It is `niedz.`
+     in Polish. A test asserting a length passed in English and nowhere else;
+     assert on "has no digits" instead.
+314. ⚠️ **Read the length before taking the mutable borrow.** `held.len()`
+     inside an arm of `match held.iter_mut()` is an immutable borrow while a
+     mutable one is live, and the compiler is right to refuse.

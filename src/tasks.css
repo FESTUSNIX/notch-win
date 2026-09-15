@@ -359,6 +359,93 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .day-switch button[aria-selected=true] { color:#fff;
   background-color:var(--tile-hi); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+/* ── Notes ───────────────────────────────────────────────────────────────
+   A field, a search, and the pile. ⚠️ The field is FIRST and always there:
+   the whole claim of a quick note is that writing one costs a keystroke, and a
+   screen that opens on a list you have to find "new" in has already lost. */
+.note-composer { display:flex; flex-direction:column; gap:8px; flex-shrink:0;
+  padding:10px; border-radius:14px;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss);
+  transition:box-shadow var(--duration-quick) var(--ease-smooth-out); }
+.note-composer:focus-within { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+  var(--gloss); }
+.note-composer.is-editing { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+  var(--gloss), var(--lift-1); }
+.note-field { width:100%; min-height:44px; font:inherit; font-size:13px;
+  line-height:1.5; resize:none; border:0; padding:6px 7px; border-radius:9px;
+  color:#fff; background:transparent; }
+.note-field:focus-visible { outline:none; }
+.note-field::placeholder { color:#6a6a6a; }
+.note-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; }
+.note-save { font-size:11.5px; font-weight:600; padding:6px 13px; border-radius:9px;
+  color:var(--on-accent);
+  background-color:var(--accent);
+  background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
+    0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
+.note-save:hover:not(:disabled) { background-color:var(--accent-hi); }
+.note-save:active:not(:disabled) { scale:.96; transition-duration:90ms; }
+.note-save:disabled { opacity:.45; cursor:default; }
+.note-cancel { font-size:11.5px; padding:6px 11px; border-radius:9px; color:#a5a5a5; }
+.note-cancel:hover { color:#fff; background:var(--tile-hi); }
+.note-cancel:active { scale:.97; transition-duration:90ms; }
+
+.note-search { display:flex; align-items:center; gap:9px; flex-shrink:0;
+  margin-top:11px; }
+.note-search-field { flex:1; min-width:0; font:inherit; font-size:12px;
+  padding:7px 10px; border:0; border-radius:9px; color:#fff;
+  background:rgba(0,0,0,.32);
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 6px -3px rgba(0,0,0,.9); }
+.note-search-field::placeholder { color:#6a6a6a; }
+.note-search-field:focus-visible { outline:none;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 2px 6px -3px rgba(0,0,0,.9); }
+.note-count { flex-shrink:0; font-size:10.5px; color:#6a6a6a;
+  font-variant-numeric:tabular-nums; }
+
+.note-list { display:flex; flex-direction:column; gap:3px; min-height:0;
+  margin-top:9px; overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
+.note-row { display:flex; align-items:center; gap:8px; min-width:0;
+  border-radius:11px;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.note-row:hover { background:var(--tile); }
+/* The one being edited is marked in the list as well, or the composer above
+   has silently taken a row's contents and the row still reads as untouched. */
+.note-row.is-editing { background:var(--tile-hi);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
+.note-open { flex:1; min-width:0; text-align:left; padding:9px 11px;
+  border-radius:11px; background:none; }
+.note-open:active { scale:.995; transition-duration:90ms; }
+.note-copy { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.note-title { font-size:13px; font-weight:500; line-height:1.35; color:#e8e8e8;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.note-preview { font-size:11px; color:#7c7c7c; line-height:1.4;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Where the search matched. */
+.note-hit { color:var(--accent); font-weight:600;
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius:3px; }
+
+.note-side { display:flex; align-items:center; gap:2px; flex-shrink:0;
+  padding-right:8px; }
+.note-when { font-size:10px; color:#5f5f5f; white-space:nowrap;
+  font-variant-numeric:tabular-nums; margin-right:4px; }
+/* ⚠️ Revealed on hover, and the row is a button, so they need a static cue
+   too: the time beside them is always there and the row lights up as a whole.
+   On a keyboard they come back with `:focus-within`, or they would be
+   unreachable by Tab. */
+.note-do { width:26px; height:26px; padding:0; border-radius:7px;
+  display:grid; place-items:center; color:#6a6a6a; opacity:0;
+  transition:opacity var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out); }
+.note-do svg { width:14px; height:14px; }
+.note-row:hover .note-do, .note-row:focus-within .note-do { opacity:1; }
+.note-do:hover { color:#fff; background:var(--tile-on); }
+.note-do:active { scale:.9; transition-duration:90ms; }
+.note-none { margin:22px 0; text-align:center; font-size:12px; color:#5f5f5f; }
+
 /* ── The calendar: a month, and the agenda beside it ─────────────────────
    ⚠️ One view, not two. A grid says WHICH days have something on them; the
    agenda says what. A grid on its own answers neither question, which is why

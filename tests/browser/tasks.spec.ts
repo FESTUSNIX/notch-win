@@ -1263,6 +1263,87 @@ test("a star keeps something, and keeps it in the empty list", async ({page}) =>
   await page.screenshot({path: "test-results/island-palette-star.png"});
 });
 
+test("notes: one key to write one, and the pile stays findable", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator('[data-tab="notes"]').click();
+
+  const rows = page.locator(".note-row");
+  await expect(rows).toHaveCount(5);
+
+  /* ⚠️ Enter SAVES; Shift+Enter is a newline. A quick note is one key or it
+     is not quick — a textarea whose Enter does nothing is the shape every
+     "notes" box has, which is why nobody uses them for one line. */
+  const field = page.getByLabel("Note", {exact: true});
+  await field.fill("Passport expires March");
+  await field.press("Enter");
+  await expect(rows).toHaveCount(6);
+  // Newest first, and the field is empty again rather than holding what was
+  // just saved — a second Enter would otherwise save it twice.
+  await expect(rows.first()).toContainText("Passport expires March");
+  await expect(field).toHaveValue("");
+
+  await field.fill("first line");
+  await field.press("Shift+Enter");
+  await field.type("second line");
+  await field.press("Enter");
+  await expect(rows).toHaveCount(7);
+  // The first line is the title, the rest is the preview on one line.
+  await expect(rows.first().locator(".note-title")).toHaveText("first line");
+  await expect(rows.first().locator(".note-preview")).toHaveText("second line");
+
+  /* ⚠️ Accents folded both ways. Half of what gets written down on this
+     machine is Polish, and a search that only matches if you reproduce the
+     diacritics is one you have to know the answer to use. */
+  const search = page.getByLabel("Search notes");
+  await search.fill("krakow");
+  await expect(rows).toHaveCount(1);
+  await expect(page.locator(".note-hit")).toHaveText("Krakow");
+  await expect(page.locator(".note-count")).toHaveText(/1 of \d/);
+
+  // Every word, anywhere, in any order — you remember a note as a few words,
+  // not as a phrase.
+  await search.fill("pi ssh");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("ssh key");
+  /* ⚠️ Three, not two — `pi` is inside `expires` as well, and that is the
+     right trade rather than a miss. Matching on word boundaries would stop
+     `krak` finding `Krakowie`, and typing a prefix is how anyone actually
+     searches a pile of their own writing. */
+  await search.fill("pi");
+  await expect(rows).toHaveCount(3);
+  await search.fill("zzz");
+  await expect(page.locator(".note-none")).toBeVisible();
+  await search.fill("");
+
+  /* Pressing a note opens it for editing, and the row says so — otherwise the
+     composer has silently taken a row's contents and the row still reads as
+     untouched. */
+  await rows.first().locator(".note-open").click();
+  await expect(page.locator(".note-row.is-editing")).toHaveCount(1);
+  await expect(field).toHaveValue(/first line/);
+  await field.fill("edited in place");
+  await field.press("Enter");
+  await expect(rows).toHaveCount(7);
+  await expect(rows.first()).toContainText("edited in place");
+  await expect(page.locator(".note-row.is-editing")).toHaveCount(0);
+
+  /* ⚠️ A note is arbitrary text the user pasted from somewhere, and the one
+     thing you must not do with that is hand it to a parser. */
+  await field.fill('<img src=x onerror="alert(1)"> pasted');
+  await field.press("Enter");
+  await expect(rows.first()).toContainText('<img src=x onerror="alert(1)"> pasted');
+  await expect(page.locator(".note-list img")).toHaveCount(0);
+
+  await page.screenshot({path: "test-results/island-notes.png"});
+
+  // Delete takes it back off the pile.
+  const before = await rows.count();
+  await rows.first().hover();
+  await rows.first().getByLabel("Delete note").click();
+  await expect(rows).toHaveCount(before - 1);
+});
+
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);

@@ -20,7 +20,8 @@ export type ScreenName =
   /** ⚠️ Real, but its tab is only on screen while something is playing — see
    *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
    *  that is not there. */
-  | "media";
+  | "media"
+  | "notes";
 
 /** What the resting pill shows: the date, the time, and at most one module. */
 export interface Resting {

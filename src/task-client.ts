@@ -61,6 +61,14 @@ if(new URLSearchParams(location.search).has("single")) demo.tasks=demo.tasks.fil
 const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
 const demoStars: Record<string, Record<string, string>> = {};
+const hoursAgo = (h: number) => Date.now() - h * 3_600_000;
+let demoNotes = [
+  {id:"n1", body:"ssh key for the pi\nroot@10.0.0.4, port 2222", written:hoursAgo(1), edited:hoursAgo(1)},
+  {id:"n2", body:"Spotkanie w Krakowie — wtorek 14:00", written:hoursAgo(5), edited:hoursAgo(5)},
+  {id:"n3", body:"Book: The Design of Everyday Things", written:hoursAgo(30), edited:hoursAgo(30)},
+  {id:"n4", body:"Bin day is Thursday", written:hoursAgo(50), edited:hoursAgo(50)},
+  {id:"n5", body:"Raspberry pi power supply is 5V 3A", written:hoursAgo(200), edited:hoursAgo(200)},
+];
 let demoPrefs: Record<string, unknown> = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   /* ⚠️ Staged from the query string, like `?edge=`. Click mode changes what
@@ -240,6 +248,26 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
   ]) as T;
   if (command === "focus_session") return true as T;
+  /* ⚠️ Held for the page's lifetime, like the stars. Enough of them to put
+     the search above its own threshold, because a fixture of three notes
+     proves nothing about a control that appears at five. */
+  if (command === "get_notes") return structuredClone(demoNotes) as T;
+  if (command === "save_note") {
+    const body = String(args.body ?? "").trim();
+    const id = String(args.id ?? "");
+    const at = Date.now();
+    if (id) {
+      if (!body) demoNotes = demoNotes.filter(n => n.id !== id);
+      else demoNotes = demoNotes.map(n => n.id === id ? {...n, body, edited: at} : n);
+    } else if (body) {
+      demoNotes = [{id: `n${at}`, body, written: at, edited: at}, ...demoNotes];
+    }
+    return structuredClone(demoNotes) as T;
+  }
+  if (command === "remove_note") {
+    demoNotes = demoNotes.filter(n => n.id !== String(args.id));
+    return structuredClone(demoNotes) as T;
+  }
   if (command === "get_snoozed") return {} as T;
   if (command === "snooze" || command === "unsnooze") return undefined as T;
   if (command === "get_shelf") return (quiet ? [] : [

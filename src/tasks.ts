@@ -22,6 +22,7 @@ import { HomeScreen } from "./screen-home";
  * the media keys already do better on a bigger surface. What it keeps is the
  * part nothing else had: the pill saying what is playing at a glance. */
 import { MediaScreen, MediaSource } from "./screen-media";
+import { NotesScreen } from "./screen-notes";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
@@ -48,6 +49,7 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "media", icon: "media", label: "Playing" },
   { name: "agents", icon: "agent", label: "Agents" },
   { name: "shelf", icon: "shelf", label: "Shelf" },
+  { name: "notes", icon: "note", label: "Notes" },
   { name: "calendar", icon: "calendar", label: "Calendar" },
   { name: "system", icon: "system", label: "System" },
   { name: "review", icon: "review", label: "Review" },
@@ -91,6 +93,10 @@ const WIDTH: Record<ScreenName, number> = {
   media: PLAYER_ONLY,
   agents: 1620,    // rows carrying project, branch, tokens and a verb
   shelf: 1480,     // rows with a thumbnail and a path
+  /* Wider than Today: a note is prose, and prose at 660px is a column of four
+   * words. Not the full body either — a line of text longer than about 90
+   * characters is measurably harder to come back to the start of. */
+  notes: 1560,
   calendar: 1900,  // the week grid needs seven columns
   system: 1900,    // a bento
   review: 1480,    // a few stacked cards
@@ -126,6 +132,7 @@ app.innerHTML = `<div id="notch-shell">
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
         <section class="screen" data-screen="agents" role="tabpanel" aria-label="Agents" hidden><div class="screen-body scrolls" id="agents-body"></div></section>
         <section class="screen" data-screen="shelf" role="tabpanel" aria-label="Shelf" hidden><div class="screen-body scrolls" id="shelf-body"></div></section>
+        <section class="screen" data-screen="notes" role="tabpanel" aria-label="Notes" hidden><div class="screen-body scrolls" id="notes-body"></div></section>
         <section class="screen" data-screen="review" role="tabpanel" aria-label="Review" hidden><div class="screen-body review-grid spans" id="review-body"></div></section>
         <section class="screen" data-screen="system" role="tabpanel" aria-label="System" hidden><div class="screen-body sys-grid spans" id="system-body"></div></section>
       </div>
@@ -220,6 +227,10 @@ const player = new MediaScreen(get("media-body"), {
   /* ⚠️ Asked for, so it springs. The queue opening is the clearest case there
    * is of a size change you pressed a button for. */
   width: () => { surface.capBody(cpx(widthOf("media"))); surface.deliberately(); },
+}, () => render());
+const notes = new NotesScreen(get("notes-body"), {
+  focus: active => surface.input(active),
+  say: (what, why) => say(what, why),
 }, () => render());
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
@@ -543,6 +554,7 @@ function render() {
   system.render();
   agentsScreen.render();
   shelf.render();
+  notes.render();
   review.render();
   home.render();
   player.render();
@@ -554,6 +566,7 @@ function render() {
   const tools: Partial<Record<ScreenName, () => ScreenTools>> = {
     today: () => today.tools(),
     shelf: () => shelf.tools(),
+    notes: () => notes.tools(),
     media: () => player.tools(),
   };
   paintTools(get("screen-tools"), tools[screen]?.() ?? {});
@@ -647,6 +660,9 @@ palette.add(() => {
     { id: "cmd:editor", title: "Accounts & connections", keywords: "settings ticktick google weather",
       icon: "settings", hint: "Do", keep: { title: "Accounts & connections", note: "command", icon: "settings", kind: "", path: "" },
       run: () => { void today.action("open_task_editor"); } },
+    { id: "cmd:note", title: "Write a note", keywords: "new jot scratch remember",
+      icon: "note", hint: "Do", keep: { title: "Write a note", note: "command", icon: "note", kind: "", path: "" },
+      run: () => { show("notes"); surface.pinFor(6000); void notes.compose(""); } },
     { id: "cmd:log", title: "Open log", keywords: "debug diagnose trouble",
       icon: "note", hint: "Do", keep: { title: "Open log", note: "command", icon: "note", kind: "", path: "" },
       run: () => call("open_log") },
@@ -1417,6 +1433,7 @@ async function boot() {
   }
 
   await shelf.boot();
+  await notes.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();
