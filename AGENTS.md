@@ -2426,3 +2426,28 @@ The two halves were the same fault.
      whose note has been deleted is a square of text on the desktop that
      nothing can reach — and the same is true of a note emptied to nothing,
      which goes through `save_note` rather than `remove_note`.
+333. ⚠️ **A shape hanging off the island must be a SIBLING of it.**
+     `#island` is `overflow: clip` and carries a clip path, so a child that
+     reaches past the shape is erased with no warning — and the window itself
+     is sized to the island exactly, so the strip the shape hangs into has to
+     be added to `windowSize()` or the shape is cut off at the window's edge.
+     Both failures look like a rendering fault rather than a missing element.
+334. ⚠️ **Anything drawn outside a reported mask is visible but dead.** The
+     notch window is click-through everywhere outside `report()`'s rects, so a
+     new surface that does not push one of its own is drawn, cannot be hovered
+     or clicked, and — worse — the island folds the instant the pointer leaves
+     the mask to reach for it.
+335. ⚠️ **`notchTransform` picks which END the flares are on, not which way
+     the shape points.** A tab moulded into the island's edge takes the
+     island's OWN edge, not the opposite one: both hang off something above
+     them. Reversed, the fillets land at the free end and a shelf reads as a
+     bell dangling on a stalk. Nothing errors; it just looks wrong.
+336. ⚠️ **A fillet radius near the depth never straightens out.** At 46 of
+     75 the tab had no flat sides left and read as a mound; at 30 of 75 the
+     curve is the top third and the rest is a straight drop. The shape is
+     valid at every value, so only looking at it catches this.
+337. ⚠️ **Chrome that exists on one edge and not on others is a silent
+     feature hole.** The tool tab was horizontal-edges-only at first, which
+     meant the screens' actions had no home at all on a left or right edge —
+     no error, no fallback, just controls that cease to exist when the island
+     is moved.

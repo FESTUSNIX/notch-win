@@ -312,16 +312,53 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    was a row at the foot of a screen before — a sync line, a sentence about
    dragging, a "Clear all" — each in the one place nothing is read, each
    breaking the bottom padding it sat inside. */
-/* ⚠️ `margin-left: auto` — the tools belong at the RIGHT-hand end, with the
-   other buttons. Left where they fell after the tab strip they read as orphans:
-   two glyphs adrift in the middle of the header with space on both sides and
-   nothing saying what they belonged to. */
-.screen-tools { display:flex; align-items:center; gap:1px; flex-shrink:0;
-  margin-left:auto; }
-.screen-tools:not(:empty) { margin-right:7px; padding-right:7px;
-  border-right:1px solid var(--hair); }
-.screen-tool { color:#565656; }
-.screen-tool:disabled { opacity:.45; }
+/* ── The tool tab ───────────────────────────────────────────────
+   What the open screen can DO, hanging off the island rather than sitting in
+   its header.
+
+   ⚠️ They were in the header, at the right-hand end, beside the pin and the
+   settings gear — and they read as orphans there however they were arranged,
+   because the header is the same on every screen and these are the one thing
+   on it that is not. A shape of their own, cut out of the island's bottom edge
+   the way the island is cut out of the bezel, says "these belong to what you
+   are looking at" without a word of explanation.
+
+   ⚠️ A SIBLING of the island, positioned by the paint loop. `#island` is
+   `overflow: clip` with a clip path, so anything inside it that reaches past
+   the shape is erased. */
+/* ── The tool tab ──────────────────────────────────────────────────────────
+   What the open screen can do, moulded into the island's far edge. Placed and
+   sized from JS every frame; everything here is which way it faces.
+
+   ⚠️ The buttons hug the JOINT, not the tab's free end, on every edge — that
+   end is where the fillets are and where the shape is widest. `flex-start`
+   does it for two of the four; the other two flip it. */
+#island-tools { position:absolute; display:flex; align-items:flex-start;
+  justify-content:center; gap:3px; padding:3px 10px 0;
+  background:#000; clip-path:url(#tools-clip);
+  will-change:width,height,opacity; }
+#island-tools[hidden] { display:none; }
+#island-tools[data-edge="bottom"] { align-items:flex-end; padding:0 10px 3px; }
+#island-tools[data-edge="left"], #island-tools[data-edge="right"] {
+  flex-direction:column; padding:10px 3px 10px 3px; }
+#island-tools[data-edge="right"] { align-items:flex-end; }
+
+/* ⚠️ The sagitta, given an axis and a sign. `screen-tools.ts` measures how
+   far into the shape a button sits and writes it as a plain length; a tab on
+   the bottom or right edge points back the other way, so the sign flips. */
+.screen-tool { translate:0 var(--tool-dip, 0px); }
+#island-tools[data-edge="bottom"] .screen-tool { translate:0 calc(var(--tool-dip, 0px) * -1); }
+#island-tools[data-edge="left"] .screen-tool { translate:var(--tool-dip, 0px) 0; }
+#island-tools[data-edge="right"] .screen-tool { translate:calc(var(--tool-dip, 0px) * -1) 0; }
+
+.screen-tool { width:28px; height:28px; padding:0; border-radius:9px;
+  display:grid; place-items:center; color:#8a8a8a; flex-shrink:0;
+  transition:color var(--duration-quick) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
+.screen-tool svg { width:16px; height:16px; }
+.screen-tool:hover:not(:disabled) { color:#fff; background:var(--tile-hi); }
+.screen-tool:active:not(:disabled) { scale:.96; transition-duration:90ms; }
+.screen-tool:disabled { color:#4f4f4f; cursor:default; }
 .screen-tool.is-warn { color:var(--warn); }
 .panel-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; }
 .small-icon { width:26px; height:26px; padding:0; color:#565656; font-size:15px; line-height:1; }

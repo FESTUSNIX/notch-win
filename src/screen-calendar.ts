@@ -253,6 +253,22 @@ export class CalendarScreen {
     void call("open_external", { url }).catch(e => { this.error = String(e); this.changed(); });
   }
 
+  /** What this screen can do, in the tab under the island.
+   *
+   * ⚠️ Both of these were reachable only by knowing they existed — a refresh
+   * that happened on a five-minute timer and nothing else, and a link into
+   * Google that was buried inside an event's panel. */
+  tools() {
+    return {
+      tools: [
+        { icon: "clock" as const, label: "Refresh the calendar",
+          run: () => { void call("refresh_calendar").catch(() => {}); } },
+        { icon: "open" as const, label: "Open Google Calendar",
+          run: () => this.open("https://calendar.google.com/calendar/r") },
+      ],
+    };
+  }
+
   private viewSwitch(): HTMLElement {
     const bar = element("div", "cal-views");
     for (const [name, icon, label] of [["month", "calendar", "Month"], ["week", "grid", "Week"]] as const) {

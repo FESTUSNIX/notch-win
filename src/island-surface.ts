@@ -91,6 +91,14 @@ export class IslandSurface {
   private cap = 0;
   private depth = cpx(FRAME.islandMinDepth);
   private clip = document.getElementById("island-clip-path") as unknown as SVGPathElement;
+  /* ── The tool tab ─────────────────────────────────────────────
+   * What the open screen can do, hanging off the island. ⚠️ A sibling of the
+   * island, never a child: `#island` is `overflow: clip` with a clip path on
+   * it, so anything inside it that reaches past the shape is simply erased. */
+  private toolsHost = document.getElementById("island-tools")!;
+  private toolsClip = document.getElementById("tools-clip-path") as unknown as SVGPathElement;
+  /** How many tools the open screen has. 0 hides the tab entirely. */
+  private toolCount = 0;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
@@ -142,7 +150,12 @@ export class IslandSurface {
   /** What the window has to be to hold the island at full size. */
   private windowSize() {
     const length = this.body + 2 * cpx(FRAME.islandCurl);
-    const depth = cpx(FRAME.islandBodyDepth);
+    /* ⚠️ Room for the tab BELOW the island, not taken out of it. The window
+     * was exactly the island's full size, so a shape hanging off the bottom had
+     * nowhere to hang — it was cut off at the window's edge, which looks like a
+     * rendering fault rather than a missing window. The strip costs nothing: the
+     * window is click-through everywhere outside the reported masks. */
+    const depth = cpx(FRAME.islandBodyDepth) + cpx(FRAME.islandToolsDepth);
     return isVertical(this.edge)
       ? { width: depth, height: length }
       : { width: length, height: depth };
@@ -540,6 +553,8 @@ export class IslandSurface {
     this.expanded.style.height = `${lh}px`;
     place(this.expanded, lw, lh);
 
+    this.paintTools(g, x, y);
+
     // Cross-fade. The collapsed layer is gone before the expanded one arrives,
     // so the two are never legible at once over each other.
     this.collapsed.style.opacity = String(Math.max(0, 1 - shown / 0.38));
@@ -585,6 +600,77 @@ export class IslandSurface {
     };
   }
 
+  /** The tab, welded to the island's far edge.
+   *
+   * ⚠️ The SAME path as the island, a quarter-turn round. The island is a
+   * notch cut into the bezel; this is a notch cut into the island, so the
+   * fillets where the two meet are the same curve running the other way and it
+   * reads as one piece of moulding rather than as a bar parked underneath.
+   *
+   * ⚠️ All four edges. It is tempting to draw this on the horizontal ones
+   * only — the sketch it came from is a top-edge island — but the tools have no
+   * other home since the header row went, and a control that silently ceases to
+   * exist when you move the island to the left of the screen is worse than one
+   * that looks slightly odd there. The geometry is the same in both
+   * orientations, with `length` and `depth` swapping axes. */
+  private paintTools(g: ReturnType<IslandSurface["geometry"]>, x: number, y: number) {
+    const show = this.open && this.toolCount > 0 && !this.hidden;
+    this.toolsHost.hidden = !show;
+    if (!show) return;
+
+    const depth = cpx(FRAME.islandToolsDepth);
+    const curl = cpx(FRAME.islandToolsCurl);
+    const length = Math.min(
+      g.body,
+      this.toolCount * cpx(FRAME.islandToolsStep) + 2 * curl,
+    );
+
+    /* Pushed to the island's far end, inset so it does not sit under the
+     * island's own flare — which is where the shape is already turning. */
+    const inset = cpx(FRAME.islandToolsInset);
+    const vertical = isVertical(this.edge);
+    /* ⚠️ Overlapped by a pixel, not butted against. Two shapes that meet
+     * exactly leave a hairline of whatever is behind them at most fractional
+     * positions — and the island is placed on a sprung, sub-pixel `top`, so it
+     * is at a fractional position most of the time. The overlap is under the
+     * fillets, where nothing can see it. */
+    const seam = 1;
+    /** Where the tab's near face sits: just inside the island's far edge. */
+    const off = this.edge === "top" || this.edge === "left"
+      ? (vertical ? x + g.width : y + g.height) - seam
+      : (vertical ? x : y) - depth + seam;
+    /** And where it sits ALONG that edge — the far end, less the inset. */
+    const run = (vertical ? y + g.height : x + g.width) - length - inset;
+
+    Object.assign(this.toolsHost.style, {
+      left: `${vertical ? off : run}px`,
+      top: `${vertical ? run : off}px`,
+      width: `${vertical ? depth : length}px`,
+      height: `${vertical ? length : depth}px`,
+      // It arrives with the fold rather than after it.
+      opacity: String(Math.max(0, Math.min(1, this.fold.value * 1.6 - 0.6))),
+    });
+    this.toolsHost.dataset.edge = this.edge;
+    this.toolsClip.setAttribute("d",
+      notchPath(depth, length, curl, cpx(FRAME.cornerRadius)));
+    /* ⚠️ The SAME edge as the island, not the opposite one. It is tempting to
+     * reverse it — the tab points away from the bezel — but what the edge picks
+     * is which end the flares are on, and both shapes hang off something above
+     * them: the island off the bezel, the tab off the island. Reversed, the
+     * fillets land at the tab's free end and it reads as a bell dangling on a
+     * stalk instead of a shelf moulded into the island's edge. */
+    this.toolsClip.setAttribute("transform", notchTransform(this.edge, depth));
+  }
+
+  /** How many tools the open screen has, so the tab can size itself — or not
+   *  be drawn at all. */
+  setTools(count: number) {
+    if (this.toolCount === count) return;
+    this.toolCount = count;
+    this.paint();
+    this.report();
+  }
+
   private report() {
     if (this.hidden && !this.peeking) {
       this.masks = [this.revealStrip()];
@@ -601,6 +687,14 @@ export class IslandSurface {
     // pointer mid-animation and re-collapse under the cursor.
     const pad = cpx(FRAME.tailGap) / 2;
     this.masks = [{ x: r.x - pad, y: r.y - pad, width: r.width + 2 * pad, height: r.height + 2 * pad }];
+    /* ⚠️ The tab is its OWN mask. The window is click-through everywhere
+     * outside these rects, so a shape drawn past the island's box would be
+     * visible, unhoverable, and unclickable — and the island would fold the
+     * moment the pointer reached for it. */
+    if (!this.toolsHost.hidden) {
+      const t = box(this.toolsHost);
+      this.masks.push({ x: t.x - pad, y: t.y, width: t.width + 2 * pad, height: t.height + pad });
+    }
     const origin = box(this.shell);
     if (native) {
       void call("set_interactive_rects", {

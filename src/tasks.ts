@@ -115,14 +115,15 @@ function widthOf(name: ScreenName): number {
 
 const app = document.getElementById("task-app")!;
 app.innerHTML = `<div id="notch-shell">
-  <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath></defs></svg>
+  <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath><clipPath id="tools-clip" clipPathUnits="userSpaceOnUse"><path id="tools-clip-path"/></clipPath></defs></svg>
+  <div id="island-tools" role="toolbar" aria-label="What this screen can do" hidden></div>
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
-        <div class="screen-tools" id="screen-tools"></div>
+        
         <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Settings" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
       <div class="screens">
@@ -567,9 +568,14 @@ function render() {
     today: () => today.tools(),
     shelf: () => shelf.tools(),
     notes: () => notes.tools(),
+    calendar: () => calendar.tools(),
     media: () => player.tools(),
   };
-  paintTools(get("screen-tools"), tools[screen]?.() ?? {});
+  /* ⚠️ In the TAB under the island now, not in the header beside the tabs.
+   * The header is the same on every screen — tabs, pin, settings, close — and
+   * putting a control that changes with the screen among four that never do is
+   * what made these read as orphans wherever they were put. */
+  surface.setTools(paintTools(get("island-tools"), tools[screen]?.() ?? {}));
 
   const live = claims();
   paintPill(live);

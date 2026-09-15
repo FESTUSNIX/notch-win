@@ -141,6 +141,35 @@ export const FRAME = {
    *  off rather than as long. This is ~470 CSS px, which fits every screen's
    *  natural content while still being a fraction of a 1080p display. */
   islandBodyDepth: 980,
+  /* ── The tool tab ──────────────────────────────────────────────
+   * What the open screen can DO, hanging off the island rather than sitting in
+   * its header.
+   *
+   * ⚠️ The same shape as the island, reversed. The island is a notch cut into
+   * the bezel; this is a notch cut into the island — inverse fillets where it
+   * meets it, so it reads as moulded out of the same piece rather than as a bar
+   * someone parked underneath. `notchPath` draws both. */
+  /** How far the tab hangs below the island, in design pixels. ~36 CSS px.
+   *
+   * ⚠️ SHALLOW, and it took two goes. At 92 the flare at each end was more
+   * than half the depth, so the sides never straightened out and the whole
+   * thing read as a bell hanging off the island rather than as a piece of it. A
+   * tab wider than it is deep by three to one is a mound; one that is square is
+   * an ornament. */
+  islandToolsDepth: 75,
+  /** The fillet where it meets the island. Smaller than the island's own 62:
+   *  the tab is a fifth of the width, and the same flare on it eats the whole
+   *  shape. */
+  /** ⚠️ Comfortably SMALLER than the depth. A fillet whose radius is most of
+   *  the depth never lets the sides straighten out, and the tab reads as a bell
+   *  hanging off the island instead of a shelf cut into it. At 30 of 75 the
+   *  curve is the top third and the rest is a straight drop. */
+  islandToolsCurl: 30,
+  /** One tool's slot along the tab. */
+  islandToolsStep: 104,
+  /** The tab's inset from the island's right-hand end. */
+  islandToolsInset: 150,
+
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,
   /** The inverse fillet where the island meets the bezel. Smaller than the

@@ -248,6 +248,36 @@ Month grid and agenda in one view, plus a week that is a time grid:
 
 ---
 
+## 5. The tool tab — DONE
+
+Context-based controls — clear the shelf, show the queue, refresh — in a shape
+hanging off the island's far edge, shaped like the island's own notch and laid
+out on its arc.
+
+- [x] **A sibling of `#island`, never a child.** `#island` is `overflow: clip`
+      with a clip path on it, so anything inside it that reaches past the shape
+      is simply erased.
+- [x] ⚠️ **The window had to grow.** `windowSize()` was exactly the island's
+      own size, so a shape hanging off the bottom had nowhere to hang. The
+      strip below costs nothing — the window is click-through everywhere
+      outside the reported masks.
+- [x] ⚠️ **And the tab reports a mask of its own**, or it is drawn, unhoverable
+      and unclickable, and the island folds the moment the pointer reaches for
+      it.
+- [x] ⚠️ **The fillets go at the JOINT, not the free end.** Same `notchPath`,
+      same `notchTransform`, same edge as the island — both shapes hang off
+      something above them. Reversed, it reads as a bell on a stalk.
+- [x] **All four edges.** The horizontal-only version was silent: on a left or
+      right edge the tools were simply not on the screen. `screen-tools.ts`
+      writes the arc offset as a length and `#island-tools[data-edge]` picks
+      the axis and the sign.
+- [x] **The header row is gone**, not duplicated. Two homes for one control is
+      how one of them goes stale.
+- [x] Every screen that had tools kept them; Calendar gained a refresh and a
+      link out, which were previously reachable only by knowing they existed.
+
+---
+
 ## Decisions this must not quietly undo
 
 - The bezel shape. Everything is welded to a screen edge and keeps the fillet.

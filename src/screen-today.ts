@@ -495,7 +495,7 @@ export class TodayScreen {
    * copy of the day: one optimistic layer, one definition of "open", one
    * completion path. */
 
-  /** The header's tools for this screen. */
+  /** What this screen can do, in the tab under the island. */
   tools(): { help?: string; tools: { icon: "clock"; label: string; run?: () => void; disabled?: boolean }[] } {
     /* ⚠️ One tool, not two. A "Connect TickTick" button here would be the
      * SECOND one on screen — the empty state already offers it, in the middle
