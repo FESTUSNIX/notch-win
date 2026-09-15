@@ -78,11 +78,22 @@ try {
   assert.equal(interactive.tasks.style & 0x20,0,'Task hover enables clicks');
   assert.equal(interactive.notch.style & 0x20,0x20,'Task hover does not alter the usage mask');
   await taskPage.locator('#pin').click();
-  // The three screens are the new structure; check they exist and switch.
-  for (const tab of ['media','calendar','today']) {
+  /* ⚠️ Every tab, not three of them. This walked `media`, `calendar`, `today`
+     and went stale twice over: Media was removed, and four screens have been
+     added since. A hardcoded subset in a smoke test is a subset that stops
+     covering what shipped — and the failure is a timeout on a selector, which
+     reads as a broken app rather than as a stale test. */
+  for (const tab of await taskPage.locator('[data-tab]').evaluateAll(
+      els => els.map(el => el.dataset.tab))) {
     await taskPage.locator(`[data-tab="${tab}"]`).click();
     await taskPage.locator(`.screen[data-screen="${tab}"].active`).waitFor({state:'visible'});
   }
+  /* ⚠️ Back to Today before the composer check below. The loop used to end
+     there because `today` was the last of three names written out by hand;
+     walking every tab ends on whichever is last, and the composer only exists
+     on one screen. */
+  await taskPage.locator('[data-tab="today"]').click();
+  await taskPage.locator('.screen[data-screen="today"].active').waitFor({state:'visible'});
   await taskPage.locator('#island-expanded').waitFor({state:'visible'});
   await taskPage.screenshot({path:resolve(root,'test-results/native-task-notch.png'),omitBackground:true});
   // The composer is a live field, so clicking it *is* the gesture that lifts
@@ -107,6 +118,17 @@ try {
   const afterEntry=await diagnostics();
   assert.equal(afterEntry.tasks.style & 0x08000000,0x08000000,'Releasing the field restores NOACTIVATE');
   assert.equal(await taskPage.locator('#inline-title').inputValue(),'Inline keyboard check','Escape keeps the draft');
+  /* ⚠️ Give the mask back FIRST. This test tells hover.rs that the whole
+     screen is the island's, which is how it drives the native hover poll
+     without touching the physical mouse — and it means Rust believes the
+     pointer is on the island for ever. Collapsing under that is a fold
+     followed, about half a second later, by the hover opening it straight back
+     up: `collapse()` suppresses the next hover, and the hover that goes FALSE
+     on the way out is what clears the suppression. Measured — the island folded
+     to 260x35 and was back at 968x209 two frames later.
+     The browser test moves the pointer away here for the same reason. */
+  await taskPage.evaluate(()=>{window.smokeRects=[];});
+  await pause(600);
   await taskPage.locator('#collapse-panel').click();
   await taskPage.locator('#island-expanded').waitFor({state:'hidden'});
   // Polled, not sampled. The expanded layer hides the instant the fold starts,
