@@ -2268,3 +2268,29 @@ The two halves were the same fault.
      this passed a test that checked the closed state and the open state. The
      test samples the frames in between now and asserts two things about them:
      the player's width never changes, and its left edge does.
+296. ⚠️ **ISO week 1 is the week containing the first THURSDAY**, not the week
+     containing 1 January. `(dayOfYear / 7) + 1` gets 2027-01-01 wrong by 53
+     weeks, and nobody notices until January. `isoWeek` moves to the week's
+     Thursday and counts from the 4th of that Thursday's year. ⚠️ And the count
+     is ROUNDED, not floored: both ends are local midnight, so a DST change
+     between them leaves the difference an hour short of whole days.
+297. ⚠️ **ISO weeks always start on Monday, whatever the week-start
+     preference says.** The preference decides which column a day is drawn in;
+     the NUMBER is a fixed international definition, and a "wk. 28" that moved
+     when somebody changed a setting is a different thing wearing the label.
+298. ⚠️ **Six rows in the month grid, always.** "As many as this month needs"
+     is five in November and six in December, so the panel's height changes
+     every time you page and the agenda beside it jumps with it.
+299. ⚠️ **A block's second line is gated on PIXELS, not on hours.** An hour is
+     22px in the week grid and two lines of type need ~34, so "an hour is long
+     enough for a time" put a second line into a block that could not hold the
+     first — and the title was clipped away, leaving a meeting labelled only
+     with its start time.
+300. ⚠️ **Two fields cannot answer to one label.** The calendar's New Task
+     field was `aria-label="Task name"`, which Today's composer already carries,
+     and both are in the DOM at once — ambiguous for a screen reader and for
+     anything driving the page.
+301. ⚠️ **`scrollIntoView` on a node that is not in the document yet does
+     nothing, silently.** Choosing a day scrolls the agenda to it, and the
+     heading only exists once the render has appended it — so the scroll is
+     queued for the frame after.

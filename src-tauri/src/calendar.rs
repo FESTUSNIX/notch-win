@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -34,7 +34,10 @@ const AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN: &str = "https://oauth2.googleapis.com/token";
 const API: &str = "https://www.googleapis.com/calendar/v3";
 /// More than a week of agenda is not glanceable, and the request is per calendar.
-const HORIZON_DAYS: i64 = 7;
+/// ⚠️ 45, not 7. A month grid has to be able to mark a busy day, and the
+/// agenda beside it runs past the end of the week. Six weeks is the most a
+/// month grid can show, and this covers the current one plus the next.
+const HORIZON_DAYS: i64 = 45;
 /// Calendars past this are almost always subscriptions — holidays, birthdays,
 /// someone else's availability — and each one costs a request.
 const MAX_CALENDARS: usize = 8;
@@ -509,12 +512,16 @@ async fn collect(http: &reqwest::Client, token: &str) -> Result<Vec<Event>, Stri
         .unwrap_or_default();
 
     let now = Utc::now();
-    let min = now - chrono::Duration::hours(12);
+    /* ⚠️ Back to the start of the month, not twelve hours. The grid draws the
+     * whole month including the days already gone, and a dot missing from the
+     * 3rd because the fetch started on the 14th is a calendar that looks wrong
+     * rather than one that looks empty. */
+    let min = (now - chrono::Duration::days(i64::from(now.day()) + 6)).max(now - chrono::Duration::days(38));
     let max = now + chrono::Duration::days(HORIZON_DAYS);
     let mut events = Vec::new();
     for (id, name, color) in calendars {
         let url = format!(
-            "{API}/calendars/{}/events?timeMin={}&timeMax={}&singleEvents=true&orderBy=startTime&maxResults=50",
+            "{API}/calendars/{}/events?timeMin={}&timeMax={}&singleEvents=true&orderBy=startTime&maxResults=250",
             encode(&id),
             encode(&min.to_rfc3339()),
             encode(&max.to_rfc3339())

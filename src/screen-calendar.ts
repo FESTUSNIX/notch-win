@@ -8,7 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
-import { localDay, weekStart } from "./task-model";
+import { isoWeek, localDay, weekStart } from "./task-model";
 import type { Activity } from "./island-activity";
 
 export interface CalEvent {
@@ -111,14 +111,25 @@ export function nextEvent(events: CalEvent[], now = new Date()): CalEvent | null
     .sort((a, b) => startOf(a).getTime() - startOf(b).getTime())[0] || null;
 }
 
-export type CalendarView = "agenda" | "week";
+/** ⚠️ No standalone `agenda` any more — the month view IS the agenda, with a
+ *  grid beside it saying which days are worth scrolling to. Two views that
+ *  differ only in whether there is a grid is one view and a toggle. */
+export type CalendarView = "month" | "week";
+
+/** How tall one hour of the week grid is.
+ *
+ * ⚠️ Must match `.cal-wkbody`'s `calc(var(--cal-hours) * 22px)` in tasks.css.
+ * It is here because the code has to know how many PIXELS a meeting comes to
+ * before deciding whether a second line of type fits in it — a decision made
+ * in hours puts two lines into a block that cannot hold one. */
+const HOUR_PX = 22;
 
 export class CalendarScreen {
   feed: CalendarFeed = emptyCalendar();
   error = "";
   /** Agenda answers "what is next"; week answers "how is the week shaped".
    *  Both off the same seven-day fetch — no second request, no second model. */
-  view: CalendarView = "agenda";
+  view: CalendarView = "month";
   /** Whether the week runs Monday to Sunday. ⚠️ A preference, pushed in by
    *  the shell rather than read here: `prefs` lives in tasks.ts, and a screen
    *  that fetched its own would need the event listener as well. */
@@ -130,7 +141,15 @@ export class CalendarScreen {
     this.changed();
   }
 
-  constructor(private host: HTMLElement, private changed: () => void) {}
+  /** ⚠️ The calendar does not create tasks itself. Today owns the optimistic
+   *  layer, the outbox and the list the composer files into; a second creation
+   *  path here would be a task that appears on one screen and not the other
+   *  until TickTick answers. */
+  constructor(
+    private host: HTMLElement,
+    private changed: () => void,
+    private deps: { create: (title: string, day: string) => void } = { create: () => {} },
+  ) {}
 
   async boot() {
     if (native) await listen<CalendarFeed>("calendar:changed", e => { this.feed = e.payload; this.changed(); });
@@ -225,7 +244,7 @@ export class CalendarScreen {
 
   private viewSwitch(): HTMLElement {
     const bar = element("div", "cal-views");
-    for (const [name, icon, label] of [["agenda", "agenda", "Agenda"], ["week", "grid", "Week"]] as const) {
+    for (const [name, icon, label] of [["month", "calendar", "Month"], ["week", "grid", "Week"]] as const) {
       const button = element("button", "cal-view", label);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-pressed", String(this.view === name));
@@ -236,45 +255,371 @@ export class CalendarScreen {
     return bar;
   }
 
-  /** The week today falls in, Monday first.
+  /* ── The month ─────────────────────────────────────────────────────────
+   * A grid on the left, the agenda scrolling beside it. ⚠️ The two are one
+   * view, not two: the grid says which days have something on them and the
+   * agenda says what — and a grid on its own answers neither question.
+   */
+
+  /** Which month is on screen, as an offset from the one today is in.
+   *  ⚠️ An offset rather than a Date, so "today" moving over midnight cannot
+   *  strand the view on a month nobody chose. */
+  private monthOffset = 0;
+  /** The day the agenda is scrolled to, or "" for today. */
+  private chosenDay = "";
+  /** Whether the New Task popover is up, and what is in it. */
+  private composing = false;
+
+  private shownMonth(now: Date): Date {
+    return new Date(now.getFullYear(), now.getMonth() + this.monthOffset, 1);
+  }
+
+  private renderMonth(now: Date) {
+    const wrap = element("div", "cal-split");
+    wrap.append(this.monthGrid(now), this.agenda(now));
+    this.host.append(wrap);
+  }
+
+  private monthGrid(now: Date): HTMLElement {
+    const panel = element("div", "cal-month");
+    const first = this.shownMonth(now);
+    const today = localDay(now);
+
+    /* ── The head: the month, a way to add, and the pager ─────────────── */
+    const head = element("div", "cal-month-head");
+    const name = element("b", "cal-month-name",
+      first.toLocaleDateString(undefined, { month: "long" }).toUpperCase());
+    const add = element("button", `cal-add${this.composing ? " is-on" : ""}`);
+    (add as HTMLButtonElement).type = "button";
+    add.setAttribute("aria-label", "New task");
+    add.setAttribute("aria-expanded", String(this.composing));
+    add.title = "New task";
+    paintIcon(add, "plus");
+    add.onclick = () => {
+      this.composing = !this.composing;
+      this.changed();
+      if (this.composing) {
+        requestAnimationFrame(() =>
+          this.host.querySelector<HTMLInputElement>(".cal-new input")?.focus());
+      }
+    };
+    const pager = element("div", "cal-pager");
+    for (const [step, label, glyph] of [[-1, "Previous month", "‹"], [1, "Next month", "›"]] as const) {
+      const button = element("button", "cal-page", glyph);
+      (button as HTMLButtonElement).type = "button";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.onclick = () => { this.monthOffset += step; this.chosenDay = ""; this.changed(); };
+      pager.append(button);
+    }
+    head.append(name, add, pager);
+    panel.append(head);
+    if (this.composing) panel.append(this.newTask(now));
+
+    /* ── The weekday row, in the order the grid is drawn ──────────────── */
+    const dow = element("div", "cal-dow");
+    const firstShown = weekStart(first, this.mondayFirst);
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(firstShown);
+      day.setDate(firstShown.getDate() + i);
+      /* ⚠️ `narrow`, and the duplicates are the point: M T W T F S S is how a
+       * calendar has always been headed, and widening it to "Mon" to tell the
+       * two T's apart costs the grid a third of its width for information the
+       * column position already carries. */
+      dow.append(element("span", "", day.toLocaleDateString(undefined, { weekday: "narrow" })));
+    }
+    panel.append(dow);
+
+    /* ── Six weeks, always ─────────────────────────────────────────────
+     * ⚠️ Six, not "as many as this month needs". A grid that is five rows in
+     * November and six in December changes the panel's height every time you
+     * page, and the agenda beside it jumps with it. */
+    const busy = new Map<string, number>();
+    for (const event of this.feed.events) {
+      const key = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
+      busy.set(key, (busy.get(key) ?? 0) + 1);
+    }
+    const grid = element("div", "cal-grid");
+    for (let i = 0; i < 42; i++) {
+      const date = new Date(firstShown);
+      date.setDate(firstShown.getDate() + i);
+      const key = localDay(date);
+      const other = date.getMonth() !== first.getMonth();
+      const cell = element("button", "cal-cell"
+        + (other ? " is-other" : "")
+        + (key === today ? " is-today" : "")
+        + (key === (this.chosenDay || today) ? " is-chosen" : ""));
+      (cell as HTMLButtonElement).type = "button";
+      cell.setAttribute("aria-label", date.toLocaleDateString(undefined,
+        { weekday: "long", day: "numeric", month: "long" }));
+      cell.append(element("span", "cal-cell-num", String(date.getDate())));
+      const count = busy.get(key) ?? 0;
+      if (count) {
+        const dots = element("span", "cal-dots");
+        // Three at most: past that the number stops being readable and the
+        // row of dots is just a texture.
+        for (let d = 0; d < Math.min(3, count); d++) dots.append(element("i"));
+        cell.append(dots);
+      }
+      /* Choosing a day scrolls the agenda to it rather than filtering to it.
+       * ⚠️ The agenda is continuous on purpose: "what is next" does not stop
+       * at midnight, and a day with nothing on it would otherwise answer with
+       * an empty panel rather than with the next thing that is. */
+      cell.onclick = () => { this.chosenDay = key; this.changed(); };
+      grid.append(cell);
+    }
+    panel.append(grid);
+    return panel;
+  }
+
+  /** The New Task popover.
    *
-   * ⚠️ This used to be "seven columns FROM today", on the argument that the
-   * island is a glance forward and half a grid of days already gone is half a
-   * grid. That is a fair argument and it lost to a simpler one: a column whose
-   * weekday changes every morning cannot be read at a glance at all, because
-   * the thing you are glancing at is where Thursday is. Days already gone are
-   * dimmed rather than dropped. */
+   * ⚠️ It writes through the Today screen rather than calling `create_task`
+   * itself. Today owns the optimistic layer, the outbox and the list the
+   * composer files into; a second creation path here would be a task that
+   * appears on one screen and not the other until TickTick answers.
+   */
+  private newTask(now: Date): HTMLElement {
+    const sheet = element("div", "cal-new");
+    sheet.append(element("span", "cal-new-head", "New Task"));
+    const row = element("div", "cal-new-row");
+    const field = document.createElement("input");
+    field.type = "text";
+    field.placeholder = "What needs doing?";
+    field.maxLength = 1000;
+    /* ⚠️ Not "Task name". Today's composer already carries that label and both
+     * are in the DOM at once — two fields answering to one name is ambiguous
+     * for a screen reader and for anything driving the page. */
+    field.setAttribute("aria-label", "New task name");
+    const when = element("span", "cal-new-day",
+      dayHeading(this.chosenDay || localDay(now), localDay(now)));
+    const add = element("button", "cal-new-add", "Add");
+    (add as HTMLButtonElement).type = "button";
+    const commit = () => {
+      const value = field.value.trim();
+      if (!value) return;
+      this.deps.create(value, this.chosenDay || localDay(now));
+      this.composing = false;
+      this.changed();
+    };
+    add.onclick = commit;
+    field.onkeydown = event => {
+      if (event.key === "Enter") { event.preventDefault(); commit(); }
+      if (event.key === "Escape") { this.composing = false; this.changed(); }
+    };
+    row.append(when, field, add);
+    sheet.append(row);
+    return sheet;
+  }
+
+  /** The agenda beside the grid: continuous, grouped by day, week number and
+   *  all. */
+  private agenda(now: Date): HTMLElement {
+    const panel = element("div", "cal-agenda scrolls");
+    const today = localDay(now);
+    /* From the chosen day, or from today. ⚠️ `endOf`, not `startOf`: a meeting
+     * that began twenty minutes ago has not finished, and dropping it while you
+     * are in it is the one moment the agenda is being looked at. */
+    const from = this.chosenDay || today;
+    const shown = this.feed.events.filter(e =>
+      (e.allDay ? e.start.slice(0, 10) : localDay(endOf(e))) >= from);
+
+    if (!shown.length) {
+      const empty = element("div", "day-empty");
+      empty.append(element("h3", "", "Nothing ahead"),
+        element("p", "", from === today
+          ? "No events in the next few weeks."
+          : "Nothing from this day on."));
+      panel.append(empty);
+      return panel;
+    }
+
+    let day = "";
+    for (const event of shown) {
+      const eventDay = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
+      if (eventDay !== day) {
+        day = eventDay;
+        const heading = element("h4", "cal-day");
+        heading.dataset.day = day;
+        const [y, m, d] = day.split("-").map(Number);
+        heading.append(
+          element("span", "", dayHeading(day, today).toUpperCase()),
+          element("span", "cal-wk", `WK. ${isoWeek(new Date(y, m - 1, d))}`),
+        );
+        panel.append(heading);
+      }
+      panel.append(this.eventCard(event));
+    }
+    return panel;
+  }
+
+  /** ⚠️ A button, and TINTED rather than striped. The 3px left rail was the
+   *  one decoration on this surface that said nothing the colour could not say
+   *  by itself — and it is the shape every generated calendar has. */
+  private eventCard(event: CalEvent): HTMLElement {
+    const row = element("button", `cal-row${event.response === "declined" ? " declined" : ""}`
+      + (this.chosen === event.id ? " is-open" : ""));
+    (row as HTMLButtonElement).type = "button";
+    row.style.setProperty("--cal", event.color || "#5ac8fa");
+    row.onclick = () => {
+      this.chosen = this.chosen === event.id ? null : event.id;
+      this.changed();
+    };
+    const body = element("div", "cal-body");
+    body.append(element("span", "cal-title", event.title));
+    body.append(element("span", "cal-time", timeLabel(event)));
+    row.append(body);
+    if (event.meetingUrl) {
+      const join = element("button", "cal-join");
+      (join as HTMLButtonElement).type = "button";
+      join.setAttribute("aria-label", `Join ${event.title}`);
+      join.title = "Join";
+      paintIcon(join, "join");
+      join.onclick = event2 => { event2.stopPropagation(); this.open(event.meetingUrl); };
+      row.append(join);
+    }
+    return row;
+  }
+
+  /* ── The week ──────────────────────────────────────────────────────────
+   * A TIME grid, not seven lists of chips.
+   *
+   * ⚠️ The old one was a column per day with the events stacked inside it in
+   * order, which answers "what is on Thursday" — the agenda answers that
+   * better, on one screen, without seven columns. The only question a week
+   * view answers that nothing else does is **where the gaps are**, and a list
+   * cannot show a gap. Laid against an hour axis, a free afternoon is a free
+   * afternoon at a glance.
+   *
+   * ⚠️ The axis is cropped to the hours that are actually used, never a flat
+   * 00:00–24:00. Nine tenths of a full day is empty on any real calendar, and
+   * a grid that spends nine tenths of its height on the small hours is a grid
+   * you cannot read the middle of. A floor and a ceiling keep it honest when
+   * the week is empty.
+   */
   private renderWeek(now: Date) {
-    const grid = element("div", "cal-week");
     const today = localDay(now);
     const first = weekStart(now, this.mondayFirst);
+    const days: { key: string; date: Date; events: CalEvent[] }[] = [];
     for (let offset = 0; offset < 7; offset++) {
       const date = new Date(first);
       date.setDate(first.getDate() + offset);
       const key = localDay(date);
-      const column = element("div",
-        `cal-wcol${key === today ? " is-today" : ""}${key < today ? " is-past" : ""}`);
-      const head = element("div", "cal-whead");
-      head.append(
-        element("span", "cal-wday", date.toLocaleDateString([], { weekday: "short" })),
-        element("span", "cal-wnum", String(date.getDate())),
-      );
-      column.append(head);
-      const events = this.feed.events.filter(e =>
-        (e.allDay ? e.start.slice(0, 10) : localDay(startOf(e))) === key);
-      if (!events.length) column.append(element("span", "cal-wnone", "—"));
-      for (const event of events) {
-        const chip = element("div", `cal-chip${event.response === "declined" ? " declined" : ""}`);
-        chip.style.setProperty("--cal", event.color || "#5ac8fa");
-        chip.title = `${timeLabel(event)} · ${event.title}`;
-        if (!event.allDay) chip.append(element("span", "cal-chip-time", timeLabel(event)));
-        chip.append(element("span", "cal-chip-title", event.title));
-        if (event.meetingUrl) chip.onclick = () => this.open(event.meetingUrl);
-        column.append(chip);
-      }
-      grid.append(column);
+      days.push({
+        key,
+        date,
+        events: this.feed.events.filter(e =>
+          (e.allDay ? e.start.slice(0, 10) : localDay(startOf(e))) === key),
+      });
     }
-    this.host.append(grid);
+
+    const timed = days.flatMap(d => d.events.filter(e => !e.allDay));
+    const hours = timed.flatMap(e => [startOf(e).getHours(), endOf(e).getHours() + 1]);
+    /* 8 to 19 with nothing on, which is the shape of a working day — and it
+     * widens to whatever is actually booked rather than the other way round. */
+    const from = Math.max(0, Math.min(8, ...hours));
+    const to = Math.min(24, Math.max(19, ...hours));
+    const span = Math.max(1, to - from);
+
+    const week = element("div", "cal-weekgrid");
+    week.style.setProperty("--cal-hours", String(span));
+
+    /* ── The head: one column per day, plus the axis gutter ───────────── */
+    const head = element("div", "cal-wkhead");
+    head.append(element("span", "cal-wkaxis-top",
+      `WK. ${isoWeek(first)}`));
+    for (const day of days) {
+      const cell = element("div", "cal-wkday"
+        + (day.key === today ? " is-today" : "")
+        + (day.key < today ? " is-past" : ""));
+      cell.append(
+        element("span", "cal-wkname", day.date.toLocaleDateString(undefined, { weekday: "short" })),
+        element("span", "cal-wknum", String(day.date.getDate())),
+      );
+      head.append(cell);
+    }
+    week.append(head);
+
+    /* ── All-day events, above the axis ────────────────────────────────
+     * ⚠️ A band of their own. An all-day event has no start time, so laying it
+     * on an hour axis means inventing one — and a birthday drawn across
+     * 00:00–23:59 swamps every meeting in the column. */
+    const allDay = days.some(d => d.events.some(e => e.allDay));
+    if (allDay) {
+      const band = element("div", "cal-wkall");
+      band.append(element("span", "cal-wkall-label", "All day"));
+      for (const day of days) {
+        const cell = element("div", "cal-wkall-cell");
+        for (const event of day.events.filter(e => e.allDay)) {
+          const chip = element("span", "cal-chip");
+          chip.style.setProperty("--cal", event.color || "var(--cool)");
+          chip.append(element("span", "cal-chip-title", event.title));
+          chip.title = event.title;
+          band.append(cell);
+          cell.append(chip);
+        }
+        if (!cell.parentElement) band.append(cell);
+      }
+      week.append(band);
+    }
+
+    /* ── The body: an hour axis and seven columns over it ─────────────── */
+    const body = element("div", "cal-wkbody");
+    const axis = element("div", "cal-wkaxis");
+    for (let h = from; h < to; h++) {
+      axis.append(element("span", "", `${String(h).padStart(2, "0")}`));
+    }
+    body.append(axis);
+
+    for (const day of days) {
+      const column = element("div", "cal-wkcol"
+        + (day.key === today ? " is-today" : "")
+        + (day.key < today ? " is-past" : ""));
+      for (let h = from; h < to; h++) column.append(element("i", "cal-wkline"));
+
+      for (const event of day.events.filter(e => !e.allDay)) {
+        const begin = startOf(event);
+        const end = endOf(event);
+        const startHour = begin.getHours() + begin.getMinutes() / 60;
+        const endHour = Math.max(startHour + 0.25, end.getHours() + end.getMinutes() / 60);
+        const block = element("button", `cal-block${event.response === "declined" ? " declined" : ""}`
+          + (this.chosen === event.id ? " is-open" : ""));
+        (block as HTMLButtonElement).type = "button";
+        block.style.setProperty("--cal", event.color || "var(--cool)");
+        block.style.top = `${((startHour - from) / span) * 100}%`;
+        /* ⚠️ A floor on the height, not just on the maths. A fifteen-minute
+         * stand-up is 2% of a twelve-hour axis — four pixels, with no room for
+         * a title and nothing to press. */
+        block.style.height = `max(${HOUR_PX}px, ${((endHour - startHour) / span) * 100}%)`;
+        block.title = `${timeLabel(event)} · ${event.title}`;
+        block.append(element("span", "cal-block-title", event.title));
+        /* ⚠️ Gated on PIXELS, not on hours. An hour is 22px here, and two lines
+         * of type need about 34 — so "an hour is long enough for a time" put a
+         * second line into a block that could not hold the first, and the title
+         * was clipped away leaving a block labelled only with its start time. */
+        if ((endHour - startHour) * HOUR_PX >= 34) {
+          block.append(element("span", "cal-block-time", timeLabel(event)));
+        }
+        block.onclick = () => {
+          this.chosen = this.chosen === event.id ? null : event.id;
+          this.changed();
+        };
+        column.append(block);
+      }
+
+      /* Now, as a line across today's column. ⚠️ Only when it is inside the
+       * axis: at seven in the morning it would otherwise be pinned to the top
+       * of the grid, claiming eight o'clock. */
+      const nowHour = now.getHours() + now.getMinutes() / 60;
+      if (day.key === today && nowHour >= from && nowHour <= to) {
+        const mark = element("i", "cal-wknow");
+        mark.style.top = `${((nowHour - from) / span) * 100}%`;
+        column.append(mark);
+      }
+      body.append(column);
+    }
+    week.append(body);
+    this.host.append(week);
   }
 
   render() {
@@ -295,76 +640,26 @@ export class CalendarScreen {
 
     this.host.append(this.viewSwitch());
     const now = new Date();
-    if (this.view === "week") {
-      this.renderWeek(now);
-      if (this.error || this.feed.error) {
-        this.host.append(element("p", "screen-error", this.error || this.feed.error || ""));
-      }
-      return;
-    }
-    const upcoming = this.feed.events.filter(e => endOf(e) > now);
-    if (!upcoming.length) {
-      const empty = element("div", "day-empty");
-      empty.append(element("h3", "", "Nothing ahead"), element("p", "", "No events in the next week."));
-      this.host.append(empty);
-      if (this.feed.error) this.host.append(element("p", "screen-error", this.feed.error));
-      return;
-    }
+    if (this.view === "week") this.renderWeek(now);
+    else this.renderMonth(now);
 
-    const next = nextEvent(this.feed.events, now);
-    if (next) {
-      const banner = element("div", "cal-next");
-      banner.append(
-        element("span", "cal-next-when", countdown(now, startOf(next))),
-        element("span", "cal-next-title", next.title),
-      );
-      if (next.color) banner.style.setProperty("--cal", next.color);
-      this.host.append(banner);
-    }
-
-    let day = "";
-    for (const event of upcoming) {
-      const eventDay = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
-      if (eventDay !== day) {
-        day = eventDay;
-        this.host.append(element("h4", "cal-day", dayHeading(day)));
-      }
-      /* ⚠️ A button, and TINTED rather than striped. The 3px left rail was the
-       * one decoration on this surface that said nothing the colour could not
-       * say by itself — and it is the shape every generated calendar has. The
-       * card carries the calendar's colour as a wash instead. */
-      const row = element("button", `cal-row${event.response === "declined" ? " declined" : ""}`
-        + (this.chosen === event.id ? " is-open" : ""));
-      (row as HTMLButtonElement).type = "button";
-      row.style.setProperty("--cal", event.color || "#5ac8fa");
-      row.onclick = () => {
-        this.chosen = this.chosen === event.id ? null : event.id;
-        this.changed();
-      };
-      row.append(element("span", "cal-time", timeLabel(event)));
-      const body = element("div", "cal-body");
-      body.append(element("span", "cal-title", event.title));
-      const detail = [event.calendar, event.location].filter(Boolean).join(" · ");
-      if (detail) body.append(element("span", "cal-detail", detail));
-      row.append(body);
-      if (event.meetingUrl) {
-        const join = element("button", "cal-join");
-        (join as HTMLButtonElement).type = "button";
-        join.setAttribute("aria-label", `Join ${event.title}`);
-        join.title = "Join";
-        paintIcon(join, "join");
-        join.onclick = () => this.open(event.meetingUrl);
-        row.append(join);
-      }
-      this.host.append(row);
-    }
-    /* The panel goes LAST so it paints over the list, and is anchored to the
-     * screen rather than to the row — a row near the bottom would otherwise
-     * open a panel half off the island. */
-    const chosen = upcoming.find(event => event.id === this.chosen);
-    if (chosen) this.host.append(this.panel(chosen));
     if (this.error || this.feed.error) {
       this.host.append(element("p", "screen-error", this.error || this.feed.error || ""));
+    }
+    if (this.chosen) {
+      const open = this.feed.events.find(e => e.id === this.chosen);
+      if (open) this.host.append(this.panel(open));
+      else this.chosen = null;
+    }
+
+    /* ⚠️ After the paint, not during it. The agenda is a scroller and the
+     * heading only exists once it has been appended — and `scrollIntoView` on
+     * a node that is not in the document yet does nothing at all, silently. */
+    if (this.chosenDay) {
+      requestAnimationFrame(() => {
+        this.host.querySelector<HTMLElement>(`.cal-day[data-day="${this.chosenDay}"]`)
+          ?.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
     }
   }
 }

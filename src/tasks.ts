@@ -189,7 +189,9 @@ paintIcon(get("collapse-panel"), "close");
 
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
 const media = new MediaSource(() => render());
-const calendar = new CalendarScreen(get("calendar-body"), () => render());
+const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
+  create: (title, day) => { void today.createOn(title, day).then(say0 => { if (say0) say("Could not add", say0); }); },
+});
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
 const shelf = new ShelfScreen(get("shelf-body"), () => render());

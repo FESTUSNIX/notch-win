@@ -61,7 +61,8 @@ test("the island morphs from one pill into one panel, and the tabs switch screen
   await expect(page.locator(".home-sec")).toHaveCount(3);
   await expect(page.locator(".home-month")).toBeVisible();
   await page.locator('[data-tab="calendar"]').click();
-  await expect(page.locator(".cal-next")).toBeVisible();
+  // The month grid and the agenda beside it — one view, not two.
+  await expect(page.locator(".cal-grid")).toBeVisible();
   await page.locator('[data-tab="today"]').click();
   await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeVisible();
   expect(errors).toEqual([]);
@@ -213,13 +214,22 @@ test("the agenda groups by day and offers a link only where there is one", async
   await page.goto("/tasks.html");
   await open(page);
   await page.locator('[data-tab="calendar"]').click();
-  await expect(page.locator(".cal-next-title")).toHaveText("Design review");
-  await expect(page.locator(".cal-next-when")).toHaveText(/^(now|in \d+ (min|h|d))$/);
-  // Not asserted as "Today": the demo's next event is minutes away, which after
-  // 23:40 is tomorrow. That a heading is printed is the point, not which one.
+  /* ⚠️ No "next up" banner any more. It named the event that is already the
+     first row of the agenda underneath it, and the pill says the same thing
+     again when it is close — three places for one fact. */
+  await expect(page.locator(".cal-next")).toHaveCount(0);
+  await expect(page.locator(".cal-row").first()).toContainText("Design review");
+  /* Grouped by day, with the ISO week beside the heading. Not asserted as
+     "Today": the demo's next event is minutes away, which after 23:40 is
+     tomorrow. That a heading is printed is the point, not which one. */
   await expect(page.locator(".cal-day").first()).toHaveText(/\S/);
+  await expect(page.locator(".cal-wk").first()).toHaveText(/^WK\. \d+$/);
   // Two of the three demo events are calls; the lunch is not.
   await expect(page.locator(".cal-join")).toHaveCount(2);
+  /* The location is in the PANEL now, not on the row. A row is a title and a
+     time; everything else about an event is one press away and does not have
+     to be squeezed into a list. */
+  await page.locator(".cal-row").filter({hasText: "Lunch"}).click();
   await expect(page.getByText("Cafe Mistral")).toBeVisible();
   await page.screenshot({path: "test-results/island-calendar.png"});
 });
@@ -1311,12 +1321,41 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await page.locator('[data-tab="calendar"]').click();
   await expect(page.locator(".cal-row").first()).toBeVisible();
   await page.getByRole("button", {name: "Week"}).click();
-  await expect(page.locator(".cal-wcol")).toHaveCount(7);
-  await expect(page.locator(".cal-wcol.is-today .cal-wnum")).toHaveText(String(new Date().getDate()));
-  await expect(page.locator(".cal-chip").first()).toBeVisible();
+  await expect(page.locator(".cal-wkcol")).toHaveCount(7);
+  await expect(page.locator(".cal-wkday.is-today .cal-wknum")).toHaveText(String(new Date().getDate()));
+
+  /* ⚠️ A TIME grid, not seven lists. The only question a week view answers
+     that the agenda does not is where the gaps are, and a list cannot show a
+     gap — so every meeting is placed against an hour axis. */
+  const block = page.locator(".cal-block").first();
+  await expect(block).toBeVisible();
+  const placed = await page.locator(".cal-block").evaluateAll(all =>
+    all.map(el => [(el as HTMLElement).style.top, (el as HTMLElement).style.height]));
+  expect(placed.every(([top, height]) => /%$/.test(top) && /%\)$/.test(height))).toBe(true);
+  // Today's column carries the now line; the others do not.
+  await expect(page.locator(".cal-wknow")).toHaveCount(1);
   await expect(page.locator(".cal-row")).toHaveCount(0);
-  await page.getByRole("button", {name: "Agenda"}).click();
+
+  await page.getByRole("button", {name: "Month"}).click();
   await expect(page.locator(".cal-row").first()).toBeVisible();
+  // 42 cells: six weeks, always, so paging cannot change the panel's height.
+  await expect(page.locator(".cal-cell")).toHaveCount(42);
+
+  /* Paging is arithmetic, and the grid keeps its shape. */
+  await page.getByRole("button", {name: "Next month", exact: true}).click();
+  await expect(page.locator(".cal-cell")).toHaveCount(42);
+  await expect(page.locator(".cal-cell.is-today")).toHaveCount(0);
+  await page.getByRole("button", {name: "Previous month", exact: true}).click();
+  await expect(page.locator(".cal-cell.is-today")).toHaveCount(1);
+
+  /* The New Task popover writes through Today's own path — one outbox, one
+     optimistic layer, one reconciliation. */
+  await page.getByRole("button", {name: "New task", exact: true}).click();
+  await expect(page.getByLabel("New task name")).toBeFocused();
+  await page.getByLabel("New task name").fill("Ring the plumber");
+  await page.getByRole("button", {name: "Add", exact: true}).click();
+  await page.locator('[data-tab="today"]').click();
+  await expect(day(page).getByText("Ring the plumber", {exact: true})).toBeVisible();
 });
 
 test("changing screens moves, and the panel travels to the new height", async ({page}) => {

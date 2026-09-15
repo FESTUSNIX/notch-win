@@ -195,9 +195,9 @@ something is playing. What landed:
       add). A connection made before this has to be reconnected in Settings, or
       adding answers 403 — which reads like a Premium problem.
 
-## 4. The calendar — NOT STARTED
+## 4. The calendar — DONE
 
-Waiting for the word. Shape agreed from the reference shots:
+Month grid and agenda in one view, plus a week that is a time grid:
 
 - **Month grid on the left**, agenda **scrolling on the right**, in one row.
 - Month name in the accent, `‹ ›` to page months, today ringed, the selected
@@ -210,10 +210,21 @@ Waiting for the word. Shape agreed from the reference shots:
   ⚠️ It writes to TickTick, so it is the composer's logic, not a second
   creation path — reuse `screen-today`'s optimistic layer rather than growing
   another one.
-- ⚠️ The current week view is deliberately **not** week-aligned ("seven columns
-  from today"). A month grid _is_ aligned, which brings back the
-  "week starts on Monday" question that was dropped for having nothing to
-  change. If the grid lands, the setting comes back with it — see `prefs.rs`.
+- ⚠️ The week grid **is** week-aligned now, which is why `week_starts_monday`
+  came back with it (defaulting to Monday). ISO week numbers are printed
+  beside each agenda heading and always start on Monday whatever that setting
+  says — the setting decides which column a day is drawn in; the week *number*
+  is a fixed international definition.
+
+### Still open on the calendar
+
+- [ ] Paging past the fetched window (45 days) draws a correct grid with no
+      busy dots, because there are no events for it. Either fetch per month or
+      say so in the grid.
+- [ ] The New Task popover files into whatever list Today's composer is on.
+      There is no list picker in the popover.
+- [ ] Nothing can be created *in the calendar* — it makes TickTick tasks, not
+      Google events. Writing events needs a second Google scope.
 
 ---
 

@@ -120,6 +120,38 @@ export function weekStart(date: Date, mondayFirst: boolean): Date {
   return first;
 }
 
+/** The ISO-8601 week number `date` falls in.
+ *
+ * ⚠️ ISO weeks always start on MONDAY, whatever the week-start preference
+ * says. The preference decides which column a day is drawn in; the week NUMBER
+ * is a fixed international definition and a "wk. 28" that moved when somebody
+ * changed a setting would be a different thing wearing the same label.
+ *
+ * ⚠️ Week 1 is the week containing the first THURSDAY of the year — not the
+ * week containing 1 January. So 1 Jan can be week 52 or 53 of the year before
+ * (2027-01-01 is a Friday, and belongs to 2026 week 53), and 31 Dec can be
+ * week 1 of the year after. Counting `(dayOfYear / 7) + 1` gets both wrong, and
+ * gets them wrong in a way nobody notices until January.
+ *
+ * The standard trick: move to the Thursday of this week, then count weeks from
+ * the 4th of January of THAT Thursday's year — which is always in week 1.
+ */
+export function isoWeek(date: Date): number {
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  // `getDay()` is 0 for Sunday; ISO counts Monday as 1 and Sunday as 7.
+  const weekday = thursday.getDay() || 7;
+  thursday.setDate(thursday.getDate() + 4 - weekday);
+  const first = new Date(thursday.getFullYear(), 0, 4);
+  const firstWeekday = first.getDay() || 7;
+  const firstThursday = new Date(first);
+  firstThursday.setDate(first.getDate() + 4 - firstWeekday);
+  /* ⚠️ Rounded, not floored. Both ends are local midnight, but a DST change
+   * between them makes the difference 23 or 25 hours short of a whole number of
+   * days — and a floor then reports the week before for half the year. */
+  const weeks = Math.round((thursday.getTime() - firstThursday.getTime()) / 604_800_000);
+  return weeks + 1;
+}
+
 /** How many rows each list holds, keyed on project id.
  *
  * ⚠️ ROOTS, not tasks. The day draws one row per root and folds its subtasks

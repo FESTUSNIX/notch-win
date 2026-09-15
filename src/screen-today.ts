@@ -391,6 +391,39 @@ export class TodayScreen {
 
   setView(view: TaskView) { this.view = view; this.changed(); }
 
+  /** Create a task from somewhere that is not the composer.
+   *
+   * ⚠️ The SAME path, not a second one. The Calendar's New Task popover calls
+   * this rather than `create_task`, so the row lands in the outbox, appears
+   * optimistically on Today and on Home, and is reconciled by the same
+   * snapshot — a second creation path would be a task that exists on one
+   * screen and not the other until TickTick answers.
+   *
+   * Returns the complaint, or "" — the caller draws it where it was typed. */
+  async createOn(title: string, day: string): Promise<string> {
+    const value = title.trim();
+    if (!value) return "";
+    if (!this.writable) return "Connect TickTick to add a task.";
+    if (!this.toList) return "Choose a list on Today first.";
+    const [y, m, d] = day.split("-").map(Number);
+    const ticket = { id: `${Date.now()}`, title: value };
+    this.outbox.push(ticket);
+    this.changed();
+    try {
+      await call("create_task", {
+        projectId: this.toList, name: value,
+        date: new Date(y, m - 1, d).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      return "";
+    } catch (error) {
+      return String(error).replace(/^invoke error: /i, "");
+    } finally {
+      this.outbox.splice(this.outbox.indexOf(ticket), 1);
+      this.changed();
+    }
+  }
+
   /** The chips that scope the day to one TickTick list.
    *
    * ⚠️ Drawn from the counts the draw just produced, never from a second walk

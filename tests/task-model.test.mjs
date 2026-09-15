@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey, listTally, inList, weekStart } from '../src/task-model.ts';
+import { taskForest, progress, localDay, dateDay, visibleNode, overdueDays, nodeDone, taskId, taskKey, listTally, inList, weekStart, isoWeek } from '../src/task-model.ts';
 
 const today = '2026-09-08';
 const date = `${today}T12:00:00Z`;
@@ -140,4 +140,29 @@ test('a Monday-first week does not walk forward on a Sunday', () => {
   // Local midnight, so seven `setDate` steps cannot drift across a DST hour.
   const start = weekStart(thursday, true);
   assert.deepEqual([start.getHours(), start.getMinutes(), start.getSeconds()], [0, 0, 0]);
+});
+
+test('ISO week numbers survive the turn of the year', () => {
+  // The ordinary case, and the one in the reference: 2026-07-10 is week 28.
+  assert.equal(isoWeek(new Date(2026, 6, 10)), 28);
+
+  /* ⚠️ Week 1 is the week containing the first THURSDAY, not the week
+     containing 1 January. 2027-01-01 is a Friday, so it belongs to 2026's week
+     53 — `(dayOfYear / 7) + 1` says 1, and nobody notices until January. */
+  assert.equal(isoWeek(new Date(2027, 0, 1)), 53);
+  assert.equal(isoWeek(new Date(2026, 11, 31)), 53);
+  // ...and the other direction: 2025-12-29 is a Monday in 2026's week 1.
+  assert.equal(isoWeek(new Date(2025, 11, 29)), 1);
+
+  // A year that starts on a Thursday starts in week 1.
+  assert.equal(isoWeek(new Date(2026, 0, 1)), 1);
+
+  /* Every day of one ISO week carries the same number, Sunday included — the
+     day `getDay()` calls 0 and ISO calls 7. ⚠️ The week is Mon 13 to SUN 19:
+     Sunday closes the week it is in rather than opening the next one, which is
+     the boundary every naive implementation puts one day out. */
+  const week = [13, 14, 15, 16, 17, 18, 19].map(d => isoWeek(new Date(2026, 6, d)));
+  assert.deepEqual(week, [29, 29, 29, 29, 29, 29, 29]);
+  assert.equal(isoWeek(new Date(2026, 6, 12)), 28);   // the Sunday before
+  assert.equal(isoWeek(new Date(2026, 6, 20)), 30);   // the Monday after
 });

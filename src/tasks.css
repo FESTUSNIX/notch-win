@@ -359,6 +359,184 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .day-switch button[aria-selected=true] { color:#fff;
   background-color:var(--tile-hi); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+/* ── The calendar: a month, and the agenda beside it ─────────────────────
+   ⚠️ One view, not two. A grid says WHICH days have something on them; the
+   agenda says what. A grid on its own answers neither question, which is why
+   the standalone agenda view is gone rather than joined by a month one. */
+.cal-split { display:grid; grid-template-columns:minmax(0,300px) minmax(0,1fr);
+  gap:16px; align-items:start; min-width:0; }
+
+.cal-month { display:flex; flex-direction:column; gap:9px; min-width:0;
+  position:relative; }
+.cal-month-head { display:flex; align-items:center; gap:8px; }
+/* The month in the app's own colour: it is the one word on this screen that
+   says where you are, and everything else here is a number. */
+.cal-month-name { font-size:15px; font-weight:700; letter-spacing:.06em;
+  color:var(--accent); min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.cal-add, .cal-page { display:grid; place-items:center; width:24px; height:24px;
+  padding:0; border-radius:50%; color:#8a8a8a; flex-shrink:0;
+  background-color:var(--tile); box-shadow:var(--hairline); }
+.cal-add svg { width:13px; height:13px; }
+.cal-page { font-size:15px; line-height:1; border-radius:8px; box-shadow:none;
+  background:none; }
+.cal-add:hover, .cal-page:hover { color:#fff; background:var(--tile-hi); }
+.cal-add:active, .cal-page:active { scale:.92; transition-duration:90ms; }
+.cal-add.is-on { color:var(--on-accent); background-color:var(--accent);
+  box-shadow:var(--glow-accent); }
+/* ⚠️ The spacer is on the PAGER, not on the month. Given `flex:1` the month
+   pushed the `+` all the way over to the arrows, where it reads as a third
+   pager button rather than as "add something to this month". */
+.cal-pager { display:flex; align-items:center; gap:2px; flex-shrink:0;
+  margin-left:auto; }
+
+.cal-dow { display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; }
+.cal-dow span { text-align:center; font-size:10px; font-weight:600; color:#6a6a6a;
+  letter-spacing:.04em; }
+
+.cal-grid { display:grid; grid-template-columns:repeat(7, 1fr);
+  grid-auto-rows:1fr; gap:2px; }
+.cal-cell { position:relative; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:3px; aspect-ratio:1;
+  padding:0; border-radius:50%; font-size:12.5px; font-weight:500; color:#d4d4d4;
+  background:none; }
+.cal-cell:hover { background:var(--tile-hi); color:#fff; }
+.cal-cell:active { scale:.9; transition-duration:90ms; }
+/* Days from the months either side are DRAWN, not blank: a grid that starts
+   mid-row loses the one thing a grid is for, which is that a column is always
+   the same weekday. */
+.cal-cell.is-other { color:#4a4a4a; }
+/* Today is filled; the day you chose is ringed. ⚠️ Two different marks, not
+   two shades of one: they are frequently the same day, and a ring inside a
+   fill still reads as both. */
+.cal-cell.is-today { color:var(--on-accent); font-weight:700;
+  background-color:var(--accent); box-shadow:var(--glow-accent); }
+.cal-cell.is-chosen:not(.is-today) { color:#fff;
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+.cal-cell.is-today.is-chosen { box-shadow:var(--glow-accent),
+  0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.cal-dots { display:flex; gap:2px; position:absolute; bottom:5px; }
+.cal-dots i { width:3px; height:3px; border-radius:50%;
+  background:color-mix(in srgb, var(--accent) 70%, transparent); }
+.cal-cell.is-today .cal-dots i { background:var(--on-accent); }
+.cal-cell.is-other .cal-dots i { background:#3f3f3f; }
+
+/* The New Task popover, over the grid rather than above it: pushing six weeks
+   of calendar down the screen to type one line is the drawer this replaced. */
+.cal-new { position:absolute; top:30px; left:0; right:0; z-index:20;
+  display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:14px;
+  background-color:#151515; background-image:var(--sheen);
+  box-shadow:var(--lift-3), var(--gloss), var(--hairline);
+  animation:cal-panel-in var(--duration-fast) var(--ease-smooth-out); }
+.cal-new-head { display:flex; align-items:center; gap:7px; font-size:11.5px;
+  font-weight:600; color:#c4c4c4; }
+.cal-new-row { display:flex; align-items:center; gap:7px; }
+.cal-new-day { flex-shrink:0; font-size:10.5px; color:var(--accent);
+  padding:4px 8px; border-radius:7px;
+  background:color-mix(in srgb, var(--accent) 14%, transparent); }
+.cal-new input { flex:1; min-width:0; font:inherit; font-size:12px;
+  padding:7px 9px; border:0; border-radius:9px; color:#fff;
+  background:rgba(0,0,0,.34);
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 2px 6px -3px rgba(0,0,0,.9); }
+.cal-new input::placeholder { color:#6d6d6d; }
+.cal-new input:focus-visible { outline:none;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 2px 6px -3px rgba(0,0,0,.9); }
+.cal-new-add { flex-shrink:0; font-size:11.5px; font-weight:600; padding:7px 13px;
+  border-radius:9px; color:var(--on-accent);
+  background-color:var(--accent);
+  background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
+    0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
+.cal-new-add:hover { background-color:var(--accent-hi); }
+.cal-new-add:active { scale:.96; transition-duration:90ms; }
+
+/* ── The agenda column ───────────────────────────────────────────────── */
+.cal-agenda { display:flex; flex-direction:column; gap:5px; min-width:0;
+  max-height:340px; overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
+.cal-agenda .cal-day { position:sticky; top:0; z-index:2;
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  margin:10px 0 3px; padding:3px 0;
+  font-size:10px; font-weight:700; letter-spacing:.06em; color:#7c7c7c;
+  background:#000; }
+.cal-agenda .cal-day:first-child { margin-top:0; }
+/* The week number, quieter than the day it labels. It is there for the two
+   weeks a year anybody needs it and must not compete the other fifty. */
+.cal-wk { font-weight:600; color:#4f4f4f; }
+
+/* ── The week: a TIME grid ───────────────────────────────────────────────
+   ⚠️ Not seven lists of chips. A list answers "what is on Thursday", which the
+   agenda answers better on one screen; the only question a week view answers
+   that nothing else does is WHERE THE GAPS ARE, and a list cannot show a gap. */
+.cal-weekgrid { display:flex; flex-direction:column; gap:0; min-width:0; }
+.cal-wkhead { display:grid; grid-template-columns:38px repeat(7, minmax(0,1fr));
+  gap:3px; align-items:end; padding-bottom:6px; }
+.cal-wkaxis-top { font-size:9px; font-weight:700; color:#4f4f4f;
+  letter-spacing:.04em; }
+.cal-wkday { display:flex; flex-direction:column; align-items:center; gap:1px;
+  padding:4px 0; border-radius:9px; }
+.cal-wkname { font-size:9.5px; font-weight:600; color:#7c7c7c;
+  text-transform:uppercase; letter-spacing:.05em; }
+.cal-wknum { font-size:14px; font-weight:600; }
+.cal-wkday.is-past { opacity:.5; }
+.cal-wkday.is-today .cal-wknum { color:var(--on-accent); }
+.cal-wkday.is-today { background-color:var(--accent); box-shadow:var(--glow-accent); }
+.cal-wkday.is-today .cal-wkname { color:color-mix(in srgb, var(--on-accent) 75%, transparent); }
+
+.cal-wkall { display:grid; grid-template-columns:38px repeat(7, minmax(0,1fr));
+  gap:3px; padding:0 0 6px; align-items:start; }
+.cal-wkall-label { font-size:9px; font-weight:600; color:#5f5f5f;
+  text-transform:uppercase; letter-spacing:.04em; padding-top:3px; }
+.cal-wkall-cell { display:flex; flex-direction:column; gap:2px; min-width:0; }
+
+.cal-wkbody { position:relative; display:grid;
+  grid-template-columns:38px repeat(7, minmax(0,1fr)); gap:3px;
+  /* ⚠️ 22px an hour, not 26. The panel caps at ~470 CSS px and a thirteen-hour
+     day at 26 came to more than that with the head on top — so the last hour of
+     the grid was clipped by the island, which looks like a broken layout rather
+     than like a screen that scrolls. */
+  height:calc(var(--cal-hours, 11) * 22px); }
+/* ⚠️ One label per ROW, each at the top of its own, not `space-between` over
+   the column. With seven labels and seven rows, space-between puts the last one
+   at the very bottom and every label in between drifts half a row off the line
+   it is naming. */
+.cal-wkaxis { display:flex; flex-direction:column; align-items:flex-end;
+  padding-right:5px; }
+.cal-wkaxis span { flex:1; font-size:9px; color:#4f4f4f;
+  font-variant-numeric:tabular-nums; line-height:1; transform:translateY(-3px); }
+.cal-wkcol { position:relative; display:flex; flex-direction:column;
+  min-width:0; border-radius:9px; background:rgba(255,255,255,.022);
+  box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; }
+.cal-wkcol.is-past { opacity:.55; }
+.cal-wkcol.is-today { background:color-mix(in srgb, var(--accent) 3.5%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+.cal-wkline { flex:1; box-shadow:inset 0 -1px 0 rgba(255,255,255,.035); }
+.cal-wkline:last-child { box-shadow:none; }
+
+/* One meeting, laid where it actually is. */
+.cal-block { position:absolute; left:2px; right:2px; display:flex;
+  flex-direction:column; gap:1px; justify-content:flex-start; overflow:hidden;
+  padding:3px 5px; border-radius:6px; text-align:left;
+  background-color:color-mix(in srgb, var(--cal, var(--cool)) 24%, #101010);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 45%, transparent); }
+.cal-block:hover { background-color:color-mix(in srgb, var(--cal, var(--cool)) 34%, #101010); }
+.cal-block:active { scale:.98; transition-duration:90ms; }
+.cal-block.is-open { box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--cal, var(--cool)) 75%, transparent); }
+.cal-block.declined { opacity:.55; }
+.cal-block.declined .cal-block-title { text-decoration:line-through; }
+.cal-block-title { font-size:10.5px; font-weight:600; line-height:1.25;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-block-time { font-size:9.5px;
+  color:color-mix(in srgb, var(--cal, var(--cool)) 55%, #fff); }
+
+/* Now, across today only. ⚠️ Drawn only while it is inside the axis: at seven
+   in the morning it would otherwise pin to the top and claim eight o'clock. */
+.cal-wknow { position:absolute; left:0; right:0; height:1.5px; z-index:3;
+  background:var(--hot); box-shadow:0 0 8px -1px var(--hot); }
+.cal-wknow::before { content:""; position:absolute; left:0; top:-2.5px;
+  width:6px; height:6px; border-radius:50%; background:var(--hot); }
+
 /* ── The player ──────────────────────────────────────────────────────────
    Two columns: what is playing, and what is next. The second is closed by
    default and the panel is narrower without it — see `widthOf` in tasks.ts.
@@ -1396,17 +1574,10 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
   border-left:0; border-radius:var(--r-tile); padding:12px 14px; }
 .cal-row { border-radius:var(--r-row); }
 .cal-row:hover { background:var(--tile-hi); }
-.cal-wcol { background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); border-radius:14px; }
 /* ⚠️ Dimmed, not dropped. The grid is a real week now, so on a Friday two
    thirds of it is behind you — and a column that is simply missing would put
    Friday where Wednesday was, which is the thing week-alignment exists to
    stop. */
-.cal-wcol.is-past { opacity:.55; }
-.cal-wcol.is-today { background-color:var(--tile-hi);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), var(--gloss), var(--lift-1); }
-.cal-whead { border-bottom:1px solid var(--hair); }
-
 .cal-view { background:var(--tile); border-radius:10px; }
 .cal-view:hover { background:var(--tile-hi); }
 .cal-view[aria-pressed=true] { background:var(--tile-on);
@@ -1922,21 +2093,10 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .cal-view[aria-pressed=true] { color:#fff; background:var(--tile-on);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.cal-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
 .cal-wcol { min-width:0; display:flex; flex-direction:column; gap:4px; padding:6px 4px 8px;
   border-radius:10px; background:#0a0a0a; }
 
-.cal-whead { display:flex; flex-direction:column; align-items:center; gap:0; padding-bottom:3px;
-  border-bottom:1px solid #1a1a1a; }
-.cal-wday { font-size:8.5px; text-transform:uppercase; letter-spacing:.08em; color:#5f5f5f; }
-.cal-wnum { font-size:13px; font-variant-numeric:tabular-nums; color:#c4c4c4; }
-.cal-wcol.is-today .cal-wnum { color:var(--accent); font-weight:600; }
-.cal-wnone { text-align:center; font-size:11px; color:#333; padding-top:4px; }
-.cal-chip { display:flex; flex-direction:column; gap:1px; padding:5px 6px; border-radius:8px;
-  min-width:0; border-left:0;
-  background-color:color-mix(in srgb, var(--cal, var(--cool)) 14%, var(--tile));
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 26%, transparent); }
-.cal-chip[onclick],.cal-chip:hover { cursor:default; }
+.cal-whe.cal-wcol.is-today .cal-wnum { color:var(--accent); font-weight:600; }
 .cal-chip.declined { opacity:.45; }
 .cal-chip-time { font-size:8.5px; color:var(--cal,#5ac8fa); font-variant-numeric:tabular-nums; font-weight:600; }
 .cal-chip-title { font-size:10.5px; line-height:1.25; overflow:hidden; display:-webkit-box;
