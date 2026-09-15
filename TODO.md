@@ -11,6 +11,11 @@
   - [ ] No global shortcut of its own — the palette command is the fast path.
         One would mean a seventh key and a seventh row in Settings.
   - [ ] Notes are not searchable *from the palette* yet, only from the screen.
+  - [x] Simple formatting — `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
+        `-` and `1.` lists, `>` quotes, `#` headings, ``` fences. Stored as the
+        text you typed; parsed on the way out.
+  - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
+        at one grows a state machine, and a note is not a document.
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose

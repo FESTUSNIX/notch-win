@@ -13,7 +13,8 @@ import { call, native } from "./task-client";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
-import { highlight, noteTitle, notePreview, noteWhen, searchNotes, type Note } from "./notes";
+import { highlight, noteWhen, searchNotes, type Note } from "./notes";
+import { blocks, plain, toggleList, toggleMark, type Block } from "./note-format";
 import type { Activity } from "./island-activity";
 
 export interface NotesDeps {
@@ -74,6 +75,23 @@ export class NotesScreen {
       // to add a line is far commoner than opening one to replace it.
       this.body.setSelectionRange(this.draft.length, this.draft.length);
     } catch { /* the field is still there; it just has no caret yet */ }
+  }
+
+  /** Put a marker round the selection, and the caret back where it was.
+   *
+   * ⚠️ The field is written directly rather than through `changed()`. A
+   * re-render replaces the textarea and takes the selection with it, which is
+   * the one thing a formatting button must not do. */
+  private wrap(field: HTMLTextAreaElement, marker: string) {
+    const from = field.selectionStart ?? 0;
+    const to = field.selectionEnd ?? from;
+    const next = marker
+      ? toggleMark(field.value, from, to, marker)
+      : toggleList(field.value, from, to);
+    field.value = next.body;
+    this.draft = next.body;
+    field.focus();
+    field.setSelectionRange(next.from, next.to);
   }
 
   private async save() {
@@ -152,7 +170,30 @@ export class NotesScreen {
     });
     composer.append(field);
 
+    /* ── The formatting, such as it is ────────────────────────────────
+     * ⚠️ The buttons write MARKERS into the text; they do not switch the
+     * field into a rich editor. The note stays the characters you typed, so it
+     * is greppable, it survives being pasted somewhere else, and the worst a
+     * bug in the parser can do is make a note look wrong rather than lose a
+     * word of it. See note-format.ts. */
     const actions = element("div", "note-actions");
+    const marks = element("div", "note-marks");
+    for (const [label, title, run] of [
+      ["B", "Bold", () => this.wrap(field, "**")],
+      ["I", "Italic", () => this.wrap(field, "*")],
+      ["•", "List", () => this.wrap(field, "")],
+    ] as const) {
+      const button = element("button", `note-mark note-mark-${title.toLowerCase()}`, label);
+      (button as HTMLButtonElement).type = "button";
+      button.setAttribute("aria-label", title);
+      button.title = title;
+      /* ⚠️ `pointerdown` + preventDefault, not `click`. A click on a button
+       * takes focus off the textarea first, and the selection is gone by the
+       * time the handler runs — so bold would wrap nothing, every time. */
+      button.addEventListener("pointerdown", event => { event.preventDefault(); run(); });
+      marks.append(button);
+    }
+    actions.append(marks);
     if (this.editing) {
       const cancel = element("button", "note-cancel", "Cancel");
       (cancel as HTMLButtonElement).type = "button";
@@ -169,7 +210,12 @@ export class NotesScreen {
     this.body = field;
 
     /* ── Finding one ──────────────────────────────────────────────────── */
-    const found = searchNotes(this.notes, this.query);
+    /* ⚠️ Searched on the PLAIN text. On the raw body, `**every**` is found by
+     * typing `**every**` and not by typing `every` — which is the one query
+     * anybody would use. */
+    const found = searchNotes(
+      this.notes.map(note => ({ ...note, body: plain(note.body) })), this.query)
+      .map(found => this.notes.find(note => note.id === found.id)!);
     /* ⚠️ The search appears once there is a pile to search. One note and a
      * search box is a control that cannot do anything, sitting where the note
      * should be. */
@@ -215,24 +261,26 @@ export class NotesScreen {
       return;
     }
 
-    const list = element("div", "note-list scrolls");
+    /* ⚠️ NOT a scroller of its own. `.screen-body` above it already is one,
+     * and two nested scrollers meant the panel measured the wall's full
+     * content height, capped itself at the island's maximum, and then clipped
+     * the bottom row — which reads as a broken layout rather than as a list
+     * that scrolls. One scroller per screen. */
+    const list = element("div", "note-wall");
     const now = Date.now();
     for (const note of found) {
-      const row = element("div", `note-row${note.id === this.editing ? " is-editing" : ""}`);
+      const card = element("article", `note-card${note.id === this.editing ? " is-editing" : ""}`);
 
       const open = element("button", "note-open");
       (open as HTMLButtonElement).type = "button";
-      open.setAttribute("aria-label", `Edit ${noteTitle(note.body, 40)}`);
-      const copy = element("div", "note-copy");
-      copy.append(this.marked(noteTitle(note.body), "note-title"));
-      const rest = notePreview(note.body);
-      if (rest) copy.append(this.marked(rest, "note-preview"));
-      open.append(copy);
+      open.setAttribute("aria-label", `Edit ${plain(note.body).slice(0, 40)}`);
+      open.append(this.paper(note.body));
       open.onclick = () => { void this.compose(note.id); };
-      row.append(open);
+      card.append(open);
 
-      const side = element("div", "note-side");
-      side.append(element("span", "note-when", noteWhen(note.written, now)));
+      const foot = element("div", "note-foot");
+      foot.append(element("span", "note-when", noteWhen(note.written, now)));
+      const doing = element("div", "note-doing");
       for (const [icon, label, run] of [
         ["copy", "Copy", () => { void call("copy_text", { text: note.body }).catch(() => {}); }],
         ["close", "Delete", () => { void this.remove(note.id); }],
@@ -243,26 +291,68 @@ export class NotesScreen {
         button.title = label;
         paintIcon(button, icon);
         button.onclick = run;
-        side.append(button);
+        doing.append(button);
       }
-      row.append(side);
-      list.append(row);
+      foot.append(doing);
+      card.append(foot);
+      list.append(card);
     }
     this.host.append(list);
   }
 
-  /** One line of a row, with the matched words lit.
+  /** A note, as it was written — lists as lists, bold as bold.
    *
-   * ⚠️ Built from text nodes, never `innerHTML`. A note is arbitrary text the
-   * user pasted from somewhere, and the one thing you must not do with that is
-   * hand it to a parser. */
-  private marked(text: string, className: string): HTMLElement {
-    const line = element("span", className);
-    const parts = highlight(text, this.query);
-    parts.forEach((part, index) => {
-      if (!part) return;
-      line.append(index % 2 ? element("b", "note-hit", part) : document.createTextNode(part));
-    });
-    return line;
+   * ⚠️ Built from the parsed structure with text nodes, never `innerHTML`.
+   * A note is arbitrary text pasted from somewhere, and the one thing you must
+   * not do with that is hand it to something that builds elements. */
+  private paper(body: string): HTMLElement {
+    const sheet = element("div", "note-body");
+    const parsed = blocks(body);
+    let list: HTMLElement | null = null;
+
+    for (const block of parsed) {
+      /* Consecutive bullets share one list, so the marker column lines up and
+       * a gap between two of them is a gap rather than two lists. */
+      if (block.kind === "bullet" || block.kind === "number") {
+        const wanted = block.kind === "bullet" ? "ul" : "ol";
+        if (!list || list.tagName.toLowerCase() !== wanted) {
+          list = element(wanted as "ul", "note-list-block");
+          if (block.kind === "number" && block.index && block.index !== 1) {
+            (list as HTMLOListElement).start = block.index;
+          }
+          sheet.append(list);
+        }
+        const item = element("li", "");
+        this.runs(item, block);
+        list.append(item);
+        continue;
+      }
+      list = null;
+      const tag = block.kind === "head" ? "h4" : block.kind === "code" ? "pre" : "p";
+      const line = element(tag as "p", `note-${block.kind}`);
+      this.runs(line, block);
+      sheet.append(line);
+    }
+    if (!parsed.length) sheet.append(element("p", "note-para", ""));
+    return sheet;
   }
+
+  /** One block's runs, with the search hits lit inside them. */
+  private runs(host: HTMLElement, block: Block) {
+    for (const span of block.spans) {
+      const tag = span.code ? "code" : span.bold ? "strong"
+        : span.italic ? "em" : span.strike ? "s" : "span";
+      const run = element(tag as "span", "");
+      /* ⚠️ The highlight is applied INSIDE a run, not over the line. Applied
+       * over the line it would have to slice through the formatting and every
+       * mark would have to be re-opened on the other side of a hit. */
+      for (const [index, part] of highlight(span.text, this.query).entries()) {
+        if (!part) continue;
+        run.append(index % 2 ? element("b", "note-hit", part) : document.createTextNode(part));
+      }
+      host.append(run);
+    }
+  }
+
+
 }

@@ -2360,3 +2360,40 @@ The two halves were the same fault.
 314. ⚠️ **Read the length before taking the mutable borrow.** `held.len()`
      inside an arm of `match held.iter_mut()` is an immutable borrow while a
      mutable one is live, and the compiler is right to refuse.
+315. ⚠️ **Parse on the way OUT, never on the way in.** The note is stored as
+     the characters typed, so it stays greppable, survives being pasted
+     elsewhere, and the worst a parser bug can do is make a note LOOK wrong
+     rather than lose a word of it. Anything that parses on the way in owns the
+     user's writing.
+316. ⚠️ **`**` has to be tried before `*`** or `**bold**` matches as two empty
+     italic runs. Order in an alternation is order of preference — which is the
+     whole reason it is one regex rather than four passes.
+317. ⚠️ **An inline run may not begin or end with a space**, or `5 * 3 * 2` is
+     an italic run and a sum becomes a sentence in italics. Exactly the sort of
+     thing a quick note holds.
+318. ⚠️ **A code run is literal all the way down.** Somebody writing
+     `` `**not bold**` `` is showing you the characters; formatting inside there
+     is the one failure that makes the feature useless for its commonest use.
+319. ⚠️ **A formatting button must use `pointerdown` + `preventDefault`,
+     not `click`.** A click takes focus off the textarea first, so the selection
+     is gone by the time the handler runs and bold wraps nothing — every time.
+320. ⚠️ **And it writes the field directly, not through a re-render.** A
+     redraw replaces the textarea and takes the selection with it, which is the
+     one thing a formatting button cannot do.
+321. ⚠️ **Search runs on the PLAIN text.** On the raw body, `**every**` is
+     found by typing `**every**` and not by typing `every` — the one query
+     anybody would use.
+322. ⚠️ **The highlight is applied INSIDE a formatted run, not over the
+     line.** Over the line it has to slice through the formatting, and every
+     mark has to be re-opened on the other side of a hit.
+323. ⚠️ **One scroller per screen.** `.screen-body` already scrolls; a second
+     one inside it meant the panel measured the full content height, capped
+     itself at the island's maximum and then clipped the bottom row — which
+     reads as a broken layout rather than as a list that scrolls.
+324. ⚠️ **`auto-fill`, not `auto-fit`, for a wall of cards.** With `auto-fit`
+     a single note stretches to the full width of the island and stops being a
+     square; `auto-fill` keeps the empty tracks.
+325. ⚠️ **A count a test perturbs itself is the wrong assertion.** The notes
+     test adds notes and then asserted how many matched `pi` — a number that
+     changes every time an earlier step in the same test adds one, and that
+     `Shopping` happens to contain.

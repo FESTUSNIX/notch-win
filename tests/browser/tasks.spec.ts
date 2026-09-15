@@ -1268,7 +1268,7 @@ test("notes: one key to write one, and the pile stays findable", async ({page}) 
   await open(page);
   await page.locator('[data-tab="notes"]').click();
 
-  const rows = page.locator(".note-row");
+  const rows = page.locator(".note-card");
   await expect(rows).toHaveCount(5);
 
   /* ⚠️ Enter SAVES; Shift+Enter is a newline. A quick note is one key or it
@@ -1288,9 +1288,33 @@ test("notes: one key to write one, and the pile stays findable", async ({page}) 
   await field.type("second line");
   await field.press("Enter");
   await expect(rows).toHaveCount(7);
-  // The first line is the title, the rest is the preview on one line.
-  await expect(rows.first().locator(".note-title")).toHaveText("first line");
-  await expect(rows.first().locator(".note-preview")).toHaveText("second line");
+  await expect(rows.first()).toContainText("first line");
+  await expect(rows.first()).toContainText("second line");
+
+  /* ⚠️ The markers are a FORMAT, not part of the text. The note is stored as
+     what you typed — greppable, and safe to paste somewhere else — and the
+     markers are read on the way out. */
+  await field.fill("# Shopping\n- **milk** and bread\n- *maybe* eggs\n\n1. first\n2. second");
+  await field.press("Enter");
+  const shopping = rows.first();
+  await expect(shopping.locator("h4")).toHaveText("Shopping");
+  await expect(shopping.locator("ul li")).toHaveCount(2);
+  await expect(shopping.locator("ol li")).toHaveCount(2);
+  await expect(shopping.locator("strong")).toHaveText("milk");
+  await expect(shopping.locator("em")).toHaveText("maybe");
+  // The markers themselves are gone from what is drawn.
+  await expect(shopping).not.toContainText("**");
+
+  /* ⚠️ Bold wraps the SELECTION and leaves the caret inside the markers, or
+     pressing bold and typing produces `**` followed by unbolded words. */
+  await field.fill("plain words");
+  await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(6, 11));
+  await page.getByLabel("Bold", {exact: true}).click();
+  await expect(field).toHaveValue("plain **words**");
+  await page.getByLabel("List", {exact: true}).click();
+  await expect(field).toHaveValue("- plain **words**");
+  await field.press("Enter");
+  await expect(rows.first().locator("li strong")).toHaveText("words");
 
   /* ⚠️ Accents folded both ways. Half of what gets written down on this
      machine is Polish, and a search that only matches if you reproduce the
@@ -1310,8 +1334,19 @@ test("notes: one key to write one, and the pile stays findable", async ({page}) 
      right trade rather than a miss. Matching on word boundaries would stop
      `krak` finding `Krakowie`, and typing a prefix is how anyone actually
      searches a pile of their own writing. */
+  /* ⚠️ Search runs on the plain text, so `milk` finds a note that says
+     `**milk**`. On the raw body it would only be found by typing the markers,
+     which is the one query nobody would use. */
+  await search.fill("milk");
+  await expect(rows).toHaveCount(1);
+  /* ⚠️ "At least", not an exact count. `pi` is inside `expires` and inside
+     `Shopping`, which is the right trade rather than a miss — matching on word
+     boundaries would stop `krak` finding `Krakowie`, and typing a prefix is how
+     anyone searches a pile of their own writing. An exact number here would
+     also be a count of what earlier steps in this test happened to add. */
   await search.fill("pi");
-  await expect(rows).toHaveCount(3);
+  expect(await rows.count()).toBeGreaterThanOrEqual(3);
+  await expect(page.locator(".note-card", {hasText: "Raspberry"})).toHaveCount(1);
   await search.fill("zzz");
   await expect(page.locator(".note-none")).toBeVisible();
   await search.fill("");
@@ -1319,21 +1354,24 @@ test("notes: one key to write one, and the pile stays findable", async ({page}) 
   /* Pressing a note opens it for editing, and the row says so — otherwise the
      composer has silently taken a row's contents and the row still reads as
      untouched. */
+  const before2 = await rows.count();
   await rows.first().locator(".note-open").click();
-  await expect(page.locator(".note-row.is-editing")).toHaveCount(1);
-  await expect(field).toHaveValue(/first line/);
+  await expect(page.locator(".note-card.is-editing")).toHaveCount(1);
+  // ⚠️ The MARKERS come back into the field, not the rendered text: editing a
+  // note has to give you back exactly what you wrote.
+  await expect(field).toHaveValue(/^- plain \*\*words\*\*$/);
   await field.fill("edited in place");
   await field.press("Enter");
-  await expect(rows).toHaveCount(7);
+  await expect(rows).toHaveCount(before2);
   await expect(rows.first()).toContainText("edited in place");
-  await expect(page.locator(".note-row.is-editing")).toHaveCount(0);
+  await expect(page.locator(".note-card.is-editing")).toHaveCount(0);
 
   /* ⚠️ A note is arbitrary text the user pasted from somewhere, and the one
      thing you must not do with that is hand it to a parser. */
   await field.fill('<img src=x onerror="alert(1)"> pasted');
   await field.press("Enter");
   await expect(rows.first()).toContainText('<img src=x onerror="alert(1)"> pasted');
-  await expect(page.locator(".note-list img")).toHaveCount(0);
+  await expect(page.locator(".note-wall img")).toHaveCount(0);
 
   await page.screenshot({path: "test-results/island-notes.png"});
 
