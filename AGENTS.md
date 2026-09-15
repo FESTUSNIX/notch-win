@@ -2530,4 +2530,26 @@ The two halves were the same fault.
      where the other shape actually begins: concentric, that distance is the
      same every time. (Hide the invisible hit band first, or
      `elementFromPoint` answers in the island's place.)
+352. ⚠️ **Reaching for a sibling of the island reads as LEAVING the island.**
+     The arcs are siblings — `#island` is `overflow: clip` — so pointing at one
+     folds the panel while you are on your way to its own close button. The
+     masks do cover them, but they are recomputed on a settle and the pointer
+     can arrive first; the arc says so directly instead, and only ever opens
+     with it, because letting go of an arc must not fold anything.
+353. ⚠️ **Chrome placed from a moving shape must not close on
+     `pointerleave`.** The arcs are positioned from the island's measured size
+     every frame, so a panel springing to a new height drags the whole quadrant
+     out from under a pointer that has not moved — leave fires, the arc shuts,
+     and nothing was touched. Hold it open while the island's own springs are
+     unsettled, then ask `:hover` again.
+354. ⚠️ **A control that moved behind a hover needs a second way in.** Pin
+     went from a permanent header button to a disc on a bare arc, and "keep
+     this open" is wanted exactly when you are about to do something fiddly —
+     the worst moment to hunt for a hidden control. It is a palette command
+     now, which is also the only stable way a test can reach it.
+355. ⚠️ **`page.clock.install` freezes `requestAnimationFrame`.** Time does
+     not advance on its own, so spring-driven layout stops mid-flight while the
+     DOM looks settled. Anything positioned by the paint loop is at a
+     provisional place in a clocked test; flow-laid-out chrome was not, which
+     is why this only surfaced when the controls moved onto an arc.
 

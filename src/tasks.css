@@ -323,20 +323,20 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    ⚠️ A SIBLING of the island, positioned by the paint loop. `#island` is
    `overflow: clip` with a clip path, so anything inside it that reaches past
    the shape is erased. */
-#island-tools { position:absolute; pointer-events:none; }
-#island-tools[hidden] { display:none; }
-#island-tools-svg { position:absolute; inset:0; width:100%; height:100%;
+.island-arc { position:absolute; pointer-events:none; }
+.island-arc[hidden] { display:none; }
+.arc-svg { position:absolute; inset:0; width:100%; height:100%;
   overflow:visible; }
 /* The line takes the island's own black, not a grey: it is a piece of the
    island that has come away from it, not a rule drawn near it. */
-#tools-arc { stroke:#000;
+.arc-line { stroke:#000;
   transition:opacity var(--duration-fast) var(--ease-smooth-out); }
 /* ⚠️ `stroke`, not a box. The band along the line is the only part of this
    that is a hit target — a rectangle over the corner would swallow presses
    meant for the panel behind it, and the line itself is nine pixels of curve,
    which is not a target at all. */
-#tools-reach { pointer-events:stroke; }
-#island-tools-acts { position:absolute; inset:0; }
+.arc-band { pointer-events:stroke; }
+.arc-acts { position:absolute; inset:0; }
 
 /* ⚠️ EMPTY until you reach for it. A row of icons parked beside the island
    permanently is a toolbar, and a toolbar is the thing the header row already
@@ -346,7 +346,7 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    The paint loop writes `left`/`top` as the point on the circle, and this is
    what makes that point the button's CENTRE — without it every action hangs
    off the arc by half its own width and the curve stops reading as a curve. */
-.screen-tool { position:absolute; width:var(--tool-size,28px); height:var(--tool-size,28px); padding:0;
+.arc-act { position:absolute; width:var(--tool-size,28px); height:var(--tool-size,28px); padding:0;
   border-radius:50%; display:grid; place-items:center; color:#8a8a8a;
   background:#000; translate:-50% -50%;
   opacity:0; scale:.25; filter:blur(4px); pointer-events:none;
@@ -355,20 +355,19 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
     filter var(--duration-fast) var(--ease-smooth-out),
     color var(--duration-quick) var(--ease-smooth-out),
     background-color var(--duration-quick) var(--ease-smooth-out); }
-.screen-tool svg { width:15px; height:15px; }
-#island-tools.is-open .screen-tool { opacity:1; scale:1; filter:blur(0px);
+.arc-act svg { width:15px; height:15px; }
+.island-arc.is-open .arc-act { opacity:1; scale:1; filter:blur(0px);
   pointer-events:auto;
   /* Staggered in, unstaggered out: an exit that counts down through four
      items reads as the arc struggling to close. */
   transition-delay:calc(var(--tool-i, 0) * 40ms); }
-.screen-tool:hover:not(:disabled) { color:#fff; background:#1f1f1f; }
+.arc-act:hover:not(:disabled) { color:#fff; background:#1f1f1f; }
 /* ⚠️ At (1,1,1) to beat the rule above — which sets `scale` too, and would
    otherwise hold the button at 1 through the press. */
-#island-tools.is-open .screen-tool:active:not(:disabled) {
+.island-arc.is-open .arc-act:active:not(:disabled) {
   scale:.96; transition-duration:90ms; transition-delay:0s; }
-.screen-tool:disabled { color:#4f4f4f; cursor:default; }
-.screen-tool.is-warn { color:var(--warn); }
-.panel-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; }
+.arc-act:disabled { color:#4f4f4f; cursor:default; }
+.arc-act.is-warn { color:var(--warn); }
 .small-icon { width:26px; height:26px; padding:0; color:#565656; font-size:15px; line-height:1; }
 .small-icon:hover { color:#fff; background:var(--tile-hi);
   box-shadow:var(--hairline), var(--gloss); }

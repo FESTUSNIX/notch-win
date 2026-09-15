@@ -30,7 +30,7 @@ import * as snooze from "./snooze";
 import * as stars from "./palette-stars";
 import * as workspaces from "./workspaces";
 import { Palette, TIER, type Action } from "./palette";
-import { paintTools, type ScreenTools } from "./screen-tools";
+import { type ScreenTools } from "./screen-tools";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
@@ -116,26 +116,12 @@ function widthOf(name: ScreenName): number {
 const app = document.getElementById("task-app")!;
 app.innerHTML = `<div id="notch-shell">
   <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath></defs></svg>
-  <!-- What the open screen can do. At rest a line struck concentric with the
-       island's own far corner, a gap out from it; reached for, the line swings
-       out and the actions land on it. One circle, two states — the same idea
-       as the settings orb on the agents notch, which is the shape this is a
-       sibling of. -->
-  <div id="island-tools" hidden>
-    <svg id="island-tools-svg" aria-hidden="true">
-      <path id="tools-arc" fill="none" stroke-linecap="round"/>
-      <path id="tools-reach" fill="none" stroke="transparent"/>
-    </svg>
-    <div id="island-tools-acts" role="toolbar" aria-label="What this screen can do"></div>
-  </div>
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
         <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
-        
-        <div class="panel-actions"><button id="open-palette" class="small-icon" aria-label="Search and commands" title="Search"></button><button id="pin" class="small-icon" aria-label="Pin the island open" aria-pressed="false" title="Keep open"></button><button id="surface-settings" class="small-icon" aria-label="Settings" title="Settings"></button><button id="collapse-panel" class="small-icon" aria-label="Collapse the island" title="Collapse"></button></div>
       </header>
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
@@ -201,10 +187,6 @@ const surface = new IslandSurface(open => {
   if (open) render();
   else if (palette.open) void palette.hide();
 });
-paintIcon(get("open-palette"), "search");
-paintIcon(get("pin"), "pin");
-paintIcon(get("surface-settings"), "settings");
-paintIcon(get("collapse-panel"), "close");
 
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
 const media = new MediaSource(() => render());
@@ -586,7 +568,20 @@ function render() {
    * The header is the same on every screen — tabs, pin, settings, close — and
    * putting a control that changes with the screen among four that never do is
    * what made these read as orphans wherever they were put. */
-  surface.setTools(paintTools(get("island-tools-acts"), tools[screen]?.() ?? {}));
+  surface.setTools(tools[screen]?.().tools ?? []);
+  /* ⚠️ Rebuilt every render rather than once at boot, and the pin is why: a
+   * button that says whether the island is held open has to be rebuilt with
+   * the answer. The list is four items long, so this is cheaper than a
+   * subscription. */
+  surface.setGlobal([
+    { icon: "search", label: "Search and commands", run: () => { void summon(); } },
+    { id: "pin", icon: "pin", label: "Pin the island open",
+      pressed: surface.isPinned, run: () => surface.pin() },
+    { icon: "settings", label: "Settings",
+      run: () => { void today.action("open_task_editor"); } },
+    { icon: "close", label: "Collapse the island",
+      run: () => { void surface.collapse(); } },
+  ]);
 
   const live = claims();
   paintPill(live);
@@ -632,7 +627,6 @@ async function summon() {
   if (!palette.showing && surface.isHidden) await call("show_chrome").catch(() => {});
   await palette.toggle();
 }
-get("open-palette").onclick = () => { void summon(); };
 
 /* The global shortcut, for the browser preview.
  *
@@ -686,6 +680,15 @@ palette.add(() => {
     { id: "cmd:display", title: "Move to next display", keywords: "monitor screen",
       icon: "system", hint: "Do", keep: { title: "Move to next display", note: "command", icon: "system", kind: "", path: "" },
       run: () => call("next_display", { label: "tasks" }) },
+    /* ⚠️ Here because the control moved. Pin used to be a permanent button in
+     * the header; it is on the near arc now, which is bare until you reach for
+     * it — and "keep this open" is exactly the thing you want when you are
+     * about to do something fiddly, which is the worst moment to go hunting a
+     * hidden control. */
+    { id: "cmd:pin", title: surface.isPinned ? "Let the island close" : "Keep the island open",
+      keywords: "pin stay hold open", icon: "pin", hint: "Do",
+      keep: { title: "Keep the island open", note: "command", icon: "pin", kind: "", path: "" },
+      run: () => surface.pin() },
     { id: "cmd:hide", title: "Hide the chrome", keywords: "dismiss away present",
       icon: "close", hint: "Do", keep: { title: "Hide the chrome", note: "command", icon: "close", kind: "", path: "" },
       run: () => call("toggle_chrome") },
@@ -1058,13 +1061,10 @@ function applyPrefs(next: Prefs) {
 }
 
 /* ── Controls ─────────────────────────────────────────────────────────── */
-get("pin").onclick = () => surface.pin();
-get("collapse-panel").onclick = () => { void surface.collapse(); };
 /* ⚠️ Opens the settings WINDOW. It used to open a popover inside the panel
  * holding the edge, the clock and the task view — which meant those three
  * settings lived somewhere the other twenty did not, and the popover pushed the
  * island taller every time it was opened. One gear, one place. */
-get("surface-settings").onclick = () => { void today.action("open_task_editor"); };
 /* Clicking the pill opens the island and nothing else.
  *
  * It deliberately does NOT jump to the screen the pill is describing. Hover
@@ -1083,26 +1083,6 @@ collapsedLayer.addEventListener("pointerdown", () => press(true));
 for (const event of ["pointerup", "pointercancel", "pointerleave"] as const) {
   collapsedLayer.addEventListener(event, () => press(false));
 }
-
-/* ── Reaching for the tool tab ─────────────────────────────────────
- * The tab is a bare seam until the pointer is on it, and then it is what the
- * screen can do. ⚠️ `pointerenter`/`pointerleave`, not `mouseover` — the
- * latter fires again for every button inside it, and the pair that matches it
- * fires a `mouseout` on the way between two of them, so the tab would shut
- * while the pointer was crossing from one tool to the next.
- *
- * ⚠️ And `focusin`/`focusout` as well. The tools are `opacity: 0` while it is
- * closed; without this they are focusable and invisible, which is the worst of
- * both. */
-const toolTab = get("island-tools");
-toolTab.addEventListener("pointerenter", () => surface.setToolsHover(true));
-toolTab.addEventListener("pointerleave", () => {
-  if (!toolTab.contains(document.activeElement)) surface.setToolsHover(false);
-});
-toolTab.addEventListener("focusin", () => surface.setToolsHover(true));
-toolTab.addEventListener("focusout", () => {
-  if (!toolTab.matches(":hover")) surface.setToolsHover(false);
-});
 
 collapsedLayer.addEventListener("click", () => {
   /* ⚠️ A second press closes it ONLY in click mode. With hover opening, the

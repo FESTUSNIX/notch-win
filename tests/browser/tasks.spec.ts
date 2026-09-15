@@ -26,6 +26,37 @@ async function openToday(page: Page) {
  *  a bare getByText matches twice and Playwright refuses in strict mode. */
 const day = (page: Page) => page.locator('[data-screen="today"]');
 
+/** The island's own four controls — search, pin, settings, collapse — sit on a
+ *  line struck off its NEAR corner, and that line is bare until you reach for
+ *  it. So a test that presses one has to reach first.
+ *
+ * ⚠️ A point ON the curve, not the host's centre. The host is the whole
+ * quadrant outside the corner and is `pointer-events: none` everywhere except
+ * an invisible band along the line — hovering its middle dispatches into empty
+ * space and nothing opens. */
+async function reachIsland(page: Page) {
+  const at = await page.evaluate(() => {
+    const host = document.getElementById("island-global")!.getBoundingClientRect();
+    const line = document.querySelector("#island-global .arc-line") as unknown as SVGPathElement;
+    const mid = line.getPointAtLength(line.getTotalLength() / 2);
+    return {x: host.left + mid.x, y: host.top + mid.y};
+  });
+  await page.mouse.move(at.x, at.y);
+  await expect(page.locator("#island-global")).toHaveClass(/is-open/);
+  /* ⚠️ And wait for it to STOP. Opening springs the line outward and the
+   * controls ride it, so for about half a second every one of them is at a
+   * position it is about to leave — Playwright measures a button, the button
+   * moves, and the click lands on the invisible hit band behind it. Settled is
+   * two identical measurements in a row. */
+  let last = "";
+  await expect.poll(async () => {
+    const now = await page.locator("#island-global .arc-line").getAttribute("d") ?? "";
+    const same = now === last;
+    last = now;
+    return same;
+  }, {timeout: 4000}).toBe(true);
+}
+
 test("the island morphs from one pill into one panel, and the tabs switch screens", async ({page}) => {
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
@@ -154,7 +185,7 @@ test("the clock is 24-hour by default, switches to 12, and pops only the digits 
      the edge, the clock and the task view; those live in the settings window
      now, and the command is what is left on the island itself. */
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await page.locator(".palette-field").fill("12-hour");
   await page.keyboard.press("Enter");
   // 3 PM, not 15:00 and not 03 PM: the 12-hour cycle drops the leading zero in
@@ -162,7 +193,7 @@ test("the clock is 24-hour by default, switches to 12, and pops only the digits 
   await expect(clock).toHaveText(/^3:00\s?[AaPp]\.?[Mm]\.?$/);
   // And back, through the same command — which now offers the other format,
   // because a command that said "12-hour" twice would be a dead end.
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await page.locator(".palette-field").fill("24-hour");
   await page.keyboard.press("Enter");
   await expect(clock).toHaveText("15:00");
@@ -345,6 +376,7 @@ test("a draft survives the island folding, and renaming happens in place", async
   await page.keyboard.press("Enter");
   await expect(day(page).getByText("Get outside twice", {exact: true})).toBeVisible();
 
+  await reachIsland(page);
   await page.getByRole("button", {name: "Collapse the island", exact: true}).click();
   await expect(page.locator("#island-expanded")).toBeHidden();
 });
@@ -501,7 +533,12 @@ test("all four edges keep the island upright and inside its window", async ({pag
   for (const edge of ["left", "top", "bottom", "right"]) {
     await page.goto(`/tasks.html?quiet&edge=${edge}`);
     await open(page);
-    await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+    /* Through the palette. ⚠️ Not the control on the arc: that is bare
+     * until it is reached for, and these tests are not about reaching for
+     * it — they only need the island held open while they poke at it. */
+    await page.keyboard.press("Control+k");
+    await page.locator(".palette-field").fill("Keep the island open");
+    await page.keyboard.press("Enter");
     await expect(page.locator("#notch-shell")).toHaveAttribute("data-edge", edge);
     await expect.poll(() => page.locator("#notch-shell").evaluate(shell => {
       const outer = shell.getBoundingClientRect();
@@ -547,7 +584,12 @@ test("the selection travels, and lands exactly where it is going", async ({page}
   await page.setViewportSize({width: 1060, height: 560});
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  /* Through the palette. ⚠️ Not the control on the arc: that is bare
+   * until it is reached for, and these tests are not about reaching for
+   * it — they only need the island held open while they poke at it. */
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
 
   const sits = () => page.locator(".tab-glide").evaluate(glide => {
     const pill = glide.getBoundingClientRect();
@@ -666,7 +708,7 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
      forgetting you pressed it and wondering for a week why the app went quiet.
      The popover that used to carry the line is gone; the palette command
      carries the count now, and the settings window's Pill pane says it too. */
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await page.locator(".palette-field").fill("snoozed");
   const back = page.locator(".palette-row").first();
   await expect(back.locator(".palette-title")).toHaveText("Bring back what is snoozed");
@@ -678,7 +720,7 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
 test("a workspace is made from a row that is already on screen", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const field = page.locator(".palette-field");
   const rows = page.locator(".palette-row");
   const titles = () => rows.locator(".palette-title").allTextContents();
@@ -695,7 +737,7 @@ test("a workspace is made from a row that is already on screen", async ({page}) 
   await expect(page.locator(".palette")).toBeHidden();
 
   // It is then a thing you can reach by name.
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await field.fill("codenotch-win");
   await expect.poll(async () => (await titles()).includes("codenotch-win")).toBe(true);
   const space = rows.filter({has: page.locator(".palette-note", {hasText: "workspace"})}).first();
@@ -717,7 +759,7 @@ test("a workspace is made from a row that is already on screen", async ({page}) 
    * ⚠️ Counted by NOTE, not by title. The live session for that folder is a row
    * called "codenotch-win" too, and it is a different thing you can do with the
    * same project — counting titles would call that a duplicate. */
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await field.fill("codenotch");
   await expect.poll(() => rows.filter({
     has: page.locator(".palette-note", {hasText: /^workspace/}),
@@ -1035,7 +1077,7 @@ test("the accent is one variable, and nothing is still painted green", async ({p
 test("the palette searches the island's own world and acts on it", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const field = page.locator(".palette-field");
   await expect(field).toBeFocused();
 
@@ -1083,7 +1125,7 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
 
   // Escape closes without running anything.
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await expect(page.locator(".palette")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".palette")).toBeHidden();
@@ -1099,7 +1141,7 @@ test("the palette searches the island's own world and acts on it", async ({page}
    * one-line results in a panel sized for a bento reads as a window someone
    * left open. */
   const full = (await page.locator("#island").boundingBox())!.width;
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await expect(page.locator(".palette")).toBeVisible();
 
   /* ⚠️ And the panel behind it is out of sight, not merely covered. It had a
@@ -1126,7 +1168,7 @@ test("the palette searches the island's own world and acts on it", async ({page}
 test("the palette does arithmetic, goes a level deeper, and learns", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const field = page.locator(".palette-field");
   const rows = page.locator(".palette-row");
 
@@ -1163,14 +1205,14 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
   /* What you actually use comes first. ⚠️ This is the EMPTY query — the state
    * the palette is in every time it opens, and the one that had no opinion at
    * all before: it listed the providers in declaration order for ever. */
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const before = await rows.first().locator(".palette-title").textContent();
   expect(before).not.toBe("Review");
   await field.fill("review");
   await page.keyboard.press("Enter");
   await expect(page.locator(".palette")).toBeHidden();
 
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   await expect(rows.first().locator(".palette-title")).toHaveText("Review");
   await page.screenshot({path: "test-results/island-palette-deep.png"});
 });
@@ -1178,7 +1220,7 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
 test("ranking prefers the thing you named, and a scope narrows it", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const field = page.locator(".palette-field");
   const rows = page.locator(".palette-row");
   const titles = () => rows.locator(".palette-title").allTextContents();
@@ -1230,7 +1272,7 @@ test("ranking prefers the thing you named, and a scope narrows it", async ({page
 test("a star keeps something, and keeps it in the empty list", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   const field = page.locator(".palette-field");
   const rows = page.locator(".palette-row");
   const titles = () => rows.locator(".palette-title").allTextContents();
@@ -1250,7 +1292,7 @@ test("a star keeps something, and keeps it in the empty list", async ({page}) =>
   await page.getByRole("option", {name: /Star this/}).click();
   await expect(page.locator(".palette")).toBeHidden();
 
-  await page.getByRole("button", {name: "Search and commands"}).click();
+  await page.keyboard.press("Control+k");
   // Empty query: the kept thing is there, and marked.
   await expect.poll(async () => (await titles()).includes("hero")).toBe(true);
   const kept = rows.filter({hasText: "hero"}).first();
@@ -1560,7 +1602,12 @@ test("changing screens moves, and the panel travels to the new height", async ({
   await page.setViewportSize({width: 1060, height: 560});
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  /* Through the palette. ⚠️ Not the control on the arc: that is bare
+   * until it is reached for, and these tests are not about reaching for
+   * it — they only need the island held open while they poke at it. */
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
 
   const dir = () => page.locator(".screens").evaluate(el =>
     getComputedStyle(el).getPropertyValue("--dir").trim());
@@ -1647,7 +1694,12 @@ test("every screen ends the same way, and a card that lights up goes somewhere",
   await page.setViewportSize({width: 1060, height: 760});
   await page.goto("/tasks.html");
   await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  /* Through the palette. ⚠️ Not the control on the arc: that is bare
+   * until it is reached for, and these tests are not about reaching for
+   * it — they only need the island held open while they poke at it. */
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
 
   /* ⚠️ The gap under the last row must match the gap at the sides. It was the
    * screen's own padding PLUS a card's worth added by `measure()` — about 30px,
@@ -1681,7 +1733,12 @@ test("a screen opens at its own height, not already scrolled", async ({page}) =>
   await page.setViewportSize({width: 1060, height: 760});
   await page.goto("/tasks.html");
   await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  /* Through the palette. ⚠️ Not the control on the arc: that is bare
+   * until it is reached for, and these tests are not about reaching for
+   * it — they only need the island held open while they poke at it. */
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
 
   /* ⚠️ `measure()` summed each row's `offsetHeight` and missed every margin
    * between them — the agents, shelf and calendar lists all space themselves
@@ -1701,7 +1758,12 @@ test("a screen opens at its own height, not already scrolled", async ({page}) =>
 test("a wheel has to mean it before the screen changes", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await page.getByRole("button", {name: "Pin the island open", exact: true}).click();
+  /* Through the palette. ⚠️ Not the control on the arc: that is bare
+   * until it is reached for, and these tests are not about reaching for
+   * it — they only need the island held open while they poke at it. */
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
   await page.locator('[data-tab="home"]').click();
   const active = () => page.locator(".island-tab[aria-selected=true] span").textContent();
 

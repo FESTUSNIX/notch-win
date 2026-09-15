@@ -19,7 +19,7 @@ test.use({viewport: {width: 1280, height: 800}});
 async function onArc(page: import("@playwright/test").Page, turn: number) {
   return page.evaluate((t) => {
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
-    const d = document.getElementById("tools-arc")!.getAttribute("d")!;
+    const d = document.querySelector("#island-tools .arc-line")!.getAttribute("d")!;
     const radius = Number(/A([\d.]+)/.exec(d)![1]);
     const angle = t * 2 * Math.PI;
     return {
@@ -43,7 +43,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
 
   await page.locator('[data-tab="calendar"]').click();
   await expect(tools).toBeVisible();
-  await expect(tools.locator(".screen-tool")).toHaveCount(2);
+  await expect(tools.locator(".arc-act")).toHaveCount(2);
 
   /* ⚠️ A GAP, not a join. The shape before this was welded to the island's
    * underside and read as a lump on the corner; the whole point of the arc is
@@ -60,7 +60,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
      * where the shape turns back out — so the along-axis distance is
      * `corner + flare` and only the across-axis is the corner alone. */
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
-    const path = document.getElementById("tools-arc") as unknown as SVGPathElement;
+    const path = document.querySelector("#island-tools .arc-line") as unknown as SVGPathElement;
     const total = path.getTotalLength();
     let nearest = Infinity;
     for (let i = 0; i <= 20; i++) {
@@ -92,7 +92,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   const walk = await page.evaluate(() => {
     const host = document.getElementById("island-tools")!;
     const at = host.getBoundingClientRect();
-    const path = document.getElementById("tools-arc") as unknown as SVGPathElement;
+    const path = document.querySelector("#island-tools .arc-line") as unknown as SVGPathElement;
     const total = path.getTotalLength();
     const rays: number[] = [];
     for (let i = 0; i <= 8; i++) {
@@ -121,7 +121,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
    * for the keyboard — but nothing of them is on screen until it is reached
    * for. */
   const seen = () => page.evaluate(() =>
-    [...document.querySelectorAll("#island-tools .screen-tool")]
+    [...document.querySelectorAll("#island-tools .arc-act")]
       .filter(t => getComputedStyle(t).opacity !== "0").length);
   expect(await seen()).toBe(0);
 
@@ -132,7 +132,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   /* ⚠️ And it stays open under a pointer that has not moved. */
   for (let i = 0; i < 6; i++) {
     await page.waitForTimeout(90);
-    expect(await tools.evaluate(e => e.className)).toBe("is-open");
+    expect(await tools.evaluate(e => e.classList.contains("is-open"))).toBe(true);
   }
 
   /* ⚠️ The hit band spans every radius the line can swing through — back to
@@ -147,7 +147,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
    * barely moves, so the loop is not reachable from the outside. It becomes
    * reachable the day a screen grows a third. */
   const band = await page.evaluate(() => {
-    const reach = document.getElementById("tools-reach")!;
+    const reach = document.querySelector("#island-tools .arc-band")!;
     const island = document.getElementById("island")!.getBoundingClientRect();
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
     const mid = Number(/A([\d.]+)/.exec(reach.getAttribute("d")!)![1]);
@@ -161,7 +161,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
    * Same distance from the corner's centre, different angles, in order. */
   const laid = await page.evaluate(() => {
     const host = document.getElementById("island-tools")!.getBoundingClientRect();
-    return [...document.querySelectorAll("#island-tools .screen-tool")].map(t => {
+    return [...document.querySelectorAll("#island-tools .arc-act")].map(t => {
       const b = t.getBoundingClientRect();
       const dx = b.left + b.width / 2 - host.left;
       const dy = b.top + b.height / 2 - host.top;
@@ -184,7 +184,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   /* It follows the screen, and Home has nothing to do — so there is no arc at
    * all rather than a bare one. */
   await page.locator('[data-tab="media"]').click();
-  await expect(tools.locator(".screen-tool")).toHaveCount(1);
+  await expect(tools.locator(".arc-act")).toHaveCount(1);
   const one = await onArc(page, 0.125);
   await page.mouse.move(one.x, one.y);
   await expect(tools.getByRole("button", {name: "Show what is next"})).toBeVisible();
