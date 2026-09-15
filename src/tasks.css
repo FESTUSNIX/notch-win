@@ -370,20 +370,35 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    also in the DOM only while open, so on the way out there was nothing left to
    animate either — see screen-media.ts.)
 
-   ⚠️ A LENGTH, not a fraction. `0fr → 1fr` does interpolate, but the width a
-   fraction RESOLVES to depends on the island's own width — which is springing
-   at the same time — so the column would chase a moving target and arrive at a
-   different speed from the shape carrying it. A fixed 260px, and an island that
-   grows by exactly 260 + 14, means the player on the left does not move.
+   ⚠️ BOTH tracks are fixed lengths, and the player's is the important one.
+   As `minmax(0,1fr)` it was sized by whatever was left over, so every frame of
+   the island's spring re-laid the player out: the transport row is
+   `space-between`, so its buttons crawled apart and back together while the
+   panel travelled. That is the jumping — not the queue, the controls.
+
+   With the player track fixed, nothing inside it moves relative to anything
+   else inside it. The island is centred on its edge (`paint()` puts it at
+   `(shell - width) / 2`), so growing by 274 moves its left edge 137 left — and
+   the player, pinned to that edge, slides left as one piece at exactly the rate
+   the queue opens. Which is the whole effect.
+
+   ⚠️ Lengths, not fractions, for the same reason on the queue side: what a
+   fraction resolves to depends on the container, which is springing, so the
+   column would chase a moving target and arrive at a different speed from the
+   shape carrying it.
 
    ⚠️ 560ms on Droppy's own curve, the same shape as the size springs: the
    outer shape and the inner column are one movement, and two durations read as
    two. */
-.media-body { display:grid; grid-template-columns:minmax(0,1fr) 0px;
+/* ⚠️ These four numbers and the two in `WIDTH`/`widthOf` are one set. The
+   island's body is `500 + 2 × 15` closed and `+ 14 + 260` open; get them out of
+   step and the player stops being centred, or the queue is clipped by the
+   bezel. tasks.ts derives its design pixels from these. */
+.media-body { display:grid; grid-template-columns:500px 0px;
   gap:0; min-width:0; align-items:start;
   transition:grid-template-columns 560ms cubic-bezier(0.32, 1.22, 0.36, 1),
     gap 560ms cubic-bezier(0.32, 1.22, 0.36, 1); }
-.media-body.has-queue { grid-template-columns:minmax(0,1fr) 260px; gap:14px; }
+.media-body.has-queue { grid-template-columns:500px 260px; gap:14px; }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion=always]) .media-body { transition:none; }
 }

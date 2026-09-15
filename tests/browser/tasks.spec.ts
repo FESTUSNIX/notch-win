@@ -853,9 +853,36 @@ test("the player is a screen only while there is a player, and the queue is clos
   };
   const shut = await settle();
 
-  await page.getByRole("button", {name: "Playing next", exact: true}).click();
+  /* ⚠️ Watched all the way, not checked at both ends. Everything about this
+     gesture was wrong in a way the endpoints agreed on: the panel's contents
+     were sized and placed at their FINAL width on the first frame while only
+     the black shape animated, so the whole player snapped and the queue
+     appeared. Two things have to hold across the frames in between — the
+     player never changes width, and it travels. */
+  const frame = () => page.evaluate(() => {
+    const now = document.querySelector(".media-now")!.getBoundingClientRect();
+    const queue = document.querySelector(".media-queue")!.getBoundingClientRect();
+    return { player: Math.round(now.width), left: Math.round(now.left), queue: Math.round(queue.width) };
+  });
+
+  const opening = page.getByRole("button", {name: "Playing next", exact: true}).click();
+  const seen: Awaited<ReturnType<typeof frame>>[] = [];
+  for (let i = 0; i < 9; i++) { seen.push(await frame()); await page.waitForTimeout(70); }
+  await opening;
   await expect(page.locator(".media-queue-head")).toHaveText("Playing Next");
   await expect.poll(column).toBeGreaterThan(200);
+
+  // The controls keep their size, so nothing inside them re-lays out. As a
+  // `1fr` track they were sized by whatever was left over, and the transport
+  // row is `space-between` — its buttons crawled apart and back every frame.
+  expect(new Set(seen.map(f => f.player)).size).toBe(1);
+  // And they MOVE, rather than arriving where they finish. The island is
+  // centred on its edge, so growing pushes its left edge out and the player
+  // rides it.
+  expect(new Set(seen.map(f => f.left)).size).toBeGreaterThan(2);
+  expect(seen[0].left).toBeGreaterThan(seen[seen.length - 1].left);
+  // The queue widens over the same frames rather than appearing.
+  expect(new Set(seen.map(f => f.queue)).size).toBeGreaterThan(2);
   await expect(page.locator(".media-track")).toHaveCount(6);
   // A track with no cover is still a row: artwork is the one field Spotify
   // legitimately omits.

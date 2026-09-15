@@ -2247,3 +2247,24 @@ The two halves were the same fault.
      the column, three track titles re-wrap through eight line-breaks each on
      the way in and out, which reads as a glitch rather than as a panel
      arriving. Fixed width inside an `overflow:hidden` track, so it slides.
+292. ⚠️ **The panel's contents were at their FINAL size and offset on frame
+     one.** `measure()` sizes `#island-expanded` to the target body — correctly,
+     because that is the width the content has to be measured at — and nothing
+     ever resized it again, so only the black shape animated and everything
+     inside it snapped. That is what "the animation is glitchy" was: not the
+     queue, the whole panel. `paint()` now sizes the layer from the sprung
+     value every frame; `measure()` still sets the target, and the two are not
+     in conflict — one is the question, the other is the answer arriving.
+293. ⚠️ **A `1fr` track re-lays out its contents on every frame of a spring.**
+     The player was sized by whatever the queue left over, and its transport row
+     is `space-between` — so the buttons crawled apart and back together for the
+     whole 560ms. Both tracks are fixed lengths now: the player cannot change
+     size, so nothing inside it can move relative to anything else inside it.
+294. ⚠️ **The island is CENTRED on its edge** (`(shell - width) / 2`), so a
+     fixed-width column pinned to its left edge slides outward as the island
+     grows — which is the whole effect, and it is free. Nothing animates the
+     player's position; it rides the shape.
+295. ⚠️ **Endpoints agree even when the middle is wrong.** Every version of
+     this passed a test that checked the closed state and the open state. The
+     test samples the frames in between now and asserts two things about them:
+     the player's width never changes, and its left edge does.

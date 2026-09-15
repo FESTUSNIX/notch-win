@@ -248,8 +248,13 @@ export class IslandSurface {
        * the bottom look nothing like the sides. */
       Math.max(cpx(FRAME.islandMinDepth), chrome + content),
     );
-    // Layers are sized to the BODY, never the element: the flare at each end is
-    // shape, not room, and content laid into it would be clipped by the curve.
+    /* Layers are sized to the BODY, never the element: the flare at each end is
+     * shape, not room, and content laid into it would be clipped by the curve.
+     *
+     * ⚠️ Set to the TARGET here because that is the size the content has to be
+     * measured at — and then overwritten by `paint()` on every animated frame.
+     * The two are not in conflict: this one is the question ("how tall is this
+     * screen at its real width?"), that one is the answer arriving. */
     const vertical = isVertical(this.edge);
     this.expanded.style.width = `${vertical ? this.depth : this.body}px`;
     this.expanded.style.height = `${vertical ? this.body : this.depth}px`;
@@ -515,7 +520,25 @@ export class IslandSurface {
     place(this.collapsed,
       vertical ? cpx(FRAME.islandPillThin) : cpx(FRAME.islandPillLong),
       vertical ? cpx(FRAME.islandPillLong) : cpx(FRAME.islandPillThin));
-    place(this.expanded, vertical ? this.depth : this.body, vertical ? this.body : this.depth);
+    /* ⚠️ The expanded layer is SIZED here, from the sprung values — not left
+     * at the target size `measure()` gave it.
+     *
+     * `measure()` has to set the target size, because that is the width the
+     * content must be measured at. But leaving it there means the panel's
+     * contents are at their final width and final offset on the very first
+     * frame, while the shape is still growing around them — so everything
+     * inside SNAPS into place and only the black shape animates. That is the
+     * jump: not the queue, the whole panel.
+     *
+     * Sized every frame instead, the container travels with the shape. The
+     * player inside it is a fixed track (see `.media-body`), so nothing in it
+     * re-lays out; it simply rides the container's left edge outwards as the
+     * island grows from its centre. */
+    const lw = vertical ? this.depth : g.body;
+    const lh = vertical ? g.body : this.depth;
+    this.expanded.style.width = `${lw}px`;
+    this.expanded.style.height = `${lh}px`;
+    place(this.expanded, lw, lh);
 
     // Cross-fade. The collapsed layer is gone before the expanded one arrives,
     // so the two are never legible at once over each other.

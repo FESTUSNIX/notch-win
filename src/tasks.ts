@@ -53,6 +53,19 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "review", icon: "review", label: "Review" },
 ];
 
+/* ── The player's two widths ────────────────────────────────────────
+ * ⚠️ Derived from the grid in tasks.css, never chosen. `.media-body` is a
+ * 500px player track beside a 260px queue track with a 14px gap, inside
+ * `--screen-pad` of 15 a side — and the island's body has to come to exactly
+ * that. A design pixel is 56/117 of a CSS one (`cpx`), so this is the inverse.
+ *
+ * Get them out of step and one of two things happens, both of which look like
+ * an animation bug rather than a number: the player stops being centred in the
+ * shape, or the queue is clipped by the bezel on the way in. */
+const dpx = (css: number) => Math.round(css * 117 / 56);
+const PLAYER_ONLY = dpx(500 + 2 * 15);
+const PLAYER_AND_QUEUE = dpx(500 + 2 * 15 + 14 + 260);
+
 /** How wide each screen wants to be, in DESIGN pixels — `cpx()` converts.
  *
  * ⚠️ A panel is only as wide as what is in it. One width for everything meant
@@ -70,11 +83,12 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
 const WIDTH: Record<ScreenName, number> = {
   home: 1900,      // three cards side by side
   today: 1420,     // one column of rows, and the composer under it
-  /* ⚠️ The player has TWO widths — see `widthOf`. The queue is a second
-   * column, and opening it into a panel sized for one is what the per-screen
-   * width was built for. Both came down after a look at the real thing: at
-   * 1320/1900 the left column was mostly empty either side of a 84px cover. */
-  media: 1130,
+  /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
+   * the grid in tasks.css rather than picked. `.media-body` is a 500px player
+   * track and a 260px queue track with a 14px gap, inside `--screen-pad` of
+   * 15 a side; the island's body has to be exactly that, or the player is no
+   * longer centred and the queue is clipped by the bezel. */
+  media: PLAYER_ONLY,
   agents: 1620,    // rows carrying project, branch, tokens and a verb
   shelf: 1480,     // rows with a thumbnail and a path
   calendar: 1900,  // the week grid needs seven columns
@@ -89,11 +103,7 @@ const WIDTH: Record<ScreenName, number> = {
  * number at it — which looks, from a test, exactly like the width not changing
  * at all. */
 function widthOf(name: ScreenName): number {
-  /* ⚠️ Exactly the queue column plus its gap wider, so the player on the left
-   * does not move while the panel arrives: 260 + 14 CSS px is 573 design px,
-   * and 1130 + 573 is this. Any other number slides the transport row sideways
-   * under the pointer that just pressed it. */
-  if (name === "media" && player.open) return 1703;
+  if (name === "media" && player.open) return PLAYER_AND_QUEUE;
   return WIDTH[name];
 }
 
