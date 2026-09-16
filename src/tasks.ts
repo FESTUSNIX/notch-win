@@ -6,9 +6,9 @@
  */
 import { IslandSurface } from "./island-surface";
 import { element } from "./dom";
-import { paintIcon } from "./task-icons";
+import { paintIcon, type TaskIcon } from "./task-icons";
+import { SCREENS } from "./screens";
 import { cpx } from "./layout";
-import { type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
 import { pick, renderActivity, renderResting, type Activity, type ScreenName } from "./island-activity";
@@ -50,34 +50,9 @@ import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
 
-/* Grouped, not alphabetical, and the order is the argument: what you are
- * doing, what is around you, then the machine and the day behind you. */
-const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
-  { name: "home", icon: "home", label: "Home" },
-  /* ⚠️ Second, and only on the rail while a call is running — the same rule
-   * the player follows, for a stronger reason: a call is the most "what you
-   * are doing right now" thing this app can know about, and it is over in
-   * forty minutes. A permanent stop for it would be nine-tenths of the day
-   * spent on a screen that says "no call is running". */
-  { name: "call", icon: "mic", label: "Call" },
-  /* ⚠️ A screen, and NOT a rail stop by default — see `stops()`. The bell
-   * in the header is how you get here, which is the whole point of putting it
-   * there: the rail is for places you go on purpose, and a notification is
-   * something that happened to you. */
-  { name: "notices", icon: "bell", label: "Notices" },
-  { name: "today", icon: "today", label: "Today" },
-  /* ⚠️ The player's tab exists only while something is playing — see
-   * `paintMediaTab`. It was removed for being a permanent tab holding a title
-   * and three buttons; it earns one again now that it carries the playhead and
-   * the queue, but only while there is something to carry. */
-  { name: "media", icon: "media", label: "Playing" },
-  { name: "agents", icon: "agent", label: "Agents" },
-  { name: "shelf", icon: "shelf", label: "Shelf" },
-  { name: "notes", icon: "note", label: "Notes" },
-  { name: "calendar", icon: "calendar", label: "Calendar" },
-  { name: "system", icon: "system", label: "System" },
-  { name: "review", icon: "review", label: "Review" },
-];
+/* The screens. ⚠️ ONE list, in `screens.ts`, shared with the settings window
+ * and the ring — it was two hand-kept copies until the ring made it three. */
+const TABS = SCREENS;
 
 /* ── The player's two widths ────────────────────────────────────────
  * ⚠️ Derived from the grid in tasks.css, never chosen. `.media-body` is a
@@ -1530,6 +1505,19 @@ async function boot() {
     /* One surface over everything. ⚠️ No pin here either — this listener
      * was the first of the three that latched it. */
     await listen("island:palette", () => { void summon(); });
+
+    /* Picked from the ring. ⚠️ It OPENS the island as well as switching to
+     * the screen, and it has to: the ring is used from inside another window,
+     * with the pointer nowhere near the edge of the display, so a screen
+     * changed behind a collapsed pill is a key that appears to do nothing.
+     * `pinFor` rather than a pin, so it closes itself the way everything else
+     * here does. */
+    await listen<string>("island:go", event => {
+      if (event.payload === "@search") { void summon(); return; }
+      show(event.payload as ScreenName);
+      surface.show(true);
+      surface.pinFor(4000);
+    });
 
     // Kept in step if the format is changed from another window.
     // ⚠️ Inside the `native` guard with every other listener here. Outside it,

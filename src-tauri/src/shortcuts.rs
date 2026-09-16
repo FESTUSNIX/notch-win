@@ -59,6 +59,10 @@ pub const DEFAULT_SHELF: &str = "Ctrl+Alt+V";
 /// half the launchers on Windows already claim that, and a shortcut that
 /// silently fails to register is worse than an unfamiliar one.
 pub const DEFAULT_PALETTE: &str = "Ctrl+Alt+K";
+/// R for ring. ⚠️ Not on the AltGr list above, and deliberately not one of
+/// the letters a screen might want later: this is the key that exists so that
+/// no screen ever needs one of its own.
+pub const DEFAULT_RING: &str = "Ctrl+Alt+R";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +79,8 @@ pub struct Shortcuts {
     pub shelf: String,
     /// Opens the command palette.
     pub palette: String,
+    /// Puts the ring of screens around the pointer.
+    pub ring: String,
 }
 
 impl Default for Shortcuts {
@@ -86,6 +92,7 @@ impl Default for Shortcuts {
             display: DEFAULT_DISPLAY.into(),
             shelf: DEFAULT_SHELF.into(),
             palette: DEFAULT_PALETTE.into(),
+            ring: DEFAULT_RING.into(),
         }
     }
 }
@@ -184,6 +191,7 @@ pub fn set_shortcuts(
     display: String,
     shelf: String,
     palette: String,
+    ring: String,
 ) -> Result<(), String> {
     let next = Shortcuts {
         toggle: toggle.trim().into(),
@@ -192,8 +200,10 @@ pub fn set_shortcuts(
         display: display.trim().into(),
         shelf: shelf.trim().into(),
         palette: palette.trim().into(),
+        ring: ring.trim().into(),
     };
-    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf, &next.palette];
+    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf,
+        &next.palette, &next.ring];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -221,6 +231,7 @@ pub fn set_shortcuts(
             config.shortcut_display = next.display;
             config.shortcut_shelf = next.shelf;
             config.shortcut_palette = next.palette;
+            config.shortcut_ring = next.ring;
             crate::config::save(&config);
             Ok(())
         }
@@ -264,6 +275,7 @@ fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
         ("Next display", &shortcuts.display),
         ("Shelf", &shortcuts.shelf),
         ("Palette", &shortcuts.palette),
+        ("Ring", &shortcuts.ring),
     ] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
@@ -290,6 +302,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         (&mut config.shortcut_display, DEFAULT_DISPLAY, "next display"),
         (&mut config.shortcut_shelf, DEFAULT_SHELF, "shelf"),
         (&mut config.shortcut_palette, DEFAULT_PALETTE, "search"),
+        (&mut config.shortcut_ring, DEFAULT_RING, "ring"),
     ] {
         if eats_a_letter(field) {
             moved.push(format!("{name}: {field} -> {fallback}"));
@@ -308,6 +321,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         display: config.shortcut_display,
         shelf: config.shortcut_shelf,
         palette: config.shortcut_palette,
+        ring: config.shortcut_ring,
     };
 
     let handler = app.clone();
@@ -359,6 +373,13 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                             let _ = handler.emit_to("tasks", "island:shelved-failed", message);
                         }
                     }
+                } else if matches(&pressed, &current.ring) {
+                    /* ⚠️ Does NOT un-hide the chrome first, unlike the
+                     * palette. The ring opens at the pointer and is the whole
+                     * interaction — there is nothing to see at the edge of the
+                     * screen until something is picked, and `ring_pick` brings
+                     * the island back then. */
+                    crate::ring::open(&handler);
                 } else if matches(&pressed, &current.display) {
                     // Moving it while it is off screen would be a keypress with
                     // no visible result, so bring it back first.

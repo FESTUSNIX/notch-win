@@ -194,7 +194,9 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      settings window's AltGr guard is what found it: it warned about a shortcut
      no build has shipped for months. */
   if (command === "get_shortcuts") return {palette:"Ctrl+Alt+K",toggle:"Ctrl+Alt+Space",
-    capture:"Ctrl+Alt+T",shelf:"Ctrl+Alt+V",display:"Ctrl+Alt+M",hide:"Ctrl+Alt+H"} as T;
+    capture:"Ctrl+Alt+T",shelf:"Ctrl+Alt+V",display:"Ctrl+Alt+M",hide:"Ctrl+Alt+H",
+    ring:"Ctrl+Alt+R"} as T;
+  if (command === "ring_pick" || command === "ring_close") return undefined as T;
   if (command === "get_chrome_hidden") return false as T;
   if (command === "show_chrome" || command === "toggle_chrome") return undefined as T;
   /* ⚠️ Apps and file hits are stubbed here so the BANDING is exercised by

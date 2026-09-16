@@ -2964,3 +2964,31 @@ The two halves were the same fault.
      `node --test` — which is the whole reason an engine lives in a file of its
      own. Declare the fields and assign them. Same trap `media-format.ts`
      exists to route around, met from the other side.
+433. ⚠️ **A radial menu's hit test is an ANGLE, not the element under the
+     pointer.** Each wedge's glyph and label are drawn on top of it, so
+     `elementFromPoint` reports the text for a third of the ring and the menu
+     goes dead exactly where its own labels are.
+434. ⚠️ **Sampling a segment's CENTRE cannot catch a segment rotated half a
+     segment.** The ring's aim regions were briefly offset from its drawn
+     wedges — the right-hand half of every wedge selected its neighbour — and
+     every test passed, because a centre maps to the same index under both
+     conventions. Found by reverting the fix and watching the suite stay green.
+     Sample just inside each wedge's own two EDGES, which is the only place the
+     two conventions disagree, and tie the sample to the drawing function.
+435. ⚠️ **A window that takes no focus has no Escape and no blur.** The ring is
+     `WS_EX_NOACTIVATE` like the rest of the chrome, so there is no key to
+     dismiss it with and no event when attention moves elsewhere: the way out
+     has to be moving the pointer away, and only a poll of `GetCursorPos` can
+     see that. The webview learns nothing about a pointer that is not over it.
+436. ⚠️ **An SVG sibling does not inherit a custom property from the shape it is
+     drawn on top of.** The ring's glyph sits over its wedge, not inside it, so
+     `--stop` has to be set on both — one of them silently keeps the default.
+437. ⚠️ **Node's resolver does not do extensionless imports the way vite does.**
+     A file that `node --test` must load may import types freely (they are
+     erased) but not values from `"./screens"`. Either spell the `.ts` or,
+     better, pass the data in — a geometry handed its own list is easier to
+     test besides.
+438. ⚠️ **Eight is the ceiling for a ring.** Past that a segment is thinner than
+     the hand is accurate and the advantage of a radial menu — aim rather than
+     read — is gone. What does not fit belongs in the palette, which is what
+     the middle of the ring opens.

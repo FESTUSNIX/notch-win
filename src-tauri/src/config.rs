@@ -62,6 +62,8 @@ pub struct Config {
     pub shortcut_display: String,
     pub shortcut_shelf: String,
     pub shortcut_palette: String,
+    /// The ring of screens around the pointer.
+    pub shortcut_ring: String,
 }
 
 impl Default for Config {
@@ -88,6 +90,7 @@ impl Default for Config {
             shortcut_display: crate::shortcuts::DEFAULT_DISPLAY.into(),
             shortcut_shelf: crate::shortcuts::DEFAULT_SHELF.into(),
             shortcut_palette: crate::shortcuts::DEFAULT_PALETTE.into(),
+            shortcut_ring: crate::shortcuts::DEFAULT_RING.into(),
         }
     }
 }

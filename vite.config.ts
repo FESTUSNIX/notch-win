@@ -21,6 +21,8 @@ export default defineConfig({
         taskEditor: resolve(__dirname, "task-editor.html"),
         // One window per pinned note, all the same page with a different `?id`.
         note: resolve(__dirname, "note.html"),
+        // The ring around the pointer, on one global key.
+        ring: resolve(__dirname, "ring.html"),
       },
     },
   },

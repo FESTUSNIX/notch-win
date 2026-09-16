@@ -27,6 +27,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { call, native, preview, watchTasks } from "./task-client";
 import { emptySnapshot } from "./task-model";
 import { element } from "./dom";
+import { SCREENS } from "./screens";
 import { taskIcon, type TaskIcon } from "./task-icons";
 import "./tasks.css";
 
@@ -111,6 +112,8 @@ const KEYS = [
   { id: "shelf", title: "Shelve the clipboard", note: "" },
   { id: "display", title: "Next display", note: "Does nothing on one monitor." },
   { id: "hide", title: "Hide everything", note: "Takes both notches off screen." },
+  { id: "ring", title: "Ring of screens",
+    note: "Puts every screen around the pointer. Pick one and the island opens on it." },
 ] as const;
 type KeyId = (typeof KEYS)[number]["id"];
 type Shortcuts = Record<KeyId, string>;
@@ -563,25 +566,10 @@ for (const [id, key] of [
   };
 }
 
-/* ── Which screens, and in what order ────────────────────────────────────
- * ⚠️ The list lives HERE, not on the island. The island's own copy is
- * `TABS` in `tasks.ts`, and this one has to agree with it or a screen is
- * reorderable into a place it cannot be shown. They are two constants because
- * the two windows share no module; keeping them in step is the price, and the
- * test at the bottom of `tips.spec.ts` is what notices. */
-const SCREENS: { name: string; label: string }[] = [
-  { name: "home", label: "Home" },
-  { name: "call", label: "Call" },
-  { name: "notices", label: "Notices" },
-  { name: "today", label: "Today" },
-  { name: "media", label: "Playing" },
-  { name: "agents", label: "Agents" },
-  { name: "shelf", label: "Shelf" },
-  { name: "notes", label: "Notes" },
-  { name: "calendar", label: "Calendar" },
-  { name: "system", label: "System" },
-  { name: "review", label: "Review" },
-];
+/* ── Which screens, and in what order ────────────────────────
+ * ⚠️ The list is in `screens.ts` and is shared with the island and the ring.
+ * It was a second hand-kept copy here, which meant a screen could be reordered
+ * into a place it could not be shown. */
 
 /** The screens in the order the preferences put them.
  *
@@ -884,7 +872,7 @@ async function paintEverything() {
  * of it, so a form sending a subset does not save part of it — it fails
  * outright on a missing argument. This window sent two of six for a while,
  * which meant saving a shortcut silently did nothing at all. */
-let keys: Shortcuts = { palette: "", toggle: "", capture: "", shelf: "", display: "", hide: "" };
+let keys: Shortcuts = { palette: "", toggle: "", capture: "", shelf: "", display: "", hide: "", ring: "" };
 let listening: KeyId | null = null;
 
 /** The accelerator Windows will actually take, built from the physical key

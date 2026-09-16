@@ -1061,7 +1061,7 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         let mut names: HashMap<u32, String> = HashMap::new();
         for (_, pid) in &windows {
-            let Some((known, app_pid, path)) = app_above(*pid, &tree) else { continue };
+            let Some((known, _, path)) = app_above(*pid, &tree) else { continue };
             if !seen.insert(known.id) {
                 continue;
             }

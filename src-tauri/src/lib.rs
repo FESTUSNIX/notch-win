@@ -20,6 +20,7 @@ mod notes;
 mod notices;
 mod notify;
 mod spotify;
+mod ring;
 mod runlog;
 mod shelf;
 mod thumbs;
@@ -555,6 +556,8 @@ pub fn run() {
             media::media_command,
             call::get_call,
             call::call_action,
+            ring::ring_pick,
+            ring::ring_close,
             notices::get_notices,
             notices::notice_dismiss,
             notify::notify_now,
@@ -684,6 +687,7 @@ pub fn run() {
             media::spawn(app.handle().clone());
             call::spawn(app.handle().clone());
             notices::spawn(app.handle().clone());
+            ring::spawn(app.handle().clone());
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
             system::spawn(app.handle().clone());

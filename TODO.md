@@ -3,8 +3,31 @@
 ## My ideas for the next features
 
 - Currency converter extension for the command palette
-- Notifications shelf/screen which keeps recent notifications and allows for quick actions (like snooze, dismiss, open app and quick reply)
-- Pomodoro widget
+- ~~Notifications shelf~~ — **done, basic**. Windows' own centre, mirrored on a
+  Notices screen with a bell in the header. ⚠️ A MIRROR: dismissing one here
+  dismisses it there, and nothing is kept on disk. The header shows a count and
+  never a word of content.
+  - [ ] No quick actions yet beyond dismiss and clear — no reply, no snooze,
+        and no opening the app that sent it.
+  - [ ] No app icons on the rows; the app's NAME is the only mark. `AppInfo`
+        can give a logo and that is the obvious next thing.
+  - [ ] A 4s poll, so a toast takes up to four seconds to land on the screen.
+- ~~Pomodoro widget~~ — **done**, in the header beside the bell, with a plain
+  countdown in the same chip (`timer 12` in the palette). Lengths in Settings.
+  - [ ] It does not claim the collapsed pill, so a running pomodoro is only
+        visible with the island open. Deliberate for now — the pill is busy.
+- ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
+  Every screen at a direction, the palette in the middle, picking one opens the
+  island on it. ⚠️ Eight at most: past that, aiming stops being faster than
+  reading.
+  - [ ] Tap-to-open only. Hold-the-key-and-release-to-pick is the gesture that
+        would make it properly fast, and the plugin does report key release.
+  - [ ] No actions on it, only screens — "add a task" and "shelve the
+        clipboard" would both earn a wedge.
+- [ ] **The rail budget** (agreed, not yet applied): a screen earns a rail stop
+      only if you would sit on it for thirty seconds. Everything else is a
+      palette command or a Home section. System and Review are the two that
+      should come off the default rail.
 
 - ~~Quick note widget with history of all notes, search~~ — **done**. A Notes
   screen: a field that saves on Enter, the pile newest-first, and a search that
