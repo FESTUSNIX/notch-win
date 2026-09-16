@@ -27,9 +27,11 @@
 - Feature (media): live lyrics sync using LRCLIB
 - Feature: In call mode with controls (mute, hand up, camera, etc.), integrate Teams, Zoom, Google Meet and WhatsApp if possible.
 - Feature (media): Add volume mixer. Control volume per app
+- Feature: reordering screens/tabs
+
 - Fix: Arcs and screen rail/switcher are visible when the command palette is open. The command palette should be a separate layer that doesn't show the global island UI
 - Fix (system): Unnecessary padding bottom on device and bluetooth cards.
-- Fix (command palette): When closing the command palette, expanded island shows up before folding. Fix that. When opening or closing the command the island should not be taken into account.
+- Fix (command palette): When closing the command palette, expanded island shows up before folding. Fix that.
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose
@@ -400,9 +402,9 @@ captioned, which told you where you were and nothing about where you could go.
 and each looked plausible on its own.
 
 - A turn ending in prose — the work came back, no question — was reported as
-  *waiting*. True of the file, false of you: it pulsed amber and held the pill
+  _waiting_. True of the file, false of you: it pulsed amber and held the pill
   until the terminal was closed. It is **done** now, which is idle.
-- A QUESTION was reported as *working*. `AskUserQuestion` arrives as a
+- A QUESTION was reported as _working_. `AskUserQuestion` arrives as a
   `tool_use` block exactly like `Bash`, so the mid-flight check swallowed the
   one moment that genuinely wanted you — no pulse, no notification. It is
   **waiting** now.

@@ -345,10 +345,18 @@ export class Palette {
      * body — now each asks for its own, and closing the palette over Today
      * would snap the panel out to 909px and leave it there. `onClose` restores
      * it, which is also why the measure that matters is the one after it. */
+    /* ⚠️ The panel is NOT handed back if it is only going to fold.
+     * `input(false)` releases the caret, which lets the fold timer arm — and
+     * the timer is most of half a second, so closing the palette with the
+     * pointer away from the island showed the whole expanded panel, in the
+     * screen's own colours, and then folded it. It reads as the island opening
+     * by mistake. Told to fold now, it goes straight from the search bar to
+     * the pill, which is where it was going anyway. */
     await this.surface.input(false).catch(() => {});
     this.surface.deliberately();
     this.onClose();
     this.surface.measure();
+    this.surface.foldIfDone();
   }
 
   /* ── Choosing ─────────────────────────────────────────────────────────── */

@@ -2709,4 +2709,15 @@ The two halves were the same fault.
      no question, and there was nothing to answer — yet it pulsed amber and
      held the pill until the terminal was closed. Together with 384 the two
      states were exactly inverted, and each looked plausible on its own.
+386. ⚠️ **A small mark centred in a large host is not where you put it.** The
+     rail's hint is five pixels tall and its host is as deep as a stop — it has
+     to be, the stops live in it — so centring sat the line twenty pixels off
+     the island's edge and the whole rail read as adrift. Align the mark to the
+     edge it belongs to; centre only what the depth exists for.
+387. ⚠️ **Releasing the caret arms the fold timer, so the panel is SHOWN for
+     its duration.** Closing the palette with the pointer away handed the panel
+     back, then waited most of half a second before folding — which reads as
+     the island opening by mistake. Fold at once when nothing is holding it
+     open, having checked: the palette is opened from a control on the island,
+     so the pointer is often still there.
 

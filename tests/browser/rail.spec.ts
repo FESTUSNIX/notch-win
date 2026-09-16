@@ -451,6 +451,89 @@ test("the palette takes the whole surface, furniture included", async ({page}) =
   await expect(page.locator("#island-rail")).toBeVisible();
 });
 
+test("closing the palette with the pointer away folds without showing the panel", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await expect(page.locator(".palette-field")).toBeVisible();
+
+  /* Away from the island — which is the case this is about. */
+  await page.mouse.move(20, 700);
+
+  /* ⚠️ Watched, not sampled. Releasing the caret lets the fold timer arm, and
+   * the timer is most of half a second — so the whole expanded panel, in the
+   * screen's own colours, was on screen for that long before folding, and it
+   * read as the island opening by mistake. A poll walks straight past it; this
+   * records every frame the panel was both visible and full height. */
+  await page.evaluate(() => {
+    const seen: number[] = [];
+    (window as unknown as {shown: number[]}).shown = seen;
+    const tick = () => {
+      const panel = document.getElementById("island-expanded")!;
+      const bar = document.querySelector(".palette-field");
+      const up = !!bar && (bar as HTMLElement).offsetParent !== null;
+      if (!up && getComputedStyle(panel).visibility === "visible") {
+        seen.push(panel.getBoundingClientRect().height);
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#island-expanded")).toBeHidden();
+
+  /* The panel may be caught mid-fold — that is the fold, and it is meant to be
+   * seen. What must not happen is it standing there at its full open height. */
+  const tall = await page.evaluate(() =>
+    (window as unknown as {shown: number[]}).shown.filter(h => h > 120).length);
+  expect(tall).toBeLessThan(8);
+});
+
+test("laid out flat, every screen is sharp and one press away", async ({page}) => {
+  await page.emulateMedia({reducedMotion: "reduce"});
+  await page.goto("/tasks.html?agents&flat");
+  await open(page);
+
+  /* ⚠️ The carousel is the better shape for nine screens on a strip you
+   * glance at — one in the middle, named, its neighbours a step away — but it
+   * costs a gesture to reach anything. Flat, nothing is dimmed, nothing is
+   * blurred, and the far end of the list is a single press. */
+  const all = await page.locator(".rail-stop").evaluateAll(stops => ({
+    count: stops.length,
+    dim: stops.filter(s => Number(getComputedStyle(s).opacity) < 0.99).length,
+    blurred: stops.filter(s => getComputedStyle(s).filter !== "none").length,
+  }));
+  expect(all.count).toBe(9);
+  expect(all.dim).toBe(0);
+  expect(all.blurred).toBe(0);
+
+  // The last screen in the list, without a drag.
+  await page.locator('.rail-stop[data-tab="review"]').click();
+  await expect.poll(() => here(page)).toBe("review");
+});
+
+test("the hint sits against the island, not adrift below it", async ({page}) => {
+  await page.emulateMedia({reducedMotion: "reduce"});
+  await page.goto("/tasks.html?agents");
+  await open(page);
+
+  /* ⚠️ The host is as deep as a STOP — it has to be, the stops live in it —
+   * and the hint is five pixels tall. Centred in it, the line sat twenty
+   * pixels off the island's edge and the rail read as floating away from the
+   * thing it belongs to. */
+  const gap = await page.evaluate(() => {
+    document.getElementById("island-rail")!.classList.remove("is-always");
+    const island = document.getElementById("island")!.getBoundingClientRect();
+    const host = document.getElementById("island-rail")!.getBoundingClientRect();
+    const line = getComputedStyle(document.getElementById("island-rail")!, "::before");
+    return {host: host.top - island.bottom, thick: parseFloat(line.height)};
+  });
+  expect(gap.host).toBeGreaterThan(0);
+  expect(gap.host).toBeLessThan(12);
+  expect(gap.thick).toBeLessThan(8);
+});
+
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
   await page.goto("/tasks.html?agents&edge=left");

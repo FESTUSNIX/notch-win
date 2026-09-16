@@ -44,6 +44,7 @@ interface Prefs {
   railAlways: boolean;
   railGrip: number;
   railSharp: number;
+  railFlat: boolean;
   useEverything: boolean;
   indexApps: boolean;
   notifyRuns: boolean;
@@ -181,6 +182,7 @@ const PANE_HTML: Record<PaneId, string> = {
         `<input type="range" id="rail-grip" min="50" max="300" step="10"><span class="set-value" id="rail-grip-value"></span>`)}
       ${row("Kept sharp", "How many either side of the middle stay unblurred.",
         `<input type="range" id="rail-sharp" min="0" max="3" step="1"><span class="set-value" id="rail-sharp-value"></span>`)}
+      ${row("Show them all", "Every screen laid out and clickable, instead of one in the middle to drag between.", check("rail-flat"))}
     </div></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
       ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
@@ -318,7 +320,7 @@ for (const spec of PANES) {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
-  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0,
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false,
   useEverything: true, indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -490,6 +492,10 @@ const railVisible = get<HTMLInputElement>("rail-visible");
 railVisible.oninput = () => {
   prefs.railVisible = Number(railVisible.value);
   get("rail-visible-value").textContent = `${prefs.railVisible}`;
+  savePrefs();
+};
+get<HTMLInputElement>("rail-flat").onchange = event => {
+  prefs.railFlat = (event.target as HTMLInputElement).checked;
   savePrefs();
 };
 get<HTMLInputElement>("rail-always").onchange = event => {
@@ -850,6 +856,7 @@ function paintPrefs() {
   markSeg("view", prefs.taskView === "all" ? "all" : "day");
   get<HTMLInputElement>("open-on-hover").checked = prefs.openOnHover;
   get<HTMLInputElement>("rail-always").checked = prefs.railAlways;
+  get<HTMLInputElement>("rail-flat").checked = prefs.railFlat;
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;
   get<HTMLInputElement>("index-apps").checked = prefs.indexApps;

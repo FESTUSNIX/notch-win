@@ -173,6 +173,7 @@ interface Prefs {
   railAlways: boolean;
   railGrip: number;
   railSharp: number;
+  railFlat: boolean;
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -182,7 +183,7 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0,
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -1028,6 +1029,7 @@ function applyPrefs(next: Prefs) {
      * drag by nothing and sends the rail to infinity on the first pixel. */
     grip: Math.max(0.5, Math.min(3, (next.railGrip || 100) / 100)),
     sharp: Math.max(0, Math.min(3, next.railSharp || 0)),
+    flat: next.railFlat,
   });
   today.setView(next.taskView === "all" ? "all" : "day");
   home.setWeekStart(next.weekStartsMonday);

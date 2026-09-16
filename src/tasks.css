@@ -326,13 +326,20 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 
 /* The hint. ⚠️ On a pseudo-element, so it costs no node and cannot be
    dragged, focused or read out — it is a mark, not a control. */
+/* ⚠️ Against the ISLAND, not centred in the host. The host is as deep as a
+   stop — it has to be, the stops live in it — and the line is five pixels
+   tall, so centring put it twenty pixels off the island's edge and the rail
+   read as floating away from the thing it belongs to. The stops stay centred;
+   they are what the depth is for. */
 #island-rail::before { content:""; position:absolute; border-radius:999px;
-  background:#000; pointer-events:none;
+  background:#000; pointer-events:none; align-self:start;
   width:var(--rail-hint, 70px); height:var(--rail-thick, 5px);
   transition:opacity var(--duration-fast) var(--ease-smooth-out),
     scale var(--duration-fast) var(--ease-smooth-out); }
-#island-rail.is-upright::before {
+#island-rail[data-edge="bottom"]::before { align-self:end; }
+#island-rail.is-upright::before { align-self:center; justify-self:start;
   width:var(--rail-thick, 5px); height:var(--rail-hint, 70px); }
+#island-rail[data-edge="right"]::before { justify-self:end; }
 /* Gone once the screens are up — in hover mode as it opens, and always in the
    mode that shows them unasked. */
 #island-rail.is-open::before, #island-rail.is-dragging::before,

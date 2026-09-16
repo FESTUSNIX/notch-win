@@ -82,7 +82,12 @@ let demoPrefs: Record<string, unknown> = {
      `!important` rule that hides every stop, so a fixture missing it shows a
      bare black pill that only fills when hovered — which is a valid setting
      and therefore looks deliberate rather than absent. */
-  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, useEverything: true,
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0,
+  /* `?flat` lays every screen out at once instead of centring one — the
+     setting is a checkbox in the real window and a flag here, because it
+     changes the rail's whole layout and looking at it is the only way to
+     judge it. */
+  railFlat: new URLSearchParams(location.search).has("flat"), useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

@@ -60,6 +60,9 @@ export interface RailPrefs {
   /** How many stops either side of the middle stay sharp. 0 blurs the
    *  immediate neighbours; 1 leaves them alone and starts at the next. */
   sharp: number;
+  /** Every screen at once, all sharp and all clickable — a strip rather than a
+   *  carousel, for when dragging is not what you want. */
+  flat: boolean;
 }
 
 export class IslandRail {
@@ -70,7 +73,9 @@ export class IslandRail {
   private at = new Spring(0, 0.34, 0.74);
   private stops: RailStop[] = [];
   private cells: HTMLElement[] = [];
-  private prefs: RailPrefs = { visible: 5, always: true, grip: 1, sharp: 0 };
+  private prefs: RailPrefs = {
+    visible: 5, always: true, grip: 1, sharp: 0, flat: false,
+  };
   private opened = false;
   private closing = 0;
   private moving = false;
@@ -177,6 +182,7 @@ export class IslandRail {
   setPrefs(prefs: RailPrefs) {
     this.prefs = prefs;
     this.host.classList.toggle("is-always", prefs.always);
+    this.host.classList.toggle("is-flat", prefs.flat);
     this.paintCells();
   }
 
@@ -267,7 +273,8 @@ export class IslandRail {
   private upright = false;
 
   private down(event: PointerEvent) {
-    if (event.button !== 0) return;
+    // A flat strip does not travel, so there is nothing to drag it by.
+    if (event.button !== 0 || this.prefs.flat) return;
     this.grabbed = true;
     this.dragging = false;
     this.coasting = false;
@@ -491,12 +498,14 @@ export class IslandRail {
     this.host.hidden = !show;
     if (!show) return;
     this.host.classList.toggle("is-upright", this.upright);
+    // Which way the hint leans: it sits against the island, not centred.
+    this.host.dataset.edge = frame.edge;
     this.host.style.setProperty("--rail-hint", `${cpx(FRAME.railHint)}px`);
     this.host.style.setProperty("--rail-thick", `${cpx(FRAME.islandArcStroke)}px`);
 
     const runs = Math.min(
       (this.upright ? frame.height : frame.width) - 2 * frame.corner,
-      this.prefs.visible * this.pitch());
+      (this.prefs.flat ? this.live().length : this.prefs.visible) * this.pitch());
     const depth = cpx(FRAME.railDepth);
     const gap = cpx(FRAME.islandArcClear);
     /** Just off the island's free edge — the side away from the bezel. */
@@ -523,6 +532,29 @@ export class IslandRail {
     }
   }
 
+  /** Every stop, evenly spaced and all the same.
+   *
+   * ⚠️ Measured from the MIDDLE of the list, not from the current stop. A
+   * flat strip does not travel, so laying it out relative to where you are
+   * would slide the whole row every time a screen changed — which is the
+   * carousel again, wearing a strip's clothes. */
+  private layFlat() {
+    const middle = (this.cells.length - 1) / 2;
+    for (const [index, cell] of this.cells.entries()) {
+      const along = (index - middle) * this.pitch();
+      cell.style.translate = this.upright ? `0 ${along}px` : `${along}px 0`;
+      cell.style.scale = "1";
+      cell.style.opacity = "1";
+      cell.style.filter = "none";
+      const here = Math.abs(index - Math.round(this.at.value)) < 0.5;
+      cell.classList.toggle("is-here", here);
+      cell.setAttribute("aria-selected", String(here));
+      (cell as HTMLButtonElement).tabIndex = 0;
+      const say = cell.querySelector(".rail-say") as HTMLElement | null;
+      if (say) { say.style.maxWidth = "0px"; say.style.paddingRight = "0px"; }
+    }
+  }
+
   /** Where each stop sits, and how much of it you can see.
    *
    * ⚠️ The blur and the fade are computed per cell from its distance to the
@@ -531,6 +563,13 @@ export class IslandRail {
    * off — stepped opacity over a smooth translate is the thing that reads as a
    * cheap carousel. */
   private lay() {
+    /* ⚠️ Laid out FLAT, every stop sharp and reachable. The carousel is the
+     * better shape for nine screens on a strip you glance at — one in the
+     * middle, named, its neighbours a step away — but it costs a gesture to
+     * reach anything, and somebody who would rather press the one they want
+     * should be able to. Nothing below runs in this mode: no scale, no blur,
+     * no fade, no name, and no pushing the neighbours aside. */
+    if (this.prefs.flat) { this.layFlat(); return; }
     const centre = this.at.value;
     /* ⚠️ Which stop you are ON is read from the CLAMPED position, while where
      * each one sits is read from the real one. Pulling past the first or last

@@ -70,6 +70,9 @@ pub struct Prefs {
     /// How many screens either side of the middle stay sharp. 0 blurs the
     /// immediate neighbours; 1 leaves them alone and starts at the next.
     pub rail_sharp: u32,
+    /// Lay every screen out at once, all of them sharp and clickable, instead
+    /// of centring one and blurring its neighbours away.
+    pub rail_flat: bool,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -119,6 +122,7 @@ impl Default for Prefs {
             rail_always: true,
             rail_grip: 100,
             rail_sharp: 0,
+            rail_flat: false,
             use_everything: true,
             index_apps: true,
             notify_runs: true,

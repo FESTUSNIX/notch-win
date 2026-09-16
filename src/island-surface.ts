@@ -366,6 +366,19 @@ export class IslandSurface {
     }
   }
 
+  /** Fold at once if nothing is keeping the panel up.
+   *
+   * ⚠️ Checked, not assumed. The pointer may well be ON the island — the
+   * palette is opened from a control that sits there — and folding under a
+   * pointer that never left is the opposite of the problem this solves. Nor
+   * does it touch `suppressed`: the panel is allowed to come straight back
+   * when the pointer arrives, which `dismiss` deliberately is not. */
+  foldIfDone() {
+    if (!this.open || this.pinned || this.hovering || this.editing) return;
+    clearTimeout(this.timer);
+    this.show(false);
+  }
+
   /** A click somewhere else on the screen.
    *
    * ⚠️ Honours the pin and nothing else. The pin is the one control whose
