@@ -186,6 +186,25 @@ export const FRAME = {
    * radius the line can swing through — see the note in `paintTools`. The line
    * is eight pixels of curve on a screen edge; an exact target is no target. */
   islandArcHot: 46,
+  /* ── The rail ────────────────────────────────────────────────────────────
+   * Where you are, under the middle of the island's free edge, between the two
+   * arcs. It shares their clearance — `islandArcClear` — so the three read as
+   * one row of furniture rather than three separate decisions. */
+  /** One stop's slot along the rail. ⚠️ Wide enough for the CENTRED stop's
+   *  caption, which is the only one drawn: a pitch sized for an icon puts the
+   *  name of the screen you are on over the two beside it. */
+  railStep: 250,
+  /** One stop's slot when the rail runs DOWN the island's side: a row's
+   *  height, not a caption's width. */
+  railStepDown: 82,
+  /** How deep the rail is — across it, whichever way it runs. */
+  railDepth: 86,
+  /** How far the panel slides for one stop's worth of drag. ⚠️ A FRACTION of
+   *  the rail's own step, not all of it: the panel is four times the rail's
+   *  width, and dragging it one-for-one throws the content off the edge of the
+   *  screen for a gesture that has not chosen anything yet. */
+  railCarry: 130,
+
   /** Room reserved beyond the island for the line at its widest. ⚠️ The
    *  window is sized from this; short, and the line is cut off at the window's
    *  edge with nothing to say so. */

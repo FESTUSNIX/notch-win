@@ -1,4 +1,45 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+/** Go to a screen.
+ *
+ * ⚠️ Through the palette rather than by pressing the stop on the rail. The
+ * rail shows five of the nine and CLIPS the rest, so pressing one by name works
+ * for whatever happens to be near the middle and silently does not for the
+ * others — which would make these tests pass or fail on where the previous one
+ * left the rail. Pressing a stop is the rail's own business and has a spec of
+ * its own. */
+const SCREENS: Record<string, string> = {
+  home: "Home", today: "Today", media: "Playing", agents: "Agents",
+  shelf: "Shelf", notes: "Notes", calendar: "Calendar", system: "System",
+  review: "Review",
+};
+async function goTo(page: Page, screen: string) {
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill(SCREENS[screen]);
+  /* ⚠️ The row by NAME, not Enter on whatever ranked first. The palette
+   * searches tasks and sessions as well as screens, so "Home" can rank a task
+   * above the screen depending on the fixture — and then the test fails with
+   * the island sitting on some other screen entirely, which reads as the
+   * feature being broken rather than the helper being sloppy. */
+  await page.locator(".palette-row .palette-title")
+    .filter({hasText: new RegExp(`^${SCREENS[screen]}$`)}).first().click();
+  /* ⚠️ Waits on the SCREEN, not on the rail. The rail is the thing under
+   * test in its own spec; here it is only the road, and asserting on it makes
+   * every one of these fail for a reason that has nothing to do with them. */
+  await expect(page.locator(`.screen[data-screen="${screen}"]`)).toBeVisible();
+  /* ⚠️ And waits for the island to STOP. Going through the palette narrows
+   * the panel and hands the width back, so for half a second afterwards every
+   * measurement of the island is of a shape on its way somewhere — which shows
+   * up as a test comparing two heights and finding the later one smaller. */
+  let last = -1;
+  await expect.poll(async () => {
+    const now = await page.locator("#island").evaluate(el =>
+      Math.round(el.getBoundingClientRect().height));
+    const same = now === last;
+    last = now;
+    return same;
+  }, {timeout: 5000}).toBe(true);
+}
 
 test("a focus session survives a reload and takes over the collapsed island", async ({page}) => {
   await page.clock.install({time: new Date("2026-09-08T10:00:00Z")});
@@ -14,7 +55,7 @@ test("a focus session survives a reload and takes over the collapsed island", as
   // the header controls the edge loop uses are on every screen.
   const openToday = async () => {
     await open();
-    await page.locator('[data-tab="today"]').click();
+    await goTo(page, "today");
     await expect(page.locator("#inline-composer")).toBeVisible();
   };
   await openToday();

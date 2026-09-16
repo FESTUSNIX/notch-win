@@ -18,7 +18,7 @@ async function open(page: Page) {
 /** The island opens on Home now, so the day screen has to be asked for. */
 async function openToday(page: Page) {
   await open(page);
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(page.locator("#inline-composer")).toBeVisible();
 }
 
@@ -57,6 +57,48 @@ async function reachIsland(page: Page) {
   }, {timeout: 4000}).toBe(true);
 }
 
+/** Go to a screen.
+ *
+ * ⚠️ Through the palette rather than by pressing the stop on the rail. The
+ * rail shows five of the nine and CLIPS the rest, so pressing one by name works
+ * for whatever happens to be near the middle and silently does not for the
+ * others — which would make these tests pass or fail on where the previous one
+ * left the rail. Pressing a stop is the rail's own business and has a spec of
+ * its own. */
+const SCREENS: Record<string, string> = {
+  home: "Home", today: "Today", media: "Playing", agents: "Agents",
+  shelf: "Shelf", notes: "Notes", calendar: "Calendar", system: "System",
+  review: "Review",
+};
+async function goTo(page: Page, screen: string, settle = true) {
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill(SCREENS[screen]);
+  /* ⚠️ The row by NAME, not Enter on whatever ranked first. The palette
+   * searches tasks and sessions as well as screens, so "Home" can rank a task
+   * above the screen depending on the fixture — and then the test fails with
+   * the island sitting on some other screen entirely, which reads as the
+   * feature being broken rather than the helper being sloppy. */
+  await page.locator(".palette-row .palette-title")
+    .filter({hasText: new RegExp(`^${SCREENS[screen]}$`)}).first().click();
+  /* ⚠️ Waits on the SCREEN, not on the rail. The rail is the thing under
+   * test in its own spec; here it is only the road, and asserting on it makes
+   * every one of these fail for a reason that has nothing to do with them. */
+  await expect(page.locator(`.screen[data-screen="${screen}"]`)).toBeVisible();
+  /* ⚠️ And waits for the island to STOP. Going through the palette narrows
+   * the panel and hands the width back, so for half a second afterwards every
+   * measurement of the island is of a shape on its way somewhere — which shows
+   * up as a test comparing two heights and finding the later one smaller. */
+  if (!settle) return;
+  let last = -1;
+  await expect.poll(async () => {
+    const now = await page.locator("#island").evaluate(el =>
+      Math.round(el.getBoundingClientRect().height));
+    const same = now === last;
+    last = now;
+    return same;
+  }, {timeout: 5000}).toBe(true);
+}
+
 test("the island morphs from one pill into one panel, and the tabs switch screens", async ({page}) => {
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
@@ -84,17 +126,17 @@ test("the island morphs from one pill into one panel, and the tabs switch screen
   expect(Math.abs((layer!.x + layer!.width / 2) - (panel!.x + panel!.width / 2))).toBeLessThan(2);
 
   // The date line separator is a real middle dot, not a mangled CSS escape.
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(page.locator("#day-date")).toHaveText(/\w/);
   await expect(page.locator(".day-meta")).not.toContainText("00b7");
-  await page.locator('[data-tab="home"]').click();
+  await goTo(page, "home");
   // Home is the default: three sections on one row, one per other screen.
   await expect(page.locator(".home-sec")).toHaveCount(3);
   await expect(page.locator(".home-month")).toBeVisible();
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
   // The month grid and the agenda beside it — one view, not two.
   await expect(page.locator(".cal-grid")).toBeVisible();
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeVisible();
   expect(errors).toEqual([]);
   await page.screenshot({path: "test-results/island-today.png"});
@@ -244,7 +286,7 @@ test("the player is on Home, and the transport there is the whole control", asyn
 test("the agenda groups by day and offers a link only where there is one", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
   /* ⚠️ No "next up" banner any more. It named the event that is already the
      first row of the agenda underneath it, and the pill says the same thing
      again when it is close — three places for one fact. */
@@ -458,7 +500,7 @@ test("settings: one window, seven pages, and nothing that can show a token", asy
   await page.setViewportSize({width: 1200, height: 700});
   await page.goto("/tasks.html?empty&quiet");
   await open(page);
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(page.getByRole("button", {name: "Connect TickTick", exact: true})).toBeVisible();
   // Nothing connected means nothing countable: the line is empty rather than
   // claiming a zero it cannot stand behind.
@@ -571,7 +613,7 @@ test("a short day uses a shorter island and reduced motion still folds", async (
   await page.emulateMedia({reducedMotion: "reduce"});
   await page.goto("/tasks.html?single&quiet");
   await open(page);
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(page.locator("#task-list .task-title")).toHaveCount(1);
   // A one-task day is markedly shorter than the 527px the island can reach.
   const island = await page.locator("#island").boundingBox();
@@ -591,40 +633,33 @@ test("the selection travels, and lands exactly where it is going", async ({page}
   await page.locator(".palette-field").fill("Keep the island open");
   await page.keyboard.press("Enter");
 
-  const sits = () => page.locator(".tab-glide").evaluate(glide => {
-    const pill = glide.getBoundingClientRect();
-    const tab = document.querySelector('.island-tab[aria-selected="true"]')!.getBoundingClientRect();
-    return Math.abs(pill.left - tab.left) < 1.5 && Math.abs(pill.width - tab.width) < 1.5;
+  /* ⚠️ The rail's equivalent of the old sliding pill. There is no pill any
+   * more — the selection is the MIDDLE of the rail, and a stop is selected by
+   * being under it. So the thing that can go wrong is the same thing and the
+   * assertion is the same shape: the chosen stop has to land exactly there,
+   * not near there. */
+  const sits = () => page.evaluate(() => {
+    const rail = document.getElementById("island-rail")!.getBoundingClientRect();
+    const here = document.querySelector(".rail-stop.is-here");
+    if (!here) return 99;
+    const box = here.getBoundingClientRect();
+    return Math.abs((box.left + box.width / 2) - (rail.left + rail.width / 2));
   });
 
-  /* ⚠️ The geometry is COMPUTED, not measured: at the moment of a click every
-   * width on the strip is mid-transition, so reading one gives a target that
-   * was true a frame ago. This is the assertion that catches that arithmetic
-   * going wrong — the pill would still glide, just never quite onto anything. */
   for (const tab of ["shelf", "review", "today", "home"]) {
-    await page.locator(`[data-tab="${tab}"]`).click();
-    await expect.poll(sits).toBe(true);
+    await goTo(page, tab);
+    await expect.poll(sits, {timeout: 4000}).toBeLessThan(1.5);
   }
 
-  /* ⚠️ And the selected tab paints no background of its OWN. Painting both
-   * lights the new tab instantly while the pill is still travelling, so there
-   * are two selections on screen for a quarter of a second, every switch.
-   *
-   * The pointer is moved off first: hover is a real state and does paint, which
-   * is correct — the claim here is about the selection, not the pointer. The
-   * island is pinned, so nothing folds. */
+  /* ⚠️ Exactly one stop is the one you are on. `is-here` is computed per
+   * frame from a distance, not toggled by a class on the neighbours, so an
+   * off-by-one in that sum shows up as two stops captioned at once or none —
+   * and both of those still LOOK like a working carousel in a screenshot. */
   await page.mouse.move(520, 520);
-  expect(await page.locator('.island-tab[aria-selected="true"]')
-    .evaluate(tab => getComputedStyle(tab).backgroundColor))
-    .toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
-
-  /* Only the tab you are on is captioned: eight labels is a menu, one is a
-   * caption for where you are. ⚠️ Polled — the label being left behind is
-   * shrinking rather than vanishing, which is the whole point of it, so for a
-   * quarter of a second there really are two. */
-  await expect.poll(() => page.locator(".island-tab span").evaluateAll(labels =>
-    labels.filter(label => label.getBoundingClientRect().width > 0).length)).toBe(1);
-  await page.screenshot({path: "test-results/island-tabs.png"});
+  await expect(page.locator(".rail-stop.is-here")).toHaveCount(1);
+  await expect.poll(() => page.locator(".rail-say").evaluateAll(says =>
+    says.filter(say => say.getBoundingClientRect().width > 0).length)).toBe(1);
+  await page.screenshot({path: "test-results/island-rail.png"});
 });
 
 test("Home gathers the other three onto one row, and opens into them", async ({page}) => {
@@ -672,7 +707,7 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await expect(page.locator(".pill-value")).toHaveText(/waiting \d+m/);
 
   await open(page);
-  await page.locator('[data-tab="agents"]').click();
+  await goTo(page, "agents");
   const rows = page.locator(".agent-row");
   await expect(rows).toHaveCount(3);
   // Ordered by who wants you, not by name or by when they started.
@@ -770,7 +805,7 @@ test("a workspace is made from a row that is already on screen", async ({page}) 
 test("today's spend is broken down by project", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.locator('[data-tab="agents"]').click();
+  await goTo(page, "agents");
 
   /* ⚠️ The usage notch says the window is going; nothing on the machine said
    * what was eating it. That is the question you actually have when you look at
@@ -800,7 +835,7 @@ test("today's spend is broken down by project", async ({page}) => {
 test("a working session says what it is doing, not that it is working", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
-  await page.locator('[data-tab="agents"]').click();
+  await goTo(page, "agents");
 
   /* ⚠️ "working" is three bits of information about something you are
    * watching closely. The transcript has always carried the answer — an
@@ -870,9 +905,9 @@ test("the player is a screen only while there is a player, and the queue is clos
   /* ⚠️ The tab exists only while something is playing. A permanent tab
      holding a title and three buttons is what got the last one removed; this
      one carries the playhead and the queue, and appears with the first track. */
-  const tab = page.locator('[data-tab="media"]');
-  await expect(tab).toBeVisible();
-  await tab.click();
+  const tab = page.locator('.rail-stop[data-tab="media"]');
+  await expect(tab).toHaveCount(1);
+  await goTo(page, "media");
 
   await expect(page.locator(".media-title")).toHaveText(/potion shop/);
   // The source, never a fabricated "explicit" badge: Windows' transport
@@ -1122,7 +1157,7 @@ test("the palette searches the island's own world and acts on it", async ({page}
   await field.fill("today");
   await page.keyboard.press("Enter");
   await expect(page.locator(".palette")).toBeHidden();
-  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.rail-stop[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
 
   // Escape closes without running anything.
   await page.keyboard.press("Control+k");
@@ -1308,7 +1343,7 @@ test("a star keeps something, and keeps it in the empty list", async ({page}) =>
 test("notes: one key to write one, and the pile stays findable", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await page.locator('[data-tab="notes"]').click();
+  await goTo(page, "notes");
 
   const rows = page.locator(".note-card");
   await expect(rows).toHaveCount(5);
@@ -1469,7 +1504,7 @@ test("a pinned note is the same note, in a window of its own", async ({page}) =>
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);
-  await page.locator('[data-tab="shelf"]').click();
+  await goTo(page, "shelf");
   const rows = page.locator(".shelf-row");
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(0).locator(".shelf-name")).toHaveText("Codenotch_0.1.0_x64-setup.exe");
@@ -1497,7 +1532,7 @@ test("the shelf parks things and hands them back", async ({page}) => {
 test("Review looks backwards at four things nothing else joined", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);
-  await page.locator('[data-tab="review"]').click();
+  await goTo(page, "review");
   const tiles = page.locator(".review-tile");
   await expect(tiles).toHaveCount(4);
 
@@ -1530,7 +1565,7 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await page.clock.install({time: morning});
   await page.goto("/tasks.html");
   await open(page);
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
   await expect(page.locator(".cal-row").first()).toBeVisible();
   await page.getByRole("button", {name: "Week"}).click();
   await expect(page.locator(".cal-wkcol")).toHaveCount(7);
@@ -1591,7 +1626,7 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
 
   await page.getByLabel("New task name").fill("Ring the plumber");
   await page.getByRole("button", {name: "Add", exact: true}).click();
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect(day(page).getByText("Ring the plumber", {exact: true})).toBeVisible();
   // Filed where the picker said, not where Today's composer was.
   await page.locator(".list-chip").filter({hasText: "Personal"}).click();
@@ -1615,9 +1650,9 @@ test("changing screens moves, and the panel travels to the new height", async ({
   /* ⚠️ The direction comes from the TAB ORDER, not from the order screens were
    * opened in — the strip is what you are looking at while this happens, so a
    * screen has to arrive from the side it sits on. */
-  await page.locator('[data-tab="review"]').click();
+  await goTo(page, "review");
   expect(await dir()).toBe("1");
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   expect(await dir()).toBe("-1");
 
   /* ⚠️ The screen being left goes ABSOLUTE for the length of its exit. Left in
@@ -1629,7 +1664,12 @@ test("changing screens moves, and the panel travels to the new height", async ({
      answers `static` for a screen that was absolute throughout its exit. The
      test failed on a calendar that had grown a 42-cell grid, which is a slower
      render and nothing else. */
-  await page.locator('[data-tab="system"]').click();
+  /* ⚠️ Switched with the KEYBOARD, not through the palette. The exit lasts
+   * 150ms and `goTo` waits for the island to settle, which is longer — so by
+   * the time it returns the leaving screen has already gone and this reads
+   * "no screen is leaving" as "the screen was never absolute". Ctrl+Tab steps
+   * to the next screen and returns immediately. */
+  await page.keyboard.press("Control+Tab");
   await expect.poll(() => page.evaluate(() => {
     const el = document.querySelector(".screen.is-leaving");
     return el ? getComputedStyle(el).position : "";
@@ -1640,9 +1680,12 @@ test("changing screens moves, and the panel travels to the new height", async ({
   /* The panel's height is SPRUNG rather than set: it travels to the new
    * screen's height instead of snapping to it. */
   const height = () => page.locator("#island").evaluate(el => el.getBoundingClientRect().height);
-  await page.locator('[data-tab="home"]').click();
+  await goTo(page, "home");
   const settled = await height();
-  await page.locator('[data-tab="review"]').click();
+  /* ⚠️ WITHOUT waiting for it to settle, which is the whole point: the claim
+   * is that the height travels, and a helper that waits for it to arrive can
+   * only ever measure the destination twice. */
+  await goTo(page, "review", false);
   const mid = await height();
   await expect.poll(height).not.toBe(mid);
   expect(await height()).not.toBe(settled);
@@ -1652,7 +1695,7 @@ test("changing screens moves, and the panel travels to the new height", async ({
 test("an event opens into a panel, and nothing is striped", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
 
   /* ⚠️ No left rails anywhere. A 3px coloured bar down the edge of a dark card
    * is the shape every generated calendar has, and it says nothing the card's
@@ -1720,7 +1763,7 @@ test("every screen ends the same way, and a card that lights up goes somewhere",
   /* ⚠️ A card that lights up under the pointer has to GO somewhere. The player
    * has no screen behind it any more, so it neither lifts nor takes a click —
    * a hover that leads nowhere is a promise the screen does not keep. */
-  await page.locator('[data-tab="home"]').click();
+  await goTo(page, "home");
   await expect(page.locator(".home-media")).not.toHaveClass(/can-open/);
   await expect(page.locator(".home-cal")).toHaveClass(/can-open/);
 
@@ -1764,8 +1807,8 @@ test("a wheel has to mean it before the screen changes", async ({page}) => {
   await page.keyboard.press("Control+k");
   await page.locator(".palette-field").fill("Keep the island open");
   await page.keyboard.press("Enter");
-  await page.locator('[data-tab="home"]').click();
-  const active = () => page.locator(".island-tab[aria-selected=true] span").textContent();
+  await goTo(page, "home");
+  const active = () => page.locator(".rail-stop.is-here .rail-say").textContent();
 
   const head = page.locator(".island-head");
   /* ⚠️ A trackpad sends a stream of 2-4px deltas, so acting on the first one
@@ -1789,17 +1832,21 @@ test("a wheel has to mean it before the screen changes", async ({page}) => {
 test("a wheel changes screens unless the thing under it can scroll", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await page.locator(".island-tabs").hover();
+  /* ⚠️ Over the HEADER, not the rail. The rail eats a wheel itself — it is
+   * a carousel and a wheel steps it — and what is under test here is the
+   * panel's own wheel-to-change-screen, which the rail must not double up on.
+   * The header is the panel, and it never scrolls. */
+  await page.locator(".island-head").hover();
   /* ⚠️ 260, not 120. The threshold is 240 now — one mouse notch no longer
      switches, which is the whole of "less sensitive". */
   await page.mouse.wheel(0, 260);
-  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.rail-stop[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
   // Past the cooldown: one flick must not run through every tab, so a second
   // wheel inside 450ms is deliberately ignored. The pointer is NOT re-aimed —
   // the rail has moved out from under it, and the gesture must survive that.
   await page.waitForTimeout(520);
   await page.mouse.wheel(0, -260);
-  await expect(page.locator('[data-tab="home"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.rail-stop[data-tab="home"]')).toHaveAttribute("aria-selected", "true");
 
   /* Vertical scrolling over a list must stay with the list.
    *
@@ -1809,13 +1856,13 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
    * is the rule rather than a bug. The rule under test is about scrollers, not
    * about how one came to be scrollable, so the test makes one. */
   await page.addStyleTag({content: "#task-list { max-height: 90px; }"});
-  await page.locator('[data-tab="today"]').click();
+  await goTo(page, "today");
   await expect.poll(() => page.locator("#task-list")
     .evaluate(el => el.scrollHeight > el.clientHeight + 1)).toBe(true);
   const list = await page.locator("#task-list").boundingBox();
   await page.mouse.move(list!.x + list!.width / 2, list!.y + 20);
   await page.mouse.wheel(0, 300);
-  await expect(page.locator('[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.rail-stop[data-tab="today"]')).toHaveAttribute("aria-selected", "true");
   // A horizontal swipe there does change screens.
   await page.waitForTimeout(520);
   await page.mouse.wheel(300, 0);
@@ -1825,7 +1872,7 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
 test("the System screen carries the machine's own controls", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await page.locator('[data-tab="system"]').click();
+  await goTo(page, "system");
 
   /* Volume and brightness are capsules, not range inputs — the whole shape is
    * the target. They keep role=slider and the arrow keys, so nothing is lost
@@ -1852,7 +1899,7 @@ test("the System screen carries the machine's own controls", async ({page}) => {
 test("a long device list opens in place and the panel travels to fit", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await page.locator('[data-tab="system"]').click();
+  await goTo(page, "system");
 
   /* ⚠️ The whole reason the pills exist. Seven audio endpoints — and this
    * machine has Steam's two virtual ones, every monitor and the real speakers —

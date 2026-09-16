@@ -315,6 +315,32 @@ distance: the same idea as the settings orb on the agents notch.
 
 ---
 
+## 6. The furniture moves out of the header — DONE
+
+Three controls hung off the island's free edge instead of crowding one bar:
+the screen's own actions on the far corner, the island's four on the near one,
+and the screens themselves on a rail under the middle.
+
+⚠️ **The header could not hold the screens, and that is measurable.** On the
+narrowest screen — the player at 531px — the header has about 60px spare, and
+nine captions need six hundred. That is why only the selected tab was ever
+captioned, which told you where you were and nothing about where you could go.
+
+- [x] **The rail centres where you are**, captions it, and fades and blurs its
+      neighbours away either side. One number — which stop is under the middle
+      — and every position is derived from it.
+- [x] **Drag it, flick it, wheel it, or press a stop.** The panel rides along
+      and blurs while the drag is live, so the two read as one movement.
+- [x] ⚠️ **Capture the pointer when the DRAG starts, not on the press** — see
+      AGENTS 356. Capturing early swallows every click.
+- [x] **All four edges**: across the island's end, or down its side.
+- [x] Settings: how many stops show (3–7), and whether they show unasked.
+- [ ] The header still names the screen, which the rail also does. It is there
+      because the header is the window's DRAG REGION and something has to be in
+      it — but if the rail is always on, the name is said twice.
+
+---
+
 ## Decisions this must not quietly undo
 
 - The bezel shape. Everything is welded to a screen edge and keeps the fillet.

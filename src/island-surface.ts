@@ -17,6 +17,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
+import { IslandRail, type RailPrefs, type RailStop } from "./island-rail";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
 import { call, native } from "./task-client";
@@ -101,12 +102,22 @@ export class IslandSurface {
     () => this.wake(), on => this.reachedFor(on));
   private global = new IslandArc("island-global", "near",
     () => this.wake(), on => this.reachedFor(on));
+  /* ── The rail ───────────────────────────────────────────────────────
+   * Where you are, under the middle, between the two arcs. Another sibling. */
+  private rail = new IslandRail(
+    () => this.wake(),
+    name => this.onChoose?.(name),
+    on => this.reachedFor(on),
+    (offset, settled) => this.carried(offset, settled),
+  );
+  private onChoose?: (name: string) => void;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
     // ⚠️ On the SHELL, beside the island rather than inside it.
     this.tools.mount(this.shell);
     this.global.mount(this.shell);
+    this.rail.mount(this.shell);
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height", `${cpx(FRAME.taskRowHeight)}px`);
     window.addEventListener("resize", () => this.measure());
@@ -488,12 +499,13 @@ export class IslandSurface {
     this.widen.step(dt);
     this.tools.step(dt);
     this.global.step(dt);
+    this.rail.step(dt);
     this.last = now;
     this.paint();
     // ⚠️ All three, not just the fold: a size change can outlast the opening,
     // and stopping on the fold alone leaves the panel frozen mid-resize.
     if (!this.fold.settled || !this.grow.settled || !this.widen.settled
-      || !this.tools.settled || !this.global.settled) {
+      || !this.tools.settled || !this.global.settled || !this.rail.settled) {
       this.frame = requestAnimationFrame(t => this.tick(t));
     } else {
       /* ⚠️ The mask follows the tab to its SHRUNK size only once it has got
@@ -636,6 +648,31 @@ export class IslandSurface {
     };
     this.tools.paint(frame);
     this.global.paint(frame);
+    this.rail.paint(frame);
+  }
+
+  /** Which screens the rail offers, and which one is showing. */
+  setStops(stops: RailStop[], current: string) {
+    this.rail.setStops(stops, current);
+    this.report();
+  }
+
+  /** How many stops the rail shows, and whether it shows them unasked. */
+  setRailPrefs(prefs: RailPrefs) { this.rail.setPrefs(prefs); }
+
+  /** Told when a stop is chosen — by a press, a drag or a flick. */
+  onStop(run: (name: string) => void) { this.onChoose = run; }
+
+  /** The panel rides the rail. ⚠️ `translate` and `filter`, never
+   *  `transform`: the island spends `transform` on its own press, and a
+   *  transformed ancestor would also become the containing block for the two
+   *  arcs, which are positioned against the window. */
+  private carried(offset: number, settled: boolean) {
+    const reach = cpx(FRAME.railCarry);
+    this.expanded.style.translate = settled ? "" : `${-offset * reach}px 0`;
+    this.expanded.style.filter = settled || Math.abs(offset) < 0.02
+      ? "" : `blur(${Math.min(5, Math.abs(offset) * 7)}px)`;
+    this.expanded.classList.toggle("is-carried", !settled);
   }
 
   /** Asks for animation frames on an arc's behalf — the loop lives here. */
@@ -705,6 +742,7 @@ export class IslandSurface {
     for (const arc of [this.tools, this.global]) {
       if (!arc.hidden) this.masks.push(box(arc.element));
     }
+    if (!this.rail.hidden) this.masks.push(box(this.rail.element));
     const origin = box(this.shell);
     if (native) {
       void call("set_interactive_rects", {

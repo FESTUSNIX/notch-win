@@ -77,7 +77,12 @@ let demoPrefs: Record<string, unknown> = {
      preview: `notch:prefs` is a native event and the settings window is a
      different page. */
   openOnHover: !new URLSearchParams(location.search).has("click"),
-  foldDelayMs: 450, motion: "system", panelWidth: 0, useEverything: true,
+  foldDelayMs: 450, motion: "system", panelWidth: 0,
+  /* ⚠️ Both, and the rail is unusable without them. `railAlways` gates a
+     `!important` rule that hides every stop, so a fixture missing it shows a
+     bare black pill that only fills when hovered — which is a valid setting
+     and therefore looks deliberate rather than absent. */
+  railVisible: 5, railAlways: true, useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

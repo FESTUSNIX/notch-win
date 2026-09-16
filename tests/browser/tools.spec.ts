@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /* The arc off the island's far corner: what the open screen can do.
  *
@@ -30,6 +30,47 @@ async function onArc(page: import("@playwright/test").Page, turn: number) {
   }, turn);
 }
 
+/** Go to a screen.
+ *
+ * ⚠️ Through the palette rather than by pressing the stop on the rail. The
+ * rail shows five of the nine and CLIPS the rest, so pressing one by name works
+ * for whatever happens to be near the middle and silently does not for the
+ * others — which would make these tests pass or fail on where the previous one
+ * left the rail. Pressing a stop is the rail's own business and has a spec of
+ * its own. */
+const SCREENS: Record<string, string> = {
+  home: "Home", today: "Today", media: "Playing", agents: "Agents",
+  shelf: "Shelf", notes: "Notes", calendar: "Calendar", system: "System",
+  review: "Review",
+};
+async function goTo(page: Page, screen: string) {
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill(SCREENS[screen]);
+  /* ⚠️ The row by NAME, not Enter on whatever ranked first. The palette
+   * searches tasks and sessions as well as screens, so "Home" can rank a task
+   * above the screen depending on the fixture — and then the test fails with
+   * the island sitting on some other screen entirely, which reads as the
+   * feature being broken rather than the helper being sloppy. */
+  await page.locator(".palette-row .palette-title")
+    .filter({hasText: new RegExp(`^${SCREENS[screen]}$`)}).first().click();
+  /* ⚠️ Waits on the SCREEN, not on the rail. The rail is the thing under
+   * test in its own spec; here it is only the road, and asserting on it makes
+   * every one of these fail for a reason that has nothing to do with them. */
+  await expect(page.locator(`.screen[data-screen="${screen}"]`)).toBeVisible();
+  /* ⚠️ And waits for the island to STOP. Going through the palette narrows
+   * the panel and hands the width back, so for half a second afterwards every
+   * measurement of the island is of a shape on its way somewhere — which shows
+   * up as a test comparing two heights and finding the later one smaller. */
+  let last = -1;
+  await expect.poll(async () => {
+    const now = await page.locator("#island").evaluate(el =>
+      Math.round(el.getBoundingClientRect().height));
+    const same = now === last;
+    last = now;
+    return same;
+  }, {timeout: 5000}).toBe(true);
+}
+
 test("the tool arc is struck off the island's corner and holds the screen's actions", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
   await page.goto(HOME);
@@ -41,7 +82,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   await page.mouse.move(pill!.x + pill!.width / 2, pill!.y + pill!.height / 2);
   await expect(page.locator("#island-expanded")).toBeVisible();
 
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
   await expect(tools).toBeVisible();
   await expect(tools.locator(".arc-act")).toHaveCount(2);
 
@@ -183,13 +224,13 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
 
   /* It follows the screen, and Home has nothing to do — so there is no arc at
    * all rather than a bare one. */
-  await page.locator('[data-tab="media"]').click();
+  await goTo(page, "media");
   await expect(tools.locator(".arc-act")).toHaveCount(1);
   const one = await onArc(page, 0.125);
   await page.mouse.move(one.x, one.y);
   await expect(tools.getByRole("button", {name: "Show what is next"})).toBeVisible();
 
-  await page.locator('[data-tab="home"]').click();
+  await goTo(page, "home");
   await expect(tools).toBeHidden();
 
   /* ⚠️ And the header does not keep a copy. The row used to live beside the
@@ -207,7 +248,7 @@ test("on a side edge the arc moves to that island's own far corner", async ({pag
   const pill = await page.locator("#island").boundingBox();
   await page.mouse.move(pill!.x + pill!.width / 2, pill!.y + pill!.height / 2);
   await expect(page.locator("#island-expanded")).toBeVisible();
-  await page.locator('[data-tab="calendar"]').click();
+  await goTo(page, "calendar");
   await expect(page.locator("#island-tools")).toBeVisible();
 
   const where = await page.evaluate(() => {

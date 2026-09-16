@@ -2552,4 +2552,29 @@ The two halves were the same fault.
      DOM looks settled. Anything positioned by the paint loop is at a
      provisional place in a clocked test; flow-laid-out chrome was not, which
      is why this only surfaced when the controls moved onto an arc.
+356. ⚠️ **`setPointerCapture` on `pointerdown` swallows the `click`.**
+     Capture retargets everything that follows to the capturing element, the
+     click included — so on a draggable rail every press of a stop was
+     delivered to the rail instead of the button, and pressing a screen did
+     nothing at all. Nothing errors, and the drag works perfectly. Capture when
+     the drag actually starts, not when the pointer goes down.
+357. ⚠️ **A draggable control needs a slop threshold or it has no clicks.**
+     Every press moves a pixel or two, so without one the snap fights the click
+     and the screen you pressed is never the one you get.
+358. ⚠️ **Chrome that is only on some edges is a silent feature hole, again.**
+     The rail ran across the island's end at first, which left a left- or
+     right-edge island with NO screen switcher — the header strip had already
+     gone. Same shape as 337; it will keep happening as long as things move out
+     of the header, so the rule is: before deleting the last copy of a control,
+     check all four edges.
+359. ⚠️ **A preference that gates a `!important` rule must exist in the
+     PREVIEW fixture too.** `railAlways` hides every stop when false, and the
+     browser fixture did not carry it — so the rail came up as a bare black pill
+     that filled on hover, which is a real setting and therefore looked
+     deliberate rather than missing.
+360. ⚠️ **A test helper that waits for a settle cannot test travel.** Routing
+     the screen switch through the palette made `goTo` wait for the island to
+     stop, and two tests measuring a height mid-flight then measured the
+     destination twice — one of them comparing it against itself and passing for
+     the wrong reason. Both take an explicit opt-out now.
 

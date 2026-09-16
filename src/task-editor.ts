@@ -40,6 +40,8 @@ interface Prefs {
   foldDelayMs: number;
   motion: string;
   panelWidth: number;
+  railVisible: number;
+  railAlways: boolean;
   useEverything: boolean;
   indexApps: boolean;
   notifyRuns: boolean;
@@ -168,6 +170,11 @@ const PANE_HTML: Record<PaneId, string> = {
     <div><p class="set-label">Size</p><div class="set-group">
       ${row("Panel width", "How wide the open panel is along its edge.",
         `<input type="range" id="panel-width" min="0" max="1100" step="20"><span class="set-value" id="panel-width-value"></span>`)}
+    </div></div>
+    <div><p class="set-label">Screens</p><div class="set-group">
+      ${row("Screens on the rail", "How many show at once. The rest blur away either side.",
+        `<input type="range" id="rail-visible" min="3" max="7" step="1"><span class="set-value" id="rail-visible-value"></span>`)}
+      ${row("Always show them", "Off, the rail is a bare shape until you reach for it — like the two arcs.", check("rail-always"))}
     </div></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
       ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
@@ -305,6 +312,7 @@ for (const spec of PANES) {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
+  railVisible: 5, railAlways: true,
   useEverything: true, indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -469,6 +477,17 @@ const foldDelay = get<HTMLInputElement>("fold-delay");
 foldDelay.oninput = () => {
   prefs.foldDelayMs = Number(foldDelay.value);
   get("fold-delay-value").textContent = `${(prefs.foldDelayMs / 1000).toFixed(2)}s`;
+  savePrefs();
+};
+
+const railVisible = get<HTMLInputElement>("rail-visible");
+railVisible.oninput = () => {
+  prefs.railVisible = Number(railVisible.value);
+  get("rail-visible-value").textContent = `${prefs.railVisible}`;
+  savePrefs();
+};
+get<HTMLInputElement>("rail-always").onchange = event => {
+  prefs.railAlways = (event.target as HTMLInputElement).checked;
   savePrefs();
 };
 
@@ -811,11 +830,14 @@ function paintPrefs() {
   markSeg("motion", prefs.motion);
   markSeg("view", prefs.taskView === "all" ? "all" : "day");
   get<HTMLInputElement>("open-on-hover").checked = prefs.openOnHover;
+  get<HTMLInputElement>("rail-always").checked = prefs.railAlways;
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;
   get<HTMLInputElement>("index-apps").checked = prefs.indexApps;
   foldDelay.value = String(prefs.foldDelayMs);
   get("fold-delay-value").textContent = `${(prefs.foldDelayMs / 1000).toFixed(2)}s`;
+  railVisible.value = String(prefs.railVisible || 5);
+  get("rail-visible-value").textContent = `${prefs.railVisible || 5}`;
   panelWidth.value = String(prefs.panelWidth || 0);
   get("panel-width-value").textContent = widthLabel(prefs.panelWidth);
   for (const box of document.querySelectorAll<HTMLInputElement>("[data-module]")) {

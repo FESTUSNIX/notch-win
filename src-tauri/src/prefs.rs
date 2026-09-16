@@ -57,6 +57,13 @@ pub struct Prefs {
     /* ── The island ─────────────────────────────────────────────────────── */
     /// The panel's width along its edge, in design pixels. 0 means the default.
     pub panel_width: u32,
+    /// How many screens the rail shows at once. The rest blur away either
+    /// side. ⚠️ Clamped where it is read — a rail of one is a label, and a
+    /// rail of twelve is the strip this replaced wearing a new shape.
+    pub rail_visible: u32,
+    /// Whether the rail shows its screens without being asked for. Off, it is
+    /// a bare shape until the pointer is on it, like the two arcs.
+    pub rail_always: bool,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -102,6 +109,8 @@ impl Default for Prefs {
             fold_delay_ms: 450,
             motion: "system".into(),
             panel_width: 0,
+            rail_visible: 5,
+            rail_always: true,
             use_everything: true,
             index_apps: true,
             notify_runs: true,

@@ -6,7 +6,7 @@
  */
 import { IslandSurface } from "./island-surface";
 import { cpx } from "./layout";
-import { paintIcon, type TaskIcon } from "./task-icons";
+import { type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
 import { pick, renderActivity, renderResting, type Activity, type ScreenName } from "./island-activity";
@@ -31,6 +31,7 @@ import * as stars from "./palette-stars";
 import * as workspaces from "./workspaces";
 import { Palette, TIER, type Action } from "./palette";
 import { type ScreenTools } from "./screen-tools";
+import { type RailStop } from "./island-rail";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
@@ -121,7 +122,14 @@ app.innerHTML = `<div id="notch-shell">
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
-        <nav class="island-tabs" role="tablist" aria-label="Island screens"></nav>
+        <!-- ⚠️ The header stays even though its contents left, because it is
+             the island's DRAG REGION — the rest of the panel is content, and a
+             drag that starts on a task row would fight every click. What is in
+             it now is the name of the screen you are on: the strip used to
+             carry that as the one caption among nine glyphs, and the rail
+             below carries it too, but the rail can be dragged away from and
+             the header cannot. -->
+        <h2 class="island-where" id="island-where"></h2>
       </header>
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
@@ -161,6 +169,8 @@ interface Prefs {
   foldDelayMs: number;
   motion: string;
   panelWidth: number;
+  railVisible: number;
+  railAlways: boolean;
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -170,7 +180,8 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, useEverything: true, indexApps: true,
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true,
+  useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
 
@@ -233,86 +244,38 @@ const home = new HomeScreen(get("home-body"), { today, media, calendar, open: na
  * A rail at the bottom rather than a strip under the header: the header
  * already carries the title and three controls, and putting the switch at the
  * far edge keeps the top of the panel for what the screen is actually saying. */
-const tabRail = document.querySelector<HTMLElement>(".island-tabs")!;
+/* ── Where you are ──────────────────────────────────────────────────────
+ * The nine screens are on the rail under the island now — see `island-rail.ts`
+ * for why they could not stay in the header. What is left here is plumbing:
+ * the rail says which screen was chosen, the shell shows it, and `render` tells
+ * the rail which one is showing and which of them have something waiting.
+ *
+ * ⚠️ Everything the old strip needed — a sliding pill, per-label widths
+ * computed rather than measured, a `ResizeObserver` to catch the font landing
+ * — went with it. The rail has one number, which stop is under the middle, and
+ * every position on screen is derived from it. */
+surface.onStop(name => show(name as ScreenName));
+
 const screens = document.querySelector<HTMLElement>(".screens")!;
-for (const tab of TABS) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "island-tab";
-  button.dataset.tab = tab.name;
-  button.setAttribute("role", "tab");
-  button.setAttribute("aria-label", tab.label);
-  button.title = tab.label;
-  paintIcon(button, tab.icon);
-  const label = document.createElement("span");
-  label.textContent = tab.label;
-  button.append(label);
-  button.onclick = () => show(tab.name);
-  tabRail.append(button);
-}
 
-/* The pill the selection rides on. A sibling of the tabs, not a child of one. */
-const tabGlide = document.createElement("span");
-tabGlide.className = "tab-glide";
-tabGlide.setAttribute("aria-hidden", "true");
-tabRail.append(tabGlide);
+/** Which screens have something waiting on them, for the dot. Held here
+ *  because `render` works it out and `stops()` needs it. */
+let lit = new Set<ScreenName>();
 
-/** The gap between a tab's icon and its caption, and between tabs. Both are in
- *  the stylesheet; they are here because the geometry below is arithmetic. */
-const LABEL_GAP = 7;
-const TAB_GAP = 2;
-
-/** How wide a tab will be once it is captioned, or once it is not.
+/** The rail's own view of the screens.
  *
- * ⚠️ Computed, never measured. At the moment of a click the labels are mid
- * transition, so every width on screen is a width that is on its way somewhere
- * — measuring one gives the pill a target that was true a frame ago. The
- * label's `scrollWidth` reports its full text width whatever its animated
- * `max-width` happens to be, which is what makes this knowable up front. */
-function tabWidth(tab: HTMLElement, captioned: boolean): number {
-  const label = tab.querySelector<HTMLElement>("span");
-  if (!label) return tab.offsetWidth;
-  const showing = label.offsetWidth + parseFloat(getComputedStyle(label).marginLeft || "0");
-  const wanted = captioned ? label.scrollWidth + LABEL_GAP : 0;
-  return tab.offsetWidth - showing + wanted;
-}
-
-/**
- * Put the pill under the selected tab, and set each label to its own width.
- *
- * ⚠️ The position is summed from the left rather than read off the tab. A tab
- * BEFORE the selected one is shrinking as this runs — that is the tab being
- * left — so `offsetLeft` is measured against a strip that is still moving.
- */
-function placeGlide(animate: boolean) {
-  const tabs = [...tabRail.querySelectorAll<HTMLElement>(".island-tab")];
-  const at = tabs.find(tab => tab.getAttribute("aria-selected") === "true");
-  if (!at) { tabGlide.classList.remove("is-placed"); return; }
-
-  for (const tab of tabs) {
-    const label = tab.querySelector<HTMLElement>("span");
-    if (label) label.style.maxWidth = tab === at ? `${label.scrollWidth}px` : "0px";
-  }
-
-  let x = tabs[0]?.offsetLeft ?? 0;
-  for (const tab of tabs) {
-    if (tab === at) break;
-    x += tabWidth(tab, false) + TAB_GAP;
-  }
-  if (!animate) tabGlide.style.transition = "none";
-  tabGlide.style.width = `${tabWidth(at, true)}px`;
-  tabGlide.style.transform = `translateX(${x - (tabs[0]?.offsetLeft ?? 0)}px)`;
-  tabGlide.style.left = `${tabs[0]?.offsetLeft ?? 0}px`;
-  tabGlide.classList.add("is-placed");
-  if (!animate) requestAnimationFrame(() => { tabGlide.style.transition = ""; });
-}
-
-/* ⚠️ Observed, not placed once. The strip's widths move for reasons this file
- * cannot see — the font finishing loading, the island changing edge, the panel
- * narrowing for the palette — and a pill left at a stale width after any of
- * them is visibly wrong until the next click. */
-if (typeof ResizeObserver !== "undefined") {
-  new ResizeObserver(() => placeGlide(false)).observe(tabRail);
+ * ⚠️ `hidden` rather than absent for the player. The rail animates between
+ * positions in this list, and a stop that comes and goes from the MIDDLE of it
+ * makes every index after it jump — so the player leaves a gap in the order
+ * rather than closing it up. */
+function stops(): RailStop[] {
+  return TABS.map(tab => ({
+    name: tab.name,
+    icon: tab.icon,
+    label: tab.label,
+    live: lit.has(tab.name),
+    hidden: tab.name === "media" && !media.media.active,
+  }));
 }
 
 /** How long a leaving screen is kept on screen. Must match `screen-out`. */
@@ -327,7 +290,7 @@ function show(name: ScreenName) {
   if (name === "review") void review.load().then(() => render());
   /* The direction the selection travelled, so the new screen arrives from the
    * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens
-   * were opened in — the strip is what you are looking at while this happens. */
+   * were opened in — the rail is what you are looking at while this happens. */
   const was = TABS.findIndex(tab => tab.name === from);
   const now = TABS.findIndex(tab => tab.name === name);
   const moving = from !== name && was >= 0 && now >= 0;
@@ -359,15 +322,13 @@ function show(name: ScreenName) {
     // The first paint is not an arrival: nothing was left to come from.
     if (active) section.classList.toggle("is-first", !moving);
   }
-  for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
-    button.setAttribute("aria-selected", String(button.dataset.tab === name));
-  }
+  get("island-where").textContent = TABS.find(tab => tab.name === name)?.label ?? "";
   /* ⚠️ The width lands BEFORE the render. The panel measures its content at
    * the end of `render()`, and measuring a screen at the previous screen's
    * width gets the wrapping — and therefore the height — right for a layout
    * that is about to change. */
   surface.capBody(cpx(widthOf(name)));
-  placeGlide(true);
+  surface.setStops(stops(), name);
   // You pressed a tab: this one is allowed to bounce. See `sizing()`.
   surface.deliberately();
   render();
@@ -381,11 +342,12 @@ function show(name: ScreenName) {
  * otherwise the island sits on a hidden tab showing an empty screen with no
  * way to tell what happened. */
 function paintMediaTab() {
-  const tab = document.querySelector<HTMLElement>('[data-tab="media"]');
-  if (!tab) return;
-  const playing = media.media.active;
-  tab.hidden = !playing;
-  if (!playing && screen === "media") show("home");
+  /* ⚠️ The rail works out for itself which stops exist — `stops()` marks the
+   * player hidden while nothing is playing. All that is left here is the case
+   * the rail cannot handle: the screen going while you are LOOKING at it, which
+   * would otherwise leave the island on a stop that no longer exists, showing
+   * an empty screen with no way to tell what happened. */
+  if (!media.media.active && screen === "media") show("home");
 }
 
 /* ── The resting pill ─────────────────────────────────────────────────────
@@ -594,12 +556,10 @@ function render() {
  * the pill, with its own equaliser running, so a dot would be the same claim
  * made twice — and it would land on Home, which is the default screen and
  * therefore the one place a dot says least. */
-  const lit = new Set(live
+  lit = new Set(live
     .filter(c => c && c.priority > 5 && c.kind !== "media")
     .map(c => c!.screen));
-  for (const button of document.querySelectorAll<HTMLElement>(".island-tab")) {
-    button.classList.toggle("live", lit.has(button.dataset.tab as ScreenName));
-  }
+  surface.setStops(stops(), screen);
   surface.measure();
 }
 
@@ -1048,6 +1008,14 @@ function applyPrefs(next: Prefs) {
   document.documentElement.dataset.open = next.openOnHover ? "hover" : "click";
   surface.setFoldDelay(next.foldDelayMs);
   surface.setBodyLong(next.panelWidth);
+  /* ⚠️ Clamped HERE, not trusted from the file. A rail of one stop is a label
+   * with no neighbours to step to, and a rail of twelve is the nine-glyph strip
+   * this replaced wearing a different shape — and a prefs file is a text file
+   * anyone can put a 1 or a 99 into. */
+  surface.setRailPrefs({
+    visible: Math.max(3, Math.min(7, next.railVisible || 5)),
+    always: next.railAlways,
+  });
   today.setView(next.taskView === "all" ? "all" : "day");
   home.setWeekStart(next.weekStartsMonday);
   calendar.setWeekStart(next.weekStartsMonday);
