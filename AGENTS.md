@@ -2720,4 +2720,10 @@ The two halves were the same fault.
      the island opening by mistake. Fold at once when nothing is holding it
      open, having checked: the palette is opened from a control on the island,
      so the pointer is often still there.
+388. ⚠️ **Cards dropped into a screen body come out as rows.** Every screen's
+     body is a flex column, so a card laid straight into it is one per line at
+     full width — which is the list it replaced, with bigger pictures. A grid
+     of its own, and `auto-fill` rather than `auto-fit`: with `auto-fit` a
+     shelf holding two items stretches them across the whole panel and they
+     stop being cards.
 

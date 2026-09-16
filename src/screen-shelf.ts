@@ -134,18 +134,49 @@ export class ShelfScreen {
     }
   }
 
+  /** What the card calls this thing's format: the extension for a file, the
+   *  kind for anything else.
+   *
+   * ⚠️ Taken off the NAME, not the path. A shelved link or a scrap of text
+   * has no path at all, and a file whose path is gone still has the name it
+   * was parked under — which is the one thing about it that survives the file
+   * being moved. */
+  private format(item: ShelfItem): string {
+    if (item.kind !== "file") return item.kind === "link" ? "LINK" : "TEXT";
+    const dot = item.name.lastIndexOf(".");
+    /* A leading dot is a dotfile, not an extension — `.gitignore` is not a
+     * GITIGNORE. And anything past a handful of characters is a sentence that
+     * happens to contain a full stop. */
+    if (dot <= 0 || dot === item.name.length - 1) return "FILE";
+    const ext = item.name.slice(dot + 1);
+    return ext.length <= 5 ? ext.toUpperCase() : "FILE";
+  }
+
   private row(item: ShelfItem): HTMLElement {
-    const row = element("div", `shelf-row${item.missing ? " is-missing" : ""}`);
+    const row = element("div", `shelf-card${item.missing ? " is-missing" : ""}`);
     if (!item.missing && item.path) row.classList.add("can-drag");
-    const mark = element("span", "shelf-mark");
+
+    /* ⚠️ A PLINTH, not a thumbnail — yet. Drawing the real picture means
+     * letting the WebView read the file, which is Tauri's asset protocol and a
+     * scope decision, not a styling one. Until that is taken deliberately this
+     * is a large glyph on a tinted ground, which is the same shape on the
+     * screen and says the same three things about the item. */
+    const mark = element("div", "shelf-plinth");
+    mark.dataset.kind = item.kind;
     paintIcon(mark, ICONS[item.kind] ?? "file");
+    if (item.kind === "file" && !item.missing) {
+      mark.append(element("span", "shelf-ext", this.format(item)));
+    }
 
     const copy = element("div", "shelf-copy");
     copy.append(element("span", "shelf-name", item.name));
+    /* ⚠️ Format AND size, on one line, because a card has room for both and
+     * a row never did. A missing file says so instead: neither number means
+     * anything once the thing behind them is gone. */
     const note = item.missing
       ? "moved or deleted"
       : item.kind === "file"
-        ? fileSize(item.size)
+        ? `${this.format(item)} · ${fileSize(item.size)}`
         : item.kind === "link"
           ? "link"
           : "note";
@@ -201,7 +232,13 @@ export class ShelfScreen {
       this.host.append(empty);
       return;
     }
-    for (const item of this.items) this.host.append(this.row(item));
+    /* ⚠️ A GRID of its own, not the screen body. The body is a flex column
+     * shared by every screen, and cards laid straight into it come out one per
+     * row at full width — which is the list this replaced, with bigger
+     * pictures. */
+    const grid = element("div", "shelf-grid");
+    for (const item of this.items) grid.append(this.row(item));
+    this.host.append(grid);
 
     if (this.error) this.host.append(element("p", "screen-error", this.error));
   }

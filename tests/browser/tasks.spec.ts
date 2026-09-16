@@ -1505,10 +1505,11 @@ test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);
   await goTo(page, "shelf");
-  const rows = page.locator(".shelf-row");
+  const rows = page.locator(".shelf-card");
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(0).locator(".shelf-name")).toHaveText("Codenotch_0.1.0_x64-setup.exe");
-  await expect(rows.nth(0).locator(".shelf-note")).toHaveText("4.8 MB");
+  // Format and size, now there is a card with room for both.
+  await expect(rows.nth(0).locator(".shelf-note")).toHaveText("EXE · 4.8 MB");
   await expect(rows.nth(1).locator(".shelf-note")).toHaveText("link");
   // A pasted wall of text is one line, not the row.
   await expect(rows.nth(2).locator(".shelf-name")).toHaveText("Traceback (most recent call last):");
@@ -1527,6 +1528,44 @@ test("the shelf parks things and hands them back", async ({page}) => {
   // Copy leads, because taking a file out of this shelf IS a clipboard copy.
   await expect(rows.nth(0).locator(".shelf-do").first()).toHaveAttribute("aria-label", /^Copy /);
   await page.screenshot({path: "test-results/island-shelf.png"});
+});
+
+test("the shelf is cards, and a card says what the thing is", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+  await goTo(page, "shelf");
+
+  /* ⚠️ A card, not a row. What is on the shelf is mostly files, and a file is
+   * something you recognise — a shape, an extension — long before you read its
+   * name. A row gave the name a whole line and everything else six grey pixels
+   * at the end of it. */
+  const cards = page.locator(".shelf-card");
+  await expect(cards.first()).toBeVisible();
+  const shape = await cards.first().evaluate(card => {
+    const box = card.getBoundingClientRect();
+    return {
+      wide: box.width,
+      tall: box.height,
+      plinth: !!card.querySelector(".shelf-plinth"),
+      note: card.querySelector(".shelf-note")?.textContent ?? "",
+      ext: card.querySelector(".shelf-ext")?.textContent ?? "",
+    };
+  });
+  // Square-ish: taller than wide, but nothing like a row.
+  expect(shape.wide).toBeLessThan(200);
+  expect(shape.tall / shape.wide).toBeGreaterThan(0.8);
+  expect(shape.tall / shape.wide).toBeLessThan(1.8);
+  expect(shape.plinth).toBe(true);
+  // Format AND size, which a row had no room for.
+  expect(shape.note).toMatch(/^[A-Z0-9]{2,5} · /);
+  expect(shape.ext).toMatch(/^[A-Z0-9]{2,5}$/);
+
+  /* ⚠️ And they lay out ACROSS, not down. Cards dropped straight into the
+   * screen body come out one per row at full width — which is the list this
+   * replaced, with bigger pictures. */
+  const across = await page.locator(".shelf-card").evaluateAll(all =>
+    new Set(all.map(c => Math.round(c.getBoundingClientRect().top))).size);
+  expect(across).toBe(1);
 });
 
 test("Review looks backwards at four things nothing else joined", async ({page}) => {

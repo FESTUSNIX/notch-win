@@ -23,7 +23,7 @@
         at one grows a state machine, and a note is not a document.
 
 - Fix: Agent status gets stuck at "waiting" when the agent has actually finished
-- Style (shelf): instead of rows make the items cards (square-ish) with a thumbnail, title, format and size.
+- ~~Style (shelf): cards with a plinth, title, format and size~~ — done. ⚠️ The plinth is a large glyph, not the real picture: drawing that means letting the WebView read the file, which is Tauri's asset protocol and a scope decision rather than a styling one.
 - Feature (media): live lyrics sync using LRCLIB
 - Feature: In call mode with controls (mute, hand up, camera, etc.), integrate Teams, Zoom, Google Meet and WhatsApp if possible.
 - Feature (media): Add volume mixer. Control volume per app
