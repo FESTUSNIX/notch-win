@@ -153,6 +153,13 @@ h1 { margin:0; }
 [data-edge=left] #island-collapsed, [data-edge=right] #island-collapsed { flex-direction:column; padding:14px 0; justify-content:center; }
 [data-edge=left] .pill-copy, [data-edge=right] .pill-copy,
 [data-edge=left] .pill-eq, [data-edge=right] .pill-eq { display:none; }
+/* ⚠️ A side island is ~35px across: the clock is already shrunk to 12px
+   there and two more controls do not fit beside it. The glyph says there is a
+   call; the panel carries the controls, as it does for everything else on
+   these edges. */
+[data-edge=left] #island-collapsed[data-kind=call],
+[data-edge=right] #island-collapsed[data-kind=call] { display:flex; }
+[data-edge=left] .pill-acts, [data-edge=right] .pill-acts { display:none; }
 [data-edge=left] .pill-lead, [data-edge=right] .pill-lead { width:26px; height:26px; }
 .pill-lead { display:grid; place-items:center; width:24px; height:24px; flex-shrink:0; color:#c9c9c9; }
 .pill-lead svg { width:18px; height:18px; }
@@ -204,6 +211,46 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .pill-eq.on i:nth-child(2) { animation-delay:-300ms; }
 .pill-eq.on i:nth-child(3) { animation-delay:-600ms; }
 @keyframes eq { 0%,100% { height:4px; } 50% { height:12px; } }
+
+/* ── In a call, on the strip ──────────────────────────────────────────
+   ⚠️ Same bargain as `.pill-eq` above and for the same reason: reachable in
+   CLICK mode only. With hover opening, a pointer on its way to one of these has
+   already turned the pill into a panel, and the panel's own row is what gets
+   pressed. The markup does not change with the preference; `pointer-events`
+   does. */
+/* ⚠️ The same grid as the resting pill — `1fr auto 1fr` — so the clock is
+   in exactly the same place whether or not you are in a call. With `auto` the
+   time would shift sideways the moment a second control appeared, and a clock
+   that moves is a clock you have to find before you can read. */
+#island-collapsed[data-kind=call] { display:grid; grid-template-columns:1fr auto 1fr;
+  align-items:center; gap:14px; padding:0 16px; }
+#island-collapsed[data-kind=call] .pill-lead { justify-self:start; }
+.pill-mark { display:grid; place-items:center; }
+.pill-mark svg { width:18px; height:18px; }
+.pill-acts { display:flex; align-items:center; justify-self:end; gap:5px;
+  flex-shrink:0; pointer-events:none; }
+.pill-act { display:grid; place-items:center; width:21px; height:21px; padding:0;
+  border-radius:7px; color:#b4b4b4; background:rgba(255,255,255,.07);
+  box-shadow:inset 0 0 0 1px var(--hair); }
+.pill-act svg { width:13px; height:13px; }
+/* The microphone is cut. ⚠️ Loud on purpose, and the ONE state on this strip
+   that is: every other colour here is a hint you may ignore, and a mute you
+   have forgotten about is the one that costs you something — you talk for
+   fifteen seconds into nothing. */
+.pill-act.is-on { color:#ffb4a8; background:rgba(255,90,70,.20);
+  box-shadow:inset 0 0 0 1px rgba(255,120,100,.34); }
+.pill-act.is-danger { color:#ff9c8c; }
+html[data-open=click] .pill-acts { pointer-events:auto; }
+html[data-open=click] .pill-act { cursor:pointer; }
+html[data-open=click] .pill-act:hover, html[data-open=click] .pill-act:focus-visible {
+  color:#fff; background:rgba(255,255,255,.14); }
+html[data-open=click] .pill-act.is-danger:hover { color:#fff; background:rgba(255,70,50,.55); }
+html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
+/* And the whole strip carries it, because in hover mode the button above is
+   not a control you can look at — it opens before you arrive. A hairline of
+   the same red down the lead is what says "muted" from across the room. */
+#island-collapsed.is-muted .pill-lead { color:#ff9c8c; }
+#island-collapsed.is-muted .pill-art { box-shadow:0 0 0 1.5px rgba(255,90,70,.55); }
 
 /* ── Expanded ─────────────────────────────────────────────
    One thin strip of chrome, not two: the tabs sit at the top-left and the
@@ -2978,3 +3025,58 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
   padding:3px 9px; border-radius:8px; background:rgba(255,255,255,.07); }
 
 .palette-empty { margin:auto; font-size:12px; color:#5f5f5f; }
+
+/* ── In a call ─────────────────────────────────────────────────────────
+   A line about the call, and a row of controls under it. Nothing else: every
+   other fact a meeting app shows — who is in it, who is talking — is behind
+   an API Windows does not have, and a panel that guessed at them would be
+   wrong in a way you could not check. */
+.call-body { display:flex; flex-direction:column; gap:18px; min-width:0; }
+.call-head { display:flex; align-items:center; gap:13px; min-width:0; }
+.call-plinth { width:44px; height:44px; flex-shrink:0; border-radius:12px;
+  overflow:hidden; display:grid; place-items:center; color:#8a8a8a;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
+.call-plinth svg { width:22px; height:22px; }
+/* The app's own icon, off its executable — see call.rs. `contain`, not
+   `cover`: this is a logo with its own margins, and cropping one is how a
+   rounded square becomes a torn corner. */
+.call-art { width:100%; height:100%; object-fit:contain; display:block; padding:7px;
+  box-sizing:border-box; }
+.call-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.call-title { font-size:16px; font-weight:600; letter-spacing:-.3px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.call-where { font-size:11.5px; color:#8a8a8a; }
+/* ⚠️ Tabular, and it has to be: this number changes every second, and
+   proportional digits make the whole row breathe in and out around it. */
+.call-held { flex-shrink:0; font-size:13px; font-weight:600; color:#d8d8d8;
+  font-variant-numeric:tabular-nums; letter-spacing:-.2px; }
+
+.call-acts { display:flex; align-items:flex-start; justify-content:center; gap:14px; }
+.call-act { display:flex; flex-direction:column; align-items:center; gap:7px; }
+.call-key { display:grid; place-items:center; width:50px; height:50px; padding:0;
+  border-radius:50%; color:#e4e4e4;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-quick) var(--ease-smooth-out); }
+.call-key svg { width:21px; height:21px; }
+.call-key:hover { color:#fff; background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+.call-key:active { scale:.96; transition-duration:90ms; }
+/* Held down: the microphone is off. Same red as the strip's, so the two states
+   are one state wherever you happen to be looking. */
+.call-key.is-on { color:#ffd9d2; background-color:rgba(255,90,70,.22);
+  box-shadow:inset 0 0 0 1px rgba(255,120,100,.38), var(--gloss); }
+.call-key.is-on:hover { background-color:rgba(255,90,70,.30); color:#fff; }
+/* ⚠️ Leave is red at REST, not only on hover. It is the one press on this
+   row that cannot be taken back, and a control that only warns you once the
+   pointer is already on it warns you too late. */
+.call-key.is-danger { color:#fff; background-color:#d8402c;
+  background-image:var(--sheen);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14), var(--gloss), var(--lift-1); }
+.call-key.is-danger:hover { background-color:#ef4b35; }
+.call-act-say { font-size:10.5px; color:#8a8a8a; letter-spacing:-.1px; }
+.call-why { margin:0; text-align:center; font-size:11.5px; color:#ff9c8c; }

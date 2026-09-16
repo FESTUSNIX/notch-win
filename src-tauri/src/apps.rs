@@ -249,6 +249,15 @@ fn data_uri(width: u32, height: u32, rgba: &[u8]) -> Option<String> {
     ))
 }
 
+/// The icon of one file, as a data URI. ⚠️ Shared with `call.rs`, which
+/// wants the picture of a running app's executable rather than of a Start Menu
+/// shortcut — the shell call is the same one and the handle leaks are the same
+/// ones, so there is no second copy of it.
+pub fn icon_of(path: &str) -> Option<String> {
+    let (width, height, rgba) = art::pixels_of(path)?;
+    data_uri(width, height, &rgba)
+}
+
 /* ── The index ───────────────────────────────────────────────────────────── */
 
 fn cache() -> &'static Mutex<Option<Vec<App>>> {

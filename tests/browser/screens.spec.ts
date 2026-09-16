@@ -14,11 +14,11 @@ test("the screens can be reordered and switched off, except the one you land on"
    * against a perfectly correct page. */
   await page.getByRole("tab", {name: "Island"}).click();
   const rows = page.locator(".screen-row");
-  await expect(rows).toHaveCount(9);
+  await expect(rows).toHaveCount(10);
 
   const order = () => rows.evaluateAll(all => all.map(r => (r as HTMLElement).dataset.screen));
   expect(await order()).toEqual([
-    "home", "today", "media", "agents", "shelf", "notes", "calendar", "system", "review",
+    "home", "call", "today", "media", "agents", "shelf", "notes", "calendar", "system", "review",
   ]);
 
   /* ⚠️ Home's switch is disabled, and the row says why rather than just
@@ -60,8 +60,8 @@ test("the screens can be reordered and switched off, except the one you land on"
   await page.mouse.up();
   const moved = await order();
   expect(moved.indexOf("review")).toBeLessThan(moved.indexOf("today"));
-  expect(moved).toHaveLength(9);
-  expect(new Set(moved).size).toBe(9);
+  expect(moved).toHaveLength(10);
+  expect(new Set(moved).size).toBe(10);
 });
 
 test("the rail obeys the order, drops what is hidden, and keeps what it has not heard of", async ({page}) => {

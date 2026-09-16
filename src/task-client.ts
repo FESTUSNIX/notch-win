@@ -27,6 +27,21 @@ let demoMedia = {
   position: 263, duration: 1878, artwork: "",
   canNext: false, canPrevious: false, canPlayPause: true, canSeek: true,
 };
+/* `?call` puts the preview IN a call, and `?call=meet` in one whose app
+   offers fewer controls — Meet has no way to hang up or share from the
+   keyboard, so the row is genuinely shorter and that is worth being able to
+   look at. ⚠️ The control list is the thing being staged, not the app name:
+   it is what `call.rs` derives from its shortcut table, and the front end is
+   only allowed to lay out what it was handed. */
+const callFlag = new URLSearchParams(location.search).get("call");
+const callAsked = new URLSearchParams(location.search).has("call");
+let demoCall = callFlag === "meet"
+  ? {active:true, app:"meet", appName:"Google Meet", title:"abc-defg-hij",
+     icon:"", since:Date.now() - 128_000, muted:false,
+     can:["mute", "video", "hand", "open"], pid:8123}
+  : {active:callAsked, app:"zoom", appName:"Zoom", title:"Design Sync",
+     icon:"", since:Date.now() - 743_000, muted:false,
+     can:["mute", "video", "share", "hand", "leave", "open"], pid:4242};
 let demoDevices = [
   {id:"bt", name:"Headphones (6- Mateusz's Buds3 Pro)", isDefault:true, isBluetooth:true},
   {id:"mon", name:"DELL U2724D (NVIDIA High Definition Audio)", isDefault:false, isBluetooth:false},
@@ -96,6 +111,7 @@ let demoPrefs: Record<string, unknown> = {
   /* `?tint=name:#hex,name:#hex` — the same map the settings window writes. */
   railColours: Object.fromEntries((new URLSearchParams(location.search).get("tint") ?? "")
     .split(",").filter(Boolean).map(one => one.split(":")) as [string, string][]), useEverything: true,
+  callMode: true, callMuteMic: true, callOpen: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
@@ -134,6 +150,16 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "everything_running") return true as T;
   if (command === "reset_position" || command === "open_log" || command === "quit_app") return undefined as T;
   if (command === "get_media") return structuredClone(demoMedia) as T;
+  if (command === "get_call") return structuredClone(demoCall) as T;
+  if (command === "call_action") {
+    const action = String(args.action ?? "");
+    /* Only the mute changes anything the preview can show, which is the honest
+       stub: every other control happens inside another application, and this
+       one has none. */
+    if (action === "mute" || action === "unmute") demoCall.muted = action === "mute";
+    if (action === "leave") demoCall = {...demoCall, active:false};
+    return structuredClone(demoCall) as T;
+  }
   if (command === "get_calendar") return structuredClone(demoCalendar) as T;
   /* ⚠️ All six, and the ones Rust actually defaults to. This stub was three
      keys and a stale `Ctrl+Alt+N` for `capture` — which is `AltGr+N`, the

@@ -12,6 +12,7 @@ import {
   SourceCodeIcon, Image01Icon, Pdf01Icon, Zip01Icon, Txt01Icon, Doc01Icon,
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
+  Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -45,6 +46,12 @@ const icons = {
   app: Rocket01Icon, star: StarIcon,
   // The settings window's page strip.
   keyboard: KeyboardIcon,
+  /* In a call. ⚠️ There is no camera-off glyph and there should not be: the
+     app never says whether your camera is on, so an icon that claimed to know
+     would be decoration that lies. The mute has two because the microphone
+     endpoint's state IS readable — see call.rs. */
+  mic: Mic01Icon, micOff: MicOff01Icon, share: ScreenShareIcon,
+  hand: HandIcon, hangup: CallEnd01Icon,
 };
 export type TaskIcon = keyof typeof icons;
 

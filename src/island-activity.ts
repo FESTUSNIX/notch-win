@@ -13,10 +13,15 @@ import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";
+import type { CallControl } from "./call-format";
 
 export type ScreenName =
   | "home" | "today" | "agents" | "shelf"
   | "calendar" | "system" | "review"
+  /** ⚠️ Real, and like the player its stop is only on the rail while there
+   *  IS one — the difference being that a call also puts the island on this
+   *  screen when it starts, because during a call this is the screen. */
+  | "call"
   /** ⚠️ Real, but its tab is only on screen while something is playing — see
    *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
    *  that is not there. */
@@ -38,7 +43,7 @@ export interface Activity {
   priority: number;
   /** Which screen the claim belongs to, for the tab dot. */
   screen: ScreenName;
-  kind: "media" | "focus" | "event" | "day" | "clock";
+  kind: "media" | "focus" | "event" | "day" | "clock" | "call";
   label: string;
   value: string;
   icon?: TaskIcon;
@@ -47,6 +52,19 @@ export interface Activity {
   /** 0..1, drawn as a ring. */
   progress?: number;
   accent?: string;
+  /** In a call: the microphone's own state, and the one or two controls the
+   *  strip carries. ⚠️ Passed in rather than derived here — which controls
+   *  an app really has is `call.rs`'s answer, and `call-format` lays them out;
+   *  the pill only draws what it was handed. */
+  muted?: boolean;
+  controls?: CallControl[];
+  /** The wall clock, already formatted.
+   *
+   * ⚠️ Filled in by the SHELL, not by the screen that raised the claim. The
+   * 12/24-hour preference is the shell's and so is the tick; a screen that
+   * formatted its own would be a second clock on the same strip, and the two
+   * would disagree for a second every minute. */
+  clock?: string;
 }
 
 export function pick(claims: (Activity | null)[]): Activity | null {
@@ -95,6 +113,35 @@ function equaliser(): HTMLElement {
   for (let i = 0; i < 3; i++) wrap.append(element("i"));
   wrap.append(element("span", "pill-eq-mark"));
   return wrap;
+}
+
+/** The one or two controls a call puts on the strip.
+ *
+ * ⚠️ Real `<button>`s, and reachable ONLY in click mode — exactly the
+ * bargain `equaliser` above makes, for exactly the same reason: with hover
+ * opening, a pointer on its way to one of these has already turned the pill
+ * into a panel, and the panel's own row is what gets pressed. The markup does
+ * not change with the preference; `pointer-events` does.
+ *
+ * ⚠️ Rebuilt only when the SET changes. The pill repaints every second and
+ * these carry a mute whose glyph swaps — rebuilding would restart that swap
+ * once a second and throw away the hover every time. */
+function paintActs(host: HTMLElement, controls: CallControl[]) {
+  const key = controls.map(one => `${one.action}${one.on ? "+" : ""}`).join(",");
+  if (host.dataset.acts !== key) {
+    host.replaceChildren();
+    for (const control of controls) {
+      const button = element("button", "pill-act");
+      (button as HTMLButtonElement).type = "button";
+      button.dataset.act = control.action;
+      if (control.tone) button.classList.add(`is-${control.tone}`);
+      if (control.on) button.classList.add("is-on");
+      button.setAttribute("aria-label", control.label);
+      paintIcon(button, control.icon);
+      host.append(button);
+    }
+    host.dataset.acts = key;
+  }
 }
 
 /* ── At rest: three slots ─────────────────────────────────────────────────
@@ -183,6 +230,34 @@ function paintModule(slot: HTMLElement, reading: ModuleReading | null) {
   }, 150);
 }
 
+/* ── In a call ────────────────────────────────────────────────────────────
+ *
+ * `[ logo ]   14:53   [ mute ] [ leave ]`, and the shape is the RESTING pill's
+ * rather than the player's: same three slots, same `1fr auto 1fr`, so the time
+ * does not move a pixel when a call starts or ends.
+ *
+ * ⚠️ The clock stays, and that is the whole decision. Every other claim
+ * takes the strip over and says its own thing — which is right for a track or
+ * a meeting reminder, and wrong here: a call lasts forty minutes, and a notch
+ * that spent forty minutes unable to tell you the time would be trading the
+ * thing you look at it for against a title you already know. What the call
+ * needs from the strip is the mute, not the room. Everything else about it is
+ * one pointer-move away on the panel.
+ */
+function buildCall(host: HTMLElement) {
+  host.replaceChildren();
+  const lead = element("div", "pill-lead");
+  /* ⚠️ The picture and the glyph are SEPARATE elements, both always here,
+   * and only one of them shown. `paintIcon` replaces its target's children —
+   * so painting the fallback into the same box as the `<img>` deletes the
+   * `<img>`, and the failure does not land on that frame: the next tick finds
+   * `dataset.kind` still saying "call", skips this builder, and throws on a
+   * node that was there a second ago. */
+  lead.append(element("img", "pill-art"), element("span", "pill-mark"));
+  host.append(lead, element("div", "pill-clock t-digit-group"), element("div", "pill-acts"));
+  host.dataset.kind = "call";
+}
+
 function build(host: HTMLElement, activity: Activity) {
   host.replaceChildren();
   const lead = element("div", "pill-lead");
@@ -230,6 +305,28 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
     return;
   }
   host.classList.remove("is-clock");
+
+  if (activity.kind === "call") {
+    if (host.dataset.kind !== "call") buildCall(host);
+    const art = host.querySelector<HTMLImageElement>(".pill-art")!;
+    const mark = host.querySelector<HTMLElement>(".pill-mark")!;
+    /* The app's own icon, or the microphone glyph while the shell has not
+       handed one over — a broken image is worse than a generic one. */
+    art.hidden = !activity.artwork;
+    mark.hidden = !!activity.artwork;
+    if (activity.artwork && art.src !== activity.artwork) art.src = activity.artwork;
+    if (!activity.artwork) paintIcon(mark, "mic");
+    setDigits(host.querySelector<HTMLElement>(".pill-clock")!, activity.clock ?? "");
+    paintActs(host.querySelector<HTMLElement>(".pill-acts")!, activity.controls ?? []);
+    /* The strip is the only thing on screen while the island is shut, so it is
+       where the call has to be nameable at all — by a screen reader, and by
+       anything else asking what this window is showing. */
+    host.setAttribute("aria-label", `${activity.label} — ${activity.value}`);
+    host.classList.toggle("is-muted", !!activity.muted);
+    return;
+  }
+  host.removeAttribute("aria-label");
+  host.classList.remove("is-muted");
   if (host.dataset.kind !== activity.kind) build(host, activity);
 
   const label = host.querySelector<HTMLElement>(".pill-label");
@@ -248,6 +345,8 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
 
   const art = host.querySelector<HTMLImageElement>(".pill-art");
   if (art && art.src !== activity.artwork) art.src = activity.artwork || "";
+
+
 
   const arc = host.querySelector<SVGCircleElement>(".pill-ring .arc");
   if (arc) {

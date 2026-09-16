@@ -475,7 +475,12 @@ mod key_tests {
  */
 
 /// The parent of every process on the machine, in one pass.
-fn parents() -> std::collections::HashMap<u32, u32> {
+///
+/// ⚠️ Public because `call.rs` needs the same walk for the opposite
+/// reason: `raise_process` goes up from a pid with no window to one that has
+/// one, and the call watch goes up from the process holding the microphone to
+/// the app whose meeting it is. One snapshot, one set of rules.
+pub fn parents() -> std::collections::HashMap<u32, u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
@@ -522,13 +527,31 @@ unsafe extern "system" fn push_window(window: HWND, data: LPARAM) -> BOOL {
     TRUE
 }
 
-fn visible_windows() -> Vec<(HWND, u32)> {
+pub fn visible_windows() -> Vec<(HWND, u32)> {
     use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
     let mut out: Vec<(HWND, u32)> = Vec::new();
     unsafe {
         let _ = EnumWindows(Some(push_window), LPARAM(&mut out as *mut Vec<(HWND, u32)> as isize));
     }
     out
+}
+
+/// What a window calls itself.
+///
+/// ⚠️ `GetWindowTextW`, not `WM_GETTEXT` by hand: the length has to be asked
+/// for first or a long title comes back cut, and a title cut mid-word is how a
+/// call ends up named after half a meeting.
+pub fn title_of(window: HWND) -> String {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW};
+    unsafe {
+        let length = GetWindowTextLengthW(window);
+        if length <= 0 {
+            return String::new();
+        }
+        let mut buffer = vec![0u16; length as usize + 1];
+        let written = GetWindowTextW(window, &mut buffer);
+        String::from_utf16_lossy(&buffer[..written as usize])
+    }
 }
 
 /// Bring the window a process is running in to the front.

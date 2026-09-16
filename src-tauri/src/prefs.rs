@@ -87,6 +87,23 @@ pub struct Prefs {
     /// palette somebody has to maintain alongside the screens.
     pub rail_colours: BTreeMap<String, String>,
 
+    /* ── In a call ───────────────────────────────────────── */
+    /// Whether the microphone is watched at all. Off, nothing polls and the
+    /// call screen never appears.
+    pub call_mode: bool,
+    /// Whether the mute button also cuts the microphone ENDPOINT, as well as
+    /// sending the app its own mute shortcut.
+    ///
+    /// ⚠️ On by default, and the argument is the failure mode rather than
+    /// thoroughness: a keystroke that does not land is a mute you can neither
+    /// see nor hear, and you carry on talking. Cutting the endpoint too means
+    /// every failure is silent in the safe direction. Off, the mute is only as
+    /// reliable as the app's own shortcut.
+    pub call_mute_mic: bool,
+    /// Whether a call arriving puts the island on its screen, so opening it
+    /// during a call shows the call.
+    pub call_open: bool,
+
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
     /// ⚠️ Off, nothing walks the Start Menu at launch — which is a shell call
@@ -139,6 +156,9 @@ impl Default for Prefs {
             rail_order: Vec::new(),
             rail_hidden: Vec::new(),
             rail_colours: BTreeMap::new(),
+            call_mode: true,
+            call_mute_mic: true,
+            call_open: true,
             use_everything: true,
             index_apps: true,
             notify_runs: true,

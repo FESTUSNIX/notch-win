@@ -2829,3 +2829,64 @@ The two halves were the same fault.
      three times in isolation; the cause was leftover vite/chrome workers from
      an earlier interrupted run holding the port. Check `netstat` for the dev
      port before believing a lone failure.
+409. ⚠️ **The microphone says you are in a call; a window title only guesses.**
+     Teams is titled "Microsoft Teams" whether or not anybody is talking, and a
+     browser on a Meet lobby page is titled exactly like a browser in a Meet
+     call. An ACTIVE Core Audio capture session is the same fact Windows draws
+     its own microphone glyph for, and it is the only one that is not a guess.
+410. ⚠️ **A capture session OUTLIVES the recording that made it.** Teams opens
+     one when it starts and keeps it all day, so "this app has a capture
+     session" is true from breakfast and means nothing. `AudioSessionState`
+     being Active is the test; without it every launch is a call.
+411. ⚠️ **The process holding the microphone is not the app you would name.**
+     New Teams runs its call inside `msedgewebview2.exe` and a Meet tab
+     captures through Chrome's audio service — both children. Matching the
+     capturing pid against a list of executables finds neither, and finds
+     nothing to report rather than erroring. Walk UP the process tree, the way
+     `win::raise_process` walks up to find a window.
+412. ⚠️ **Zero capture SESSIONS is an ordinary machine; zero capture ENDPOINTS
+     is a broken enumeration.** They look identical from outside — both report
+     "no call" — and the second is discovered during a meeting. The probe
+     asserts on endpoints, and opens a capture stream of its own to prove an
+     active session is really seen.
+413. ⚠️ **`PostMessage` of a key does not reach a Chromium or WebView2 window.**
+     That is Teams, Meet and WhatsApp, i.e. most of them. `SendInput` is the
+     only thing that works and it goes to the FOREGROUND — so the call window
+     has to be raised, sent the key, and the previous window put back. The
+     flicker is the cost of the only mechanism there is.
+414. ⚠️ **Release modifiers in REVERSE order.** Sent up in the same order they
+     went down, the modifier lifts before the letter and the app sees a bare
+     `m` — which in Teams is not mute, it is a letter typed into the meeting
+     chat.
+415. ⚠️ **A browser window's title is its ACTIVE TAB's title**, so a Meet call
+     drops its own evidence the moment you look at another tab. The microphone
+     is what says the call is still up; the name it had is carried forward.
+     Without that, every Meet call ends on screen the first time you check your
+     email.
+416. ⚠️ **And the same fact makes `Ctrl+D` dangerous.** Meet's mute is an
+     ordinary browser shortcut and means mute only while the Meet tab is in
+     front; sent at a window that has moved on it is "add bookmark". The window
+     is asked again what it is after being raised, and refused if it has moved.
+417. ⚠️ **Mute the endpoint AND send the app's shortcut.** The app's mute is
+     what the meeting can SEE; the endpoint's is the one that can be read back
+     and the one that holds when a keystroke does not land. Sending only the
+     shortcut means a failure you can neither see nor hear — you believe you
+     are muted and you carry on talking. Doing both makes every failure silent
+     in the safe direction.
+418. ⚠️ **Mute the endpoint the call is RECORDING FROM, not the default one.**
+     An app records from whichever microphone it was told to, and a headset
+     that is not the system default is the normal case for somebody in a call.
+     Muting the default then silences nothing, and looks exactly like it
+     worked.
+419. ⚠️ **`paintIcon` REPLACES its target's children.** An `<img>` sitting in
+     the same box as a fallback glyph is deleted the first time the glyph is
+     painted — and nothing throws on that frame. The next tick finds
+     `dataset.kind` unchanged, skips the builder, and dies on a node that was
+     there a second ago. Give the picture and the glyph an element each and
+     toggle `hidden`.
+420. ⚠️ **A wheel that steps through `TABS` can land on a stop that is not on
+     the rail.** Two screens come and go and several can be switched off, and
+     `render` sends you straight back — so the notch reads as DEAD rather than
+     as having done something. It was latent while the player sat third; a call
+     sitting second made the very first notch do nothing. Step through the
+     stops that exist, not through the list of all of them.

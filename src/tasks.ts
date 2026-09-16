@@ -22,6 +22,12 @@ import { HomeScreen } from "./screen-home";
  * the media keys already do better on a bigger surface. What it keeps is the
  * part nothing else had: the pill saying what is playing at a glance. */
 import { MediaScreen, MediaSource } from "./screen-media";
+/* In a call — which is the one claim on this list that is not about this app
+ * at all. Windows knows you are in a meeting (something is holding the
+ * microphone) and the meeting app knows how to be muted; nothing joins the
+ * two, so the mute lives inside whichever window is covered by the one you are
+ * working in. That join is the whole feature. */
+import { CallScreen, CallSource } from "./screen-call";
 import { NotesScreen } from "./screen-notes";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
@@ -43,6 +49,12 @@ import "./tasks.css";
  * doing, what is around you, then the machine and the day behind you. */
 const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
   { name: "home", icon: "home", label: "Home" },
+  /* ⚠️ Second, and only on the rail while a call is running — the same rule
+   * the player follows, for a stronger reason: a call is the most "what you
+   * are doing right now" thing this app can know about, and it is over in
+   * forty minutes. A permanent stop for it would be nine-tenths of the day
+   * spent on a screen that says "no call is running". */
+  { name: "call", icon: "mic", label: "Call" },
   { name: "today", icon: "today", label: "Today" },
   /* ⚠️ The player's tab exists only while something is playing — see
    * `paintMediaTab`. It was removed for being a permanent tab holding a title
@@ -86,6 +98,11 @@ const PLAYER_AND_QUEUE = dpx(500 + 2 * 15 + 14 + 260);
  * about content, not about the shape. */
 const WIDTH: Record<ScreenName, number> = {
   home: 1900,      // three cards side by side
+  /* A line about the call and a row of round buttons under it. ⚠️ Narrow on
+   * purpose: everything on this screen is a control, so the panel is as wide
+   * as the controls and no wider — a full-width island with six buttons
+   * huddled in the middle reads as a window somebody left open. */
+  call: 1180,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -135,6 +152,7 @@ app.innerHTML = `<div id="notch-shell">
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
+        <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
         <section class="screen" data-screen="agents" role="tabpanel" aria-label="Agents" hidden><div class="screen-body scrolls" id="agents-body"></div></section>
@@ -178,6 +196,9 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  callMode: boolean;
+  callMuteMic: boolean;
+  callOpen: boolean;
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -188,6 +209,7 @@ interface Prefs {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
+  callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -223,6 +245,7 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
   lists: () => today.lists(),
   focus: active => surface.input(active),
 });
+const callSource = new CallSource(() => render(), (what, why) => say(what, why));
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
 const shelf = new ShelfScreen(get("shelf-body"), () => render(), () => cpx(WIDTH.shelf));
@@ -252,6 +275,15 @@ const notes = new NotesScreen(get("notes-body"), {
   focus: active => surface.input(active),
   say: (what, why) => say(what, why),
 }, () => render());
+const callScreen = new CallScreen(get("call-body"), callSource,
+  () => clockText(new Date(), clock24));
+/* ⚠️ The island is put on the call screen when a call STARTS, not when the
+ * island is next opened. It is collapsed at that moment, so nothing jumps and
+ * nothing is taken away from under the pointer — and when you do open it, you
+ * are where you would have navigated to anyway. The preference exists because
+ * "put me where the new thing is" is exactly the behaviour some people
+ * cannot stand. */
+callSource.started = () => { if (prefs.callOpen) show("call"); };
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -302,6 +334,7 @@ function stops(): RailStop[] {
      * island opens and where a vanished screen sends you — hiding it leaves
      * nowhere for either to land. */
     hidden: (tab.name === "media" && !media.media.active)
+      || (tab.name === "call" && !callSource.call.active)
       || (tab.name !== "home" && prefs.railHidden.includes(tab.name)),
   })).sort((a, b) => rank(a.name as ScreenName) - rank(b.name as ScreenName));
 }
@@ -509,6 +542,7 @@ function noticeClaim(): Activity | null {
 function claims(): (Activity | null)[] {
   return [
     noticeClaim(),
+    callSource.activity(),
     agentsScreen.activity(),
     system.activity(),
     today.activity(),
@@ -524,7 +558,12 @@ function claims(): (Activity | null)[] {
 function paintPill(live = claims()) {
   const best = pick(live);
   if (best && best.priority > 0) {
-    renderActivity(collapsedLayer, best);
+    /* ⚠️ A call keeps the clock, so the shell hands it over — it owns the
+     * 12/24-hour preference and the tick, and a screen formatting its own
+     * would put two clocks on one strip that disagree for a second a minute. */
+    renderActivity(collapsedLayer, best.kind === "call"
+      ? { ...best, clock: clockText(new Date(), clock24) }
+      : best);
     return;
   }
   const now = new Date();
@@ -549,6 +588,12 @@ function render() {
   review.render();
   home.render();
   player.render();
+  callScreen.render();
+  /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
+   * handle is the call ending while you are LOOKING at it, which would leave
+   * the island on a screen that says nothing with no way to tell what
+   * happened. Same rule as the player, one line up. */
+  if (!callSource.call.active && screen === "call") show("home");
   paintMediaTab();
 
   /* What the OPEN screen can do, in the header. ⚠️ Only the open one: these
@@ -1110,6 +1155,17 @@ collapsedLayer.addEventListener("click", event => {
   media.control("playpause");
 }, true);
 
+/* The call's own controls, in click mode. ⚠️ Capturing, and the press must
+ * not reach the pill underneath — muting must not also open the island, which
+ * is the one thing you do NOT want to happen while somebody is looking at your
+ * shared screen. */
+collapsedLayer.addEventListener("click", event => {
+  const act = (event.target as HTMLElement).closest<HTMLElement>(".pill-act");
+  if (!act?.dataset.act) return;
+  event.stopPropagation();
+  callSource.act(act.dataset.act);
+}, true);
+
 /* ── Changing screens with a wheel ────────────────────────────────────────
  * A wheel anywhere in the panel changes screen, UNLESS the pointer is over
  * something that can actually scroll — then the scroll belongs to that list.
@@ -1136,6 +1192,29 @@ const WHEEL_WINDOW = 400;
 let wheeled = 0;
 let wheeledAt = 0;
 
+/** The screens a step can actually land on, in the rail's own order.
+ *
+ * ⚠️ Not `TABS`. Two of them come and go — the player and the call — and
+ * several more can be switched off in settings, and a step that walks the full
+ * list lands on one that is not there: `render` then sends you straight back,
+ * so the wheel reads as DEAD for that notch rather than as having done
+ * something. It was latent while the player sat third (you had to wheel twice
+ * to meet it); a call sitting second made the very first notch do nothing.
+ */
+function reachable(): ScreenName[] {
+  return stops().filter(stop => !stop.hidden).map(stop => stop.name as ScreenName);
+}
+
+function step(direction: number) {
+  const live = reachable();
+  if (!live.length) return;
+  const index = live.indexOf(screen);
+  /* ⚠️ On a screen that is not on the rail at all — switched off in settings
+   * and opened from the palette — a step goes to the rail's first stop rather
+   * than nowhere at all. */
+  show(index < 0 ? live[0] : live[(index + direction + live.length) % live.length]);
+}
+
 function cycle(direction: number) {
   const now = Date.now();
   // One flick must not run through every tab.
@@ -1144,8 +1223,7 @@ function cycle(direction: number) {
   if (!direction || now - lastSwitch < 450) return;
   lastSwitch = now;
   wheeled = 0;
-  const index = TABS.findIndex(t => t.name === screen);
-  show(TABS[(index + direction + TABS.length) % TABS.length].name);
+  step(direction);
 }
 
 function scrollableUnder(target: EventTarget | null, within: HTMLElement): boolean {
@@ -1190,8 +1268,8 @@ document.addEventListener("keydown", event => {
   // Tab through screens without the mouse while the island has focus.
   if ((event.ctrlKey || event.metaKey) && event.key === "Tab") {
     event.preventDefault();
-    const index = TABS.findIndex(t => t.name === screen);
-    show(TABS[(index + (event.shiftKey ? TABS.length - 1 : 1)) % TABS.length].name);
+    // The same list the wheel steps through, for the same reason.
+    step(event.shiftKey ? -1 : 1);
   }
 });
 
@@ -1460,6 +1538,7 @@ async function boot() {
 
   await shelf.boot();
   await notes.boot();
+  await callSource.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();
@@ -1471,6 +1550,7 @@ async function boot() {
   window.setInterval(() => {
     today.paintTimer();
     agentsScreen.tick();
+    callScreen.tick();
     paintPill();
   }, 1000);
   window.setInterval(() => { today.tick(); render(); }, 60000);

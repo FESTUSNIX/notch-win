@@ -48,6 +48,9 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  callMode: boolean;
+  callMuteMic: boolean;
+  callOpen: boolean;
   useEverything: boolean;
   indexApps: boolean;
   notifyRuns: boolean;
@@ -192,7 +195,13 @@ const PANE_HTML: Record<PaneId, string> = {
     </div></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
       ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
-    </div></div>`,
+    </div></div>
+    <div><p class="set-label">In a call</p><div class="set-group">
+      ${row("Watch for calls", "The pill becomes the call while one is running \u2014 Zoom, Teams, Meet, WhatsApp, Discord, Slack.", check("call-mode"))}
+      ${row("Mute the microphone too", "As well as pressing the app\u2019s own mute. Off, the mute is only as reliable as that shortcut.", check("call-mute-mic"))}
+      ${row("Go to the call", "A call starting puts the island on its screen, so opening it shows the call.", check("call-open"))}
+    </div>
+    <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>`,
 
   pill: `
     <div><p class="set-label">What it may say</p><div class="set-group" id="modules"></div>
@@ -327,7 +336,8 @@ let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
   railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
-  useEverything: true, indexApps: true, notifyRuns: true,
+  useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
+  indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
 
@@ -509,6 +519,19 @@ get<HTMLInputElement>("rail-always").onchange = event => {
   savePrefs();
 };
 
+/* ⚠️ Three switches, one loop. They are the same shape and the same write,
+ * and three copies of four lines is three places for one of them to save a
+ * stale copy of the other two — the trap `set_prefs` is built around, one
+ * layer up. */
+for (const [id, key] of [
+  ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
+] as const) {
+  get<HTMLInputElement>(id).onchange = event => {
+    prefs[key] = (event.target as HTMLInputElement).checked;
+    savePrefs();
+  };
+}
+
 /* ── Which screens, and in what order ────────────────────────────────────
  * ⚠️ The list lives HERE, not on the island. The island's own copy is
  * `TABS` in `tasks.ts`, and this one has to agree with it or a screen is
@@ -517,6 +540,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
  * test at the bottom of `tips.spec.ts` is what notices. */
 const SCREENS: { name: string; label: string }[] = [
   { name: "home", label: "Home" },
+  { name: "call", label: "Call" },
   { name: "today", label: "Today" },
   { name: "media", label: "Playing" },
   { name: "agents", label: "Agents" },
@@ -1074,6 +1098,9 @@ function paintPrefs() {
   get<HTMLInputElement>("open-on-hover").checked = prefs.openOnHover;
   get<HTMLInputElement>("rail-always").checked = prefs.railAlways;
   get<HTMLInputElement>("rail-flat").checked = prefs.railFlat;
+  get<HTMLInputElement>("call-mode").checked = prefs.callMode;
+  get<HTMLInputElement>("call-mute-mic").checked = prefs.callMuteMic;
+  get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   paintScreens();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;

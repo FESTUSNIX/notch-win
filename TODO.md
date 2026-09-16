@@ -29,7 +29,27 @@
   the disk. Asked once per file per modification time, and a file the shell
   has nothing for keeps its glyph.
 - Feature (media): live lyrics sync using LRCLIB
-- Feature: In call mode with controls (mute, hand up, camera, etc.), integrate Teams, Zoom, Google Meet and WhatsApp if possible.
+- ~~Feature: In call mode with controls~~ — **done**. The microphone is the
+  signal: an app with an active capture session is in a call, which is the same
+  fact Windows draws its own microphone glyph for. Collapsed, the strip keeps
+  the clock and gains mute + hang up; expanded, it is the call with its own
+  screen. Zoom, Teams, Meet, WhatsApp — and Discord and Slack, which the table
+  gave away for free.
+  - [ ] Controls are the apps' own keyboard shortcuts, so the call window comes
+        forward for an instant when you press one. There is no other mechanism:
+        `PostMessage` does not reach a Chromium or WebView2 window. AGENTS 413.
+  - [ ] **Google Meet cannot be hung up from the keyboard** and WhatsApp
+        publishes no in-call shortcuts at all, so neither offers those buttons.
+        The microphone is still cut for both, which is what the mute mostly is.
+  - [ ] No participant count, and there cannot be one: nothing on Windows says
+        how many people are in a meeting. The elapsed time is in that slot.
+  - [ ] Nothing reads back whether the APP thinks it is muted — no API does.
+        The mute presses both the app's button and the microphone endpoint, so
+        the state shown is the endpoint's, which is the one that is true.
+  - [ ] Detection is a 1.5s poll, so joining shows up a beat late.
+  - [ ] Only tested against a capture stream this repo opens itself (AGENTS
+        412). The app table, the window titles and every keystroke are
+        unexercised until a real meeting.
 - Feature (media): Add volume mixer. Control volume per app
 
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.

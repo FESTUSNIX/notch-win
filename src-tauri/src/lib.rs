@@ -2,6 +2,7 @@ mod apptime;
 mod audio;
 mod autostart;
 mod calendar;
+mod call;
 mod config;
 mod credentials;
 mod drag;
@@ -477,6 +478,7 @@ pub fn run() {
         .manage(tasks::TaskState::new())
         .manage(sessions::Latest::default())
         .manage(media::MediaState::default())
+        .manage(call::CallState::default())
         .manage(calendar::CalendarState::default())
         .manage(shortcuts::ShortcutState_::default())
         .manage(apptime::AppTimeState::default())
@@ -549,6 +551,8 @@ pub fn run() {
             weather::set_weather_place,
             media::get_media,
             media::media_command,
+            call::get_call,
+            call::call_action,
             media::media_seek,
             audio::get_audio_devices,
             audio::set_audio_device,
@@ -673,6 +677,7 @@ pub fn run() {
             hover::spawn(app.handle().clone(), "tasks");
             tasks::spawn(app.handle().clone());
             media::spawn(app.handle().clone());
+            call::spawn(app.handle().clone());
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
             system::spawn(app.handle().clone());
