@@ -73,6 +73,15 @@ pub struct Prefs {
     /// Lay every screen out at once, all of them sharp and clickable, instead
     /// of centring one and blurring its neighbours away.
     pub rail_flat: bool,
+    /// The screens, in the order they sit on the rail.
+    ///
+    /// ⚠️ A partial list is fine and is the normal case. Anything the island
+    /// knows about that is missing here keeps its built-in place at the end,
+    /// so a preferences file written before a screen existed does not hide it
+    /// — and the default is simply empty.
+    pub rail_order: Vec<String>,
+    /// The screens that are not on the rail at all.
+    pub rail_hidden: Vec<String>,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -123,6 +132,8 @@ impl Default for Prefs {
             rail_grip: 100,
             rail_sharp: 0,
             rail_flat: false,
+            rail_order: Vec::new(),
+            rail_hidden: Vec::new(),
             use_everything: true,
             index_apps: true,
             notify_runs: true,

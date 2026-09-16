@@ -87,7 +87,12 @@ let demoPrefs: Record<string, unknown> = {
      setting is a checkbox in the real window and a flag here, because it
      changes the rail's whole layout and looking at it is the only way to
      judge it. */
-  railFlat: new URLSearchParams(location.search).has("flat"), useEverything: true,
+  railFlat: new URLSearchParams(location.search).has("flat"),
+  /* `?order=` and `?hide=` drive the rail's own list from the URL, the way the
+     settings window drives it from a file. ⚠️ Comma-separated screen NAMES,
+     not labels — the rail matches on `data-tab`. */
+  railOrder: (new URLSearchParams(location.search).get("order") ?? "").split(",").filter(Boolean),
+  railHidden: (new URLSearchParams(location.search).get("hide") ?? "").split(",").filter(Boolean), useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

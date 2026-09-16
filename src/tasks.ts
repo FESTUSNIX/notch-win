@@ -175,6 +175,8 @@ interface Prefs {
   railGrip: number;
   railSharp: number;
   railFlat: boolean;
+  railOrder: string[];
+  railHidden: string[];
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -184,7 +186,7 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false,
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [],
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -279,13 +281,25 @@ let lit = new Set<ScreenName>();
  * makes every index after it jump — so the player leaves a gap in the order
  * rather than closing it up. */
 function stops(): RailStop[] {
+  /* ⚠️ The saved order is applied as a SORT KEY, not by rebuilding the list
+   * from it. A screen the preferences have never heard of — one added since
+   * they were written — keeps its built-in place at the end rather than
+   * vanishing, which is what filtering `railOrder` through `TABS` would do. */
+   const rank = (name: ScreenName) => {
+     const at = prefs.railOrder.indexOf(name);
+     return at < 0 ? TABS.findIndex(tab => tab.name === name) + TABS.length : at;
+   };
   return TABS.map(tab => ({
     name: tab.name,
     icon: tab.icon,
     label: tab.label,
     live: lit.has(tab.name),
-    hidden: tab.name === "media" && !media.media.active,
-  }));
+    /* ⚠️ Home is never hidden, whatever the preferences say. It is where the
+     * island opens and where a vanished screen sends you — hiding it leaves
+     * nowhere for either to land. */
+    hidden: (tab.name === "media" && !media.media.active)
+      || (tab.name !== "home" && prefs.railHidden.includes(tab.name)),
+  })).sort((a, b) => rank(a.name as ScreenName) - rank(b.name as ScreenName));
 }
 
 /** How long a leaving screen is kept on screen. Must match `screen-out`. */

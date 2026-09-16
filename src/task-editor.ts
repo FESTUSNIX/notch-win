@@ -45,6 +45,8 @@ interface Prefs {
   railGrip: number;
   railSharp: number;
   railFlat: boolean;
+  railOrder: string[];
+  railHidden: string[];
   useEverything: boolean;
   indexApps: boolean;
   notifyRuns: boolean;
@@ -182,6 +184,10 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Kept sharp", "How many either side of the middle stay unblurred.",
         `<input type="range" id="rail-sharp" min="0" max="3" step="1"><span class="set-value" id="rail-sharp-value"></span>`)}
       ${row("Show them all", "Every screen laid out and clickable, instead of one in the middle to drag between.", check("rail-flat"))}
+    </div>
+    <p class="set-label">Which screens, and in what order</p>
+    <p class="set-why">Drag to reorder. Switch one off and it leaves the rail — it is still reachable from the palette.</p>
+    <div class="set-group" id="rail-screens">
     </div></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
       ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
@@ -319,7 +325,7 @@ for (const spec of PANES) {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
-  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false,
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [],
   useEverything: true, indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -501,6 +507,118 @@ get<HTMLInputElement>("rail-always").onchange = event => {
   prefs.railAlways = (event.target as HTMLInputElement).checked;
   savePrefs();
 };
+
+/* ── Which screens, and in what order ────────────────────────────────────
+ * ⚠️ The list lives HERE, not on the island. The island's own copy is
+ * `TABS` in `tasks.ts`, and this one has to agree with it or a screen is
+ * reorderable into a place it cannot be shown. They are two constants because
+ * the two windows share no module; keeping them in step is the price, and the
+ * test at the bottom of `tips.spec.ts` is what notices. */
+const SCREENS: { name: string; label: string }[] = [
+  { name: "home", label: "Home" },
+  { name: "today", label: "Today" },
+  { name: "media", label: "Playing" },
+  { name: "agents", label: "Agents" },
+  { name: "shelf", label: "Shelf" },
+  { name: "notes", label: "Notes" },
+  { name: "calendar", label: "Calendar" },
+  { name: "system", label: "System" },
+  { name: "review", label: "Review" },
+];
+
+/** The screens in the order the preferences put them.
+ *
+ * ⚠️ Anything the preferences have not heard of keeps its built-in place at
+ * the END rather than disappearing. A file written before a screen existed
+ * must not hide it. */
+function screenOrder(): { name: string; label: string }[] {
+  const rank = (name: string) => {
+    const at = prefs.railOrder.indexOf(name);
+    return at < 0 ? SCREENS.findIndex(s => s.name === name) + SCREENS.length : at;
+  };
+  return [...SCREENS].sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+function paintScreens() {
+  const host = get("rail-screens");
+  host.replaceChildren();
+  for (const screen of screenOrder()) {
+    const row = document.createElement("div");
+    row.className = "set-row screen-row";
+    row.draggable = true;
+    row.dataset.screen = screen.name;
+
+    const grip = document.createElement("span");
+    grip.className = "screen-grip";
+    grip.textContent = "≡";
+    grip.setAttribute("aria-hidden", "true");
+
+    const text = document.createElement("div");
+    const name = document.createElement("b");
+    name.textContent = screen.label;
+    text.append(name);
+    /* ⚠️ Home cannot be switched off, and says so rather than simply
+     * refusing. It is where the island opens and where a screen that
+     * disappears sends you — hidden, neither has anywhere to land. */
+    if (screen.name === "home") {
+      const why = document.createElement("small");
+      why.textContent = "Always on the rail";
+      text.append(why);
+    }
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "switch";
+    box.checked = !prefs.railHidden.includes(screen.name);
+    box.disabled = screen.name === "home";
+    box.setAttribute("aria-label", `Show ${screen.label} on the rail`);
+    box.onchange = () => {
+      prefs.railHidden = box.checked
+        ? prefs.railHidden.filter(one => one !== screen.name)
+        : [...prefs.railHidden.filter(one => one !== screen.name), screen.name];
+      savePrefs();
+    };
+
+    row.append(grip, text, box);
+    host.append(row);
+  }
+}
+
+/* ⚠️ HTML drag and drop, not pointer events. This window is an ordinary
+ * focusable window — unlike the island — so the platform's own drag works, and
+ * it brings the auto-scroll and the drop cursor with it. The island could not
+ * use this; a settings list can. */
+let dragging: string | null = null;
+get("rail-screens").addEventListener("dragstart", event => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>(".screen-row");
+  if (!row) return;
+  dragging = row.dataset.screen ?? null;
+  row.classList.add("is-lifting");
+  event.dataTransfer?.setData("text/plain", dragging ?? "");
+});
+get("rail-screens").addEventListener("dragend", event => {
+  (event.target as HTMLElement).closest(".screen-row")?.classList.remove("is-lifting");
+  dragging = null;
+});
+get("rail-screens").addEventListener("dragover", event => {
+  if (!dragging) return;
+  // Without this the drop is refused and the row springs back.
+  event.preventDefault();
+  const over = (event.target as HTMLElement).closest<HTMLElement>(".screen-row");
+  if (!over || over.dataset.screen === dragging) return;
+  const order = screenOrder().map(s => s.name);
+  const from = order.indexOf(dragging);
+  const to = order.indexOf(over.dataset.screen ?? "");
+  if (from < 0 || to < 0) return;
+  order.splice(to, 0, ...order.splice(from, 1));
+  prefs.railOrder = order;
+  paintScreens();
+});
+get("rail-screens").addEventListener("drop", event => {
+  event.preventDefault();
+  dragging = null;
+  savePrefs();
+});
 
 const railGrip = get<HTMLInputElement>("rail-grip");
 railGrip.oninput = () => {
@@ -856,6 +974,7 @@ function paintPrefs() {
   get<HTMLInputElement>("open-on-hover").checked = prefs.openOnHover;
   get<HTMLInputElement>("rail-always").checked = prefs.railAlways;
   get<HTMLInputElement>("rail-flat").checked = prefs.railFlat;
+  paintScreens();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;
   get<HTMLInputElement>("index-apps").checked = prefs.indexApps;

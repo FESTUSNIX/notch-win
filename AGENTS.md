@@ -2745,4 +2745,21 @@ The two halves were the same fault.
      Sweeping `.title =` left seven `title="…"` attributes in template
      literals, and the OS draws its own tooltip a second later over ours — so
      those controls ended up with two labels disagreeing about when to appear.
+393. ⚠️ **A saved order must be a SORT KEY, not the list itself.** Rebuilding
+     the rail from `railOrder` drops every screen the preferences have never
+     heard of — so a file written before a screen existed hides it, silently and
+     for good. Rank by the saved position, fall back to the built-in one, and a
+     partial list is simply a partial list.
+394. ⚠️ **The screen the island lands on cannot be hideable.** Home is where
+     it opens and where a screen that disappears sends you; hidden, neither has
+     anywhere to go. Refused in the island as well as disabled in the settings
+     window — preferences are a file anybody can edit.
+395. ⚠️ **`dragover` must call `preventDefault` or every drop is refused.**
+     Without it an HTML5 reorder looks exactly like a list that cannot be
+     reordered: the row lifts, follows the pointer, and springs back.
+396. ⚠️ **Every control in a non-active settings pane is present and
+     `hidden`.** The window is a sidebar over a stack of panes, so a test that
+     addresses a control without opening its pane times out against a perfectly
+     correct page — and so does a styled checkbox, whose input is painted over
+     by its own pseudo-element and never hittable.
 

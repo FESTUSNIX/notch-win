@@ -1524,6 +1524,23 @@ button:active:not(:disabled) { background:var(--tile-on); }
 .set-row { display:flex; align-items:center; gap:16px; padding:11px 14px; min-height:48px; }
 .set-row + .set-row { box-shadow:inset 0 1px 0 var(--hair); }
 .set-row.stack { flex-direction:column; align-items:stretch; gap:10px; }
+
+/* ── Which screens, and in what order ───────────────────────────────
+   ⚠️ Rows, not a grid of cards. This is a LIST whose order is its meaning, and
+   the one thing a reorderable list has to make obvious is which way is up. */
+.set-why { margin:-2px 0 8px; font-size:11.5px; color:rgba(255,255,255,.4); line-height:1.45; }
+.screen-row { cursor:grab; user-select:none; }
+.screen-row:active { cursor:grabbing; }
+.screen-row > div { flex:1; min-width:0; }
+.screen-row small { display:block; margin-top:2px; font-size:11px;
+  color:rgba(255,255,255,.35); }
+.screen-grip { flex-shrink:0; width:18px; text-align:center; font-size:15px;
+  color:rgba(255,255,255,.28); }
+.screen-row:hover .screen-grip { color:rgba(255,255,255,.55); }
+/* ⚠️ The row being carried is dimmed, not hidden. Removed from the flow it
+   would collapse the list by its own height and every other row would jump,
+   which makes the drop target impossible to aim at. */
+.screen-row.is-lifting { opacity:.4; }
 .set-text { flex:1; min-width:0; }
 .set-text b { display:block; font-size:12.5px; font-weight:500; }
 .set-text span { display:block; font-size:11px; color:#7c7c7c; line-height:1.5; margin-top:2px;

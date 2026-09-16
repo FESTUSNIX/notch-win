@@ -57,6 +57,23 @@ until the answer arrives as a `tool_result`.
 
 ---
 
+## 8. The rail's screens are the user's — DONE
+
+Reorder them by dragging, and switch off the ones you never open. Both live in
+the settings window's Island pane and both are preferences, so they survive a
+restart and a rebuild.
+
+- [x] ⚠️ **The order is a SORT KEY, not the list.** Rebuilding the rail from
+      it drops every screen the file has not heard of — so a preferences file
+      written before a screen existed would hide it for good.
+- [x] ⚠️ **Home cannot be switched off**, in the island as well as in the
+      window: it is where the island opens and where a vanished screen sends
+      you.
+- [ ] A hidden screen is still reachable from the palette, which is right — but
+      nothing says so except the sentence above the list.
+
+---
+
 ## Decisions this must not quietly undo
 
 - The bezel shape. Everything is welded to a screen edge and keeps the fillet.
