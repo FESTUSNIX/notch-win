@@ -13,7 +13,7 @@
   - [x] Pin a note to the desktop — its own always-on-top, undecorated,
         draggable window. Position and size are remembered; pinned notes come
         back when the app restarts.
-  - [ ] Notes are not searchable *from the palette* yet, only from the screen.
+  - [ ] Notes are not searchable _from the palette_ yet, only from the screen.
   - [ ] A pinned note has no colour of its own — they are all the same paper.
         A colour per note is the obvious next thing if the desktop gets busy.
   - [x] Simple formatting — `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
@@ -21,6 +21,10 @@
         text you typed; parsed on the way out.
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
+
+- Fix: Agent status gets stuck at "waiting" when the agent has actually finished
+- Style (shelf): instead of rows make the items cards (square-ish) with a thumbnail, title, format and size.
+- Feature (media): live lyrics sync using LRCLIB
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose
@@ -233,7 +237,7 @@ Month grid and agenda in one view, plus a week that is a time grid:
 - ⚠️ The week grid **is** week-aligned now, which is why `week_starts_monday`
   came back with it (defaulting to Monday). ISO week numbers are printed
   beside each agenda heading and always start on Monday whatever that setting
-  says — the setting decides which column a day is drawn in; the week *number*
+  says — the setting decides which column a day is drawn in; the week _number_
   is a fixed international definition.
 
 ### Still open on the calendar
@@ -243,7 +247,7 @@ Month grid and agenda in one view, plus a week that is a time grid:
       say so in the grid.
 - [x] The New Task popover files into whatever list Today's composer is on.
       There is no list picker in the popover.
-- [ ] Nothing can be created *in the calendar* — it makes TickTick tasks, not
+- [ ] Nothing can be created _in the calendar_ — it makes TickTick tasks, not
       Google events. Writing events needs a second Google scope.
 
 ---
@@ -335,6 +339,13 @@ captioned, which told you where you were and nothing about where you could go.
       AGENTS 356. Capturing early swallows every click.
 - [x] **All four edges**: across the island's end, or down its side.
 - [x] Settings: how many stops show (3–7), and whether they show unasked.
+- [x] **The arcs are a hint, not chrome.** The resting line is thinner (11
+      design, ~5px) and short — it points at the hover area rather than tracing
+      it — and the actions are smaller, spaced, and closer to the island.
+- [x] ⚠️ **The spread follows the actions, not the other way round.** A fixed
+      spread divided by the count overlapped the discs the moment the radius
+      was clamped for room; the spacing is what is guaranteed now and the span
+      is whatever that comes to. AGENTS 361.
 - [ ] The header still names the screen, which the rail also does. It is there
       because the header is the window's DRAG REGION and something has to be in
       it — but if the rail is always on, the name is said twice.

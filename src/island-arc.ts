@@ -235,14 +235,30 @@ export class IslandArc {
   private span(open: boolean): number {
     const clear = this.seen + cpx(FRAME.islandArcClear);
     if (!open) return clear + cpx(FRAME.islandArcStroke) / 2;
+    /* As close to the island as the clearance allows — which for one, two or
+     * three actions is all it ever needs to be. */
     const sits = clear + cpx(FRAME.islandArcActSize) / 2;
-    const step = (FRAME.islandArcTo - FRAME.islandArcFrom)
-      / Math.max(1, this.count) * 2 * Math.PI;
-    /* And far enough out that two neighbours do not touch: the chord between
-     * them has to clear `islandArcStep`, which on a circle is `2r sin(step/2)`,
-     * solved for r. */
-    const needed = cpx(FRAME.islandArcStep) / 2 / Math.max(1e-3, Math.sin(step / 2));
-    return Math.min(cpx(FRAME.islandArcReach) - 30, Math.max(sits, needed));
+    /* … and further only if they cannot fit inside the widest spread. The
+     * chord between two neighbours must clear `islandArcStep`, which on a
+     * circle is `2r sin(θ/2)`, solved for r at the tightest θ allowed. */
+    const per = FRAME.islandArcSpread * 2 * Math.PI / Math.max(1, this.count);
+    const needed = cpx(FRAME.islandArcStep) / 2 / Math.max(1e-3, Math.sin(per / 2));
+    return Math.max(sits, Math.min(cpx(FRAME.islandArcReach) - 30, needed));
+  }
+
+  /** Where the actions sit, as fractions of a turn: the angle each one needs at
+   *  this radius, laid symmetrically about the corner's own diagonal.
+   *
+   * ⚠️ The SPAN follows the actions, not the other way round. Fixing the span
+   * and dividing it by the count spreads two actions to the far ends of the
+   * corner and crushes four into each other — and when the radius is then
+   * clamped for room, the spacing silently stops being honoured and the discs
+   * overlap. Here the spacing is what is guaranteed and the span is whatever
+   * that comes to. */
+  private slots(radius: number, count: number): { at: number; per: number } {
+    const chord = Math.min(0.999, cpx(FRAME.islandArcStep) / (2 * Math.max(1, radius)));
+    const per = 2 * Math.asin(chord) / (2 * Math.PI);
+    return { at: 0.125 - per * count / 2, per };
   }
 
   paint(frame: ArcFrame) {
@@ -298,16 +314,21 @@ export class IslandArc {
     const oy = dy > 0 ? 0 : reach;
     this.svg.setAttribute("viewBox", `0 0 ${reach.toFixed(2)} ${reach.toFixed(2)}`);
 
+    /* Everything is laid about the corner's own diagonal — an eighth of a turn
+     * into its quadrant — so one action sits on it and four sit evenly either
+     * side of it. */
     const base = baseTurn(dx, dy);
-    const from = base + FRAME.islandArcFrom;
-    const to = base + FRAME.islandArcTo;
+    const { at, per } = this.slots(radius, this.count);
+    const from = base + at;
+    const to = base + at + per * this.count;
 
-    /* ⚠️ The LINE is shorter than the span the actions use. It is a hint that
-     * something is here; run out to the actions' own ends it reaches the
-     * island's straight edges and reads as a badly drawn continuation of
-     * them. */
-    const trim = FRAME.islandArcLineTrim;
-    this.line.setAttribute("d", arcPath(ox, oy, radius, from + trim, to - trim));
+    /* ⚠️ The LINE is a HINT, and much shorter than the actions' own spread. It
+     * says there is something at this corner; drawn the full length of the
+     * spread it runs out to the island's straight edges and reads as a badly
+     * drawn continuation of them rather than as its own mark. */
+    const mark = FRAME.islandArcLine;
+    this.line.setAttribute("d",
+      arcPath(ox, oy, radius, base + 0.125 - mark, base + 0.125 + mark));
     this.line.setAttribute("stroke-width", `${cpx(FRAME.islandArcStroke)}`);
     /* ⚠️ The line goes as the actions land on it. Both at once is a track with
      * beads on it, which is a different thing and a busier one. */
@@ -319,8 +340,11 @@ export class IslandArc {
      * with it, the pointer is left over nothing, `pointerleave` fires, it shuts
      * — and the pointer has not moved, so it opens again. */
     const outer = this.span(true) + cpx(FRAME.islandArcHot);
+    const reachable = this.slots(this.span(true), this.count);
     this.band.setAttribute("d",
-      arcPath(ox, oy, (frame.corner + outer) / 2, from - 0.02, to + 0.02));
+      arcPath(ox, oy, (frame.corner + outer) / 2,
+        base + Math.min(at, reachable.at) - 0.03,
+        base + Math.max(to - base, reachable.at + reachable.per * this.count) + 0.03));
     this.band.setAttribute("stroke-width", `${Math.max(1, outer - frame.corner)}`);
 
     /* And the actions, laid ALONG it — which is the whole idea. Each sits at
@@ -332,9 +356,8 @@ export class IslandArc {
      * on one side ends up facing the last on the other. */
     const list = [...this.acts.children] as HTMLElement[];
     for (const [index, act] of list.entries()) {
-      const at = dx > 0 ? index : list.length - 1 - index;
-      const turn = from + (to - from) * ((at + 0.5) / list.length);
-      const angle = turn * 2 * Math.PI;
+      const slot = dx > 0 ? index : list.length - 1 - index;
+      const angle = (from + per * (slot + 0.5)) * 2 * Math.PI;
       act.style.left = `${ox + radius * Math.cos(angle)}px`;
       act.style.top = `${oy + radius * Math.sin(angle)}px`;
     }

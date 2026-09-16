@@ -149,43 +149,53 @@ export const FRAME = {
    * the bezel; this is a notch cut into the island — inverse fillets where it
    * meets it, so it reads as moulded out of the same piece rather than as a bar
    * someone parked underneath. `notchPath` draws both. */
-  /** The clearance between the island's edge and the line's inner edge.
+  /** The clearance between the island's edge and whatever sits outside it.
    *
-   * ⚠️ Matched to the settings orb's on the agents notch, which sits 18 in
-   * from its flare — that is the shape this is a sibling of, and a second
-   * clearance that is merely similar reads as one of the two being wrong. The
-   * first go at 34 put the line a visible distance out on its own. */
-  islandArcClear: 18,
-  /** How thick the resting line is. The orb's, unchanged. */
-  islandArcStroke: 18,
+   * ⚠️ Measured to the thing's own EDGE, not to the circle it is centred on —
+   * half a stroke, or half a disc, otherwise lives inside the gap and the
+   * number here stops meaning what it says. */
+  islandArcClear: 14,
+  /** How thick the resting line is.
+   *
+   * ⚠️ It is a HINT, not a rail. Its whole job is to say there is a hover
+   * area here; drawn as thick as the orb's 18 it reads as a piece of chrome in
+   * its own right and obstructs the corner it is meant to annotate. */
+  islandArcStroke: 11,
+  /** How much of a turn the resting line covers, either side of the corner's
+   *  diagonal. Short: enough to point at the place, not to trace it. */
+  islandArcLine: 0.05,
+  /** The widest the actions may spread, as a fraction of a turn.
+   *
+   * ⚠️ A little past the corner's own quarter at each end, which is safe: a
+   * ray leaving the corner's centre at 15° outside the quadrant meets the
+   * island's straight edge at `corner / cos 15°`, barely further than the
+   * corner radius itself — so the clearance holds. Much past that and the far
+   * actions start sinking into the island's flank. */
+  islandArcSpread: 0.34,
   /** How big one action is. ⚠️ The geometry has to know this, not just the
    *  stylesheet: an action is a disc on the same circle as the line, and it is
-   *  three times the thickness — so kept on the line's own radius its inner
-   *  edge lands INSIDE the island's corner and the row looks welded on. The
-   *  actions sit further out, by exactly enough to keep the clearance above. */
-  islandArcActSize: 58,
-  /** How much of the corner's quarter-turn the ACTIONS spread over, as a
-   *  fraction of the full circle, clockwise from three o'clock. */
-  islandArcFrom: 0.02,
-  islandArcTo: 0.23,
-  /** And how much of it the resting line covers. ⚠️ Shorter than the actions'
-   *  span at both ends: the line is a hint that something is here, and one run
-   *  right up to the island's straight edges reads as a badly drawn
-   *  continuation of them rather than as its own arc. */
-  islandArcLineTrim: 0.028,
-  /** The clearance an action needs on the line, centre to centre. Sets how far
-   *  out the line has to swing to hold them all without them touching.
+   *  more than twice its thickness — so kept on the line's own radius its inner
+   *  edge lands INSIDE the island's corner and the row looks welded on. */
+  islandArcActSize: 52,
+  /** Centre to centre between two actions, along the chord.
    *
-   * ⚠️ Small enough that two fit at the RESTING radius. The line swinging
-   * out to make room is a fine motion for four actions and an absurd one for
-   * two — and two is what every screen here actually has. */
-  islandArcStep: 68,
+   * ⚠️ Comfortably MORE than `islandArcActSize`, and the difference is the
+   * gap you see. Equal to it, the discs touch and read as one lozenge with
+   * notches in it — which is what happens when the radius gets clamped and this
+   * spacing quietly stops being honoured. */
+  islandArcStep: 76,
   /** How far past the outermost action the invisible hit band reaches.
    *
    * ⚠️ The band runs from the island's own corner to here, covering every
-   * radius the line can swing through — see the note in `paintTools`. The line
-   * is eight pixels of curve on a screen edge; an exact target is no target. */
+   * radius the line can swing through — see the note in `island-arc.ts`. The
+   * line is five pixels of curve on a screen edge; an exact target is no
+   * target. */
   islandArcHot: 46,
+  /** Room reserved beyond the island for the line at its widest. ⚠️ The
+   *  window is sized from this; short, and the line is cut off at the window's
+   *  edge with nothing to say so. */
+  islandArcReach: 230,
+
   /* ── The rail ────────────────────────────────────────────────────────────
    * Where you are, under the middle of the island's free edge, between the two
    * arcs. It shares their clearance — `islandArcClear` — so the three read as
@@ -204,11 +214,6 @@ export const FRAME = {
    *  width, and dragging it one-for-one throws the content off the edge of the
    *  screen for a gesture that has not chosen anything yet. */
   railCarry: 130,
-
-  /** Room reserved beyond the island for the line at its widest. ⚠️ The
-   *  window is sized from this; short, and the line is cut off at the window's
-   *  edge with nothing to say so. */
-  islandArcReach: 230,
 
   /** Minimum expanded depth, so a screen with one row is not a tall void. */
   islandMinDepth: 330,

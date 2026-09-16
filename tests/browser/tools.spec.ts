@@ -239,6 +239,58 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   await expect(page.locator("#screen-tools")).toHaveCount(0);
 });
 
+test("the island's own four sit apart on their arc, and the line stays a hint", async ({page}) => {
+  await page.emulateMedia({reducedMotion: "reduce"});
+  await page.goto(HOME);
+
+  const pill = await page.locator("#island").boundingBox();
+  await page.mouse.move(pill!.x + pill!.width / 2, pill!.y + pill!.height / 2);
+  await expect(page.locator("#island-expanded")).toBeVisible();
+
+  const arc = page.locator("#island-global");
+  await expect(arc.locator(".arc-act")).toHaveCount(4);
+
+  /* ⚠️ The RESTING LINE is a hint, not chrome. It says there is a hover area
+   * at this corner; as long as the arcs' own spread it runs out to the
+   * island's straight edges and stops reading as a mark of its own. */
+  const hint = await page.evaluate(() => {
+    const line = document.querySelector("#island-global .arc-line") as unknown as SVGPathElement;
+    return {
+      long: line.getTotalLength(),
+      thick: parseFloat(getComputedStyle(line).strokeWidth),
+    };
+  });
+  expect(hint.thick).toBeLessThan(7);
+  expect(hint.long).toBeLessThan(40);
+
+  const at = await page.evaluate(() => {
+    const host = document.getElementById("island-global")!.getBoundingClientRect();
+    const line = document.querySelector("#island-global .arc-line") as unknown as SVGPathElement;
+    const mid = line.getPointAtLength(line.getTotalLength() / 2);
+    return {x: host.left + mid.x, y: host.top + mid.y};
+  });
+  await page.mouse.move(at.x, at.y);
+  await expect(arc).toHaveClass(/is-open/);
+
+  /* ⚠️ Four of them, and they must not TOUCH. This is the one the spacing
+   * maths got wrong in a way nothing else could see: the radius is clamped so
+   * the arc stays inside its window, and once the clamp bites the guaranteed
+   * centre-to-centre spacing quietly stops being honoured — the discs overlap
+   * and read as one lozenge with notches cut in it. Every number involved is
+   * still correct; only the picture is wrong. */
+  const gaps = await page.evaluate(() => {
+    const acts = [...document.querySelectorAll("#island-global .arc-act")].map(a => {
+      const box = a.getBoundingClientRect();
+      return {x: box.left + box.width / 2, y: box.top + box.height / 2, w: box.width};
+    });
+    return acts.slice(1).map((a, i) =>
+      Math.hypot(a.x - acts[i].x, a.y - acts[i].y) - (a.w + acts[i].w) / 2);
+  });
+  expect(gaps).toHaveLength(3);
+  for (const gap of gaps) expect(gap).toBeGreaterThan(5);
+  await page.screenshot({path: "test-results/arc-global.png"});
+});
+
 /* ⚠️ The left edge, because the arc was top-edge-only in an earlier shape and
  * the failure was silent: the actions were simply not on the screen. */
 test("on a side edge the arc moves to that island's own far corner", async ({page}) => {

@@ -89,9 +89,17 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   /* Drag one stop's worth to the left and the next screen comes to the middle.
    * ⚠️ In steps, not one jump: the drag reads a stream of positions and works
    * out a speed from them, and a single move has no speed at all. */
+  /* ⚠️ Onto it first, then RE-MEASURE. Arriving is what opens the rail, and
+   * opening changes what is in it — so a point worked out before the pointer
+   * got there can be one the rail has since moved out from under. */
   await page.mouse.move(mid.x, mid.y);
+  const on = (await page.locator("#island-rail").boundingBox())!;
+  const from = {x: on.x + on.width / 2, y: on.y + on.height / 2};
+  await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(mid.x - pitch, mid.y, {steps: 8});
+  await page.mouse.move(from.x - pitch, from.y, {steps: 8});
+  // The gesture has to be taken as a drag before its effects can be.
+  await expect(page.locator("#island-rail")).toHaveClass(/is-dragging/);
 
   /* ⚠️ The panel rides the rail while the drag is live — it moves with the
    * gesture and blurs, so the two read as one thing rather than a control that
@@ -105,6 +113,12 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   expect(carried.moved).toBeGreaterThan(0);
   expect(carried.blurred).toBe(true);
 
+  /* ⚠️ Let go SLOWLY. The release speed is read off the last two moves, and
+   * a drag delivered in one burst releases at hundreds of pixels a second —
+   * which is a flick, and a flick deliberately carries one stop further. This
+   * test is about the drag; the carry is its own behaviour. */
+  await page.waitForTimeout(220);
+  await page.mouse.move(from.x - pitch + 1, from.y);
   await page.mouse.up();
   await expect.poll(() => here(page)).toBe("today");
   // And the panel is handed back, unblurred and where it belongs.

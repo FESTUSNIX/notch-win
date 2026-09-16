@@ -2577,4 +2577,19 @@ The two halves were the same fault.
      stop, and two tests measuring a height mid-flight then measured the
      destination twice — one of them comparing it against itself and passing for
      the wrong reason. Both take an explicit opt-out now.
+361. ⚠️ **A clamped radius silently breaks a spacing guarantee.** The arc
+     divided a FIXED angular spread by the number of actions and then clamped
+     the radius to keep the shape inside its window — so once the clamp bit, the
+     chord between two neighbours fell below the spacing that had been
+     calculated for it and the discs overlapped into one lozenge with notches
+     in it. Every number involved was still correct. Derive the ANGLE from the
+     radius you ended up with, not the radius from the angle you wanted.
+362. ⚠️ **Arriving at a hover-revealed control changes it, so measure after
+     arriving.** A test that works out where to press, then moves the pointer
+     there, has measured the closed shape and pressed the open one.
+363. ⚠️ **A drag delivered in one burst always releases as a flick.** The
+     release speed is read off the last two moves, and Playwright's `steps`
+     dispatches them microseconds apart — so a test dragging exactly one stop
+     lands one further, intermittently, depending on machine speed. End the
+     gesture with a slow one-pixel move.
 
