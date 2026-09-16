@@ -28,6 +28,7 @@
 - Feature: In call mode with controls (mute, hand up, camera, etc.), integrate Teams, Zoom, Google Meet and WhatsApp if possible.
 - Feature (media): Add volume mixer. Control volume per app
 - Fix: Arcs and screen rail/switcher are visible when the command palette is open. The command palette should be a separate layer that doesn't show the global island UI
+- Fix (system): Unnecessary padding bottom on device and bluetooth cards.
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose
@@ -368,7 +369,14 @@ captioned, which told you where you were and nothing about where you could go.
       first and last stop, but there is no screen out there to be carried
       towards, so the content stays put instead of sliding off and snapping
       back. The end stop stays marked while you lean on it. AGENTS 374.
-- [x] **A fast drag does not render every screen it passes** — live changes are
+- [x] **More room in the gesture.** The finger travels 150 design px per stop
+      rather than the 90 the stops are drawn at, so the rail moves slower than
+      the hand and there is room to stop on the one you wanted.
+- [x] **Slow and short walks the screens; long or fast saves them for the
+      release.** Two stops is a correction and the panel follows it through;
+      six is travelling, and travelling wants one arrival. Latched for the rest
+      of the gesture, so slowing down halfway does not start it up again.
+- [x] ~~A fast drag does not render every screen it passes~~ — live changes are
       rate-limited to one every 150ms, and the release is never limited, so
       whatever it lands on is always what ends up on screen.
 - [x] The header names the screen — and now it is the only place that does,

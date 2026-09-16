@@ -108,9 +108,12 @@ export class IslandRail {
    *  re-runs a screen's entrance when it is handed the screen already on, so a
    *  drag that wobbles over one stop makes it flash. */
   private told = "";
-  /** When the shell was last told, so a fast drag does not render every screen
-   *  it passes over. */
-  private toldAt = 0;
+  /** Latched once a gesture has gone too far or too fast to be choosing.
+   *
+   * ⚠️ LATCHED for the rest of the drag, not re-tested each frame. Slowing
+   * down in the middle of a long sweep would start animating screens again
+   * halfway through it, which is worse than either behaviour on its own. */
+  private coasting = false;
   private lastX = 0;
   private lastT = 0;
 
@@ -261,10 +264,15 @@ export class IslandRail {
     if (event.button !== 0) return;
     this.grabbed = true;
     this.dragging = false;
+    this.coasting = false;
     this.grabX = this.upright ? event.clientY : event.clientX;
     this.grabAt = this.at.value;
     this.lastX = this.upright ? event.clientY : event.clientX;
-    this.lastT = event.timeStamp;
+    /* ⚠️ Zero, not the clock. There is no speed yet, and the gap between the
+     * press and the first move is nearly nothing — measured, it comes out at
+     * thousands of pixels a second and latches every gate below on the very
+     * first move of every drag. */
+    this.lastT = 0;
     this.speed = 0;
     /* ⚠️ The pointer is NOT captured yet. Capture retargets everything that
      * follows to the capturing element — `click` included — so capturing on the
@@ -288,28 +296,64 @@ export class IslandRail {
       this.host.setPointerCapture(event.pointerId);
     }
 
-    const dt = Math.max(1, event.timeStamp - this.lastT);
+    /* ⚠️ `performance.now()`, NOT `event.timeStamp`. A synthesised pointer
+     * event — anything driven by automation, and some remote-desktop stacks —
+     * can carry a constant timestamp, and then every gap is the one-millisecond
+     * floor below and every gesture reads as thousands of pixels a second. The
+     * speed gates here quietly latch on the first move and nothing in between
+     * is ever drawn. */
+    const at = performance.now();
     const now = this.upright ? event.clientY : event.clientX;
-    this.speed = (now - this.lastX) / dt * 1000;
+    if (this.lastT > 0) {
+      /* ⚠️ A frame is the floor. Two moves delivered in the same tick are not
+       * evidence of speed, they are evidence of a coalesced queue — and
+       * dividing by the millisecond below them turns a gentle drag into a
+       * flick. */
+      const dt = Math.max(8, at - this.lastT);
+      this.speed = (now - this.lastX) / dt * 1000;
+    }
+    /* ⚠️ Measured on the FIRST move too, from the press point. The speed
+     * gate cannot see that move — there is no earlier sample to divide by — so
+     * without this a flick still animates one screen in before the gate
+     * closes. */
+    const jumped = now - this.lastX;
     this.lastX = now;
-    this.lastT = event.timeStamp;
+    this.lastT = at;
 
-    /* ⚠️ Rubber-banded past the ends rather than stopped dead. A list that
+    /* ⚠️ Divided by the DRAG step, not the one the stops are drawn at. The
+     * rail moves slower than the hand on purpose: at one-to-one a stop is
+     * forty pixels of travel, and the whole list goes past in a flick with no
+     * room in the gesture to stop on the one you wanted.
+     *
+     * ⚠️ Rubber-banded past the ends rather than stopped dead. A list that
      * simply refuses to move reads as a broken drag; one that resists says
      * "this is the end" without a word. */
     const last = Math.max(0, this.live().length - 1);
-    let want = this.grabAt - dx / this.pitch();
+    let want = this.grabAt - dx / cpx(FRAME.railDragStep);
     if (want < 0) want = want / 3;
     else if (want > last) want = last + (want - last) / 3;
     this.at.snap(want);
     this.renaming(false);
     this.lay();
     this.carry(this.offset(), false);
+    /* ⚠️ Once the gesture is clearly TRAVELLING rather than choosing, nothing
+     * in between is drawn. Every screen has its own width and height, so
+     * animating through five of them is five resizes of the island inside half
+     * a second — each correct on its own and unreadable in a row. */
+    if (Math.abs(this.at.value - this.grabAt) > FRAME.railLiveStops
+      || Math.abs(this.speed) > cpx(FRAME.railLiveSpeed)
+      /* ⚠️ And a single move that clears half a stop, which is the case the
+       * two above cannot catch: the first move of a flick has no speed behind
+       * it yet and has travelled no distance yet, so without this one screen
+       * still animates in before the gate closes. */
+      || Math.abs(jumped) > this.pitch() / 2) {
+      this.coasting = true;
+    }
     /* ⚠️ The screen changes as the rail passes it, not when the drag is let
      * go. Waiting for the release means walking three screens is three drags;
      * and it means the panel spends the whole gesture showing something the
      * rail has already left, which is what made the drag read as broken. */
-    this.arrive(Math.round(this.at.value), true);
+    if (!this.coasting) this.arrive(Math.round(this.at.value), true);
   }
 
   private up(event: PointerEvent) {
@@ -355,17 +399,6 @@ export class IslandRail {
   private arrive(index: number, live: boolean) {
     const stop = this.live()[index];
     if (!stop || stop.name === this.told) return;
-    /* ⚠️ Rate-limited while the drag is in the hand. A screen change is a
-     * full render of the panel, and a quick flick across the rail passes six
-     * of them in half a second — rendering all six is work nobody sees and it
-     * makes the drag itself stutter. The rail keeps moving smoothly; the panel
-     * simply shows some of what it goes past.
-     *
-     * ⚠️ The RELEASE is never rate-limited, so whatever it lands on is always
-     * what ends up on screen. */
-    const now = performance.now();
-    if (live && now - this.toldAt < 150) return;
-    this.toldAt = now;
     this.told = stop.name;
     this.choose(stop.name, live);
   }

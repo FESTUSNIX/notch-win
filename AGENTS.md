@@ -2643,4 +2643,26 @@ The two halves were the same fault.
      is read from the real one — judged on the rubber-banded position, the
      nearest stop is over half a slot away and the rail reads as having lost
      its place because you leaned on the end of it.
+375. ⚠️ **`event.timeStamp` does not advance for synthesised pointer events.**
+     Anything driven by automation — and some remote-desktop stacks — delivers
+     a constant timestamp, so a velocity computed from it divides by the
+     millisecond floor and every gesture reads as thousands of pixels a second.
+     Every speed gate then latches on the first move and the feature is simply
+     never on. Use `performance.now()`.
+376. ⚠️ **The first move after `pointerdown` has no time behind it.** The gap
+     between the press and the first move is nearly zero, so the first speed
+     sample is garbage however it is measured. Skip it, and floor the interval
+     at a frame — two moves coalesced into one tick are not evidence of speed.
+377. ⚠️ **A live preview must be gated on the gesture, not on a timer.** Rate-
+     limiting screen changes to one every 150ms still rendered four of them in
+     a fast sweep, and every screen has its own width and height — so that is
+     four resizes of the island in half a second, each correct alone and
+     unreadable in a row. Gate on distance travelled and speed, and LATCH it:
+     slowing down in the middle of a long sweep must not start animating again
+     halfway through.
+378. ⚠️ **`cpx()` imported into Node answers differently than in the page.**
+     It converts design pixels by a scale the browser works out from the
+     screen, so a distance computed in a test is not the distance on screen.
+     Measure from the page and scale by a ratio of two constants, which is the
+     same everywhere.
 

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { FRAME } from "../../src/layout";
 
 /* The rail: where you are, under the middle of the island.
  *
@@ -84,19 +85,6 @@ test("dragging the rail walks the screens, and a press still picks one", async (
 
   const rail = (await page.locator("#island-rail").boundingBox())!;
   const mid = {x: rail.x + rail.width / 2, y: rail.y + rail.height / 2};
-  /* ⚠️ Measured between two stops on the SAME side of the middle. The centred
-   * stop opens into a pill with its name in it and pushes its neighbours out,
-   * so the step from it to the next one is the pitch plus that push — and a
-   * drag of that distance travels one and a half screens. Two stops that are
-   * both pushed by the same amount are a true pitch apart. */
-  const pitch = await page.locator(".rail-stop").evaluateAll(stops => {
-    const at = (el: Element) => el.getBoundingClientRect().left;
-    return Math.abs(at(stops[3]) - at(stops[2]));
-  });
-
-  /* Drag one stop's worth to the left and the next screen comes to the middle.
-   * ⚠️ In steps, not one jump: the drag reads a stream of positions and works
-   * out a speed from them, and a single move has no speed at all. */
   /* ⚠️ Onto it first, then RE-MEASURE. Arriving is what opens the rail, and
    * opening changes what is in it — so a point worked out before the pointer
    * got there can be one the rail has since moved out from under. */
@@ -105,13 +93,45 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   const from = {x: on.x + on.width / 2, y: on.y + on.height / 2};
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(from.x - pitch, from.y, {steps: 8});
+
+  /* Drag one stop's worth to the left and the next screen comes to the middle.
+   *
+   * ⚠️ DELIBERATELY — small steps with real gaps between them. Delivered as
+   * one burst this is a flick, and a flick is travelling rather than choosing:
+   * the rail deliberately shows nothing in between and saves it all for the
+   * release. That behaviour has a test of its own; this one is about the
+   * gesture that walks. */
+  /* How far the finger goes for one stop.
+   *
+   * ⚠️ Measured from the page and scaled by a pure RATIO. `cpx()` converts
+   * design pixels using a scale the browser works out from the screen, and
+   * imported into Node it answers with something else entirely — so a distance
+   * computed here would be the wrong one, and the drag would stop short of the
+   * next screen. The ratio between the two constants is the same everywhere.
+   *
+   * ⚠️ And the pitch is read between two stops on the SAME side of the middle:
+   * the centred one opens into a pill with its name in it and pushes its
+   * neighbours out, so the step from it to the next is a pitch plus a push. */
+  const pitch = await page.locator(".rail-stop").evaluateAll(stops => {
+    const at = (el: Element) => el.getBoundingClientRect().left;
+    return Math.abs(at(stops[3]) - at(stops[2]));
+  });
+  const grab = pitch * FRAME.railDragStep / FRAME.railStep;
+  for (let i = 1; i <= 4; i++) {
+    await page.mouse.move(from.x - (grab * i) / 8, from.y);
+    await page.waitForTimeout(45);
+  }
   // The gesture has to be taken as a drag before its effects can be.
   await expect(page.locator("#island-rail")).toHaveClass(/is-dragging/);
 
   /* ⚠️ The panel rides the rail while the drag is live — it moves with the
    * gesture and blurs, so the two read as one thing rather than a control that
-   * happens to change a screen. */
+   * happens to change a screen.
+   *
+   * ⚠️ Read HALF WAY between two stops, which is where the carry is at its
+   * largest. It is measured from the distance to the nearest stop, so on a
+   * stop it is zero by definition — sampled there, a working carry looks like
+   * no carry at all. */
   const carried = await page.locator("#island-expanded").evaluate(el => ({
     moved: Math.abs(parseFloat(getComputedStyle(el).translate) || 0),
     blurred: /blur\([\d.]+px\)/.test(getComputedStyle(el).filter),
@@ -121,6 +141,11 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   expect(carried.moved).toBeGreaterThan(0);
   expect(carried.blurred).toBe(true);
 
+  for (let i = 5; i <= 8; i++) {
+    await page.mouse.move(from.x - (grab * i) / 8, from.y);
+    await page.waitForTimeout(45);
+  }
+
   /* ⚠️ The screen has ALREADY changed, with the drag still in the hand. It
    * used to wait for the release, which meant walking three screens was three
    * separate drags — and the panel spent the whole gesture showing something
@@ -129,24 +154,19 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   await expect(page.locator("#island-where")).toHaveText("Today");
   await expect(page.locator("#island-rail")).toHaveClass(/is-dragging/);
 
-  /* ⚠️ And a second stop in the same gesture, without letting go. */
-  await page.mouse.move(from.x - pitch * 2, from.y, {steps: 8});
-  await expect.poll(() => here(page)).toBe("media");
-
   /* ⚠️ And NO screen plays its entrance while the drag is in the hand. This
    * is the fault the live change created and the reason `show()` takes a
    * `live` flag: the rail already translates and blurs the whole panel through
    * the gesture, so a screen sliding in on top of that reads as the content
    * stuttering rather than as either animation. Watched rather than sampled —
    * the entrance lasts a couple of frames and a poll walks straight past it. */
-  await page.evaluate(() => {
+  const entrances = await page.evaluate(() => {
     let seen = 0;
     /* ⚠️ Counts the moment a screen GAINS the class, not every class change
      * on a screen that happens to have it. A screen keeps `is-first` from the
      * island's own opening, and every later toggle of `active` or `hidden` on
-     * that same element is a mutation whose target still carries it — so the
-     * naive check reports an entrance for a screen that is merely being
-     * hidden. */
+     * that element is a mutation whose target still carries it — so the naive
+     * check reports an entrance for a screen that is merely being hidden. */
     const had = new WeakMap<Element, boolean>();
     for (const el of document.querySelectorAll(".screen")) {
       had.set(el, el.classList.contains("is-first"));
@@ -163,23 +183,29 @@ test("dragging the rail walks the screens, and a press still picks one", async (
       watch.observe(el, {attributes: true, attributeFilter: ["class"]});
     }
     (window as unknown as {entrances: () => number}).entrances = () => seen;
+    return seen;
   });
-  await page.mouse.move(from.x - pitch * 3, from.y, {steps: 10});
-  await expect.poll(() => here(page)).toBe("agents");
+  expect(entrances).toBe(0);
+
+  /* A second stop in the same gesture, without letting go. ⚠️ Two, and no
+   * further: past that the rail stops animating through them on purpose, which
+   * has a test of its own. */
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(from.x - grab - (grab * i) / 8, from.y);
+    await page.waitForTimeout(45);
+  }
+  await expect.poll(() => here(page)).toBe("media");
   expect(await page.evaluate(() =>
     (window as unknown as {entrances: () => number}).entrances())).toBe(0);
-
-  await page.mouse.move(from.x - pitch, from.y, {steps: 8});
-  await expect.poll(() => here(page)).toBe("today");
 
   /* ⚠️ Let go SLOWLY. The release speed is read off the last two moves, and
    * a drag delivered in one burst releases at hundreds of pixels a second —
    * which is a flick, and a flick deliberately carries one stop further. This
    * test is about the drag; the carry is its own behaviour. */
   await page.waitForTimeout(220);
-  await page.mouse.move(from.x - pitch + 1, from.y);
+  await page.mouse.move(from.x - grab * 2 + 1, from.y);
   await page.mouse.up();
-  await expect.poll(() => here(page)).toBe("today");
+  await expect.poll(() => here(page)).toBe("media");
   // And the panel is handed back, unblurred and where it belongs.
   await expect.poll(() => page.locator("#island-expanded").evaluate(el =>
     getComputedStyle(el).filter)).toBe("none");
@@ -187,10 +213,27 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   /* ⚠️ A press is still a press. The rail is draggable, so every click on a
    * stop is also a drag of a pixel or two — and without the slop threshold the
    * snap fights the click and the screen you pressed is never the one you get. */
-  const next = page.locator('.rail-stop[data-tab="media"], .rail-stop[data-tab="agents"]').first();
-  const want = await next.getAttribute("data-tab");
+  /* ⚠️ Back onto the rail first. The drag ended two stops' worth to the left
+   * of it, which is outside both the rail and the island's own mask — and the
+   * island folds when the pointer is on neither, taking the rail with it. */
+  /* ⚠️ Via the ISLAND, which is always on screen — collapsed or not. Aiming
+   * straight at the rail races the fold: by the time its box is measured it
+   * can already be gone, and `boundingBox()` answers null. */
+  const isle = (await page.locator("#island").boundingBox())!;
+  await page.mouse.move(isle.x + isle.width / 2, isle.y + isle.height / 2);
+  await expect(page.locator("#island-rail")).toBeVisible();
+
+  /* ⚠️ Wait for the name to finish arriving first. It opens the centred stop
+   * into a pill and pushes its neighbours aside, so for half a second after
+   * settling every stop is somewhere it is about to leave — and a click aimed
+   * at one waits for it to hold still, which it will not until then. */
+  await expect.poll(() => page.locator(".rail-stop.is-here .rail-say")
+    .evaluate(el => el.getBoundingClientRect().width), {timeout: 4000})
+    .toBeGreaterThan(20);
+
+  const next = page.locator('.rail-stop[data-tab="agents"]');
   await next.click();
-  await expect.poll(() => here(page)).toBe(want);
+  await expect.poll(() => here(page)).toBe("agents");
 });
 
 test("the name waits for the rail to stop, and the ends do not carry", async ({page}) => {
@@ -237,6 +280,60 @@ test("the name waits for the rail to stop, and the ends do not carry", async ({p
   await expect(page.locator("#island-rail")).toBeVisible();
   // And once it is still again, the name comes back.
   await expect.poll(named, {timeout: 4000}).toBeGreaterThan(20);
+});
+
+test("a slow drag walks the screens; a long one saves them all for the release", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+
+  /** Every screen the panel actually showed, in order. */
+  const watch = () => page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as {seen: string[]}).seen = seen;
+    const eye = new MutationObserver(() => {
+      const on = document.querySelector<HTMLElement>(".screen.active")?.dataset.screen;
+      if (on && seen[seen.length - 1] !== on) seen.push(on);
+    });
+    for (const el of document.querySelectorAll(".screen")) {
+      eye.observe(el, {attributes: true, attributeFilter: ["class"]});
+    }
+  });
+  const seen = () => page.evaluate(() => (window as unknown as {seen: string[]}).seen);
+  const railMid = async () => {
+    const box = (await page.locator("#island-rail").boundingBox())!;
+    return {x: box.x + box.width / 2, y: box.y + box.height / 2};
+  };
+
+  /* ⚠️ SLOWLY, two stops. Small steps with real gaps between them: this is
+   * somebody choosing, and the panel is expected to follow them through. */
+  await watch();
+  let at = await railMid();
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(at.x - i * 12, at.y);
+    await page.waitForTimeout(50);
+  }
+  expect(await seen()).toEqual(["today", "media"]);
+  await page.mouse.up();
+  at = await railMid();
+  await page.mouse.move(at.x, at.y);
+  await expect.poll(() => here(page)).toBe("media");
+
+  /* ⚠️ And a long flick shows NOTHING in between. Every screen has its own
+   * width and height, so animating through six of them is six resizes of the
+   * island inside half a second — each correct on its own and unreadable in a
+   * row. Two stops is a correction; six is travelling, and travelling wants
+   * one arrival. */
+  await watch();
+  at = await railMid();
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x - 450, at.y, {steps: 10});
+  expect(await seen()).toEqual([]);
+  await page.mouse.up();
+  // ... and still lands where it was let go.
+  await expect.poll(() => here(page)).not.toBe("media");
 });
 
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {

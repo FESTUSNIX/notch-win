@@ -226,6 +226,24 @@ export const FRAME = {
    *  weight and size; anything longer ellipsises rather than pushing the row
    *  about. */
   railSayRoom: 128,
+  /** How far the finger travels for one stop.
+   *
+   * ⚠️ Deliberately MORE than `railStep`, so the rail moves slower than the
+   * hand. At one-to-one a stop is forty pixels of travel and the whole list
+   * goes past in a flick — there is no room in the gesture to stop on the one
+   * you wanted. */
+  railDragStep: 150,
+  /** How far a gesture may travel and still change screens as it goes.
+   *
+   * ⚠️ Past this it stops animating through them entirely and the panel waits
+   * for the release. Every screen has its own width and height, so changing
+   * through five of them is five resizes of the island in half a second — each
+   * correct on its own and unreadable in a row. Two is a correction; five is
+   * travelling, and travelling wants one arrival. */
+  railLiveStops: 2,
+  /** And how fast, in design pixels a second. Above this the hand is clearly
+   *  going somewhere rather than choosing, so nothing in between is drawn. */
+  railLiveSpeed: 1400,
 
   /** How far the panel slides for one stop's worth of drag. ⚠️ A FRACTION of
    *  the rail's own step, not all of it: the panel is four times the rail's
