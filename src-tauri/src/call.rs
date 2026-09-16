@@ -115,12 +115,27 @@ struct Known {
     /// Words marking one of this app's windows as the CALL window rather than
     /// its inbox. Empty means any window of its will do.
     call_words: &'static [&'static str],
+    /// Titles that are certainly NOT the call — the app's own sections. Used
+    /// only to break a tie: a window matching none of `call_words` is still
+    /// better than one of these.
+    ///
+    /// ⚠️ English, because that is what the titles say on an English
+    /// install and there is no way to ask an app what it calls its own tabs.
+    /// Getting this wrong costs a call NAMED after the wrong window, never a
+    /// call that is missed — the keystroke goes to the app either way.
+    avoid: &'static [&'static str],
     /// ⚠️ When set, a window has to SAY it is a call before this counts as one
     /// at all. It is what separates a Meet call from a browser recording a
     /// voice message: the executable is the same one.
     by_window: bool,
     /// Text stripped off a window title to leave the meeting's own name.
     strip: &'static [&'static str],
+    /// Pieces of a bar-separated title that are never the meeting's name.
+    ///
+    /// ⚠️ New Teams writes FIVE fields into one title — the layout, the
+    /// meeting, the account type, the account and the app — and stripping only
+    /// the app's name off the end leaves the other four on the notch.
+    drop_parts: &'static [&'static str],
     mute: Keys,
     video: Keys,
     hand: Keys,
@@ -141,8 +156,10 @@ const KNOWN: &[Known] = &[
         name: "Zoom",
         exe: &["zoom.exe"],
         call_words: &["zoom meeting", "meeting"],
+        avoid: &["zoom workplace", "settings"],
         by_window: false,
         strip: &["Zoom Meeting", "Zoom Workplace", "Zoom"],
+        drop_parts: &[],
         mute: &[VK_MENU, VK_A],
         video: &[VK_MENU, VK_V],
         hand: &[VK_MENU, VK_Y],
@@ -156,9 +173,15 @@ const KNOWN: &[Known] = &[
         id: "teams",
         name: "Microsoft Teams",
         exe: &["ms-teams.exe", "teams.exe"],
-        call_words: &["meeting", "call", "| microsoft teams"],
+        /* ⚠️ NOT "| microsoft teams". Every window Teams has ends in it, so as
+         * a marker it matches the inbox as readily as the meeting and the
+         * `avoid` tier below never gets to break the tie. A marker has to mark
+         * something. */
+        call_words: &["meeting", "call"],
+        avoid: &["activity |", "chat |", "calendar |", "calls |", "files |", "apps |", "store |", "help |", "teams |"],
         by_window: false,
         strip: &["| Microsoft Teams", "Microsoft Teams", "| Teams"],
+        drop_parts: &[" view", "personal", "work or school", "work", "microsoft teams"],
         mute: &[VK_CONTROL, VK_SHIFT, VK_M],
         video: &[VK_CONTROL, VK_SHIFT, VK_O],
         hand: &[VK_CONTROL, VK_SHIFT, VK_K],
@@ -169,13 +192,21 @@ const KNOWN: &[Known] = &[
         id: "meet",
         name: "Google Meet",
         exe: BROWSERS,
-        call_words: &["meet.google.com", "meet -", "meet \u{2013}", "meet \u{2014}", "meet |"],
+        /* ⚠️ Meet titles its tab "Meet – abc-defg-hij", and a browser window
+         * is titled after its ACTIVE TAB — so these have to match the tab,
+         * not the site. A bare "meet" is deliberately not on the list: it is
+         * inside "Meeting", "Meetup" and half the invitations on the web. */
+        call_words: &[
+            "meet.google.com", "google meet", "meet -", "meet \u{2013}", "meet \u{2014}", "meet |",
+        ],
+        avoid: &[],
         by_window: true,
         strip: &[
             "- Google Chrome", "\u{2014} Google Chrome", "- Brave", "- Microsoft Edge",
             "\u{2014} Mozilla Firefox", "- Vivaldi", "- Opera", "Meet -", "Meet \u{2013}",
             "Meet \u{2014}", "Google Meet",
         ],
+        drop_parts: &[],
         mute: &[VK_CONTROL, VK_D],
         video: &[VK_CONTROL, VK_E],
         hand: &[VK_CONTROL, VK_MENU, VK_H],
@@ -188,8 +219,10 @@ const KNOWN: &[Known] = &[
         name: "WhatsApp",
         exe: &["whatsapp.exe"],
         call_words: &["call", "po\u{142}\u{105}czenie"],
+        avoid: &[],
         by_window: false,
         strip: &["- WhatsApp", "| WhatsApp", "WhatsApp"],
+        drop_parts: &[],
         // Publishes no in-call shortcuts. The microphone is still ours to cut.
         mute: &[],
         video: &[],
@@ -204,8 +237,10 @@ const KNOWN: &[Known] = &[
         name: "Discord",
         exe: &["discord.exe", "discordptb.exe", "discordcanary.exe"],
         call_words: &[],
+        avoid: &[],
         by_window: false,
         strip: &["- Discord", "Discord"],
+        drop_parts: &[],
         mute: &[],
         video: &[],
         hand: &[],
@@ -217,8 +252,10 @@ const KNOWN: &[Known] = &[
         name: "Slack",
         exe: &["slack.exe"],
         call_words: &["huddle", "call"],
+        avoid: &[],
         by_window: false,
         strip: &["- Slack", "Slack"],
+        drop_parts: &[],
         mute: &[],
         video: &[],
         hand: &[],
@@ -291,10 +328,36 @@ fn name_call(raw: &str, known: &Known) -> String {
     let text = text.trim_matches(|c: char| {
         c.is_whitespace() || c == '-' || c == '\u{2013}' || c == '\u{2014}' || c == '|' || c == '\u{b7}'
     });
+    let text = if text.contains('|') { one_field(text, known) } else { text.to_string() };
     if text.chars().count() < 2 {
         return known.name.to_string();
     }
-    text.to_string()
+    text
+}
+
+/// The one field of a bar-separated title that names the meeting.
+///
+/// ⚠️ **An `@` is dropped wherever it appears, for every app.** New Teams
+/// puts the signed-in ACCOUNT in its window title, so the honest reading of
+/// that title put `someone@example.com` on a strip that is on screen all day
+/// — including while the same person is sharing it. The address says nothing
+/// about the call, and a notch is a bad place to learn it about yourself in a
+/// meeting.
+fn one_field(text: &str, known: &Known) -> String {
+    let kept: Vec<&str> = text
+        .split('|')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty() && !part.contains('@'))
+        .filter(|part| {
+            let lower = part.to_lowercase();
+            !known.drop_parts.iter().any(|junk| lower.contains(junk))
+        })
+        .collect();
+    /* The FIRST that survives, not the longest. Teams writes the layout first
+     * and the meeting second, so dropping the layout leaves the meeting at the
+     * front — and "longest" would pick a chatty account type over a meeting
+     * called "Sync". */
+    kept.first().map(|part| part.to_string()).unwrap_or_default()
 }
 
 /* ── Who is holding the microphone ────────────────────────────────────────── */
@@ -437,26 +500,61 @@ fn app_above(pid: u32, tree: &HashMap<u32, u32>) -> Option<(&'static Known, u32,
     None
 }
 
-/// The app's call window, preferred over its inbox, and what it is titled.
-fn window_of(known: &Known, pid: u32, windows: &[(HWND, u32)]) -> Option<(HWND, String)> {
-    let mut fallback = None;
+/// Which of an app's windows is the call, by title alone.
+///
+/// ⚠️ Pure and tested, because it is a pile of heuristics about other
+/// people's title bars and every one of them is a guess that has to be
+/// written down somewhere it can be checked. Three tiers: a window that says
+/// it is a call, then any window that is not one of the app's own sections,
+/// then whatever there is. Never `None` when there is a window — the worst
+/// case is a call named after the wrong window, and the keystrokes still land
+/// on the right app.
+fn pick_window(known: &Known, titles: &[String]) -> Option<usize> {
+    let lower: Vec<String> = titles.iter().map(|t| t.to_lowercase()).collect();
+    let says_call = |t: &String| known.call_words.iter().any(|word| t.contains(word));
+    let a_section = |t: &String| known.avoid.iter().any(|word| t.contains(word));
+    lower
+        .iter()
+        .position(says_call)
+        .or_else(|| lower.iter().position(|t| !a_section(t)))
+        .or(if titles.is_empty() { None } else { Some(0) })
+}
+
+/// The app's call window, and what it is titled.
+///
+/// ⚠️ Every window of every process running the same EXECUTABLE, not the
+/// windows of one pid. The process holding the microphone is a child with the
+/// same name as its parent — `brave.exe --type=utility` is the audio service,
+/// and new Teams captures in a child of its own too — and a child owns no
+/// windows. Asking for one pid's windows therefore found nothing at all, which
+/// looked like an app with no controls rather than like a lookup that missed:
+/// Teams and Discord offered a lone Mute, and a Meet call was never detected,
+/// because the gate that wants a window title had no title to read.
+fn window_of(
+    known: &Known,
+    exe: &str,
+    windows: &[(HWND, u32)],
+    names: &mut HashMap<u32, String>,
+) -> Option<(HWND, String)> {
+    let mut found: Vec<(HWND, String)> = Vec::new();
     for (window, owner) in windows {
-        if *owner != pid {
+        let name = names
+            .entry(*owner)
+            .or_insert_with(|| file_name(&exe_of(*owner)))
+            .clone();
+        /* The same executable, not merely the same app: a Meet call in Chrome
+         * must not be driven through a Brave window, and both are the `meet`
+         * row. */
+        if name != exe {
             continue;
         }
         let title = crate::win::title_of(*window);
-        if title.is_empty() {
-            continue;
-        }
-        let lower = title.to_lowercase();
-        if known.call_words.iter().any(|word| lower.contains(word)) {
-            return Some((*window, title));
-        }
-        if fallback.is_none() {
-            fallback = Some((*window, title));
+        if !title.is_empty() {
+            found.push((*window, title));
         }
     }
-    fallback
+    let titles: Vec<String> = found.iter().map(|(_, title)| title.clone()).collect();
+    pick_window(known, &titles).map(|at| found[at].clone())
 }
 
 /// Is the microphone this call is on muted?
@@ -501,10 +599,14 @@ fn look(previous: &Call) -> Call {
     }
     let tree = crate::win::parents();
     let windows = crate::win::visible_windows();
+    /* One executable lookup per process, not per window: a browser has a
+     * window per profile and a dozen processes, and `OpenProcess` for each of
+     * them on every poll is work nobody asked for. */
+    let mut names: HashMap<u32, String> = HashMap::new();
 
     for (pid, device) in holders {
         let Some((known, app_pid, path)) = app_above(pid, &tree) else { continue };
-        let found = window_of(known, app_pid, &windows);
+        let found = window_of(known, &file_name(&path), &windows, &mut names);
         let title = found.as_ref().map(|(_, title)| title.clone()).unwrap_or_default();
         let says_call = known.call_words.iter().any(|word| title.to_lowercase().contains(word));
         let carried = previous.active && previous.app == known.id && previous.pid == app_pid;
@@ -722,8 +824,17 @@ fn from_same_app(pid: u32, known: &Known) -> bool {
     known_by_exe(&file_name(&exe_of(pid))).map(|found| found.id) == Some(known.id)
 }
 
+/// The call's window again, now that it is being acted on.
+///
+/// ⚠️ Re-derived from the remembered pid's EXECUTABLE rather than from the
+/// pid itself — see `window_of`. If that process has gone since, the app's
+/// first executable stands in, which is right for the five apps with one name
+/// and only loose for a Meet call in a second browser.
 fn window_now(known: &Known, pid: u32) -> Option<HWND> {
-    window_of(known, pid, &crate::win::visible_windows()).map(|(window, _)| window)
+    let exe = file_name(&exe_of(pid));
+    let exe = if exe.is_empty() { known.exe[0].to_string() } else { exe };
+    let mut names = HashMap::new();
+    window_of(known, &exe, &crate::win::visible_windows(), &mut names).map(|(window, _)| window)
 }
 
 #[cfg(test)]
@@ -743,6 +854,38 @@ mod tests {
         assert_eq!(name_call("Meet \u{2013} Design Sync - Google Chrome", app("meet")), "Design Sync");
         assert_eq!(name_call("(1) Meet - abc-defg-hij - Brave", app("meet")), "abc-defg-hij");
         assert_eq!(name_call("Standup - WhatsApp", app("whatsapp")), "Standup");
+    }
+
+    /// New Teams writes five fields into one title, and one of them is you.
+    ///
+    /// ⚠️ This string is REAL — taken off a live call on the machine this was
+    /// written on, with the address changed. Stripping only the app's name off
+    /// the end, which is what every other app needs, left the layout, the
+    /// account type and the signed-in ADDRESS on a strip that is on screen all
+    /// day, including while its owner is sharing it.
+    #[test]
+    fn a_teams_title_gives_up_the_meeting_and_nothing_else() {
+        let real = "Meeting compact view | Meeting with Marek Nowak | Personal | somebody@example.com | Microsoft Teams";
+        assert_eq!(name_call(real, app("teams")), "Meeting with Marek Nowak");
+
+        // No address survives, in any app, wherever it sits in the title.
+        for raw in [
+            "Meeting compact view | Sync | Personal | somebody@example.com | Microsoft Teams",
+            "somebody@example.com | Standup | Microsoft Teams",
+        ] {
+            let named = name_call(raw, app("teams"));
+            assert!(!named.contains('@'), "{named}");
+            assert!(!named.to_lowercase().contains("example.com"), "{named}");
+        }
+
+        // A plain two-field title is untouched by any of this.
+        assert_eq!(name_call("Design Sync | Microsoft Teams", app("teams")), "Design Sync");
+        /* And a title that is ONLY furniture falls back to the app rather than
+         * to one arbitrary piece of it. */
+        assert_eq!(
+            name_call("Activity | Personal | somebody@example.com | Microsoft Teams", app("teams")),
+            "Activity",
+        );
     }
 
     /// ⚠️ A title that reduces to nothing is the NORMAL case for Zoom — every
@@ -776,6 +919,51 @@ mod tests {
         /* ⚠️ With no window there is nothing to send a keystroke TO, so the
          * microphone is all that is left — and it is still ours. */
         assert_eq!(controls(app("zoom"), false), vec!["mute".to_string()]);
+    }
+
+    /// Which window is the call.
+    ///
+    /// ⚠️ The regression this exists for was not in this function — it was
+    /// one pid's windows being asked for when the microphone is held by a
+    /// CHILD process of the same name, which owns none. The symptom was an app
+    /// with a lone Mute button and a Meet call that was never detected at all,
+    /// because both depend on having found a window. See `window_of`.
+    #[test]
+    fn the_call_window_is_picked_out_of_the_app_s_other_windows() {
+        let titles = |all: &[&str]| all.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+
+        // A window that says it is a meeting wins outright.
+        let teams = titles(&["Chat | Microsoft Teams", "Design Sync meeting | Microsoft Teams"]);
+        assert_eq!(pick_window(app("teams"), &teams), Some(1));
+
+        /* ⚠️ And when NOTHING says "meeting" — which is most of them, since a
+         * 1:1 call is titled after the person — the app's own sections are
+         * what gets ruled out. Without this tier the call is named "Activity".
+         */
+        let quiet = titles(&["Activity | Microsoft Teams", "Marek Nowak | Microsoft Teams"]);
+        assert_eq!(pick_window(app("teams"), &quiet), Some(1));
+
+        // Only sections: still a window, because the keystroke has to go
+        // somewhere and Teams takes its shortcuts on any of them.
+        let sections = titles(&["Activity | Microsoft Teams", "Calendar | Microsoft Teams"]);
+        assert_eq!(pick_window(app("teams"), &sections), Some(0));
+
+        // Zoom's meeting window over its main one, whatever order they arrive.
+        let zoom = titles(&["Zoom Workplace", "Zoom Meeting"]);
+        assert_eq!(pick_window(app("zoom"), &zoom), Some(1));
+        let zoom_back = titles(&["Zoom Meeting", "Zoom Workplace"]);
+        assert_eq!(pick_window(app("zoom"), &zoom_back), Some(0));
+
+        // A browser: the Meet window among the ordinary ones.
+        let browser = titles(&[
+            "Inbox (12) - Gmail - Brave",
+            "Meet \u{2013} Design Sync - Brave",
+            "GitHub - Brave",
+        ]);
+        assert_eq!(pick_window(app("meet"), &browser), Some(1));
+
+        // Nothing at all is the only case with no answer.
+        assert_eq!(pick_window(app("teams"), &[]), None);
     }
 
     /// The executables that stand in for an app, including the ones it runs a
@@ -871,12 +1059,13 @@ mod tests {
         let tree = crate::win::parents();
         let windows = crate::win::visible_windows();
         let mut seen = std::collections::BTreeSet::new();
+        let mut names: HashMap<u32, String> = HashMap::new();
         for (_, pid) in &windows {
             let Some((known, app_pid, path)) = app_above(*pid, &tree) else { continue };
             if !seen.insert(known.id) {
                 continue;
             }
-            let found = window_of(known, app_pid, &windows);
+            let found = window_of(known, &file_name(&path), &windows, &mut names);
             println!(
                 "{} <- {}
    window: {:?}

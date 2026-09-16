@@ -2890,3 +2890,30 @@ The two halves were the same fault.
      as having done something. It was latent while the player sat third; a call
      sitting second made the very first notch do nothing. Step through the
      stops that exist, not through the list of all of them.
+421. ⚠️ **The process holding the microphone has the SAME NAME as the app and
+     owns no window.** `brave.exe --type=utility` is Chrome's audio service and
+     is itself `brave.exe`; Teams and Discord capture in children of their own
+     name too. So walking up the process tree finds the app on the FIRST step —
+     the child — and asking that pid for its windows finds none. The symptom
+     was not an error: Teams and Discord offered a lone Mute (every other
+     control needs a window to send a keystroke to) and Google Meet was never
+     detected at all (its gate needs a window title to read). Match windows
+     across every process running the same EXECUTABLE, never by pid. AGENTS 411
+     is the same trap one level up and does not cover this: the walk found the
+     right app and still the wrong process.
+422. ⚠️ **New Teams puts the signed-in ACCOUNT in its window title.** The real
+     string is `Meeting compact view | Meeting with <name> | Personal |
+     <address> | Microsoft Teams` — five fields — so stripping the app's name
+     off the end, which is all every other app needs, put an email address on a
+     strip that is on screen all day, including while its owner is sharing it.
+     Anything holding an `@` is dropped from a title now, in every app.
+423. ⚠️ **A marker that matches everything is not a marker.** `| microsoft
+     teams` ends every window Teams has, so as the test for "this is the call
+     window" it matched the inbox as readily as the meeting — and the
+     tie-breaker below it never ran.
+424. ⚠️ **A screen that rebuilds itself on every `render()` is paid for by the
+     whole panel.** The call screen replaced its own children each time, which
+     is nothing on a tick and real work during a rail drag: three of the rail's
+     timing tests started failing in a parallel run and passing alone, which
+     reads exactly like flake. It was not flake. Redraw on a key, and let the
+     per-second tick write text only.

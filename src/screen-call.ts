@@ -129,8 +129,20 @@ export class CallScreen {
     private clock: () => string,
   ) {}
 
+  /** What this screen was last drawn from. */
+  private drawn = "";
+
   render() {
     const { call: live } = this.source;
+    /* ⚠️ Only when something CHANGED. `render()` runs on every tick and on
+     * every frame of a rail drag, and rebuilding six buttons each time throws
+     * away the hover and the focus on whichever one the pointer is over — and
+     * it is work the whole panel pays for during a gesture that is measured in
+     * frames. The clocks move in `tick`, which writes text and nothing else. */
+    const key = [live.active, live.app, live.title, live.muted, live.can.join(),
+      live.icon.length, this.source.error].join("|");
+    if (key === this.drawn) return;
+    this.drawn = key;
     this.host.replaceChildren();
     if (!live.active) {
       const empty = element("p", "home-empty", "No call is running.");
