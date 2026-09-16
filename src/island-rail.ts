@@ -82,12 +82,17 @@ export class IslandRail {
   private dragging = false;
   /** Pixels a second, for the flick. */
   private speed = 0;
+  /** The stop the shell has been told about. ⚠️ Held so a drag can change
+   *  screens as it passes them without saying the same one twice — `show()`
+   *  re-runs a screen's entrance when it is handed the screen already on, so a
+   *  drag that wobbles over one stop makes it flash. */
+  private told = "";
   private lastX = 0;
   private lastT = 0;
 
   constructor(
     private wake: () => void,
-    private choose: (name: string) => void,
+    private choose: (name: string, live: boolean) => void,
     /** Says the pointer is on the rail. ⚠️ Load-bearing for the same reason it
      *  is on the arcs: the rail is a SIBLING of the island, so reaching for it
      *  reads as leaving, and the island folds under your hand. */
@@ -149,6 +154,7 @@ export class IslandRail {
     if (!same) this.paintCells();
     const want = this.live().findIndex(s => s.name === current);
     if (want < 0) return;
+    this.told = current;
     /* ⚠️ Snapped while the rail is not showing, sprung while it is. A screen
      * changed from the palette with the island shut must not spend its travel
      * behind a collapsed pill and arrive somewhere arbitrary. */
@@ -173,13 +179,15 @@ export class IslandRail {
       cell.setAttribute("aria-label", stop.label);
       cell.title = stop.label;
       paintIcon(cell, stop.icon);
-      const caption = element("span", "rail-say", stop.label);
-      cell.append(caption);
       /* ⚠️ `click`, not `pointerup`. A drag that ends on a stop must not also
        * select it, and `dragging` is what tells them apart — but the browser
        * suppresses a click after a real drag anyway, so this is belt and
        * braces for the case where the pointer barely moved. */
-      cell.onclick = () => { if (!this.dragging) this.choose(stop.name); };
+      cell.onclick = () => {
+        if (this.dragging) return;
+        const index = this.live().findIndex(one => one.name === stop.name);
+        if (index >= 0) this.settleOn(index);
+      };
       this.track.append(cell);
       this.cells.push(cell);
     }
@@ -269,6 +277,11 @@ export class IslandRail {
     this.at.snap(want);
     this.lay();
     this.carry(this.offset(), false);
+    /* ⚠️ The screen changes as the rail passes it, not when the drag is let
+     * go. Waiting for the release means walking three screens is three drags;
+     * and it means the panel spends the whole gesture showing something the
+     * rail has already left, which is what made the drag read as broken. */
+    this.arrive(Math.round(this.at.value), true);
   }
 
   private up(event: PointerEvent) {
@@ -299,11 +312,22 @@ export class IslandRail {
   }
 
   private settleOn(index: number) {
-    const stop = this.live()[index];
     if (still()) this.at.snap(index);
     else this.at.setTarget(index);
     this.wake();
-    if (stop) this.choose(stop.name);
+    this.arrive(index, false);
+  }
+
+  /** Tell the shell where the rail is, at most once per screen.
+   *
+   * @param live whether this is mid-drag, so the screen swaps without playing
+   *             its entrance — the panel is already being carried by the
+   *             gesture, and two motions at once is the flicker. */
+  private arrive(index: number, live: boolean) {
+    const stop = this.live()[index];
+    if (!stop || stop.name === this.told) return;
+    this.told = stop.name;
+    this.choose(stop.name, live);
   }
 
   /** How far the rail is from its resting stop, in cells. The island's content
@@ -324,6 +348,8 @@ export class IslandRail {
     this.host.hidden = !show;
     if (!show) return;
     this.host.classList.toggle("is-upright", this.upright);
+    this.host.style.setProperty("--rail-hint", `${cpx(FRAME.railHint)}px`);
+    this.host.style.setProperty("--rail-thick", `${cpx(FRAME.islandArcStroke)}px`);
 
     const runs = Math.min(
       (this.upright ? frame.height : frame.width) - 2 * frame.corner,

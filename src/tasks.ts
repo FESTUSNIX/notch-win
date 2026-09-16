@@ -254,7 +254,7 @@ const home = new HomeScreen(get("home-body"), { today, media, calendar, open: na
  * computed rather than measured, a `ResizeObserver` to catch the font landing
  * — went with it. The rail has one number, which stop is under the middle, and
  * every position on screen is derived from it. */
-surface.onStop(name => show(name as ScreenName));
+surface.onStop((name, live) => show(name as ScreenName, live));
 
 const screens = document.querySelector<HTMLElement>(".screens")!;
 
@@ -281,7 +281,14 @@ function stops(): RailStop[] {
 /** How long a leaving screen is kept on screen. Must match `screen-out`. */
 const SCREEN_EXIT_MS = 150;
 
-function show(name: ScreenName) {
+/**
+ * @param live a drag is carrying the panel already, so the screen swaps
+ *             WITHOUT its entrance. ⚠️ Two motions at once is the flicker:
+ *             the rail translates and blurs the whole panel through the
+ *             gesture, and a screen sliding in on top of that reads as the
+ *             content stuttering rather than as either animation.
+ */
+function show(name: ScreenName, live = false) {
   const from = screen;
   screen = name;
   // Volume, brightness and the device lists are read when the screen is
@@ -293,7 +300,7 @@ function show(name: ScreenName) {
    * were opened in — the rail is what you are looking at while this happens. */
   const was = TABS.findIndex(tab => tab.name === from);
   const now = TABS.findIndex(tab => tab.name === name);
-  const moving = from !== name && was >= 0 && now >= 0;
+  const moving = !live && from !== name && was >= 0 && now >= 0;
   screens.style.setProperty("--dir", String(moving && now < was ? -1 : 1));
 
   for (const section of document.querySelectorAll<HTMLElement>(".screen")) {
@@ -320,7 +327,7 @@ function show(name: ScreenName) {
     section.classList.remove("is-leaving");
     section.hidden = !active;
     // The first paint is not an arrival: nothing was left to come from.
-    if (active) section.classList.toggle("is-first", !moving);
+    if (active) section.classList.toggle("is-first", !moving && !live);
   }
   get("island-where").textContent = TABS.find(tab => tab.name === name)?.label ?? "";
   /* ⚠️ The width lands BEFORE the render. The panel measures its content at

@@ -43,8 +43,11 @@ test("the rail centres where you are and blurs the rest away", async ({page}) =>
    * either side of it are a step away rather than a guess. */
   expect(await here(page)).toBe("home");
   await expect(page.locator(".rail-stop.is-here")).toHaveCount(1);
-  expect(await page.locator(".rail-say").evaluateAll(says =>
-    says.filter(s => s.getBoundingClientRect().width > 0).length)).toBe(1);
+  /* ⚠️ The name is in the HEADER, not on the stop. A caption on the middle
+   * one made every slot as wide as a word, which put a rail of five over two
+   * hundred pixels long with the screens marooned at either end. */
+  await expect(page.locator("#island-where")).toHaveText("Home");
+  await expect(page.locator(".rail-stop")).toHaveCount(9);
 
   /* The further from the middle, the less of it there is. ⚠️ Measured as a
    * monotonic fall, not against fixed numbers: the ramp is a judgement and will
@@ -112,6 +115,57 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   expect(carried.marked).toBe(true);
   expect(carried.moved).toBeGreaterThan(0);
   expect(carried.blurred).toBe(true);
+
+  /* ⚠️ The screen has ALREADY changed, with the drag still in the hand. It
+   * used to wait for the release, which meant walking three screens was three
+   * separate drags — and the panel spent the whole gesture showing something
+   * the rail had left, which is what made the drag read as broken. */
+  await expect.poll(() => here(page)).toBe("today");
+  await expect(page.locator("#island-where")).toHaveText("Today");
+  await expect(page.locator("#island-rail")).toHaveClass(/is-dragging/);
+
+  /* ⚠️ And a second stop in the same gesture, without letting go. */
+  await page.mouse.move(from.x - pitch * 2, from.y, {steps: 8});
+  await expect.poll(() => here(page)).toBe("media");
+
+  /* ⚠️ And NO screen plays its entrance while the drag is in the hand. This
+   * is the fault the live change created and the reason `show()` takes a
+   * `live` flag: the rail already translates and blurs the whole panel through
+   * the gesture, so a screen sliding in on top of that reads as the content
+   * stuttering rather than as either animation. Watched rather than sampled —
+   * the entrance lasts a couple of frames and a poll walks straight past it. */
+  await page.evaluate(() => {
+    let seen = 0;
+    /* ⚠️ Counts the moment a screen GAINS the class, not every class change
+     * on a screen that happens to have it. A screen keeps `is-first` from the
+     * island's own opening, and every later toggle of `active` or `hidden` on
+     * that same element is a mutation whose target still carries it — so the
+     * naive check reports an entrance for a screen that is merely being
+     * hidden. */
+    const had = new WeakMap<Element, boolean>();
+    for (const el of document.querySelectorAll(".screen")) {
+      had.set(el, el.classList.contains("is-first"));
+    }
+    const watch = new MutationObserver(list => {
+      for (const one of list) {
+        const el = one.target as HTMLElement;
+        const now = el.classList.contains("is-first");
+        if (now && !had.get(el)) seen++;
+        had.set(el, now);
+      }
+    });
+    for (const el of document.querySelectorAll(".screen")) {
+      watch.observe(el, {attributes: true, attributeFilter: ["class"]});
+    }
+    (window as unknown as {entrances: () => number}).entrances = () => seen;
+  });
+  await page.mouse.move(from.x - pitch * 3, from.y, {steps: 10});
+  await expect.poll(() => here(page)).toBe("agents");
+  expect(await page.evaluate(() =>
+    (window as unknown as {entrances: () => number}).entrances())).toBe(0);
+
+  await page.mouse.move(from.x - pitch, from.y, {steps: 8});
+  await expect.poll(() => here(page)).toBe("today");
 
   /* ⚠️ Let go SLOWLY. The release speed is read off the last two moves, and
    * a drag delivered in one burst releases at hundreds of pixels a second —

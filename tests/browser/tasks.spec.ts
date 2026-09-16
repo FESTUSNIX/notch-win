@@ -657,8 +657,8 @@ test("the selection travels, and lands exactly where it is going", async ({page}
    * and both of those still LOOK like a working carousel in a screenshot. */
   await page.mouse.move(520, 520);
   await expect(page.locator(".rail-stop.is-here")).toHaveCount(1);
-  await expect.poll(() => page.locator(".rail-say").evaluateAll(says =>
-    says.filter(say => say.getBoundingClientRect().width > 0).length)).toBe(1);
+  // And the header names it — the one place a screen is spelled out.
+  await expect(page.locator("#island-where")).toHaveText("Home");
   await page.screenshot({path: "test-results/island-rail.png"});
 });
 
@@ -1808,7 +1808,11 @@ test("a wheel has to mean it before the screen changes", async ({page}) => {
   await page.locator(".palette-field").fill("Keep the island open");
   await page.keyboard.press("Enter");
   await goTo(page, "home");
-  const active = () => page.locator(".rail-stop.is-here .rail-say").textContent();
+  /* ⚠️ The HEADER, not the rail. The rail carries icons now — a caption on
+   * the middle one made every stop as wide as a word and marooned the screens
+   * at either end of a two-hundred-pixel bar. The name lives where it does not
+   * have to fit between two other screens. */
+  const active = () => page.locator("#island-where").textContent();
 
   const head = page.locator(".island-head");
   /* ⚠️ A trackpad sends a stream of 2-4px deltas, so acting on the first one

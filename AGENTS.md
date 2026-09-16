@@ -2592,4 +2592,23 @@ The two halves were the same fault.
      dispatches them microseconds apart — so a test dragging exactly one stop
      lands one further, intermittently, depending on machine speed. End the
      gesture with a slow one-pixel move.
+364. ⚠️ **`show(name)` replays a screen's entrance when handed the screen it
+     is already on.** It is harmless from a click and ruinous from a drag,
+     which passes stops continuously — a gesture wobbling over one stop flashes
+     the panel on every crossing. The rail remembers what it last announced and
+     says nothing twice.
+365. ⚠️ **Two motions on the same pixels read as neither.** The rail
+     translates and blurs the whole panel through a drag; a screen playing its
+     own entrance on top of that reads as the content stuttering. A live change
+     swaps the screen with the entrance suppressed and lets the gesture carry
+     the motion.
+366. ⚠️ **A `MutationObserver` on `class` counts the wrong thing by
+     default.** `target.classList.contains(x)` in the callback is true for every
+     later mutation on an element that still has `x` — so a test counting
+     entrances counted a screen merely being hidden. Keep the previous value and
+     count the 0→1 transition.
+367. ⚠️ **A caption in a carousel sets the pitch for every slot.** One word
+     on the centred stop made all nine slots a word wide, which put a rail of
+     five at over two hundred pixels with the screens marooned at its ends. The
+     name belongs where it does not have to fit between two neighbours.
 

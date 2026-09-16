@@ -106,11 +106,11 @@ export class IslandSurface {
    * Where you are, under the middle, between the two arcs. Another sibling. */
   private rail = new IslandRail(
     () => this.wake(),
-    name => this.onChoose?.(name),
+    (name, live) => this.onChoose?.(name, live),
     on => this.reachedFor(on),
     (offset, settled) => this.carried(offset, settled),
   );
-  private onChoose?: (name: string) => void;
+  private onChoose?: (name: string, live: boolean) => void;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
@@ -660,8 +660,10 @@ export class IslandSurface {
   /** How many stops the rail shows, and whether it shows them unasked. */
   setRailPrefs(prefs: RailPrefs) { this.rail.setPrefs(prefs); }
 
-  /** Told when a stop is chosen — by a press, a drag or a flick. */
-  onStop(run: (name: string) => void) { this.onChoose = run; }
+  /** Told when a stop is chosen — by a press, a drag or a flick. `live` means
+   *  the drag is still in the hand, so the screen should swap without playing
+   *  its entrance. */
+  onStop(run: (name: string, live: boolean) => void) { this.onChoose = run; }
 
   /** The panel rides the rail. ⚠️ `translate` and `filter`, never
    *  `transform`: the island spends `transform` on its own press, and a

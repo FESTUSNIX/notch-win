@@ -25,6 +25,9 @@
 - Fix: Agent status gets stuck at "waiting" when the agent has actually finished
 - Style (shelf): instead of rows make the items cards (square-ish) with a thumbnail, title, format and size.
 - Feature (media): live lyrics sync using LRCLIB
+- Feature: In call mode with controls (mute, hand up, camera, etc.), integrate Teams, Zoom, Google Meet and WhatsApp if possible.
+- Feature (media): Add volume mixer. Control volume per app
+- Fix: Arcs and screen rail/switcher are visible when the command palette is open. The command palette should be a separate layer that doesn't show the global island UI
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose
@@ -346,7 +349,20 @@ captioned, which told you where you were and nothing about where you could go.
       spread divided by the count overlapped the discs the moment the radius
       was clamped for room; the spacing is what is guaranteed now and the span
       is whatever that comes to. AGENTS 361.
-- [ ] The header still names the screen, which the rail also does. It is there
+- [x] **Either the line or the screens, never both.** The rail was a black
+      pill with the stops inside it — a heavy piece of furniture directly under
+      a panel that is already a large black shape. It is the arcs' own mark
+      now, straight: a hint that there is a hover area, which goes as the
+      screens arrive. In the always-on mode there is no line at all.
+- [x] **Compact stops, each on its own ground**, so they sit close together and
+      still read against whatever is behind the island.
+- [x] **The screen changes DURING the drag**, not on release — walking three
+      screens was three separate drags, and the panel spent each gesture
+      showing something the rail had already left.
+- [x] ⚠️ **With its entrance suppressed while the drag is live.** Two motions
+      on the same pixels read as neither. AGENTS 364-365.
+- [x] The header names the screen — and now it is the only place that does,
+      which is what let the rail's slots shrink from a word wide to an icon. It is there
       because the header is the window's DRAG REGION and something has to be in
       it — but if the rail is always on, the name is said twice.
 
