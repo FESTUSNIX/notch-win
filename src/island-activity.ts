@@ -22,6 +22,8 @@ export type ScreenName =
    *  IS one — the difference being that a call also puts the island on this
    *  screen when it starts, because during a call this is the screen. */
   | "call"
+  /** Windows' own notification centre, mirrored. */
+  | "notices"
   /** ⚠️ Real, but its tab is only on screen while something is playing — see
    *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
    *  that is not there. */

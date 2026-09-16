@@ -104,6 +104,21 @@ pub struct Prefs {
     /// during a call shows the call.
     pub call_open: bool,
 
+    /* ── Notifications ───────────────────────────────────── */
+    /// Whether Windows' own notification centre is mirrored on the island.
+    ///
+    /// ⚠️ Reading it means every toast on the machine passes through this
+    /// app, so it is a switch rather than an assumption — and off, nothing is
+    /// asked for and nothing is polled.
+    pub notice_mode: bool,
+
+    /* ── The timer ──────────────────────────────────────── */
+    /// Minutes in a pomodoro, in the short break after one, and in the long
+    /// break after four.
+    pub pomodoro_work: u32,
+    pub pomodoro_break: u32,
+    pub pomodoro_long: u32,
+
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
     /// ⚠️ Off, nothing walks the Start Menu at launch — which is a shell call
@@ -156,6 +171,10 @@ impl Default for Prefs {
             rail_order: Vec::new(),
             rail_hidden: Vec::new(),
             rail_colours: BTreeMap::new(),
+            notice_mode: true,
+            pomodoro_work: 25,
+            pomodoro_break: 5,
+            pomodoro_long: 15,
             call_mode: true,
             call_mute_mic: true,
             call_open: true,
@@ -212,6 +231,12 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
         thresholds: prefs.thresholds.into_iter()
             .map(|(key, value)| (key, value.clamp(1, 100)))
             .collect(),
+        /* ⚠️ Bounded, like the fold delay: a pomodoro of zero minutes ends
+         * the instant it starts and fires a toast on every render, and one of
+         * a day is not a pomodoro. */
+        pomodoro_work: prefs.pomodoro_work.clamp(1, 180),
+        pomodoro_break: prefs.pomodoro_break.clamp(1, 60),
+        pomodoro_long: prefs.pomodoro_long.clamp(1, 120),
         ..prefs
     };
     let snapshot = {

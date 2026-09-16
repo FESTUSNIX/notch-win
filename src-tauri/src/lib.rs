@@ -17,6 +17,7 @@ mod dropprobe;
 mod log;
 mod model;
 mod notes;
+mod notices;
 mod notify;
 mod spotify;
 mod runlog;
@@ -479,6 +480,7 @@ pub fn run() {
         .manage(sessions::Latest::default())
         .manage(media::MediaState::default())
         .manage(call::CallState::default())
+        .manage(notices::NoticeState::default())
         .manage(calendar::CalendarState::default())
         .manage(shortcuts::ShortcutState_::default())
         .manage(apptime::AppTimeState::default())
@@ -553,6 +555,9 @@ pub fn run() {
             media::media_command,
             call::get_call,
             call::call_action,
+            notices::get_notices,
+            notices::notice_dismiss,
+            notify::notify_now,
             media::media_seek,
             audio::get_audio_devices,
             audio::set_audio_device,
@@ -678,6 +683,7 @@ pub fn run() {
             tasks::spawn(app.handle().clone());
             media::spawn(app.handle().clone());
             call::spawn(app.handle().clone());
+            notices::spawn(app.handle().clone());
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
             system::spawn(app.handle().clone());

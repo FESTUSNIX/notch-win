@@ -42,6 +42,24 @@ let demoCall = callFlag === "meet"
   : {active:callAsked, app:"zoom", appName:"Zoom", title:"Design Sync",
      icon:"", since:Date.now() - 743_000, muted:false,
      can:["mute", "video", "share", "hand", "leave", "open"], pid:4242};
+/* `?notices` fills the centre, `?notices=denied` refuses it. ⚠️ Both are
+   worth staging: "nothing has happened" and "Windows will not let this app
+   look" draw the same empty screen and want different words, and only one of
+   them is a bug. */
+const noticeFlag = new URLSearchParams(location.search).get("notices");
+let demoNotices = {
+  access: noticeFlag === "denied" ? "denied" : "allowed",
+  // Present and not a refusal. (`?notices` alone parses as an empty string.)
+  items: noticeFlag !== null && noticeFlag !== "denied" ? [
+    {id:1, app:"Slack", title:"Marek Nowak", body:"Can you look at the PR before standup?",
+     at:Date.now() - 90_000},
+    {id:2, app:"Outlook", title:"Design Sync in 15 minutes", body:"Teams meeting", at:Date.now() - 12 * 60_000},
+    {id:3, app:"Codenotch", title:"akcesfonia stopped", body:"Claude Code ran for 21m 10s.",
+     at:Date.now() - 55 * 60_000},
+    {id:4, app:"Brave", title:"Norton Password Manager", body:"Vault is synced and ready!",
+     at:Date.now() - 5 * 3_600_000},
+  ] : [],
+};
 let demoDevices = [
   {id:"bt", name:"Headphones (6- Mateusz's Buds3 Pro)", isDefault:true, isBluetooth:true},
   {id:"mon", name:"DELL U2724D (NVIDIA High Definition Audio)", isDefault:false, isBluetooth:false},
@@ -112,6 +130,7 @@ let demoPrefs: Record<string, unknown> = {
   railColours: Object.fromEntries((new URLSearchParams(location.search).get("tint") ?? "")
     .split(",").filter(Boolean).map(one => one.split(":")) as [string, string][]), useEverything: true,
   callMode: true, callMuteMic: true, callOpen: true,
+  noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
@@ -151,6 +170,14 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "reset_position" || command === "open_log" || command === "quit_app") return undefined as T;
   if (command === "get_media") return structuredClone(demoMedia) as T;
   if (command === "get_call") return structuredClone(demoCall) as T;
+  if (command === "get_notices") return structuredClone(demoNotices) as T;
+  if (command === "notice_dismiss") {
+    const id = args.id as number | undefined;
+    demoNotices = {...demoNotices,
+      items: id === undefined ? [] : demoNotices.items.filter(one => one.id !== id)};
+    return structuredClone(demoNotices) as T;
+  }
+  if (command === "notify_now") return true as T;
   if (command === "call_action") {
     const action = String(args.action ?? "");
     /* Only the mute changes anything the preview can show, which is the honest

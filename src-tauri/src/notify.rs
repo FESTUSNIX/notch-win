@@ -45,6 +45,17 @@ pub fn register() {
     }
 }
 
+/// Raise a toast from the island — the timer finishing, and nothing else yet.
+///
+/// ⚠️ A command, so the WEBVIEW can interrupt you. That is a real capability
+/// to hand a page, and it is handed over deliberately: a countdown that ends
+/// while you are in another window is worth exactly one interruption, and the
+/// island has no other way to reach you there.
+#[tauri::command]
+pub fn notify_now(title: String, body: String) -> bool {
+    toast(&title, &body)
+}
+
 /// Raise a toast. Returns whether the shell accepted it — the caller has a
 /// visible indicator of its own to fall back on, so a refusal is worth knowing
 /// about but is never worth failing over.
@@ -81,6 +92,60 @@ pub fn toast(title: &str, body: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Can this app read the notifications OTHER apps raise?
+    ///
+    /// The answer decides whether a notifications shelf can mirror Windows'
+    /// own Action Centre or can only hold this app's own notices, so it is
+    /// asked of the machine rather than argued about.
+    ///
+    /// ⚠️ `RequestAccessAsync` can raise a consent prompt, which is why this
+    /// is `#[ignore]`d rather than part of the suite.
+    /// `cargo test --lib can_this_app_read -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn can_this_app_read_other_apps_notifications() {
+        use windows::UI::Notifications::Management::{
+            UserNotificationListener, UserNotificationListenerAccessStatus,
+        };
+        use windows::UI::Notifications::NotificationKinds;
+
+        fn wait<T: windows::core::RuntimeType + 'static>(
+            op: windows_future::IAsyncOperation<T>,
+        ) -> windows::core::Result<T> {
+            // Spin rather than await: same reason as media.rs.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                match op.Status() {
+                    Ok(windows_future::AsyncStatus::Started)
+                        if std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    _ => return op.GetResults(),
+                }
+            }
+        }
+
+        let listener = match UserNotificationListener::Current() {
+            Ok(listener) => listener,
+            Err(error) => {
+                println!("no listener at all: {error:?}");
+                return;
+            }
+        };
+        match listener.RequestAccessAsync().and_then(wait) {
+            Ok(UserNotificationListenerAccessStatus::Allowed) => {
+                println!("ALLOWED");
+                match listener.GetNotificationsAsync(NotificationKinds::Toast).and_then(wait) {
+                    Ok(list) => println!("{} notification(s) in the centre", list.Size().unwrap_or(0)),
+                    Err(error) => println!("allowed, but the read failed: {error:?}"),
+                }
+            }
+            Ok(status) => println!("REFUSED: {status:?}"),
+            Err(error) => println!("REFUSED with an error: {error:?}"),
+        }
+    }
 
     #[test]
     fn escapes_what_would_break_the_parse() {

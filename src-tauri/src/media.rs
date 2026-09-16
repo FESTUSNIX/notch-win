@@ -73,7 +73,7 @@ impl MediaState {
 /// apartment for what is a local, sub-millisecond call, so this spins on the
 /// status the interface still exposes. The deadline is the point: a player that
 /// never completes must not wedge the media thread for the life of the app.
-fn block<T: RuntimeType + 'static>(op: IAsyncOperation<T>) -> windows::core::Result<T> {
+pub(crate) fn block<T: RuntimeType + 'static>(op: IAsyncOperation<T>) -> windows::core::Result<T> {
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     loop {
         match op.Status() {

@@ -48,6 +48,10 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  noticeMode: boolean;
+  pomodoroWork: number;
+  pomodoroBreak: number;
+  pomodoroLong: number;
   callMode: boolean;
   callMuteMic: boolean;
   callOpen: boolean;
@@ -201,6 +205,19 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Mute the microphone too", "As well as pressing the app\u2019s own mute. Off, the mute is only as reliable as that shortcut.", check("call-mute-mic"))}
       ${row("Go to the call", "A call starting puts the island on its screen, so opening it shows the call.", check("call-open"))}
     </div>
+    <div><p class="set-label">Notifications</p><div class="set-group">
+      ${row("Mirror the notification centre", "The header shows how many are waiting, and the Notices screen shows them.", check("notice-mode"))}
+    </div>
+    <p class="set-why">Codenotch shows what is already in Windows\u2019 own centre and keeps no copy of its own \u2014 dismissing one here dismisses it there.</p></div>
+    <div><p class="set-label">Pomodoro</p><div class="set-group">
+      ${row("Focus", "How long one pomodoro runs.",
+        `<input type="range" id="pom-work" min="5" max="90" step="5"><span class="set-value" id="pom-work-value"></span>`)}
+      ${row("Break", "The short one, after each pomodoro.",
+        `<input type="range" id="pom-break" min="1" max="30" step="1"><span class="set-value" id="pom-break-value"></span>`)}
+      ${row("Long break", "After every fourth one.",
+        `<input type="range" id="pom-long" min="5" max="60" step="5"><span class="set-value" id="pom-long-value"></span>`)}
+    </div>
+    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. Set a plain countdown from the palette \u2014 type \u201ctimer 12\u201d.</p></div>
     <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>`,
 
   pill: `
@@ -337,6 +354,7 @@ let prefs: Prefs = {
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
   railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
+  noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -504,6 +522,18 @@ foldDelay.oninput = () => {
   savePrefs();
 };
 
+const POMODORO = [
+  ["pom-work", "pomodoroWork"], ["pom-break", "pomodoroBreak"], ["pom-long", "pomodoroLong"],
+] as const;
+for (const [id, key] of POMODORO) {
+  const slider = get<HTMLInputElement>(id);
+  slider.oninput = () => {
+    prefs[key] = Number(slider.value);
+    get(`${id}-value`).textContent = `${prefs[key]}m`;
+    savePrefs();
+  };
+}
+
 const railVisible = get<HTMLInputElement>("rail-visible");
 railVisible.oninput = () => {
   prefs.railVisible = Number(railVisible.value);
@@ -525,6 +555,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
  * layer up. */
 for (const [id, key] of [
   ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
+  ["notice-mode", "noticeMode"],
 ] as const) {
   get<HTMLInputElement>(id).onchange = event => {
     prefs[key] = (event.target as HTMLInputElement).checked;
@@ -541,6 +572,7 @@ for (const [id, key] of [
 const SCREENS: { name: string; label: string }[] = [
   { name: "home", label: "Home" },
   { name: "call", label: "Call" },
+  { name: "notices", label: "Notices" },
   { name: "today", label: "Today" },
   { name: "media", label: "Playing" },
   { name: "agents", label: "Agents" },
@@ -1099,6 +1131,12 @@ function paintPrefs() {
   get<HTMLInputElement>("rail-always").checked = prefs.railAlways;
   get<HTMLInputElement>("rail-flat").checked = prefs.railFlat;
   get<HTMLInputElement>("call-mode").checked = prefs.callMode;
+  get<HTMLInputElement>("notice-mode").checked = prefs.noticeMode;
+  for (const [id, key] of POMODORO) {
+    const slider = get<HTMLInputElement>(id);
+    slider.value = String(prefs[key]);
+    get(`${id}-value`).textContent = `${prefs[key]}m`;
+  }
   get<HTMLInputElement>("call-mute-mic").checked = prefs.callMuteMic;
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   paintScreens();

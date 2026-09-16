@@ -3,7 +3,7 @@
 ## My ideas for the next features
 
 - Currency converter extension for the command palette
-- Notifications shelf/screen which keeps recent notifications and allows for quick actions
+- Notifications shelf/screen which keeps recent notifications and allows for quick actions (like snooze, dismiss, open app and quick reply)
 - Pomodoro widget
 
 - ~~Quick note widget with history of all notes, search~~ — **done**. A Notes
@@ -23,11 +23,6 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
-- ~~Style (shelf): cards with a plinth, title, format and size~~ — done, and the
-  plinth now carries the file's **real** preview. ⚠️ The shell's thumbnail, by
-  shelf ID — not Tauri's asset protocol, which would have handed the WebView
-  the disk. Asked once per file per modification time, and a file the shell
-  has nothing for keeps its glyph.
 - Feature (media): live lyrics sync using LRCLIB
 - ~~Feature: In call mode with controls~~ — **done**. The microphone is the
   signal: an app with an active capture session is in a call, which is the same
@@ -53,6 +48,8 @@
 - Feature (media): Add volume mixer. Control volume per app
 
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
+
+- Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
 
 ---
 
@@ -89,6 +86,12 @@ until the answer arrives as a `tool_result`.
 - Fix (command palette): When closing the command palette, expanded island shows up before folding. Fix that.
 - Feature: reordering screens/tabs, hiding them, and a colour each — eight
   preset tones plus a custom picker, right-click to clear back to the accent.
+
+- ~~Style (shelf): cards with a plinth, title, format and size~~ — done, and the
+  plinth now carries the file's **real** preview. ⚠️ The shell's thumbnail, by
+  shelf ID — not Tauri's asset protocol, which would have handed the WebView
+  the disk. Asked once per file per modification time, and a file the shell
+  has nothing for keeps its glyph.
 
 ---
 

@@ -2911,9 +2911,56 @@ The two halves were the same fault.
      teams` ends every window Teams has, so as the test for "this is the call
      window" it matched the inbox as readily as the meeting — and the
      tie-breaker below it never ran.
-424. ⚠️ **A screen that rebuilds itself on every `render()` is paid for by the
-     whole panel.** The call screen replaced its own children each time, which
-     is nothing on a tick and real work during a rail drag: three of the rail's
-     timing tests started failing in a parallel run and passing alone, which
-     reads exactly like flake. It was not flake. Redraw on a key, and let the
-     per-second tick write text only.
+424. ⚠️ **The rail's timing tests fail under PARALLEL load, and it looks
+     exactly like a regression.** A dozen specs here measure motion — a drag
+     frame by frame, a spring that has to have settled — and on three parallel
+     Chrome instances they miss frames. Two or three fail, never the same two,
+     always passing alone. ⚠️ **This entry first said the cause was work I had
+     added per frame, and that was wrong**: the same failures came back after
+     that work was keyed away. `--workers=1` fixed most of it — 78/78 on a
+     quiet machine — and not all: the next two runs each failed one test, a
+     different one, while the machine was busy with a video call. The config
+     pins one worker now, and the rule is that **a failure here is only real if
+     it survives being run alone**. The per-frame lesson below still stands on
+     its own merits; it just was not this.
+425. ⚠️ **A screen that rebuilds itself on every `render()` is paid for by the
+     whole panel.** `render()` runs on every frame of a rail drag, so a screen
+     that replaces its own children each time does that work per frame to
+     change nothing — and throws away the hover and focus on whatever the
+     pointer is over. Redraw on a key; let the per-second tick write text only.
+426. ⚠️ **`UserNotificationListener` works for an UNPACKAGED app.** It is
+     documented as needing the `userNotificationListener` capability, which
+     only a packaged app can declare, so the reasonable expectation is a flat
+     refusal — and the reasonable design is a notifications screen that can
+     only hold this app's own notices. Asked on a real machine it answers
+     `Allowed` and hands back the whole centre. The probe in `notify.rs` is
+     kept so the day that stops being true is a test failure rather than an
+     empty screen.
+427. ⚠️ **A notification's text is a LIST, not a title and a body.** The
+     template decides how many elements there are and apps use one, two or
+     three, so element 0 is the title and the rest join. An empty list is a
+     real notification (an image-only toast) and is kept, named after its app.
+428. ⚠️ **WinRT `DateTime` is 100ns ticks since 1601, not since 1970.** The
+     difference is 11644473600 seconds. Skip it and every notification is
+     dated to the seventeenth century — which still SORTS correctly, so the
+     list looks right and every timestamp on it is wrong.
+429. ⚠️ **Mirror the notification centre; never archive it.** Keeping our own
+     copy so things "stay in the shelf" would build a private, durable log of
+     someone's messages, which is a much larger promise than showing them what
+     is already on their own screen. Dismissing a row removes it from Windows,
+     and when the centre is empty so is the screen.
+430. ⚠️ **The header may count them; it must never quote them.** The island is
+     on screen all day, including while its owner is sharing it — the same
+     argument that keeps an address out of a call's title. Content lives on a
+     screen you have to open.
+431. ⚠️ **A countdown is an END TIME, never a remaining number.** A number
+     ticked down drifts against the clock, stops while the machine sleeps and
+     cannot survive a reload. And a stored countdown that ran out while the app
+     was closed must be DROPPED rather than fired: otherwise every launch after
+     lunch announces a pomodoro that ended an hour ago, and the one thing a
+     timer must never do is go off at the wrong time.
+432. ⚠️ **Node's type stripping refuses a parameter property**, so
+     `constructor(private changed: () => void)` makes a file unimportable by
+     `node --test` — which is the whole reason an engine lives in a file of its
+     own. Declare the fields and assign them. Same trap `media-format.ts`
+     exists to route around, met from the other side.

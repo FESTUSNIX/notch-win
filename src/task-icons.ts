@@ -13,6 +13,7 @@ import {
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
+  Notification01Icon, Timer01Icon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -52,6 +53,8 @@ const icons = {
      endpoint's state IS readable — see call.rs. */
   mic: Mic01Icon, micOff: MicOff01Icon, share: ScreenShareIcon,
   hand: HandIcon, hangup: CallEnd01Icon,
+  // The header's two chips.
+  bell: Notification01Icon, timer: Timer01Icon,
 };
 export type TaskIcon = keyof typeof icons;
 

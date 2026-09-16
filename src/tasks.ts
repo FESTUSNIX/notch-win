@@ -5,6 +5,8 @@
  * header, the tabs and which screen is showing; each screen owns its own body.
  */
 import { IslandSurface } from "./island-surface";
+import { element } from "./dom";
+import { paintIcon } from "./task-icons";
 import { cpx } from "./layout";
 import { type TaskIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
@@ -28,6 +30,9 @@ import { MediaScreen, MediaSource } from "./screen-media";
  * two, so the mute lives inside whichever window is covered by the one you are
  * working in. That join is the whole feature. */
 import { CallScreen, CallSource } from "./screen-call";
+import { NoticeSource, NoticesScreen } from "./screen-notices";
+import { DEFAULT_LENGTHS, Timer, phaseName, spokenEnd } from "./timer";
+import { timerText } from "./focus-timer";
 import { NotesScreen } from "./screen-notes";
 import { CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
@@ -55,6 +60,11 @@ const TABS: { name: ScreenName; icon: TaskIcon; label: string }[] = [
    * forty minutes. A permanent stop for it would be nine-tenths of the day
    * spent on a screen that says "no call is running". */
   { name: "call", icon: "mic", label: "Call" },
+  /* ⚠️ A screen, and NOT a rail stop by default — see `stops()`. The bell
+   * in the header is how you get here, which is the whole point of putting it
+   * there: the rail is for places you go on purpose, and a notification is
+   * something that happened to you. */
+  { name: "notices", icon: "bell", label: "Notices" },
   { name: "today", icon: "today", label: "Today" },
   /* ⚠️ The player's tab exists only while something is playing — see
    * `paintMediaTab`. It was removed for being a permanent tab holding a title
@@ -103,6 +113,8 @@ const WIDTH: Record<ScreenName, number> = {
    * as the controls and no wider — a full-width island with six buttons
    * huddled in the middle reads as a window somebody left open. */
   call: 1180,
+  // Rows of prose somebody else wrote, so the same measure as the notes.
+  notices: 1560,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -148,10 +160,22 @@ app.innerHTML = `<div id="notch-shell">
              below carries it too, but the rail can be dragged away from and
              the header cannot. -->
         <h2 class="island-where" id="island-where"></h2>
+        <!-- ⚠️ The right-hand end of the header, which was empty on every
+             screen. What goes here is what is true whatever screen you are on
+             — a countdown you started and how much is waiting for you — and
+             NOT another set of screen tools: those are on the far arc, and
+             this line is the one place a control does not change under you.
+             Both are buttons inside the DRAG REGION, which is why the drag
+             handler below skips a press that landed on one. -->
+        <div class="head-side">
+          <button type="button" class="head-chip" id="head-timer" hidden></button>
+          <button type="button" class="head-chip" id="head-bell" hidden></button>
+        </div>
       </header>
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
+        <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
         <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
@@ -196,6 +220,10 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  noticeMode: boolean;
+  pomodoroWork: number;
+  pomodoroBreak: number;
+  pomodoroLong: number;
   callMode: boolean;
   callMuteMic: boolean;
   callOpen: boolean;
@@ -209,6 +237,7 @@ interface Prefs {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
+  noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -246,6 +275,28 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
   focus: active => surface.input(active),
 });
 const callSource = new CallSource(() => render(), (what, why) => say(what, why));
+const noticeSource = new NoticeSource(() => render(), (what, why) => say(what, why));
+/* The header's countdown. ⚠️ The lengths are read through a function rather
+ * than captured, so changing them in settings applies to the next phase instead
+ * of at the next restart — the same live-preferences rule everything else here
+ * follows. */
+const timer = new Timer(
+  () => render(),
+  finished => {
+    const said = spokenEnd(finished, lengths());
+    say(said.title, said.body);
+    /* ⚠️ And a real toast, because the whole point of a countdown is that
+     * you are not looking at the thing that is counting. The island cannot
+     * reach you inside another window; the shell can. */
+    void call("notify_now", { title: said.title, body: said.body }).catch(() => {});
+  },
+  () => lengths(),
+);
+const lengths = () => ({
+  work: prefs.pomodoroWork || DEFAULT_LENGTHS.work,
+  rest: prefs.pomodoroBreak || DEFAULT_LENGTHS.rest,
+  long: prefs.pomodoroLong || DEFAULT_LENGTHS.long,
+});
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
 const shelf = new ShelfScreen(get("shelf-body"), () => render(), () => cpx(WIDTH.shelf));
@@ -284,6 +335,7 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * "put me where the new thing is" is exactly the behaviour some people
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
+const notices = new NoticesScreen(get("notices-body"), noticeSource);
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -335,6 +387,11 @@ function stops(): RailStop[] {
      * nowhere for either to land. */
     hidden: (tab.name === "media" && !media.media.active)
       || (tab.name === "call" && !callSource.call.active)
+      /* ⚠️ Off the rail unless you put it there. The bell in the header is
+       * how you reach this, and the rail is for places you go on purpose —
+       * see the note on TABS. It is still reorderable and switchable in
+       * settings like every other screen, and still in the palette. */
+      || (tab.name === "notices" && screen !== "notices" && !prefs.railOrder.includes("notices"))
       || (tab.name !== "home" && prefs.railHidden.includes(tab.name)),
   })).sort((a, b) => rank(a.name as ScreenName) - rank(b.name as ScreenName));
 }
@@ -552,6 +609,81 @@ function claims(): (Activity | null)[] {
   ];
 }
 
+/* ── The header's right-hand end ─────────────────────────────────
+ * Two chips that are true on every screen, so they can live on the one line
+ * that does not change with the screen.
+ *
+ * ⚠️ Both are HIDDEN when they have nothing to say. A permanent bell reading
+ * zero and a permanent timer reading nothing are two pieces of furniture on a
+ * header with room for about one — and the whole reason there is room here at
+ * all is that it was empty. */
+/** A chip's glyph and its word, built once and then written into.
+ *
+ * ⚠️ Built once is the whole point: both of these change every second, and
+ * an element rebuilt every second cannot be hovered, focused or animated — the
+ * same rule `renderActivity` follows for the pill. */
+function chipParts(chip: HTMLElement, second: string): { mark: HTMLElement; text: HTMLElement } {
+  const found = chip.querySelector<HTMLElement>(".head-mark");
+  const said = chip.querySelector<HTMLElement>(`.${second}`);
+  if (found && said) return { mark: found, text: said };
+  const mark = element("span", "head-mark");
+  const text = element("span", second);
+  chip.replaceChildren(mark, text);
+  return { mark, text };
+}
+
+/** What the header last drew, so a frame that would draw the same thing does
+ *  not draw at all.
+ *
+ * ⚠️ `render()` runs on every frame of a rail drag, and both of these chips
+ * are hidden most of the day — so without this the panel pays for two element
+ * lookups, an icon paint and two text writes, per frame, to change nothing.
+ * Measured by the rail's own timing tests, which started failing under load
+ * when this was unconditional. */
+let headDrawn = "";
+
+function paintHead() {
+  const running = timer.state;
+  const waiting = noticeSource.count;
+  const key = [
+    running ? `${running.phase}:${timer.seconds()}:${running.endsAt === null}` : "",
+    waiting,
+  ].join("|");
+  if (key === headDrawn) return;
+  headDrawn = key;
+
+  const chip = get<HTMLButtonElement>("head-timer");
+  chip.hidden = !running;
+  if (running) {
+    const left = timerText(timer.seconds());
+    chip.dataset.phase = running.phase;
+    chip.classList.toggle("is-held", running.endsAt === null);
+    /* ⚠️ Written in place, not rebuilt: this changes every second, and a
+     * chip rebuilt every second can never be hovered, focused or animated. */
+    const { mark, text } = chipParts(chip, "head-text");
+    paintIcon(mark, "timer");
+    text.textContent = left;
+    chip.setAttribute("aria-label", `${phaseName(running)} — ${left} left`);
+    chip.setAttribute("data-tip", running.endsAt === null
+      ? `${phaseName(running)} paused — press to carry on`
+      : `${phaseName(running)} — press to pause`);
+  }
+
+  const bell = get<HTMLButtonElement>("head-bell");
+  const count = waiting;
+  bell.hidden = count === 0;
+  if (count) {
+    const { mark, text } = chipParts(bell, "head-count");
+    paintIcon(mark, "bell");
+    /* ⚠️ A COUNT, never a word of what they say. The island is on screen
+     * all day, including while its owner is sharing it — the same argument
+     * that keeps an address out of a call's title. */
+    text.textContent = count > 99 ? "99+" : String(count);
+    bell.setAttribute("aria-label", `${count} notification${count === 1 ? "" : "s"}`);
+    bell.setAttribute("data-tip", "What Windows has been trying to tell you");
+  }
+}
+
 /** Draw the collapsed pill: the live claim if there is one, the resting three
  *  slots otherwise. Split because at rest the pill is not one claim with its
  *  parts blank — it is three independent things sharing a strip. */
@@ -589,6 +721,8 @@ function render() {
   home.render();
   player.render();
   callScreen.render();
+  notices.render();
+  paintHead();
   /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
    * handle is the call ending while you are LOOKING at it, which would leave
    * the island on a screen that says nothing with no way to tell what
@@ -605,6 +739,7 @@ function render() {
     notes: () => notes.tools(),
     calendar: () => calendar.tools(),
     media: () => player.tools(),
+    notices: () => notices.tools(),
   };
   /* ⚠️ In the TAB under the island now, not in the header beside the tabs.
    * The header is the same on every screen — tabs, pin, settings, close — and
@@ -693,6 +828,52 @@ if (preview) {
  * the row from the stars file alone. A screen needs no rebuilding — this
  * provider offers it on every query including the empty one — so its `kind` is
  * blank and the stored copy is deduped away in favour of this live one. */
+/* The timer's verbs.
+ *
+ * ⚠️ Here rather than on the chip, and the chip is the reason: a header has
+ * room for a countdown and one press, so the press is the one you make twenty
+ * times (pause) and everything else is typed. `timer 12` is the same trick the
+ * arithmetic row uses — the query IS the argument.
+ */
+palette.add(query => {
+  const out: Action[] = [];
+  const minutes = /^(?:timer|countdown)\s+(\d{1,3})$/i.exec(query.trim());
+  if (minutes) {
+    const count = Number(minutes[1]);
+    out.push({
+      id: `timer:${count}`,
+      icon: "timer",
+      title: `Set a timer for ${count} minute${count === 1 ? "" : "s"}`,
+      run: () => { timer.start(count); },
+      // One id per number would evict forty real entries in an afternoon.
+      volatile: true,
+    });
+  }
+  if (!timer.state) {
+    out.push({
+      id: "timer:pomodoro",
+      icon: "timer",
+      title: "Start a pomodoro",
+      note: `${lengths().work} minutes, then a break`,
+      run: () => { timer.start(); },
+    });
+  } else {
+    out.push({
+      id: "timer:toggle",
+      icon: "timer",
+      title: timer.state.endsAt === null ? "Carry on the timer" : "Pause the timer",
+      run: () => timer.toggle(),
+    });
+    out.push({
+      id: "timer:stop",
+      icon: "close",
+      title: `Stop the ${phaseName(timer.state).toLowerCase()}`,
+      run: () => timer.stop(),
+    });
+  }
+  return out;
+});
+
 palette.add(() => TABS.map(tab => ({
   id: `go:${tab.name}`,
   title: tab.label,
@@ -1155,6 +1336,12 @@ collapsedLayer.addEventListener("click", event => {
   media.control("playpause");
 }, true);
 
+get("head-bell").addEventListener("click", () => show("notices"));
+/* ⚠️ Press to PAUSE, not to stop. Stopping is in the palette, where a
+ * destructive verb belongs — a countdown you cannot get back is a bad thing to
+ * put under the same press that pauses it. */
+get("head-timer").addEventListener("click", () => timer.toggle());
+
 /* The call's own controls, in click mode. ⚠️ Capturing, and the press must
  * not reach the pill underneath — muting must not also open the island, which
  * is the one thing you do NOT want to happen while somebody is looking at your
@@ -1280,7 +1467,14 @@ let dragStart: { x: number; y: number } | null = null;
 let dragged = false;
 for (const handle of [collapsedLayer, document.querySelector<HTMLElement>(".island-head")!]) {
   handle.addEventListener("pointerdown", event => {
-    if (event.button === 0) { dragStart = { x: event.screenX, y: event.screenY }; dragged = false; }
+    /* ⚠️ Not from a button. The header is the island's drag region and the
+     * pill carries the call's controls, so without this a press on the bell or
+     * on mute that wanders five pixels drags the WINDOW instead — and the
+     * press it came from is then cancelled as a drag. */
+    if (event.button === 0 && !(event.target as HTMLElement).closest("button")) {
+      dragStart = { x: event.screenX, y: event.screenY };
+      dragged = false;
+    }
   });
   handle.addEventListener("pointermove", event => {
     if (dragStart && Math.hypot(event.screenX - dragStart.x, event.screenY - dragStart.y) > 5) {
@@ -1539,6 +1733,7 @@ async function boot() {
   await shelf.boot();
   await notes.boot();
   await callSource.boot();
+  await noticeSource.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();
@@ -1551,6 +1746,11 @@ async function boot() {
     today.paintTimer();
     agentsScreen.tick();
     callScreen.tick();
+    notices.tick();
+    /* The countdown, once a second. ⚠️ `tick` returns whether a phase ENDED,
+     * which needs the whole shell redrawn — the chip alone would leave the
+     * rail and the palette holding a timer that has finished. */
+    if (timer.tick()) render(); else paintHead();
     paintPill();
   }, 1000);
   window.setInterval(() => { today.tick(); render(); }, 60000);
