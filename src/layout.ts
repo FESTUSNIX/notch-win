@@ -244,6 +244,13 @@ export const FRAME = {
   /** And how fast, in design pixels a second. Above this the hand is clearly
    *  going somewhere rather than choosing, so nothing in between is drawn. */
   railLiveSpeed: 1400,
+  /** How hard the panel resists being carried past one screen's worth.
+   *
+   * ⚠️ A log curve, so it never actually stops — it only costs more and more
+   * rail to move it. At 0.45 the whole nine-screen list comes to about two
+   * screens of lean: far enough to read as "left behind", short enough that
+   * the panel is still recognisably the screen it came from. */
+  railResist: 0.45,
 
   /** How far the panel slides for one stop's worth of drag. ⚠️ A FRACTION of
    *  the rail's own step, not all of it: the panel is four times the rail's

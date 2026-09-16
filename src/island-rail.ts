@@ -310,7 +310,14 @@ export class IslandRail {
        * dividing by the millisecond below them turns a gentle drag into a
        * flick. */
       const dt = Math.max(8, at - this.lastT);
-      this.speed = (now - this.lastX) / dt * 1000;
+      /* ⚠️ SMOOTHED, because one sample latches a gate for the whole gesture.
+       * A pointer stream stutters — a frame drops, two moves coalesce, the
+       * machine is busy — and a single pair delivered eight milliseconds apart
+       * reads as hundreds of pixels a second whatever the hand was doing. Taken
+       * raw, that one sample switched the live preview off for the rest of a
+       * perfectly deliberate drag, at random, on a busy machine. */
+      const raw = (now - this.lastX) / dt * 1000;
+      this.speed = this.speed * 0.6 + raw * 0.4;
     }
     /* ⚠️ Measured on the FIRST move too, from the press point. The speed
      * gate cannot see that move — there is no earlier sample to divide by — so
@@ -446,13 +453,20 @@ export class IslandRail {
      * flip is all there is: the panel slides left, snaps right, and does it
      * again for every screen gone past.
      *
-     * ⚠️ Capped at one stop's worth. The rail can travel the whole list from
-     * here; the panel is not going with it. It leans as far as one screen and
-     * holds there, which reads as having been left behind — which it has. */
+     * ⚠️ RESISTED past one stop's worth, not stopped at it. A hard cap is the
+     * honest thing to say — the panel is not following you any further — but it
+     * reads as the thing having jammed, and a gesture that keeps going against
+     * something frozen feels like a fault rather than a limit. So it keeps
+     * moving, and every further screen of rail travel moves it less than the
+     * one before: the whole nine-screen list comes to about two screens of
+     * lean. A bow being drawn, rather than a drawer hitting its stop. */
     if (this.coasting) {
       const shown = this.live().findIndex(stop => stop.name === this.told);
       if (shown < 0) return 0;
-      return Math.max(-1, Math.min(1, bounded - shown));
+      const pull = bounded - shown;
+      const far = Math.abs(pull);
+      if (far <= 1) return pull;
+      return Math.sign(pull) * (1 + Math.log1p(far - 1) * FRAME.railResist);
     }
     return bounded - Math.round(bounded);
   }

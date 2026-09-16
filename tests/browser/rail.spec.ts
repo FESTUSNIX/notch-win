@@ -89,6 +89,20 @@ test("dragging the rail walks the screens, and a press still picks one", async (
    * opening changes what is in it — so a point worked out before the pointer
    * got there can be one the rail has since moved out from under. */
   await page.mouse.move(mid.x, mid.y);
+  /* ⚠️ Wait for it to hold still before taking the point to press. Arriving
+   * opens the rail and brings the name in, and both move things — a box read a
+   * frame too early gives a point the rail has since left, the press lands
+   * beside it, and the drag simply never starts. */
+  let steady = "";
+  await expect.poll(async () => {
+    const now = await page.locator("#island-rail").evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}`;
+    });
+    const same = now === steady;
+    steady = now;
+    return same;
+  }, {timeout: 5000}).toBe(true);
   const on = (await page.locator("#island-rail").boundingBox())!;
   const from = {x: on.x + on.width / 2, y: on.y + on.height / 2};
   await page.mouse.move(from.x, from.y);
@@ -207,8 +221,12 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   await page.mouse.up();
   await expect.poll(() => here(page)).toBe("media");
   // And the panel is handed back, unblurred and where it belongs.
+  /* ⚠️ A hair of blur, not exactly none. The carry eases back through a
+   * transition, so for a moment after it arrives the computed filter is
+   * `blur(0.19px)` — which is nothing to look at and not `"none"` to read. */
   await expect.poll(() => page.locator("#island-expanded").evaluate(el =>
-    getComputedStyle(el).filter)).toBe("none");
+    Number(/blur\(([\d.]+)px\)/.exec(getComputedStyle(el).filter)?.[1] ?? 0)))
+    .toBeLessThan(0.5);
 
   /* ⚠️ A press is still a press. The rail is draggable, so every click on a
    * stop is also a drag of a pixel or two — and without the slop threshold the
@@ -264,8 +282,23 @@ test("the name waits for the rail to stop, and the ends do not carry", async ({p
    * panel must not move. The rail itself rubber-bands — which is right, it
    * says "this is the end" — but carrying the content out there slides it off
    * and then snaps it back when the band returns, which is a jump nobody
-   * asked for. */
-  await page.mouse.move(from.x + 260, from.y, {steps: 10});
+   * asked for.
+   *
+   * ⚠️ From a CLEAN gesture, on the stop the panel is already showing. Pulled
+   * past the start after having walked to the next screen, the panel is
+   * legitimately one screen ahead of the rail and leans by that much — which is
+   * correct, and nothing to do with the claim being made here. */
+  await page.mouse.up();
+  /* ⚠️ Back to the FIRST stop deliberately. The small drag above may or may
+   * not have walked a screen depending on how the pointer stream was
+   * delivered, and "past the end" only means anything from the end. */
+  await page.locator('.rail-stop[data-tab="home"]').click();
+  await expect.poll(() => here(page)).toBe("home");
+  const again = (await page.locator("#island-rail").boundingBox())!;
+  const anew = {x: again.x + again.width / 2, y: again.y + again.height / 2};
+  await page.mouse.move(anew.x, anew.y);
+  await page.mouse.down();
+  await page.mouse.move(anew.x + 260, anew.y, {steps: 10});
   await expect.poll(() => page.locator("#island-expanded").evaluate(el =>
     Math.abs(parseFloat(getComputedStyle(el).translate) || 0))).toBeLessThan(0.5);
   expect(await page.locator(".rail-stop.is-here").getAttribute("data-tab")).toBe("home");
@@ -351,9 +384,9 @@ test("a long sweep does not rock the panel once it stops changing screens", asyn
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   const trail: {screen: string; carry: number}[] = [];
-  for (let i = 1; i <= 40; i++) {
+  for (let i = 1; i <= 56; i++) {
     await page.mouse.move(from.x - (grab * i) / 8, from.y);
-    await page.waitForTimeout(40);
+    await page.waitForTimeout(30);
     trail.push(await page.evaluate(() => ({
       screen: document.querySelector<HTMLElement>(".screen.active")?.dataset.screen ?? "",
       carry: parseFloat(getComputedStyle(document.getElementById("island-expanded")!).translate) || 0,
@@ -376,11 +409,24 @@ test("a long sweep does not rock the panel once it stops changing screens", asyn
   for (let i = 1; i < after.length; i++) {
     expect(after[i].carry).toBeLessThanOrEqual(after[i - 1].carry + 0.5);
   }
-  /* And it leans only as far as one screen's worth before holding — the rail
-   * can travel the whole list from there; the panel is not going with it. */
+  /* ⚠️ And it RESISTS rather than stopping. A hard cap is the honest thing to
+   * say — the panel is not following you any further — but a gesture pushing
+   * against something frozen reads as a fault rather than a limit. So the
+   * later part of the sweep still moves it, and moves it LESS than the earlier
+   * part did: a bow being drawn, not a drawer hitting its stop. */
+  const step = (a: typeof after) =>
+    Math.abs(a[a.length - 1].carry - a[0].carry) / Math.max(1, a.length - 1);
+  const half = Math.floor(after.length / 2);
+  const early = step(after.slice(0, half));
+  const late = step(after.slice(half));
+  expect(late).toBeGreaterThan(0.2);
+  expect(late).toBeLessThan(early * 0.7);
+
+  /* Far enough to read as "left behind", short enough that the panel is still
+   * recognisably the screen it came from. */
   const leaned = Math.abs(after[after.length - 1].carry);
-  expect(leaned).toBeGreaterThan(20);
-  expect(leaned).toBeLessThan(90);
+  expect(leaned).toBeGreaterThan(50);
+  expect(leaned).toBeLessThan(200);
 });
 
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {

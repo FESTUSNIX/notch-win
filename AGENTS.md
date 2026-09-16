@@ -2673,4 +2673,16 @@ The two halves were the same fault.
      crossing and the flip is all there is: the panel slid one way, snapped
      back, and did it again for every screen gone past. Measure to the thing
      being SHOWN, not to the nearest one, and cap it.
+380. ⚠️ **One sample must not latch a gesture gate.** A pointer stream
+     stutters — a frame drops, two moves coalesce, the machine is busy — and a
+     single pair delivered eight milliseconds apart reads as hundreds of pixels
+     a second whatever the hand was doing. Taken raw, that switched the rail's
+     live preview off for the rest of a perfectly deliberate drag, at random,
+     on a busy machine. Smooth the speed before anything reads it.
+381. ⚠️ **A hard limit reads as a jam.** Stopping the panel dead at one
+     screen's worth was the honest thing to say — it is not following you any
+     further — but a gesture pushing against something frozen feels like a
+     fault. A log curve past the knee keeps it moving and makes every further
+     screen of travel move it less: a bow being drawn, not a drawer hitting its
+     stop.
 
