@@ -304,6 +304,11 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     {id:"f4", kind:"file", name:"moved.psd", path:"C:\\gone\\moved.psd", text:null,
      addedMs:Date.now()-9_000_000, missing:true, size:0},
   ]) as T;
+  /* ⚠️ One file has a preview and the rest do not, which is the real
+     shape of a shelf — a `.zip` is a glyph however long you wait. */
+  if (command === "shelf_thumb") {
+    return (args.id === "f1" ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAEUlEQVR4nGMIa1qBFTEMpAQACnFIAfXVen4AAAAASUVORK5CYII=" : null) as T;
+  }
   if (command.startsWith("shelf_")) return undefined as T;
   if (command === "get_runs") return (quiet ? [] : [
     {day:"", project:"akcesfonia", seconds:252, endedMs:Date.now()-3_600_000, waiting:true,

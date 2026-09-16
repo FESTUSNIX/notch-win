@@ -20,6 +20,7 @@ mod notify;
 mod spotify;
 mod runlog;
 mod shelf;
+mod thumbs;
 mod snooze;
 mod prefs;
 mod stars;
@@ -517,6 +518,7 @@ pub fn run() {
             shelf::shelf_add_bytes,
             dragout::shelf_drag,
             shelf::shelf_remove,
+            shelf::shelf_thumb,
             shelf::shelf_copy,
             shelf::copy_text,
             shelf::shelf_open,

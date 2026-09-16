@@ -2801,3 +2801,31 @@ The two halves were the same fault.
      row of nine takes a second look to find. Colour is what makes it findable
      without reading.
 
+404. ⚠️ **A preview is not a reason to hand the page a filesystem.** The
+     obvious way to show a shelved file is Tauri's asset protocol, and it
+     grants "read any file matching this glob" — the shelf holds whatever was
+     dropped on it, so the glob would have to be the disk. The command takes a
+     shelf ID and returns a PNG instead: no path crosses the bridge, and a
+     page that renders a lot of text it did not write gains nothing it can be
+     talked into reading.
+405. ⚠️ **It is the SHELL's thumbnail, not one decoded here.** Windows already
+     holds a cached, oriented, scaled preview for images, PDFs, video and
+     Office documents, and it is the picture Explorer shows — which is the one
+     the eye is expecting. Decoding a 40 MP JPEG to draw it at 120px is
+     slower, larger, and wrong more often.
+406. ⚠️ **`IShellItemImageFactory` hands back an opaque thumbnail with every
+     alpha byte at ZERO.** Written straight out that is a correctly sized,
+     correctly coloured, completely invisible PNG — and nothing errors. Force
+     alpha to 255 when the whole channel is zero, and only then: an icon with
+     a genuine cut-out has a mixed channel and must keep it.
+407. ⚠️ **Loud is not the same as findable.** The first fix for 403 added a
+     bloom around the active stop, and the rail then had one thing on it —
+     every glance landed on the selection whether or not you were looking for
+     it. A quiet wash at half the strength, in a colour nothing else on the
+     rail wears, is found just as fast and costs no attention when you are not
+     looking.
+408. ⚠️ **A Playwright failure that will not reproduce is probably my own
+     orphaned processes.** One test failed a full-suite run and then passed
+     three times in isolation; the cause was leftover vite/chrome workers from
+     an earlier interrupted run holding the port. Check `netstat` for the dev
+     port before believing a lone failure.

@@ -55,6 +55,10 @@ export class ShelfScreen {
   items: ShelfItem[] = [];
   /** Set for a moment after a copy, so the row can say it worked. */
   private copied = "";
+  /** id -> its preview, or `null` for "asked, and there is none". ⚠️ The
+   *  null matters: without it a file the shell cannot preview is asked about
+   *  again on every single render, forever. */
+  private art = new Map<string, string | null>();
   error = "";
 
   /**
@@ -172,6 +176,46 @@ export class ShelfScreen {
     return ext.length <= 5 ? ext.toUpperCase() : "FILE";
   }
 
+  /** Ask the shell for a picture of this file, and put it on the plinth.
+   *
+   * ⚠️ The glyph is drawn FIRST and replaced if a picture arrives. Waiting
+   * for the answer before drawing anything gives a shelf of empty squares for
+   * as long as the thumbnails take, and most files have no preview at all — a
+   * `.zip` is a glyph however long you wait for it.
+   *
+   * ⚠️ Remembered across renders. The shelf re-renders on every screen
+   * change, and asking the shell again each time is a round trip per card for a
+   * picture that has not changed. `thumbs.rs` caches on its side too; this is
+   * about not making the call. */
+  private picture(plinth: HTMLElement, item: ShelfItem) {
+    const had = this.art.get(item.id);
+    if (had === null) return;
+    if (had) return void this.hang(plinth, had);
+    void call<string | null>("shelf_thumb", { id: item.id })
+      .then(uri => {
+        this.art.set(item.id, uri ?? null);
+        /* ⚠️ The plinth may be gone by now — a render replaced it while the
+         * shell was thinking. `isConnected` is what says so; writing to a
+         * detached node is silent and draws nothing. */
+        if (uri && plinth.isConnected) this.hang(plinth, uri);
+      })
+      .catch(() => { this.art.set(item.id, null); });
+  }
+
+  private hang(plinth: HTMLElement, uri: string) {
+    if (plinth.querySelector(".shelf-shot")) return;
+    const shot = document.createElement("img");
+    shot.className = "shelf-shot";
+    shot.src = uri;
+    shot.alt = "";
+    /* ⚠️ `decoding="async"` and no width/height. The shell's previews are
+     * whatever aspect the file is, and the plinth is a fixed 4:3 box — the
+     * picture is fitted by CSS, not by attributes that would claim a size it
+     * does not have. */
+    shot.decoding = "async";
+    plinth.append(shot);
+  }
+
   private row(item: ShelfItem): HTMLElement {
     const row = element("div", `shelf-card${item.missing ? " is-missing" : ""}`);
     if (!item.missing && item.path) row.classList.add("can-drag");
@@ -186,6 +230,7 @@ export class ShelfScreen {
     paintIcon(mark, ICONS[item.kind] ?? "file");
     if (item.kind === "file" && !item.missing) {
       mark.append(element("span", "shelf-ext", this.format(item)));
+      this.picture(mark, item);
     }
 
     const copy = element("div", "shelf-copy");

@@ -1568,6 +1568,48 @@ test("the shelf is cards, and a card says what the thing is", async ({page}) => 
   expect(across).toBe(1);
 });
 
+test("a shelved file shows its real preview, and the rest keep their glyph", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+  await goTo(page, "shelf");
+
+  /* ⚠️ The glyph is drawn FIRST and replaced only if a picture arrives.
+   * Waiting for the answer before drawing anything gives a shelf of empty
+   * squares for as long as the shell takes — and most files have no preview at
+   * all, so for most cards the wait would never end in anything. */
+  await expect(page.locator(".shelf-card")).toHaveCount(4);
+  await expect.poll(() => page.locator(".shelf-shot").count()).toBe(1);
+
+  const shot = page.locator(".shelf-shot").first();
+  /* It fills the plinth rather than being letterboxed into it: a preview is a
+   * sample, and a photograph with two grey bars is a worse sample than a crop. */
+  const fit = await shot.evaluate(el => ({
+    fit: getComputedStyle(el).objectFit,
+    covers: el.getBoundingClientRect().width > 80,
+  }));
+  expect(fit.fit).toBe("cover");
+  expect(fit.covers).toBe(true);
+
+  /* ⚠️ The extension chip stays ON TOP of it. The picture is appended after
+   * the chip, so without a stacking order it covers the one thing that says
+   * what the file is. */
+  await expect(page.locator(".shelf-card").first().locator(".shelf-ext")).toBeVisible();
+  const order = await page.locator(".shelf-card").first().evaluate(card => {
+    const chip = card.querySelector(".shelf-ext") as HTMLElement;
+    const box = chip.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return hit === chip || chip.contains(hit);
+  });
+  expect(order).toBe(true);
+
+  /* And a file the shell cannot preview is asked about ONCE. Without the
+   * "asked, and there is none" answer being remembered, every render asks
+   * again, forever. */
+  await goTo(page, "home");
+  await goTo(page, "shelf");
+  await expect.poll(() => page.locator(".shelf-shot").count()).toBe(1);
+});
+
 test("Review looks backwards at four things nothing else joined", async ({page}) => {
   await page.goto("/tasks.html?nocal");
   await open(page);

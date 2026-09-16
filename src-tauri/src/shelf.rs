@@ -244,6 +244,30 @@ pub fn shelf_add_text(app: AppHandle, text: String) -> bool {
     add_text(&app, text)
 }
 
+/// A small picture of one shelved file, for the card to show.
+///
+/// ⚠️ By ID, never by path. The WebView asks for something it can already
+/// see and gets a PNG back; it cannot name a file of its own, so nothing here
+/// can be turned into "read that one instead". See `thumbs.rs` on why the
+/// asset protocol was not the answer.
+///
+/// ⚠️ And it answers `None` for anything that is not a real file on disk.
+/// A shelved link or scrap of text has no path, and a file that has moved has
+/// one that no longer resolves — the card draws its glyph in both cases.
+#[tauri::command]
+pub fn shelf_thumb(app: AppHandle, id: String) -> Option<String> {
+    let path = {
+        let state = app.state::<Store>();
+        let items = state.0.lock().ok()?;
+        let item = items.iter().find(|one| one.id == id)?;
+        if item.kind != "file" || item.missing {
+            return None;
+        }
+        item.path.clone()?
+    };
+    crate::thumbs::of(&path)
+}
+
 #[tauri::command]
 pub fn shelf_remove(app: AppHandle, id: String) {
     let snapshot = {

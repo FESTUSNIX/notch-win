@@ -409,15 +409,19 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    mixed off that one value with `color-mix`, so a screen is ONE colour and the
    rest is arithmetic — the same rule the whole surface follows. */
 .rail-stop { --stop: var(--accent); }
+/* ⚠️ NO glow, and the wash is quiet. The first version had an outer bloom and
+   a 26% ground, and it did exactly what it was told: it took the eye every
+   time, on a control you look at once a minute. A selection has to be findable,
+   not loud — a ring and a shade of ground is enough to pick out of nine, and
+   the panel above it is what you are actually here to read. */
 .rail-stop.is-here { color:#fff;
-  background:color-mix(in srgb, var(--stop) 26%, #101010);
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--stop) 72%, transparent),
-    0 0 12px -2px color-mix(in srgb, var(--stop) 55%, transparent),
+  background:color-mix(in srgb, var(--stop) 13%, #121212);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--stop) 55%, transparent),
     var(--gloss); }
-.rail-stop.is-here svg { color:#fff; }
+.rail-stop.is-here svg { color:color-mix(in srgb, var(--stop) 45%, #ffffff); }
 /* Off-centre, the colour is a hint rather than a statement: enough to tell two
    screens apart at a glance, not enough to make a row of nine into bunting. */
-.rail-stop:not(.is-here) svg { color:color-mix(in srgb, var(--stop) 38%, #8f8f8f); }
+.rail-stop:not(.is-here) svg { color:color-mix(in srgb, var(--stop) 30%, #8f8f8f); }
 .rail-stop.is-live::after { content:""; position:absolute; top:1px; right:1px;
   width:5px; height:5px; border-radius:50%; background:var(--accent); }
 .rail-stop.is-here.is-live::after { display:none; }
@@ -1565,6 +1569,17 @@ button:active:not(:disabled) { background:var(--tile-on); }
   box-shadow:inset 0 0 0 1px var(--hair); }
 .screen-dye::-webkit-color-swatch-wrapper { padding:0; }
 .screen-dye::-webkit-color-swatch { border:0; border-radius:7px; }
+/* ── Presets ──────────────────────────────────────────────────────────
+   ⚠️ A short row of ready colours, because picking nine that go together out
+   of a colour wheel is a design job and this is a settings panel. The wheel is
+   still there for anybody who wants it. */
+.screen-tones { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.screen-tone { width:15px; height:15px; padding:0; border-radius:50%;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14); }
+.screen-tone:hover { scale:1.18; }
+.screen-tone.is-on { box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),
+  0 0 0 2px var(--bg), 0 0 0 3.5px currentColor; }
+.screen-tone:active { scale:.9; transition-duration:90ms; }
 .set-text { flex:1; min-width:0; }
 .set-text b { display:block; font-size:12.5px; font-weight:500; }
 .set-text span { display:block; font-size:11px; color:#7c7c7c; line-height:1.5; margin-top:2px;
@@ -2641,13 +2656,20 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   background-color:rgba(255,255,255,.045); background-image:var(--sheen);
   box-shadow:inset 0 0 0 1px var(--hair); color:#7e7e7e; overflow:hidden; }
 .shelf-plinth svg { width:30px; height:30px; }
+/* The real picture, over the glyph. ⚠️ `cover`, not `contain`: a preview is a
+   sample, and a photograph letterboxed into a 4:3 box with two grey bars is a
+   worse sample than a crop of the middle of it. */
+.shelf-shot { position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; border-radius:inherit;
+  animation:shelf-shot-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes shelf-shot-in { from { opacity:0; } to { opacity:1; } }
 /* Tinted by what it is, so a wall of cards is scannable by colour before it is
    read. Derived from the accent rather than picked, like everything else. */
 .shelf-plinth[data-kind="link"] { color:color-mix(in srgb, var(--accent) 70%, #9fb4c9); }
 .shelf-plinth[data-kind="text"] { color:#a79b7e; }
 /* The extension, on the plinth itself — it is a property of the picture, not
    of the caption, and down in the note it was competing with the size. */
-.shelf-ext { position:absolute; left:6px; bottom:5px; font-size:9px; font-weight:700;
+.shelf-ext { position:absolute; z-index:1; left:6px; bottom:5px; font-size:9px; font-weight:700;
   letter-spacing:.06em; color:rgba(255,255,255,.55);
   background:rgba(0,0,0,.45); border-radius:5px; padding:1px 5px; }
 

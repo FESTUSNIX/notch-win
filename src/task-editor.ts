@@ -540,6 +540,16 @@ function screenOrder(): { name: string; label: string }[] {
   return [...SCREENS].sort((a, b) => rank(a.name) - rank(b.name));
 }
 
+/** Ready-made colours, so picking nine that go together is not a design job.
+ *
+ * ⚠️ Chosen to be TELLABLE APART at 18px, which is the only thing they are
+ * for — not to be a harmonious palette. Two blues a shade apart look
+ * considered in a swatch row and identical on the rail. */
+const TONES = [
+  "#00ff88", "#4db4ff", "#c58cff", "#ff5d8f",
+  "#ff8a3d", "#ffd23d", "#5ee6c4", "#9aa4b2",
+];
+
 /** The accent as a hex string, for a colour input that cannot take anything
  *  else. ⚠️ Read off the element rather than off `prefs.accent`, which may be
  *  any CSS colour; the input only accepts `#rrggbb`. */
@@ -602,6 +612,26 @@ function paintScreens() {
     };
     /* Right-click clears it back to the accent — a colour input has no "none",
      * and a reset button per row is nine buttons for a thing done twice. */
+    const tones = document.createElement("div");
+    tones.className = "screen-tones";
+    for (const tone of TONES) {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "screen-tone";
+      dot.style.background = tone;
+      dot.style.color = tone;
+      dot.setAttribute("aria-label", `${screen.label}: ${tone}`);
+      if ((prefs.railColours[screen.name] ?? "").toLowerCase() === tone) {
+        dot.classList.add("is-on");
+      }
+      dot.onclick = () => {
+        prefs.railColours = { ...prefs.railColours, [screen.name]: tone };
+        savePrefs();
+        paintScreens();
+      };
+      tones.append(dot);
+    }
+
     dye.oncontextmenu = event => {
       event.preventDefault();
       const rest = { ...prefs.railColours };
@@ -611,7 +641,7 @@ function paintScreens() {
       savePrefs();
     };
 
-    row.append(grip, text, dye, box);
+    row.append(grip, text, tones, dye, box);
     host.append(row);
   }
 }
