@@ -341,7 +341,7 @@ export class SystemScreen {
       (mute as HTMLButtonElement).type = "button";
       mute.setAttribute("aria-pressed", String(this.state.muted));
       mute.setAttribute("aria-label", this.state.muted ? "Unmute" : "Mute");
-      mute.title = this.state.muted ? "Unmute" : "Mute";
+      mute.dataset.tip = this.state.muted ? "Unmute" : "Mute";
       paintIcon(mute, this.state.muted ? "volumeOff" : "volume");
       mute.onclick = () => this.setVolume(this.state.volume, !this.state.muted);
       pips.append(mute);
@@ -349,7 +349,7 @@ export class SystemScreen {
     const lock = element("button", "pip");
     (lock as HTMLButtonElement).type = "button";
     lock.setAttribute("aria-label", "Lock the session");
-    lock.title = "Lock";
+    lock.dataset.tip = "Lock";
     paintIcon(lock, "lock");
     lock.onclick = () => { void call("lock_workstation").catch(e => { this.error = String(e); this.changed(); }); };
     pips.append(lock);

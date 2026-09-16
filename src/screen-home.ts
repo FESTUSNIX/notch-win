@@ -76,7 +76,7 @@ export class HomeScreen {
     const go = element("button", "home-go", "›");
     (go as HTMLButtonElement).type = "button";
     go.setAttribute("aria-label", `Open ${title}`);
-    go.title = title;
+    go.dataset.tip = title;
     go.onclick = () => this.deps.open(screen);
     wrap.append(go);
     return wrap;
@@ -119,7 +119,7 @@ export class HomeScreen {
       (button as HTMLButtonElement).type = "button";
       (button as HTMLButtonElement).disabled = !enabled;
       button.setAttribute("aria-label", label);
-      button.title = label;
+      button.dataset.tip = label;
       paintIcon(button, icon);
       button.onclick = () => this.deps.media.control(action);
       controls.append(button);

@@ -373,10 +373,11 @@ export class IslandSurface {
    * pointer that never left is the opposite of the problem this solves. Nor
    * does it touch `suppressed`: the panel is allowed to come straight back
    * when the pointer arrives, which `dismiss` deliberately is not. */
-  foldIfDone() {
-    if (!this.open || this.pinned || this.hovering || this.editing) return;
+  foldIfDone(): boolean {
+    if (!this.open || this.pinned || this.hovering || this.editing) return false;
     clearTimeout(this.timer);
     this.show(false);
+    return true;
   }
 
   /** A click somewhere else on the screen.

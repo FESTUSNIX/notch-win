@@ -38,7 +38,7 @@ const HTML = `
   </div>
   <div class="day-rail"><i id="day-rail-fill"></i></div>
   <div class="day-lists" id="day-lists" role="tablist" aria-label="Lists" hidden></div>
-  <section id="focus-session" hidden><div id="focus-task-title"></div><div class="focus-controls"><time id="focus-elapsed" title="Elapsed focus time">00:00</time><button id="focus-others" aria-label="Show other tasks" title="Show other tasks" aria-expanded="false"></button><button id="focus-pause" aria-label="Pause focus timer" title="Pause"></button><button id="focus-end" aria-label="End focus session" title="End session"></button><button id="focus-finish" aria-label="Complete focused task" title="Complete task"></button></div><span id="focus-state" class="sr-only"></span></section>
+  <section id="focus-session" hidden><div id="focus-task-title"></div><div class="focus-controls"><time id="focus-elapsed" data-tip="Elapsed focus time">00:00</time><button id="focus-others" aria-label="Show other tasks" data-tip="Show other tasks" aria-expanded="false"></button><button id="focus-pause" aria-label="Pause focus timer" data-tip="Pause"></button><button id="focus-end" aria-label="End focus session" data-tip="End session"></button><button id="focus-finish" aria-label="Complete focused task" data-tip="Complete task"></button></div><span id="focus-state" class="sr-only"></span></section>
   <div id="task-status" role="status"></div>
   <div id="task-list" class="task-list scrolls"><div id="task-list-content"></div><div id="task-done"></div></div>
   <form id="inline-composer"><span class="plus" aria-hidden="true">+</span><input id="inline-title" aria-label="Task name" maxlength="1000" required autocomplete="off" placeholder="Add a task"><div class="composer-chips" id="composer-chips"><button type="button" class="chip" id="chip-list" aria-haspopup="listbox" aria-expanded="false"></button><button type="button" class="chip" id="chip-day" aria-haspopup="listbox" aria-expanded="false"></button></div><span class="enter-hint" aria-hidden="true">&#8629;</span></form>
@@ -104,7 +104,6 @@ export class TodayScreen {
     const get = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
     this.composer = get<HTMLFormElement>("inline-composer");
     this.title = get<HTMLInputElement>("inline-title");
-
     this.list = get("task-list-content");
     this.doneTarget = get("task-done");
     this.status = get("task-status");
@@ -279,9 +278,9 @@ export class TodayScreen {
     shell.classList.toggle("focus-break", !!s && seconds >= 1500);
     this.get("focus-state").textContent = paused ? "Paused" : seconds >= 1500 ? "25 minutes reached - take a breath" : "Focusing";
     paintIcon(this.get("focus-pause"), paused ? "play" : "pause");
-    this.get("focus-pause").title = paused ? "Resume" : "Pause";
+    this.get("focus-pause").dataset.tip = paused ? "Resume" : "Pause";
     this.get("focus-pause").setAttribute("aria-label", paused ? "Resume focus timer" : "Pause focus timer");
-    this.get("focus-elapsed").title = seconds >= 1500 ? "25 minutes reached - take a break when ready" : "Elapsed focus time";
+    this.get("focus-elapsed").dataset.tip = seconds >= 1500 ? "25 minutes reached - take a break when ready" : "Elapsed focus time";
   }
 
   render() {
@@ -290,8 +289,8 @@ export class TodayScreen {
     this.get("focus-session").hidden = !session;
     this.get("focus-others").hidden = !session;
     this.get("task-list").hidden = !!session && !this.othersOpen;
-    for (const attr of ["aria-label", "title"] as const) {
-      this.get("focus-others").setAttribute(attr === "title" ? "title" : attr, this.othersOpen ? "Hide other tasks" : "Show other tasks");
+    for (const attr of ["aria-label", "data-tip"] as const) {
+      this.get("focus-others").setAttribute(attr, this.othersOpen ? "Hide other tasks" : "Show other tasks");
     }
     this.get("focus-others").setAttribute("aria-expanded", String(this.othersOpen));
     if (session) {

@@ -2726,4 +2726,23 @@ The two halves were the same fault.
      of its own, and `auto-fill` rather than `auto-fit`: with `auto-fit` a
      shelf holding two items stretches them across the whole panel and they
      stop being cards.
+389. ⚠️ **`auto-fill` asks the element how wide it is, and during a screen
+     change the answer is the PREVIOUS screen's.** The panel's width is sprung,
+     so a grid laid out at that moment wraps to two rows, the island measures
+     itself against that, opens at twice the height it needs and settles a
+     moment later. Compute the column count from the width the panel is
+     travelling to.
+390. ⚠️ **A tooltip must not fall back to "the nearest thing with a label".**
+     `#island` carries an `aria-label`, as do the panel, the screens and half
+     the regions inside them — so `closest("[aria-label]")` matches everywhere
+     on the surface and the whole island grows one tooltip saying its own name.
+     Match controls, then read the label off what you matched.
+391. ⚠️ **A regex sweep over `.title =` catches `.title===`.** Converting the
+     native tooltips to `data-tip` rewrote two comparisons into syntax errors,
+     and a looser pattern written to catch `x.title=y` is exactly what does it.
+     It also hits data models: a `Task` has a title and it is not a tooltip.
+392. ⚠️ **Half the native tooltips are in markup strings, not assignments.**
+     Sweeping `.title =` left seven `title="…"` attributes in template
+     literals, and the OS draws its own tooltip a second later over ours — so
+     those controls ended up with two labels disagreeing about when to appear.
 

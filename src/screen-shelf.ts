@@ -27,6 +27,14 @@ export interface ShelfItem {
   size: number;
 }
 
+/** The card's smallest comfortable width, the gap between cards, and the
+ *  screen body's own padding — all in CSS pixels, all matching `tasks.css`.
+ *  ⚠️ Here because the column count is arithmetic, and arithmetic cannot read
+ *  a stylesheet. Change one and change the other. */
+const CARD_MIN = 128;
+const GRID_GAP = 9;
+const SCREEN_PAD = 15;
+
 const ICONS: Record<ShelfItem["kind"], TaskIcon> = {
   file: "file",
   text: "note",
@@ -49,7 +57,19 @@ export class ShelfScreen {
   private copied = "";
   error = "";
 
-  constructor(private host: HTMLElement, private changed: () => void) {}
+  /**
+   * @param wide how wide the panel will BE, in CSS pixels. ⚠️ Not how wide it
+   *             is: the panel's width is sprung, so at the moment this screen
+   *             is first laid out it is still whatever the last one asked for.
+   *             An `auto-fill` grid measured against that wraps to two rows,
+   *             the island opens to twice the height it needs, and then drops
+   *             — see `render`.
+   */
+  constructor(
+    private host: HTMLElement,
+    private changed: () => void,
+    private wide: () => number,
+  ) {}
 
   async boot() {
     try {
@@ -199,7 +219,7 @@ export class ShelfScreen {
       const button = element("button", `shelf-do${command === "shelf_copy" ? " lead" : ""}`);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-label", `${label} ${item.name}`);
-      button.title = label;
+      button.dataset.tip = label;
       paintIcon(button, icon);
       button.onclick = () => { void this.act(item, command); };
       actions.append(button);
@@ -237,6 +257,16 @@ export class ShelfScreen {
      * row at full width — which is the list this replaced, with bigger
      * pictures. */
     const grid = element("div", "shelf-grid");
+    /* ⚠️ The column count is COMPUTED, not left to `auto-fill`. `auto-fill`
+     * asks the element how wide it is, and the answer while the panel is still
+     * springing to this screen's width is the previous screen's — so the cards
+     * wrapped to two rows, the island measured itself against that, opened at
+     * twice the height it needed, and settled down a moment later. Worked out
+     * from the width the panel is travelling TO, the first measurement is the
+     * right one. */
+    const room = this.wide() - 2 * SCREEN_PAD;
+    const columns = Math.max(1, Math.floor((room + GRID_GAP) / (CARD_MIN + GRID_GAP)));
+    grid.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
     for (const item of this.items) grid.append(this.row(item));
     this.host.append(grid);
 

@@ -218,7 +218,7 @@ export class IslandRail {
       cell.dataset.tab = stop.name;
       cell.setAttribute("role", "tab");
       cell.setAttribute("aria-label", stop.label);
-      cell.title = stop.label;
+      cell.dataset.tip = stop.label;
       paintIcon(cell, stop.icon);
       cell.append(element("span", "rail-say", stop.label));
       /* ⚠️ `click`, not `pointerup`. A drag that ends on a stop must not also

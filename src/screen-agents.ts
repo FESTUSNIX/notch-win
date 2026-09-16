@@ -161,7 +161,7 @@ export class AgentsScreen {
       (bell as HTMLButtonElement).type = "button";
       const label = quiet ? `Stop snoozing ${session.project}` : `Snooze ${session.project} for an hour`;
       bell.setAttribute("aria-label", label);
-      bell.title = label;
+      bell.dataset.tip = label;
       paintIcon(bell, "snooze");
       bell.onclick = () => {
         void (quiet ? wake(`agent:${session.id}`) : hush(`agent:${session.id}`));
@@ -205,7 +205,7 @@ export class AgentsScreen {
       fill.style.width = `${Math.max(4, share(row, whole) * 100)}%`;
       rail.append(fill);
       line.append(rail, element("span", "spend-tokens", short(total(row))));
-      line.title = `${row.project}: ${short(row.input)} in, ${short(row.output)} out, `
+      line.dataset.tip = `${row.project}: ${short(row.input)} in, ${short(row.output)} out, `
         + `${row.runs} run${row.runs === 1 ? "" : "s"}`;
       block.append(line);
     }

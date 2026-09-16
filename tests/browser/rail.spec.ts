@@ -460,20 +460,21 @@ test("closing the palette with the pointer away folds without showing the panel"
   /* Away from the island — which is the case this is about. */
   await page.mouse.move(20, 700);
 
-  /* ⚠️ Watched, not sampled. Releasing the caret lets the fold timer arm, and
-   * the timer is most of half a second — so the whole expanded panel, in the
-   * screen's own colours, was on screen for that long before folding, and it
-   * read as the island opening by mistake. A poll walks straight past it; this
-   * records every frame the panel was both visible and full height. */
+  /* ⚠️ Watched, not sampled, and watched on the SCREENS rather than on the
+   * panel. Releasing the caret lets the fold timer arm, and the timer is most
+   * of half a second — so the screen that was open came back, in its own
+   * colours, and sat there before folding. A poll walks straight past it. The
+   * panel itself is never the thing to measure: it stays in the layout as an
+   * empty masked box, which is exactly what it is supposed to do. */
   await page.evaluate(() => {
     const seen: number[] = [];
     (window as unknown as {shown: number[]}).shown = seen;
     const tick = () => {
-      const panel = document.getElementById("island-expanded")!;
-      const bar = document.querySelector(".palette-field");
-      const up = !!bar && (bar as HTMLElement).offsetParent !== null;
-      if (!up && getComputedStyle(panel).visibility === "visible") {
-        seen.push(panel.getBoundingClientRect().height);
+      const screens = document.querySelector(".screens") as HTMLElement | null;
+      const bar = document.querySelector(".palette-field") as HTMLElement | null;
+      const up = !!bar && bar.offsetParent !== null;
+      if (screens && !up && getComputedStyle(screens).visibility === "visible") {
+        seen.push(screens.getBoundingClientRect().height);
       }
       requestAnimationFrame(tick);
     };
@@ -483,11 +484,11 @@ test("closing the palette with the pointer away folds without showing the panel"
   await page.keyboard.press("Escape");
   await expect(page.locator("#island-expanded")).toBeHidden();
 
-  /* The panel may be caught mid-fold — that is the fold, and it is meant to be
-   * seen. What must not happen is it standing there at its full open height. */
+  /* ⚠️ NONE. Not "few" — the screen underneath is masked all the way down
+   * now, so any frame of it at all is the bug coming back. */
   const tall = await page.evaluate(() =>
-    (window as unknown as {shown: number[]}).shown.filter(h => h > 120).length);
-  expect(tall).toBeLessThan(8);
+    (window as unknown as {shown: number[]}).shown.filter(h => h > 40).length);
+  expect(tall).toBe(0);
 });
 
 test("laid out flat, every screen is sharp and one press away", async ({page}) => {

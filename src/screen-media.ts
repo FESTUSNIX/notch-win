@@ -337,7 +337,7 @@ export class MediaScreen {
     (queueButton as HTMLButtonElement).type = "button";
     queueButton.setAttribute("aria-label", "Playing next");
     queueButton.setAttribute("aria-expanded", String(this.queueOpen));
-    queueButton.title = "Playing next";
+    queueButton.dataset.tip = "Playing next";
     paintIcon(queueButton, "list");
     queueButton.onclick = () => this.toggleQueue();
 
@@ -351,7 +351,7 @@ export class MediaScreen {
       (button as HTMLButtonElement).type = "button";
       (button as HTMLButtonElement).disabled = !enabled;
       button.setAttribute("aria-label", label);
-      button.title = label;
+      button.dataset.tip = label;
       paintIcon(button, icon);
       button.onclick = () => this.deps.source.control(action);
       keys.append(button);
@@ -361,7 +361,7 @@ export class MediaScreen {
     (output as HTMLButtonElement).type = "button";
     output.setAttribute("aria-label", "Output device");
     output.setAttribute("aria-expanded", String(this.devicesOpen));
-    output.title = this.devices.find(d => d.isDefault)?.name || "Output device";
+    output.dataset.tip = this.devices.find(d => d.isDefault)?.name || "Output device";
     paintIcon(output, "speaker");
     output.onclick = event => { event.stopPropagation(); void this.pickDevice(); };
 
@@ -490,7 +490,7 @@ export class MediaScreen {
       (add as HTMLButtonElement).type = "button";
       add.setAttribute("aria-label", "Add to the queue");
       add.setAttribute("aria-expanded", String(this.adding));
-      add.title = "Add to the queue";
+      add.dataset.tip = "Add to the queue";
       paintIcon(add, "plus");
       add.onclick = () => {
         this.adding = !this.adding;

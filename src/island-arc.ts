@@ -171,7 +171,7 @@ export class IslandArc {
       if (action.id) button.id = action.id;
       (button as HTMLButtonElement).disabled = !!action.disabled || !action.run;
       button.setAttribute("aria-label", action.label);
-      button.title = action.label;
+      button.dataset.tip = action.label;
       if (action.pressed !== undefined) {
         button.setAttribute("aria-pressed", String(action.pressed));
       }

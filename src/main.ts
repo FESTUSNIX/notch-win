@@ -646,7 +646,7 @@ function paintPip() {
   const working = states.includes("working");
   const state = finished ? "done" : waiting ? "waiting" : working ? "working" : "idle";
   if (pip.dataset.state !== state) pip.dataset.state = state;
-  pip.title = finished
+  pip.dataset.tip = finished
     ? `${finished.project} ${finished.waiting ? "needs you" : "stopped"} after ${spoken(finished.seconds)}`
     : waiting
       ? "Waiting for you"

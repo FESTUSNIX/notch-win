@@ -200,7 +200,7 @@ export class NotesScreen {
       const button = element("button", `note-mark note-mark-${title.toLowerCase()}`, label);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-label", title);
-      button.title = title;
+      button.dataset.tip = title;
       /* ⚠️ `pointerdown` + preventDefault, not `click`. A click on a button
        * takes focus off the textarea first, and the selection is gone by the
        * time the handler runs — so bold would wrap nothing, every time. */
@@ -310,7 +310,7 @@ export class NotesScreen {
           `note-do${icon === "pin" ? " note-pin" : ""}${icon === "pin" && note.pinned ? " is-on" : ""}`);
         (button as HTMLButtonElement).type = "button";
         button.setAttribute("aria-label", icon === "pin" ? label : `${label} note`);
-        button.title = label;
+        button.dataset.tip = label;
         paintIcon(button, icon);
         button.onclick = run;
         doing.append(button);

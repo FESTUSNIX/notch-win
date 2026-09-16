@@ -190,7 +190,7 @@ function drawRow(node: TaskNode, snapshot: TaskSnapshot, o: DayOptions, depth: n
   }
   row.append(body);
   if(!done && !children.length && o.focus) {
-    const focus=element("button","task-focus");focus.append(taskIcon("focus"));focus.title=o.focused===key?"Current focus":"Focus on this task";
+    const focus=element("button","task-focus");focus.append(taskIcon("focus"));focus.dataset.tip = o.focused===key?"Current focus":"Focus on this task";
     focus.type="button";focus.setAttribute("aria-label","Focus "+task.title);
     focus.disabled=o.focused===key;focus.onclick=()=>o.focus!(task);row.append(focus);
   }
@@ -199,7 +199,7 @@ function drawRow(node: TaskNode, snapshot: TaskSnapshot, o: DayOptions, depth: n
     // Capped: the chip sits beside the title on a 373px panel, and a task
     // forgotten for two years must not be the widest thing in the row.
     const chip = element("span", "day-chip", late > 99 ? "99+d" : `${late}d`);
-    chip.title = `${late} ${late === 1 ? "day" : "days"} overdue`;
+    chip.dataset.tip = `${late} ${late === 1 ? "day" : "days"} overdue`;
     row.append(chip);
   }
   inner.append(row);

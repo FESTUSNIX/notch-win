@@ -368,7 +368,7 @@ export class CalendarScreen {
     (add as HTMLButtonElement).type = "button";
     add.setAttribute("aria-label", "New task");
     add.setAttribute("aria-expanded", String(this.composing));
-    add.title = "New task";
+    add.dataset.tip = "New task";
     paintIcon(add, "plus");
     add.onclick = () => {
       this.composing = !this.composing;
@@ -390,7 +390,7 @@ export class CalendarScreen {
       const button = element("button", "cal-page", glyph);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-label", label);
-      button.title = label;
+      button.dataset.tip = label;
       button.onclick = () => { this.monthOffset += step; this.chosenDay = ""; this.changed(); };
       pager.append(button);
     }
@@ -622,7 +622,7 @@ export class CalendarScreen {
       const join = element("button", "cal-join");
       (join as HTMLButtonElement).type = "button";
       join.setAttribute("aria-label", `Join ${event.title}`);
-      join.title = "Join";
+      join.dataset.tip = "Join";
       paintIcon(join, "join");
       join.onclick = event2 => { event2.stopPropagation(); this.open(event.meetingUrl); };
       row.append(join);
@@ -703,7 +703,7 @@ export class CalendarScreen {
           const chip = element("span", "cal-chip");
           chip.style.setProperty("--cal", event.color || "var(--cool)");
           chip.append(element("span", "cal-chip-title", event.title));
-          chip.title = event.title;
+          chip.dataset.tip = event.title;
           band.append(cell);
           cell.append(chip);
         }
@@ -740,7 +740,7 @@ export class CalendarScreen {
          * stand-up is 2% of a twelve-hour axis — four pixels, with no room for
          * a title and nothing to press. */
         block.style.height = `max(${HOUR_PX}px, ${((endHour - startHour) / span) * 100}%)`;
-        block.title = `${timeLabel(event)} · ${event.title}`;
+        block.dataset.tip = `${timeLabel(event)} · ${event.title}`;
         block.append(element("span", "cal-block-title", event.title));
         /* ⚠️ Gated on PIXELS, not on hours. An hour is 22px here, and two lines
          * of type need about 34 — so "an hour is long enough for a time" put a

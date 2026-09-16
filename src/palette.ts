@@ -260,6 +260,11 @@ export class Palette {
      * Nothing here needs the pin anyway: `input(true)` sets `editing`, which
      * blocks folding outright. `pinFor` only covers the gap before that lands,
      * which is the same thing quick capture does. */
+    /* ⚠️ The mask FIRST, before anything opens the island. `pinFor` expands a
+     * collapsed island, and with the mask applied afterwards there is a frame
+     * or two of whatever screen was last up — in its own colours, at its own
+     * height — arriving underneath a search bar that is also arriving. */
+    this.mask(true);
     this.surface.pinFor(6000);
     this.open = true;
     this.host.hidden = false;
@@ -267,12 +272,6 @@ export class Palette {
      * Covered, it still answers the pointer at the edges and the tab rail still
      * answers a wheel — and any translucency at all puts it back on screen,
      * which is what made the search look like two surfaces stacked. */
-    this.host.parentElement?.classList.add("is-searching");
-    /* ⚠️ And the furniture outside the panel, which that class cannot reach.
-     * The arcs and the rail are siblings of the island — left up, they hang off
-     * a shape that is now a search bar, offering the actions and the screens of
-     * whatever happens to be underneath it. */
-    this.surface.setSearching(true);
     this.field.value = "";
     this.inside = null;
     this.scope = null;
@@ -330,8 +329,6 @@ export class Palette {
     if (!this.open) return;
     this.open = false;
     this.host.hidden = true;
-    this.host.parentElement?.classList.remove("is-searching");
-    this.surface.setSearching(false);
     this.field.value = "";
     this.inside = null;
     this.scope = null;
@@ -356,8 +353,26 @@ export class Palette {
     this.surface.deliberately();
     this.onClose();
     this.surface.measure();
-    this.surface.foldIfDone();
+    /* ⚠️ The mask comes off only if the panel is STAYING. Folding, it stays on
+     * all the way down — otherwise the screen underneath appears for the length
+     * of the fold, in its own colours, which is the flash this exists to stop.
+     * `unmask` is called when the island next opens; see `tasks.ts`. */
+    if (!this.surface.foldIfDone()) this.mask(false);
   }
+
+  /** Hide or show everything of the island that is not the palette.
+   *
+   * ⚠️ Two halves, and both are needed. The class takes the panel's own
+   * contents out of sight; `setSearching` takes the arcs and the rail, which
+   * are SIBLINGS of the island and cannot be reached by a class on it. */
+  private mask(on: boolean) {
+    this.host.parentElement?.classList.toggle("is-searching", on);
+    this.surface.setSearching(on);
+  }
+
+  /** The island is opening again, so whatever was masked for a fold that has
+   *  now happened can come back. */
+  unmask() { if (!this.open) this.mask(false); }
 
   /* ── Choosing ─────────────────────────────────────────────────────────── */
 

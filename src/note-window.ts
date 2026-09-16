@@ -109,7 +109,7 @@ function render() {
     const button = element("button", "sticky-do");
     (button as HTMLButtonElement).type = "button";
     button.setAttribute("aria-label", label);
-    button.title = label;
+    button.dataset.tip = label;
     paintIcon(button, icon);
     button.onclick = run;
     tools.append(button);

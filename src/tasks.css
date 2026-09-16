@@ -306,6 +306,30 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
 .island-tab.live::after { content:""; position:absolute; top:3px; right:4px; width:5px; height:5px;
   border-radius:50%; background:var(--accent); }
 .island-tab.live[aria-selected=true]::after { display:none; }
+/* ── Tooltips ────────────────────────────────────────────────────────
+   Ours, because the native `title` is wrong three ways on this surface: it
+   waits about a second, which is longer than most of the glances this island
+   exists for; it is drawn by the OS in the OS's colours on a window otherwise
+   painted entirely by us; and on a `WS_EX_NOACTIVATE` window it is not
+   reliably drawn at all. See `tips.ts` for the timing, which is the part that
+   matters. */
+.tip { position:fixed; top:0; left:0; z-index:90; pointer-events:none;
+  max-width:260px; padding:5px 9px; border-radius:8px;
+  font-size:11.5px; line-height:1.35; color:#f0f0f0; white-space:nowrap;
+  background:rgba(20,20,20,.94); backdrop-filter:blur(10px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 6px 20px -8px rgba(0,0,0,.9);
+  opacity:0; scale:.92; filter:blur(3px);
+  transition:opacity var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-quick) var(--ease-smooth-out),
+    filter var(--duration-quick) var(--ease-smooth-out); }
+.tip.is-on { opacity:1; scale:1; filter:blur(0px); }
+/* ⚠️ Moving between controls animates the POSITION and nothing else. The
+   entrance is for arriving from nothing; replayed on every neighbour it is the
+   flicker this replaces, and it is also what makes a row of buttons feel like
+   four tooltips rather than one label following the pointer. */
+.tip.is-moving { transition:translate var(--duration-fast) var(--ease-smooth-out),
+    opacity var(--duration-quick) var(--ease-smooth-out); }
+
 /* ── The rail ──────────────────────────────────────────────────────────────
    Where you are, under the middle of the island's free edge, between the two
    arcs. Placed and sized by the paint loop; everything here is how it reads.

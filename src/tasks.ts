@@ -32,6 +32,7 @@ import * as workspaces from "./workspaces";
 import { Palette, TIER, type Action } from "./palette";
 import { type ScreenTools } from "./screen-tools";
 import { type RailStop } from "./island-rail";
+import { tips } from "./tips";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
 import { ShelfScreen } from "./screen-shelf";
@@ -198,8 +199,14 @@ let prefs: Prefs = {
  * never been given the caret — visible, and impossible to type in or click.
  * Folding is the one signal that covers every route into that state. */
 const surface = new IslandSurface(open => {
-  if (open) render();
-  else if (palette.open) void palette.hide();
+  if (open) {
+    /* ⚠️ The mask comes off HERE, not when the palette closed. Closing it
+     * with the island on its way down leaves the panel's contents hidden all
+     * the way through the fold, or the screen underneath shows for its
+     * duration; this is the other end of that. */
+    palette.unmask();
+    render();
+  } else if (palette.open) void palette.hide();
 });
 
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
@@ -213,7 +220,7 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
 });
 const system = new SystemScreen(get("system-body"), () => render());
 const agentsScreen = new AgentsScreen(get("agents-body"), () => render());
-const shelf = new ShelfScreen(get("shelf-body"), () => render());
+const shelf = new ShelfScreen(get("shelf-body"), () => render(), () => cpx(WIDTH.shelf));
 /* One surface over everything. See palette.ts on why it is not trying to be
  * Flow Launcher: this searches the island's OWN world — the shelf, the live
  * sessions, today's tasks — which a general launcher cannot see. */
@@ -1191,6 +1198,7 @@ for (const handle of [collapsedLayer, document.querySelector<HTMLElement>(".isla
 window.addEventListener("pointerup", () => { dragStart = null; });
 
 async function boot() {
+  tips();
   await surface.boot();
   /* ⚠️ FIRST, and awaited. Two things below read a preference as they run
    * rather than after: the Start Menu walk checks `indexApps`, and the accent

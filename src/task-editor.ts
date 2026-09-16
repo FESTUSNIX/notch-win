@@ -116,7 +116,6 @@ const ACCENTS = ["#00ff88", "#5ac8fa", "#a78bfa", "#ff9f0a", "#ff6961", "#f5f5f5
 
 document.body.className = "settings-page";
 document.title = "Codenotch Settings";
-
 const row = (title: string, note: string, control: string, extra = "") =>
   `<div class="set-row${extra ? " " + extra : ""}"><div class="set-text"><b>${title}</b>${note ? `<span>${note}</span>` : ""}</div><div class="set-ctl">${control}</div></div>`;
 
