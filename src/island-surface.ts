@@ -374,7 +374,14 @@ export class IslandSurface {
    * does it touch `suppressed`: the panel is allowed to come straight back
    * when the pointer arrives, which `dismiss` deliberately is not. */
   foldIfDone(): boolean {
-    if (!this.open || this.pinned || this.hovering || this.editing) return false;
+    /* ⚠️ Already shut counts as YES. Escape reaches the island's own handler
+     * as well as the palette's, so by the time the palette asks, the island is
+     * often already on its way down — and reading that as "nothing to fold,
+     * the panel is staying" is what put the screen back on screen for the
+     * length of the fold. The question is "will it end up collapsed", not
+     * "did I fold it". */
+    if (!this.open) return true;
+    if (this.pinned || this.hovering || this.editing) return false;
     clearTimeout(this.timer);
     this.show(false);
     return true;

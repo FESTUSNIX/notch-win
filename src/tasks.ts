@@ -202,11 +202,13 @@ let prefs: Prefs = {
  * Folding is the one signal that covers every route into that state. */
 const surface = new IslandSurface(open => {
   if (open) {
-    /* ⚠️ The mask comes off HERE, not when the palette closed. Closing it
-     * with the island on its way down leaves the panel's contents hidden all
-     * the way through the fold, or the screen underneath shows for its
-     * duration; this is the other end of that. */
+    /* ⚠️ The mask comes off HERE, not when the palette closed — and the
+     * screen's width goes back on here too. Closing the palette over an island
+     * that is folding does neither: the contents stay hidden all the way down,
+     * and the width is left alone so the fold is not retargeted at a full
+     * expanded panel on its way to the pill. This is the other end of both. */
     palette.unmask();
+    surface.capBody(cpx(widthOf(screen)));
     render();
   } else if (palette.open) void palette.hide();
 });

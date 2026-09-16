@@ -264,9 +264,14 @@ export class Palette {
      * collapsed island, and with the mask applied afterwards there is a frame
      * or two of whatever screen was last up — in its own colours, at its own
      * height — arriving underneath a search bar that is also arriving. */
+    /* ⚠️ `open` FIRST, before anything that can expand the island. `pinFor`
+     * opens it synchronously, which fires the shell's open callback, which
+     * calls `unmask` — and `unmask` is guarded on this very flag. Set after,
+     * the mask was applied and then stripped again in the same tick, so the
+     * screen behind the palette was visible the whole time it was up. */
+    this.open = true;
     this.mask(true);
     this.surface.pinFor(6000);
-    this.open = true;
     this.host.hidden = false;
     /* ⚠️ The panel behind it is taken out of sight, not just covered over.
      * Covered, it still answers the pointer at the edges and the tab rail still
@@ -350,14 +355,25 @@ export class Palette {
      * by mistake. Told to fold now, it goes straight from the search bar to
      * the pill, which is where it was going anyway. */
     await this.surface.input(false).catch(() => {});
+
+    /* ⚠️ The FOLD is decided before the size is given back, and when it folds
+     * the size is not given back AT ALL.
+     *
+     * Handing the screen's width over first is what made closing the palette
+     * look like the island opening: `onClose` retargets the width and height
+     * springs to whatever screen is underneath, and the fold then runs with
+     * those as its destination — so the shape grew into a full expanded panel
+     * on its way down to the pill. Masking the contents hid what was IN it and
+     * left the shape doing exactly that.
+     *
+     * Folding, the restore is left for the next opening, where `show` sets the
+     * screen's width anyway and does it behind a collapsed pill, where it
+     * snaps instead of travelling. */
+    if (this.surface.foldIfDone()) return;
     this.surface.deliberately();
     this.onClose();
     this.surface.measure();
-    /* ⚠️ The mask comes off only if the panel is STAYING. Folding, it stays on
-     * all the way down — otherwise the screen underneath appears for the length
-     * of the fold, in its own colours, which is the flash this exists to stop.
-     * `unmask` is called when the island next opens; see `tasks.ts`. */
-    if (!this.surface.foldIfDone()) this.mask(false);
+    this.mask(false);
   }
 
   /** Hide or show everything of the island that is not the palette.
@@ -366,7 +382,7 @@ export class Palette {
    * contents out of sight; `setSearching` takes the arcs and the rail, which
    * are SIBLINGS of the island and cannot be reached by a class on it. */
   private mask(on: boolean) {
-    this.host.parentElement?.classList.toggle("is-searching", on);
+    document.getElementById("island-expanded")?.classList.toggle("is-searching", on);
     this.surface.setSearching(on);
   }
 

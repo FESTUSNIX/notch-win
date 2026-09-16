@@ -454,8 +454,19 @@ test("the palette takes the whole surface, furniture included", async ({page}) =
 test("closing the palette with the pointer away folds without showing the panel", async ({page}) => {
   await page.goto("/tasks.html?agents");
   await open(page);
+
+  /* ⚠️ On a WIDE screen, so the difference is visible. The palette narrows the
+   * panel; the bug was that closing it handed the screen's own width back
+   * first, which retargeted the size springs — so the fold ran with a full
+   * expanded panel as its destination and the island GREW on its way down to
+   * the pill. On a screen no wider than the palette there is nothing to see. */
+  await page.locator('.rail-stop[data-tab="calendar"]').click();
+  await expect(page.locator('.screen[data-screen="calendar"]')).toBeVisible();
+  await page.waitForTimeout(900);
   await page.keyboard.press("Control+k");
   await expect(page.locator(".palette-field")).toBeVisible();
+  await page.waitForTimeout(600);
+  const bar = await page.locator("#island").evaluate(el => el.getBoundingClientRect().width);
 
   /* Away from the island — which is the case this is about. */
   await page.mouse.move(20, 700);
@@ -469,7 +480,10 @@ test("closing the palette with the pointer away folds without showing the panel"
   await page.evaluate(() => {
     const seen: number[] = [];
     (window as unknown as {shown: number[]}).shown = seen;
+    const wide: number[] = [];
+    (window as unknown as {wide: number[]}).wide = wide;
     const tick = () => {
+      wide.push(document.getElementById("island")!.getBoundingClientRect().width);
       const screens = document.querySelector(".screens") as HTMLElement | null;
       const bar = document.querySelector(".palette-field") as HTMLElement | null;
       const up = !!bar && bar.offsetParent !== null;
@@ -489,6 +503,12 @@ test("closing the palette with the pointer away folds without showing the panel"
   const tall = await page.evaluate(() =>
     (window as unknown as {shown: number[]}).shown.filter(h => h > 40).length);
   expect(tall).toBe(0);
+
+  /* ⚠️ And the SHAPE never grows either. Masking the contents hid what was in
+   * the island and left the shape doing exactly what it had been doing. */
+  const widest = await page.evaluate(() =>
+    Math.max(...(window as unknown as {wide: number[]}).wide));
+  expect(widest).toBeLessThan(bar + 8);
 });
 
 test("laid out flat, every screen is sharp and one press away", async ({page}) => {

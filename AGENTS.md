@@ -2762,4 +2762,22 @@ The two halves were the same fault.
      addresses a control without opening its pane times out against a perfectly
      correct page — and so does a styled checkbox, whose input is painted over
      by its own pseudo-element and never hittable.
+397. ⚠️ **Setting a flag AFTER the call that fires the callback guarded on it
+     is a mask that removes itself.** The palette applied its mask, then called
+     `pinFor` — which opens the island synchronously, which fires the shell's
+     open callback, which calls `unmask`, which is guarded on `palette.open`
+     — and `open` was set on the next line. The mask went on and came off in
+     the same tick, so the screen behind the palette was visible the whole time
+     it was up, and had been all along.
+398. ⚠️ **"Not open" is not "staying open".** Escape reaches the island's own
+     handler as well as the palette's, so by the time the palette asked whether
+     to fold, the island was often already on its way down — and reading that
+     as "nothing to fold, the panel is staying" put the screen back on screen
+     for the length of the fold. The question is "will it end up collapsed".
+399. ⚠️ **Giving a size back before a fold retargets the fold.** `onClose`
+     restores the screen's width and height, and the springs then travel
+     towards a full expanded panel on their way down to the pill — so the
+     island visibly GREW while closing. Masking the contents hid what was in
+     it and left the shape doing exactly that. Fold first; restore behind the
+     collapsed pill, where it snaps.
 
