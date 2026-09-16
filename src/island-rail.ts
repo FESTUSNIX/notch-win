@@ -436,6 +436,24 @@ export class IslandRail {
      * returns. At the ends this is simply zero. */
     const last = Math.max(0, this.live().length - 1);
     const bounded = Math.max(0, Math.min(last, this.at.value));
+
+    /* ⚠️ Measured to the screen the panel is actually SHOWING, once the
+     * gesture has stopped changing them. To the nearest stop — which is right
+     * while the screens are following along — this flips from +0.4 to -0.4 at
+     * every stop the rail passes; and while they are following, the screen
+     * changes at that same instant and the flip is what the new one arrives
+     * on. Once they stop following, nothing changes at the crossing and the
+     * flip is all there is: the panel slides left, snaps right, and does it
+     * again for every screen gone past.
+     *
+     * ⚠️ Capped at one stop's worth. The rail can travel the whole list from
+     * here; the panel is not going with it. It leans as far as one screen and
+     * holds there, which reads as having been left behind — which it has. */
+    if (this.coasting) {
+      const shown = this.live().findIndex(stop => stop.name === this.told);
+      if (shown < 0) return 0;
+      return Math.max(-1, Math.min(1, bounded - shown));
+    }
     return bounded - Math.round(bounded);
   }
 

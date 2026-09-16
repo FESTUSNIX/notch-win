@@ -336,6 +336,53 @@ test("a slow drag walks the screens; a long one saves them all for the release",
   await expect.poll(() => here(page)).not.toBe("media");
 });
 
+test("a long sweep does not rock the panel once it stops changing screens", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+
+  const pitch = await page.locator(".rail-stop").evaluateAll(stops => {
+    const at = (el: Element) => el.getBoundingClientRect().left;
+    return Math.abs(at(stops[3]) - at(stops[2]));
+  });
+  const grab = pitch * FRAME.railDragStep / FRAME.railStep;
+  const box = (await page.locator("#island-rail").boundingBox())!;
+  const from = {x: box.x + box.width / 2, y: box.y + box.height / 2};
+
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  const trail: {screen: string; carry: number}[] = [];
+  for (let i = 1; i <= 40; i++) {
+    await page.mouse.move(from.x - (grab * i) / 8, from.y);
+    await page.waitForTimeout(40);
+    trail.push(await page.evaluate(() => ({
+      screen: document.querySelector<HTMLElement>(".screen.active")?.dataset.screen ?? "",
+      carry: parseFloat(getComputedStyle(document.getElementById("island-expanded")!).translate) || 0,
+    })));
+  }
+  await page.mouse.up();
+
+  /* ⚠️ Once the screens stop changing, the panel must stop rocking. The carry
+   * used to be measured to the NEAREST stop, which flips from one side to the
+   * other at every stop the rail passes — right while the screens are following
+   * along, because the new one arrives on exactly that flip, and nonsense once
+   * they stop: nothing changes at the crossing, so the panel simply slid left,
+   * snapped right, and did it again for every screen gone past.
+   *
+   * So: from the last screen change onward, the carry may not reverse. */
+  const settledOn = trail[trail.length - 1].screen;
+  const after = trail.slice(trail.findIndex(
+    (step, i) => step.screen === settledOn && trail.slice(i).every(s => s.screen === settledOn)));
+  expect(after.length).toBeGreaterThan(8);
+  for (let i = 1; i < after.length; i++) {
+    expect(after[i].carry).toBeLessThanOrEqual(after[i - 1].carry + 0.5);
+  }
+  /* And it leans only as far as one screen's worth before holding — the rail
+   * can travel the whole list from there; the panel is not going with it. */
+  const leaned = Math.abs(after[after.length - 1].carry);
+  expect(leaned).toBeGreaterThan(20);
+  expect(leaned).toBeLessThan(90);
+});
+
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
   await page.goto("/tasks.html?agents&edge=left");

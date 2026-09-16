@@ -2665,4 +2665,12 @@ The two halves were the same fault.
      screen, so a distance computed in a test is not the distance on screen.
      Measure from the page and scale by a ratio of two constants, which is the
      same everywhere.
+379. ⚠️ **An offset measured to the NEAREST slot flips sign at every slot it
+     passes.** The panel is carried by the rail, and that carry was
+     `position - round(position)` — which is correct only while the screen
+     changes on the same crossing, because the new one arrives on exactly that
+     flip. The moment the screens stop following along, nothing changes at the
+     crossing and the flip is all there is: the panel slid one way, snapped
+     back, and did it again for every screen gone past. Measure to the thing
+     being SHOWN, not to the nearest one, and cap it.
 

@@ -372,6 +372,10 @@ captioned, which told you where you were and nothing about where you could go.
 - [x] **More room in the gesture.** The finger travels 150 design px per stop
       rather than the 90 the stops are drawn at, so the rail moves slower than
       the hand and there is room to stop on the one you wanted.
+- [x] ⚠️ **And the panel stops rocking once they stop following.** The carry
+      is measured to the screen being SHOWN rather than to the nearest stop,
+      and capped at one screen's worth — the rail can travel the whole list
+      from there; the panel is not going with it. AGENTS 379.
 - [x] **Slow and short walks the screens; long or fast saves them for the
       release.** Two stops is a correction and the panel follows it through;
       six is travelling, and travelling wants one arrival. Latched for the rest
