@@ -276,6 +276,9 @@ fn state_of(turn: crate::transcript::Turn) -> Activity {
     match turn {
         crate::transcript::Turn::Working => Activity::Working,
         crate::transcript::Turn::Waiting => Activity::Waiting,
+        // ⚠️ Done is IDLE, not waiting. The work came back and nothing is
+        // expected of you — only `Waiting` claims the pill and pulses.
+        crate::transcript::Turn::Done => Activity::Idle,
         crate::transcript::Turn::Unknown => Activity::Idle,
     }
 }
@@ -355,7 +358,10 @@ impl Watcher {
                      * alone — the tool call is still in flight, and blanking it
                      * would make a long `cargo build` flicker between "running
                      * cargo build" and nothing every second. */
-                    if scanned.doing.is_some() || scanned.turn == Some(crate::transcript::Turn::Waiting) {
+                    if scanned.doing.is_some()
+                        || matches!(scanned.turn, Some(crate::transcript::Turn::Waiting)
+                            | Some(crate::transcript::Turn::Done))
+                    {
                         entry.doing = scanned.doing;
                     }
                 }

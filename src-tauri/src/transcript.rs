@@ -34,9 +34,20 @@ pub enum Turn {
     /// A tool call is pending, or a prompt just went in and the model is
     /// thinking. Either way nobody is waiting on you.
     Working,
-    /// The assistant's turn ended with prose. Nothing more will be written to
-    /// this file until you type something.
+    /// The assistant is BLOCKED on you — it asked a question and cannot carry
+    /// on until it is answered.
+    ///
+    /// ⚠️ Not the same as the turn merely ending, and conflating the two had
+    /// them exactly backwards. A turn that ends in prose is the model handing
+    /// work back, which wants no attention at all; a question is a `tool_use`
+    /// block, which every other tool call also is — so the one state that
+    /// genuinely needed you was reported as *working*, and the one that needed
+    /// nothing pulsed amber until the terminal was closed.
     Waiting,
+    /// The assistant's turn ended with prose and asked for nothing. The work is
+    /// done; nothing more will be written until you type something, and nothing
+    /// is expected of you before then.
+    Done,
     /// Nothing conversational in what was read.
     Unknown,
 }
@@ -188,15 +199,33 @@ pub fn classify(line: &str) -> Option<Turn> {
         "user" => Some(Turn::Working),
         "assistant" => {
             let content = message.get("content")?.as_array()?;
-            // A turn that ends in prose is a turn that ended. Anything else in
-            // the block list means the model is mid-flight.
+            /* ⚠️ A question comes through as a TOOL CALL, and that is the whole
+             * reason this was wrong. `AskUserQuestion` is a `tool_use` block
+             * like `Bash` or `Read`, so the check below counts it as the model
+             * being mid-flight — and the one moment a session genuinely wants
+             * you reported as *working*, with no pulse and no notification.
+             * Verified against a real transcript: the record is an assistant
+             * message whose only block is that tool call, and nothing follows
+             * it until the answer arrives as a `tool_result`. */
+            if content.iter().any(|block| {
+                block.get("type").and_then(|v| v.as_str()) == Some("tool_use")
+                    && block.get("name").and_then(|v| v.as_str()) == Some("AskUserQuestion")
+            }) {
+                return Some(Turn::Waiting);
+            }
+            // Anything else in the block list means the model is mid-flight.
             let acting = content.iter().any(|block| {
                 !matches!(
                     block.get("type").and_then(|v| v.as_str()),
                     Some("text") | Some("thinking") | Some("redacted_thinking")
                 )
             });
-            Some(if acting { Turn::Working } else { Turn::Waiting })
+            /* ⚠️ And a turn that simply ENDS is done, not waiting. It used to
+             * be waiting, which is true of the file — nothing more is written
+             * until you type — and false of you: the work came back, there was
+             * no question, and there is nothing to answer. Reported as waiting
+             * it pulsed amber and held the pill for the rest of the session. */
+            Some(if acting { Turn::Working } else { Turn::Done })
         }
         _ => None,
     }
@@ -257,7 +286,7 @@ pub fn scan(chunk: &str) -> Scan {
         }
         if let Some(turn) = classify(line) {
             out.turn = Some(turn);
-            if turn == Turn::Waiting {
+            if matches!(turn, Turn::Waiting | Turn::Done) {
                 out.doing = None;
             }
         }
@@ -457,13 +486,28 @@ mod tests {
         "",
     ];
 
+    /// An assistant turn whose only block is a question. ⚠️ Taken from a real
+    /// transcript on this machine, not invented: `AskUserQuestion` is a
+    /// `tool_use` with a name, which is exactly why the old check could not
+    /// tell it apart from `Bash`.
+    const ASKING: &str = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{}}]}}"#;
+
     #[test]
-    fn prose_is_waiting_and_a_tool_call_is_not() {
+    fn prose_is_done_a_question_waits_and_a_tool_call_is_neither() {
         assert_eq!(classify(TOOL), Some(Turn::Working));
-        assert_eq!(classify(PROSE), Some(Turn::Waiting));
+        /* ⚠️ DONE, not waiting. The work came back and there was no question,
+         * so there is nothing to answer — true of you, even though the file
+         * will not grow again until you type. Called waiting, it pulsed amber
+         * and held the pill for the rest of the session. */
+        assert_eq!(classify(PROSE), Some(Turn::Done));
+        /* ⚠️ And a QUESTION is the case that genuinely waits. It arrives as a
+         * `tool_use` block like every other tool call, so the mid-flight check
+         * swallowed it and the one state that wanted you was reported as
+         * working — no pulse, no notification. */
+        assert_eq!(classify(ASKING), Some(Turn::Waiting));
         // Thinking is not acting: a turn that thought and then answered has
         // still ended.
-        assert_eq!(classify(THINKING), Some(Turn::Waiting));
+        assert_eq!(classify(THINKING), Some(Turn::Done));
         assert_eq!(classify(RESULT), Some(Turn::Working));
         assert_eq!(classify(PROMPT), Some(Turn::Working));
     }
@@ -487,7 +531,11 @@ mod tests {
     fn the_newest_conversational_record_wins_through_the_noise() {
         let mut chunk = vec![PROMPT, TOOL, RESULT, PROSE];
         chunk.extend_from_slice(NOISE);
-        assert_eq!(scan(&chunk.join("\n")).turn, Some(Turn::Waiting));
+        assert_eq!(scan(&chunk.join("\n")).turn, Some(Turn::Done));
+
+        let mut asked = vec![PROMPT, TOOL, RESULT, ASKING];
+        asked.extend_from_slice(NOISE);
+        assert_eq!(scan(&asked.join("\n")).turn, Some(Turn::Waiting));
 
         let mut working = vec![PROSE, PROMPT, TOOL];
         working.extend_from_slice(NOISE);
@@ -533,7 +581,7 @@ mod tests {
 
         let (offset, chunk) = read_from(&path, 0).unwrap();
         assert_eq!(chunk.lines().count(), 2);
-        assert_eq!(scan(&chunk).turn, Some(Turn::Waiting));
+        assert_eq!(scan(&chunk).turn, Some(Turn::Done));
         // The fragment is left for next time rather than parsed as truncated.
         assert_eq!(offset as usize, PROMPT.len() + PROSE.len() + 2);
 

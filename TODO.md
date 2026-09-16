@@ -394,6 +394,30 @@ captioned, which told you where you were and nothing about where you could go.
 
 ---
 
+## 7. Agent states were inverted — DONE
+
+⚠️ **The two states a session can be in were exactly the wrong way round**,
+and each looked plausible on its own.
+
+- A turn ending in prose — the work came back, no question — was reported as
+  *waiting*. True of the file, false of you: it pulsed amber and held the pill
+  until the terminal was closed. It is **done** now, which is idle.
+- A QUESTION was reported as *working*. `AskUserQuestion` arrives as a
+  `tool_use` block exactly like `Bash`, so the mid-flight check swallowed the
+  one moment that genuinely wanted you — no pulse, no notification. It is
+  **waiting** now.
+
+Verified against a real transcript rather than argued: the question is an
+assistant record whose only block is that tool call, and nothing follows it
+until the answer arrives as a `tool_result`.
+
+- [ ] Permission prompts are still not detected. Blocking on "allow this
+      command?" looks like a tool call with a result that has not arrived —
+      indistinguishable, from the transcript alone, from a `cargo build` that
+      is still running. It needs a time threshold or a hook.
+
+---
+
 ## Decisions this must not quietly undo
 
 - The bezel shape. Everything is welded to a screen edge and keeps the fillet.

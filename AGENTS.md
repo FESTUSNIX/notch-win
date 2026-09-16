@@ -2696,4 +2696,17 @@ The two halves were the same fault.
      behind the palette, left them hanging off a shape that is now a search
      bar, offering the actions and the screens of whatever was underneath.
      Anything new outside the island needs telling directly.
+384. ⚠️ **A question from an agent is a TOOL CALL, not prose.**
+     `AskUserQuestion` arrives as a `tool_use` block exactly like `Bash` or
+     `Read`, so a classifier that reads "any non-text block means mid-flight"
+     counts the one moment a session genuinely wants you as *working* — no
+     pulse, no notification. Verified against a real transcript on this
+     machine: the record is an assistant message whose only block is that call,
+     and nothing follows until the answer arrives as a `tool_result`.
+385. ⚠️ **"The file will not grow again" is not the same as "you are
+     needed".** A turn ending in prose was reported as *waiting*, which is true
+     of the transcript and false of the reader: the work came back, there was
+     no question, and there was nothing to answer — yet it pulsed amber and
+     held the pill until the terminal was closed. Together with 384 the two
+     states were exactly inverted, and each looked plausible on its own.
 
