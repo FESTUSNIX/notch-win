@@ -1900,6 +1900,24 @@ test("the System screen carries the machine's own controls", async ({page}) => {
   await page.screenshot({path: "test-results/island-system.png"});
 });
 
+test("a closed system pill is exactly its own row", async ({page}) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await goTo(page, "system");
+
+  /* ⚠️ `.tile` sets a 7px gap, and a pill holds TWO children — the head, and
+   * a list held at `max-height: 0`. A zero-height child still takes its gap,
+   * so every closed pill carried seven pixels of nothing along its bottom edge
+   * and read as badly padded. Measured rather than eyeballed: it is the kind
+   * of wrong that looks like a taste decision. */
+  const pills = await page.locator(".sys-pill").evaluateAll(all => all.map(pill => ({
+    whole: pill.getBoundingClientRect().height,
+    head: pill.querySelector(".pill-head")!.getBoundingClientRect().height,
+  })));
+  expect(pills.length).toBeGreaterThan(1);
+  for (const pill of pills) expect(pill.whole - pill.head).toBeLessThan(1);
+});
+
 test("a long device list opens in place and the panel travels to fit", async ({page}) => {
   await page.goto("/tasks.html?quiet");
   await open(page);

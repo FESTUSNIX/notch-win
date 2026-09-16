@@ -2685,4 +2685,15 @@ The two halves were the same fault.
      fault. A log curve past the knee keeps it moving and makes every further
      screen of travel move it less: a bow being drawn, not a drawer hitting its
      stop.
+382. ⚠️ **A zero-height child still takes its gap.** `.tile` sets a 7px gap
+     and a system pill holds two children — the head, and a list clamped to
+     `max-height: 0`. Every closed pill therefore carried seven pixels of
+     nothing along its bottom edge, which reads as a taste decision rather than
+     a bug and survived a long time because of it.
+383. ⚠️ **A class on the panel cannot hide the furniture outside it.** The
+     arcs and the rail are SIBLINGS of `#island` — they have to be, it is
+     `overflow: clip` — so `.is-searching`, which takes the panel out of sight
+     behind the palette, left them hanging off a shape that is now a search
+     bar, offering the actions and the screens of whatever was underneath.
+     Anything new outside the island needs telling directly.
 

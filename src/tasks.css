@@ -2033,7 +2033,13 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
    middle of it — but in the flex COLUMN they live in now, `align-self` is the
    cross axis, so `start` shrank every pill to the width of its own text and
    left the column half empty. The flex default is what is wanted. */
-.sys-pill { padding:0; overflow:hidden; }
+/* ⚠️ `gap: 0`, and the closed pill is why. `.tile` sets a 7px gap, and a
+   pill holds TWO children — the head, and a list held at `max-height: 0`. A
+   zero-height child still takes its gap, so every closed pill carried seven
+   pixels of nothing along its bottom edge and read as badly padded. */
+.sys-pill { padding:0; overflow:hidden; gap:0; }
+/* Open, the rows want the air back. */
+.sys-pill.is-open .pill-list { padding-top:5px; }
 .pill-head { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
   padding:11px 13px; border-radius:var(--r-tile); background:none; box-shadow:none; }
 .pill-head:hover { background:var(--tile-hi); box-shadow:none; }

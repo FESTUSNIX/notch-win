@@ -171,6 +171,8 @@ interface Prefs {
   panelWidth: number;
   railVisible: number;
   railAlways: boolean;
+  railGrip: number;
+  railSharp: number;
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -180,7 +182,7 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true,
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -1022,6 +1024,10 @@ function applyPrefs(next: Prefs) {
   surface.setRailPrefs({
     visible: Math.max(3, Math.min(7, next.railVisible || 5)),
     always: next.railAlways,
+    /* ⚠️ Stored as a percentage and clamped here. A grip of zero divides the
+     * drag by nothing and sends the rail to infinity on the first pixel. */
+    grip: Math.max(0.5, Math.min(3, (next.railGrip || 100) / 100)),
+    sharp: Math.max(0, Math.min(3, next.railSharp || 0)),
   });
   today.setView(next.taskView === "all" ? "all" : "day");
   home.setWeekStart(next.weekStartsMonday);

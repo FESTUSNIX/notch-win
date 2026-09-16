@@ -111,6 +111,11 @@ export class IslandSurface {
     (offset, settled) => this.carried(offset, settled),
   );
   private onChoose?: (name: string, live: boolean) => void;
+  /** The palette is up. ⚠️ The arcs and the rail are SIBLINGS of the island,
+   *  so the class that hides the panel behind the palette cannot reach them —
+   *  they would go on hanging off a shape that is now a search bar, offering
+   *  the actions and the screens of whatever was underneath. */
+  private searching = false;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
@@ -643,7 +648,7 @@ export class IslandSurface {
       corner: notchCorner(g.depth, g.length, g.curl, cpx(FRAME.cornerRadius)),
       edge: this.edge,
       fold: this.fold.value,
-      open: this.open && !this.hidden,
+      open: this.open && !this.hidden && !this.searching,
       moving: !this.fold.settled || !this.grow.settled || !this.widen.settled,
     };
     this.tools.paint(frame);
@@ -694,6 +699,14 @@ export class IslandSurface {
    * knows where it is. */
   private reachedFor(on: boolean) {
     if (on) this.hover(true);
+    this.report();
+  }
+
+  /** The palette takes the whole surface over, so the furniture stands down. */
+  setSearching(on: boolean) {
+    if (this.searching === on) return;
+    this.searching = on;
+    this.paint();
     this.report();
   }
 

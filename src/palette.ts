@@ -268,6 +268,11 @@ export class Palette {
      * answers a wheel — and any translucency at all puts it back on screen,
      * which is what made the search look like two surfaces stacked. */
     this.host.parentElement?.classList.add("is-searching");
+    /* ⚠️ And the furniture outside the panel, which that class cannot reach.
+     * The arcs and the rail are siblings of the island — left up, they hang off
+     * a shape that is now a search bar, offering the actions and the screens of
+     * whatever happens to be underneath it. */
+    this.surface.setSearching(true);
     this.field.value = "";
     this.inside = null;
     this.scope = null;
@@ -326,6 +331,7 @@ export class Palette {
     this.open = false;
     this.host.hidden = true;
     this.host.parentElement?.classList.remove("is-searching");
+    this.surface.setSearching(false);
     this.field.value = "";
     this.inside = null;
     this.scope = null;

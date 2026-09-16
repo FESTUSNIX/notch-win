@@ -64,6 +64,12 @@ pub struct Prefs {
     /// Whether the rail shows its screens without being asked for. Off, it is
     /// a bare shape until the pointer is on it, like the two arcs.
     pub rail_always: bool,
+    /// How far the finger travels for one screen, as a percentage of the
+    /// default. Higher is heavier: more drag for the same change.
+    pub rail_grip: u32,
+    /// How many screens either side of the middle stay sharp. 0 blurs the
+    /// immediate neighbours; 1 leaves them alone and starts at the next.
+    pub rail_sharp: u32,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -111,6 +117,8 @@ impl Default for Prefs {
             panel_width: 0,
             rail_visible: 5,
             rail_always: true,
+            rail_grip: 100,
+            rail_sharp: 0,
             use_everything: true,
             index_apps: true,
             notify_runs: true,

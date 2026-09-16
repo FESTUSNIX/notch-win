@@ -29,6 +29,7 @@
 - Feature (media): Add volume mixer. Control volume per app
 - Fix: Arcs and screen rail/switcher are visible when the command palette is open. The command palette should be a separate layer that doesn't show the global island UI
 - Fix (system): Unnecessary padding bottom on device and bluetooth cards.
+- Fix (command palette): When closing the command palette, expanded island shows up before folding. Fix that. When opening or closing the command the island should not be taken into account.
 
 A big overhaul of how the island _feels_, in four parts. Reference is **Droppy**
 (macOS): a notch that is snappy, springy, only as wide as its content, and whose

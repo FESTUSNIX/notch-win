@@ -82,7 +82,7 @@ let demoPrefs: Record<string, unknown> = {
      `!important` rule that hides every stop, so a fixture missing it shows a
      bare black pill that only fills when hovered — which is a valid setting
      and therefore looks deliberate rather than absent. */
-  railVisible: 5, railAlways: true, useEverything: true,
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

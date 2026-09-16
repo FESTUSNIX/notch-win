@@ -429,6 +429,28 @@ test("a long sweep does not rock the panel once it stops changing screens", asyn
   expect(leaned).toBeLessThan(200);
 });
 
+test("the palette takes the whole surface, furniture included", async ({page}) => {
+  await page.emulateMedia({reducedMotion: "reduce"});
+  await page.goto("/tasks.html?agents");
+  await open(page);
+  await expect(page.locator("#island-rail")).toBeVisible();
+  await expect(page.locator("#island-global")).toBeVisible();
+
+  /* ⚠️ The arcs and the rail are SIBLINGS of the island, so the class that
+   * hides the panel behind the palette cannot reach them — they went on
+   * hanging off a shape that is now a search bar, offering the actions and the
+   * screens of whatever happened to be underneath it. */
+  await page.keyboard.press("Control+k");
+  await expect(page.locator(".palette-field")).toBeVisible();
+  for (const id of ["#island-rail", "#island-global", "#island-tools"]) {
+    await expect(page.locator(id)).toBeHidden();
+  }
+
+  // And they come back with the panel.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#island-rail")).toBeVisible();
+});
+
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
   await page.goto("/tasks.html?agents&edge=left");

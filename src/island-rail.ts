@@ -54,6 +54,12 @@ export interface RailPrefs {
   visible: number;
   /** Whether the stops show without being asked for. */
   always: boolean;
+  /** How far the finger travels for one screen, as a multiple of the default.
+   *  Higher is heavier: more drag for the same change. */
+  grip: number;
+  /** How many stops either side of the middle stay sharp. 0 blurs the
+   *  immediate neighbours; 1 leaves them alone and starts at the next. */
+  sharp: number;
 }
 
 export class IslandRail {
@@ -64,7 +70,7 @@ export class IslandRail {
   private at = new Spring(0, 0.34, 0.74);
   private stops: RailStop[] = [];
   private cells: HTMLElement[] = [];
-  private prefs: RailPrefs = { visible: 5, always: true };
+  private prefs: RailPrefs = { visible: 5, always: true, grip: 1, sharp: 0 };
   private opened = false;
   private closing = 0;
   private moving = false;
@@ -336,7 +342,7 @@ export class IslandRail {
      * simply refuses to move reads as a broken drag; one that resists says
      * "this is the end" without a word. */
     const last = Math.max(0, this.live().length - 1);
-    let want = this.grabAt - dx / cpx(FRAME.railDragStep);
+    let want = this.grabAt - dx / (cpx(FRAME.railDragStep) * this.prefs.grip);
     if (want < 0) want = want / 3;
     else if (want > last) want = last + (want - last) / 3;
     this.at.snap(want);
@@ -562,7 +568,14 @@ export class IslandRail {
       const near = Math.max(0, 1 - far / Math.max(0.001, edge + 0.5));
       cell.style.scale = `${0.74 + 0.26 * near}`;
       cell.style.opacity = `${Math.max(0, Math.min(1, 0.12 + 0.88 * near))}`;
-      cell.style.filter = far < 0.5 ? "none" : `blur(${Math.min(3.2, (far - 0.5) * 2.2)}px)`;
+      /* ⚠️ Blur starts beyond the stops kept SHARP, not beyond the middle
+       * one. At the default of none, the immediate neighbours are already soft
+       * — which is the point of the shape — but somebody who wants to read the
+       * screen either side of the one they are on can have it, and the falloff
+       * simply begins one stop further out. */
+      const clear = 0.5 + this.prefs.sharp;
+      cell.style.filter = far < clear
+        ? "none" : `blur(${Math.min(3.2, (far - clear) * 2.2)}px)`;
       const here = Math.abs(index - anchor) < 0.5;
       cell.classList.toggle("is-here", here);
       cell.setAttribute("aria-selected", String(here));
