@@ -348,12 +348,25 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    is what lets them sit this close together and still read against whatever
    is behind the island — and it is why there is no longer a pill around the
    lot of them. */
-.rail-stop { position:absolute; display:grid; place-items:center;
-  width:30px; height:30px; padding:0; border-radius:50%;
-  background:#000; color:#8f8f8f; will-change:translate, opacity, filter;
-  transition:color var(--duration-quick) var(--ease-smooth-out),
-    background-color var(--duration-quick) var(--ease-smooth-out); }
-.rail-stop svg { width:16px; height:16px; }
+.rail-stop { position:absolute; display:flex; align-items:center;
+  justify-content:flex-start; min-width:34px; height:34px; padding:0;
+  border-radius:999px; background:#000; color:#8f8f8f;
+  will-change:translate, opacity, filter; }
+/* ⚠️ The icon keeps the pill's own width to itself, so an uncaptioned stop
+   is a circle and a captioned one is that circle with a word beside it — the
+   pill grows to the right of a mark that does not move. */
+.rail-stop svg { width:18px; height:18px; flex:0 0 34px; }
+/* ⚠️ `max-width` is written as a LENGTH by the paint loop, from the same
+   number that pushes the neighbours aside. A CSS transition here and a spring
+   there are two clocks for one movement, and they drift.
+   `box-sizing: border-box` is what makes the padding vanish with the width. */
+.rail-say { max-width:0; min-width:0; overflow:hidden; white-space:nowrap;
+  text-overflow:ellipsis; font-size:12px; font-weight:600; }
+/* ⚠️ `min-width: 0` is load-bearing, and its absence is invisible in the
+   rule. A flex item's `min-width` defaults to `auto`, which means "no smaller
+   than my content" — and that BEATS `max-width: 0`. Without it every caption
+   renders at full width whatever the paint loop writes, so all nine stops are
+   word-wide pills sitting on top of each other. */
 /* The one you are on: brighter, and on a lifted ground rather than a bigger
    one — `lay()` already scales it, and doing both makes it lurch. */
 .rail-stop.is-here { color:#fff; background:#1f1f1f;
@@ -370,6 +383,9 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
     background-color var(--duration-quick) var(--ease-smooth-out),
     opacity var(--duration-fast) var(--ease-smooth-out),
     scale var(--duration-fast) var(--ease-smooth-out); }
+/* ⚠️ NOT on `translate`, `filter` or `max-width`. All three are written every
+   frame by the paint loop, and a transition on a per-frame write is a second
+   animation chasing the first — the row lags the finger by its own duration. */
 #island-rail:not(.is-always):not(.is-open):not(.is-dragging) .rail-stop {
   opacity:0 !important; scale:.4 !important; pointer-events:none; }
 

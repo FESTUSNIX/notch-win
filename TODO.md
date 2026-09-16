@@ -361,6 +361,16 @@ captioned, which told you where you were and nothing about where you could go.
       showing something the rail had already left.
 - [x] ⚠️ **With its entrance suppressed while the drag is live.** Two motions
       on the same pixels read as neither. AGENTS 364-365.
+- [x] **The name is back on the stop, debounced.** It opens into a fixed slot
+      once the rail has been still for a beat, and goes the instant it moves —
+      so a drag never pays for the layout change. AGENTS 368-373.
+- [x] **The ends do not carry the panel.** The rail still rubber-bands past the
+      first and last stop, but there is no screen out there to be carried
+      towards, so the content stays put instead of sliding off and snapping
+      back. The end stop stays marked while you lean on it. AGENTS 374.
+- [x] **A fast drag does not render every screen it passes** — live changes are
+      rate-limited to one every 150ms, and the release is never limited, so
+      whatever it lands on is always what ends up on screen.
 - [x] The header names the screen — and now it is the only place that does,
       which is what let the rail's slots shrink from a word wide to an icon. It is there
       because the header is the window's DRAG REGION and something has to be in

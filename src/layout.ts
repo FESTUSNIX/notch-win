@@ -206,9 +206,9 @@ export const FRAME = {
    * centred stop's name — and that made a rail of five over two hundred pixels
    * long, with the screens marooned at either end of it. The name is in the
    * header, where it does not have to fit between two other screens. */
-  railStep: 78,
+  railStep: 90,
   /** One stop's slot when the rail runs DOWN the island's side. */
-  railStepDown: 78,
+  railStepDown: 90,
   /** How deep the rail is — across it, whichever way it runs. */
   railDepth: 66,
   /** How long the resting line is: the hint that there is something here.
@@ -218,6 +218,14 @@ export const FRAME = {
    * furniture in its own right — and a heavy one directly under a panel that is
    * already a large black shape. */
   railHint: 150,
+  /** The breathing room after a stop's name, inside its pill. ⚠️ Grown with
+   *  the caption rather than set in the stylesheet — see `island-rail.ts`. */
+  railSayGap: 24,
+  /** The slot a stop's name opens into, gap included. ⚠️ Fixed, not measured
+   *  — see `island-rail.ts`. Wide enough for the longest of the nine at this
+   *  weight and size; anything longer ellipsises rather than pushing the row
+   *  about. */
+  railSayRoom: 128,
 
   /** How far the panel slides for one stop's worth of drag. ⚠️ A FRACTION of
    *  the rail's own step, not all of it: the panel is four times the rail's

@@ -84,9 +84,14 @@ test("dragging the rail walks the screens, and a press still picks one", async (
 
   const rail = (await page.locator("#island-rail").boundingBox())!;
   const mid = {x: rail.x + rail.width / 2, y: rail.y + rail.height / 2};
+  /* ⚠️ Measured between two stops on the SAME side of the middle. The centred
+   * stop opens into a pill with its name in it and pushes its neighbours out,
+   * so the step from it to the next one is the pitch plus that push — and a
+   * drag of that distance travels one and a half screens. Two stops that are
+   * both pushed by the same amount are a true pitch apart. */
   const pitch = await page.locator(".rail-stop").evaluateAll(stops => {
     const at = (el: Element) => el.getBoundingClientRect().left;
-    return Math.abs(at(stops[1]) - at(stops[0]));
+    return Math.abs(at(stops[3]) - at(stops[2]));
   });
 
   /* Drag one stop's worth to the left and the next screen comes to the middle.
@@ -186,6 +191,52 @@ test("dragging the rail walks the screens, and a press still picks one", async (
   const want = await next.getAttribute("data-tab");
   await next.click();
   await expect.poll(() => here(page)).toBe(want);
+});
+
+test("the name waits for the rail to stop, and the ends do not carry", async ({page}) => {
+  await page.goto("/tasks.html?agents");
+  await open(page);
+
+  /* ⚠️ The name arrives LATE, and that is the point. A caption is wider than
+   * an icon, so showing one moves every stop beside it — fine once, and a
+   * layout thrashing back and forth if it happens on every stop a drag passes.
+   * It waits for the rail to be still. */
+  const named = () => page.locator(".rail-stop.is-here .rail-say")
+    .evaluate(el => el.getBoundingClientRect().width);
+  await expect.poll(named, {timeout: 4000}).toBeGreaterThan(20);
+
+  const rail = (await page.locator("#island-rail").boundingBox())!;
+  const mid = {x: rail.x + rail.width / 2, y: rail.y + rail.height / 2};
+  await page.mouse.move(mid.x, mid.y);
+  const on = (await page.locator("#island-rail").boundingBox())!;
+  const from = {x: on.x + on.width / 2, y: on.y + on.height / 2};
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 40, from.y, {steps: 5});
+  await expect(page.locator("#island-rail")).toHaveClass(/is-dragging/);
+  // Gone the instant it moves.
+  await expect.poll(named).toBeLessThan(4);
+
+  /* ⚠️ Past the FIRST stop there is no screen to be carried towards, so the
+   * panel must not move. The rail itself rubber-bands — which is right, it
+   * says "this is the end" — but carrying the content out there slides it off
+   * and then snaps it back when the band returns, which is a jump nobody
+   * asked for. */
+  await page.mouse.move(from.x + 260, from.y, {steps: 10});
+  await expect.poll(() => page.locator("#island-expanded").evaluate(el =>
+    Math.abs(parseFloat(getComputedStyle(el).translate) || 0))).toBeLessThan(0.5);
+  expect(await page.locator(".rail-stop.is-here").getAttribute("data-tab")).toBe("home");
+
+  await page.mouse.up();
+  /* ⚠️ Back onto the island first. The drag ended well outside it — that is
+   * what pulling past the end means — and the island folds when the pointer
+   * leaves, taking the rail with it. Asserting from out there measures a
+   * hidden element and reads as the name never coming back. */
+  const isle = (await page.locator("#island").boundingBox())!;
+  await page.mouse.move(isle.x + isle.width / 2, isle.y + isle.height / 2);
+  await expect(page.locator("#island-rail")).toBeVisible();
+  // And once it is still again, the name comes back.
+  await expect.poll(named, {timeout: 4000}).toBeGreaterThan(20);
 });
 
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {

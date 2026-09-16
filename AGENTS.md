@@ -2611,4 +2611,36 @@ The two halves were the same fault.
      on the centred stop made all nine slots a word wide, which put a rail of
      five at over two hundred pixels with the screens marooned at its ends. The
      name belongs where it does not have to fit between two neighbours.
+368. ⚠️ **`Math.sign` of a float that should be zero is 1.** The rail pushed
+     its neighbours aside with `Math.sign(away) * push`, and the CENTRED stop's
+     `away` is zero give or take rounding — so it shoved itself a full step and
+     sat off centre by half a caption, while every radius and width involved
+     still measured correct. Ramp through zero instead of stepping across it.
+369. ⚠️ **A hidden element measures zero, and so does a clamped one.** The
+     rail is `hidden` until its first paint and its captions are held at
+     `max-width: 0`; `scrollWidth` AND `offsetWidth` both report 0 in either
+     case, so three separate attempts to measure a caption all returned nothing
+     and the pill grew to exactly its own padding. A fixed slot with an
+     ellipsis has none of those failure modes.
+370. ⚠️ **`min-width: auto` on a flex item beats `max-width: 0`.** A flex
+     item will not shrink below its content by default, so a caption held at
+     zero rendered at full width and every stop on the rail became a word-wide
+     pill sitting on its neighbours.
+371. ⚠️ **`box-sizing: border-box` makes padding the FLOOR of a width.**
+     `max-width: 0` cannot squeeze padding out, so a caption clamped to nothing
+     still occupied its own padding on every stop. Grow the padding with the
+     width, from the same number.
+372. ⚠️ **A debounce re-armed from the frame loop never fires.** The loop is
+     woken by things with nothing to do with the thing being debounced — the
+     clock ticking the pill over, a session changing, the panel measuring
+     itself — and each of those reset the timer. Start the count; never restart
+     one already running.
+373. ⚠️ **A spring asymptotes, so `value === 0` is never true again.** The
+     name went away once and never came back, because the re-arm was guarded on
+     an exact zero the spring arrives near but not at. Ask `settled`.
+374. ⚠️ **Rubber-banding past the end unselects everything.** Which stop you
+     are ON has to be read from the CLAMPED position while where each one sits
+     is read from the real one — judged on the rubber-banded position, the
+     nearest stop is over half a slot away and the rail reads as having lost
+     its place because you leaned on the end of it.
 

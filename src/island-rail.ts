@@ -68,6 +68,27 @@ export class IslandRail {
   private opened = false;
   private closing = 0;
   private moving = false;
+  /* ── The name on the stop you settle on ────────────────────────────────────
+   * ⚠️ DEBOUNCED, and that is the whole of it. A caption is wider than an
+   * icon, so showing one moves every stop beside it — harmless once, and a
+   * layout thrashing back and forth if it happens on every stop a drag passes.
+   * It waits for the rail to stop, and goes the instant it moves again. */
+  private named = new Spring(0, 0.3, 0.92);
+  private naming = 0;
+  /** The widest caption, so every stop displaces its neighbours by the same
+   *  amount. ⚠️ One width for all of them: per-caption, the row either side
+   *  would shift by a different distance for each screen, and stepping along
+   *  the rail would make the whole thing breathe. */
+  /** The room a name opens into, as a FIXED slot rather than a measured one.
+   *
+   * ⚠️ Measuring it was three traps and no better answer. The rail is
+   * `hidden` until its first paint and a hidden element measures zero; the
+   * caption is held at `max-width: 0`, and both `scrollWidth` and `offsetWidth`
+   * report zero on a box already clamped to nothing; and a per-caption width
+   * would shift the stops either side by a different distance for every screen,
+   * so stepping along the rail would make the whole row breathe. A slot every
+   * name fits has none of that, and anything that outgrows it ellipsises. */
+  private capWide = cpx(FRAME.railSayRoom);
 
   /* ── The drag ─────────────────────────────────────────────────────────
    * Held here rather than read back off the DOM: a drag is a stream of
@@ -87,6 +108,9 @@ export class IslandRail {
    *  re-runs a screen's entrance when it is handed the screen already on, so a
    *  drag that wobbles over one stop makes it flash. */
   private told = "";
+  /** When the shell was last told, so a fast drag does not render every screen
+   *  it passes over. */
+  private toldAt = 0;
   private lastX = 0;
   private lastT = 0;
 
@@ -136,8 +160,10 @@ export class IslandRail {
 
   get element(): HTMLElement { return this.host; }
   get hidden(): boolean { return this.host.hidden; }
-  get settled(): boolean { return this.at.settled && !this.grabbed; }
-  step(dt: number) { this.at.step(dt); }
+  get settled(): boolean {
+    return this.at.settled && this.named.settled && !this.grabbed;
+  }
+  step(dt: number) { this.at.step(dt); this.named.step(dt); }
 
   setPrefs(prefs: RailPrefs) {
     this.prefs = prefs;
@@ -179,6 +205,7 @@ export class IslandRail {
       cell.setAttribute("aria-label", stop.label);
       cell.title = stop.label;
       paintIcon(cell, stop.icon);
+      cell.append(element("span", "rail-say", stop.label));
       /* ⚠️ `click`, not `pointerup`. A drag that ends on a stop must not also
        * select it, and `dragging` is what tells them apart — but the browser
        * suppresses a click after a real drag anyway, so this is belt and
@@ -275,6 +302,7 @@ export class IslandRail {
     if (want < 0) want = want / 3;
     else if (want > last) want = last + (want - last) / 3;
     this.at.snap(want);
+    this.renaming(false);
     this.lay();
     this.carry(this.offset(), false);
     /* ⚠️ The screen changes as the rail passes it, not when the drag is let
@@ -312,6 +340,7 @@ export class IslandRail {
   }
 
   private settleOn(index: number) {
+    this.renaming(false);
     if (still()) this.at.snap(index);
     else this.at.setTarget(index);
     this.wake();
@@ -326,13 +355,56 @@ export class IslandRail {
   private arrive(index: number, live: boolean) {
     const stop = this.live()[index];
     if (!stop || stop.name === this.told) return;
+    /* ⚠️ Rate-limited while the drag is in the hand. A screen change is a
+     * full render of the panel, and a quick flick across the rail passes six
+     * of them in half a second — rendering all six is work nobody sees and it
+     * makes the drag itself stutter. The rail keeps moving smoothly; the panel
+     * simply shows some of what it goes past.
+     *
+     * ⚠️ The RELEASE is never rate-limited, so whatever it lands on is always
+     * what ends up on screen. */
+    const now = performance.now();
+    if (live && now - this.toldAt < 150) return;
+    this.toldAt = now;
     this.told = stop.name;
     this.choose(stop.name, live);
   }
 
+  /** Take the name away now; put it back when the rail has been still for a
+   *  moment. ⚠️ Called from everywhere that moves the rail, including the
+   *  frame loop — there is no single place a carousel "stops". */
+  private renaming(quiet: boolean) {
+    if (!quiet) {
+      clearTimeout(this.naming);
+      this.naming = 0;
+      this.named.setTarget(0);
+      return;
+    }
+    /* ⚠️ Only START the count — never restart one already running. This is
+     * called from the frame loop, and the loop is woken by things that have
+     * nothing to do with the rail: the clock ticking the pill over, a session
+     * changing, the panel measuring itself. Re-arming on each of those starves
+     * the timer forever, and the name simply never appears. */
+    if (this.naming) return;
+    this.naming = window.setTimeout(() => {
+      this.naming = 0;
+      this.named.setTarget(1);
+      this.wake();
+    }, 260);
+  }
+
   /** How far the rail is from its resting stop, in cells. The island's content
    *  rides this, which is what makes the two read as one movement. */
-  private offset(): number { return this.at.value - Math.round(this.at.value); }
+  private offset(): number {
+    /* ⚠️ Measured from the CLAMPED position. Past the first or last stop the
+     * rail rubber-bands — which is right, it says "this is the end" — but there
+     * is no screen out there for the panel to be carried towards, so carrying
+     * it anyway slides the content off and then snaps it back when the band
+     * returns. At the ends this is simply zero. */
+    const last = Math.max(0, this.live().length - 1);
+    const bounded = Math.max(0, Math.min(last, this.at.value));
+    return bounded - Math.round(bounded);
+  }
 
   /* ── Drawing ──────────────────────────────────────────────────────── */
 
@@ -369,7 +441,15 @@ export class IslandRail {
       opacity: String(Math.max(0, Math.min(1, frame.fold * 1.6 - 0.6))),
     });
     this.lay();
-    if (this.at.settled && !this.grabbed) this.carry(0, true);
+    if (this.at.settled && !this.grabbed) {
+      this.carry(0, true);
+      /* Nothing has moved this frame; start counting towards the name.
+       *
+       * ⚠️ `settled`, not `value === 0`. A spring asymptotes — it arrives at
+       * 0.004 and stays there — so an equality test against zero is never true
+       * after the first drag, and the name goes away once and never returns. */
+      if (this.named.settled) this.renaming(true);
+    }
   }
 
   /** Where each stop sits, and how much of it you can see.
@@ -381,10 +461,35 @@ export class IslandRail {
    * cheap carousel. */
   private lay() {
     const centre = this.at.value;
+    /* ⚠️ Which stop you are ON is read from the CLAMPED position, while where
+     * each one sits is read from the real one. Pulling past the first or last
+     * stop rubber-bands the rail out beyond it, and judged on that the nearest
+     * stop is more than half a slot away — so nothing is marked as current,
+     * the caption goes, and the rail reads as having lost its place because
+     * you leaned on the end of it. */
+    const last = Math.max(0, this.live().length - 1);
+    const anchor = Math.max(0, Math.min(last, centre));
     const edge = (this.prefs.visible - 1) / 2;
+    /* How much room the caption is taking. ⚠️ Its neighbours are pushed out by
+     * HALF of it each, not the whole: the pill grows from its middle, so each
+     * side only has to yield half the extra. Pushing by the full width leaves a
+     * visible hole beside the name. */
+    const grown = this.named.value * this.capWide;
+    /* ⚠️ The neighbours yield HALF the extra each, plus a gap. Half, because
+     * the pill grows from its middle and each side only has to give way by
+     * half of it; the gap, because half exactly is half exactly — the pill's
+     * edge lands on its neighbour's and the name reads as crowded into it. */
+    const push = (grown + cpx(FRAME.railSayGap)) / 2;
     for (const [index, cell] of this.cells.entries()) {
       const away = index - centre;
-      const along = away * this.pitch();
+      /* ⚠️ RAMPED, not `Math.sign`. The centred stop's `away` is zero give or
+       * take floating-point noise, and `Math.sign(1e-15)` is 1 — so the stop
+       * the name belongs to shoved ITSELF a full step sideways and sat off
+       * centre by half the name's width, which every other measurement here
+       * still called correct. It also means a stop crossing the middle slides
+       * through the displacement instead of snapping across it. */
+      const lean = Math.max(-1, Math.min(1, away / 0.5));
+      const along = away * this.pitch() + lean * push;
       cell.style.translate = this.upright ? `0 ${along}px` : `${along}px 0`;
       const far = Math.abs(away);
       /* Full size in the middle, and away from it they shrink, fade and blur
@@ -393,12 +498,26 @@ export class IslandRail {
       cell.style.scale = `${0.74 + 0.26 * near}`;
       cell.style.opacity = `${Math.max(0, Math.min(1, 0.12 + 0.88 * near))}`;
       cell.style.filter = far < 0.5 ? "none" : `blur(${Math.min(3.2, (far - 0.5) * 2.2)}px)`;
-      cell.classList.toggle("is-here", far < 0.5);
-      cell.setAttribute("aria-selected", String(far < 0.5));
+      const here = Math.abs(index - anchor) < 0.5;
+      cell.classList.toggle("is-here", here);
+      cell.setAttribute("aria-selected", String(here));
       /* ⚠️ Kept out of the tab order when it is not the one showing. Nine
        * screens on a rail is nine tab stops between the panel and its own
        * controls otherwise. */
-      (cell as HTMLButtonElement).tabIndex = far < 0.5 ? 0 : -1;
+      (cell as HTMLButtonElement).tabIndex = here ? 0 : -1;
+      /* ⚠️ Written as a LENGTH, from the same number that moves the
+       * neighbours. A CSS transition on the caption and a spring on the row
+       * either side are two clocks for one movement, and they drift. */
+      const say = cell.querySelector(".rail-say") as HTMLElement | null;
+      if (!say) continue;
+      const showing = here;
+      say.style.maxWidth = showing ? `${grown}px` : "0px";
+      /* ⚠️ The padding grows WITH it. `box-sizing: border-box` means padding
+       * is the floor of a border box, not something `max-width: 0` can squeeze
+       * out — so a caption held at zero still took its own padding's width, and
+       * every stop on the rail carried eleven pixels of nothing. */
+      say.style.paddingRight = showing
+        ? `${this.named.value * cpx(FRAME.railSayGap)}px` : "0px";
     }
   }
 }
