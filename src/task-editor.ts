@@ -47,6 +47,7 @@ interface Prefs {
   railFlat: boolean;
   railOrder: string[];
   railHidden: string[];
+  railColours: Record<string, string>;
   useEverything: boolean;
   indexApps: boolean;
   notifyRuns: boolean;
@@ -325,7 +326,7 @@ for (const spec of PANES) {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
-  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [],
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   useEverything: true, indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -539,13 +540,21 @@ function screenOrder(): { name: string; label: string }[] {
   return [...SCREENS].sort((a, b) => rank(a.name) - rank(b.name));
 }
 
+/** The accent as a hex string, for a colour input that cannot take anything
+ *  else. ⚠️ Read off the element rather than off `prefs.accent`, which may be
+ *  any CSS colour; the input only accepts `#rrggbb`. */
+function accentNow(): string {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent").trim();
+  return /^#[0-9a-f]{6}$/i.test(raw) ? raw : "#00ff88";
+}
+
 function paintScreens() {
   const host = get("rail-screens");
   host.replaceChildren();
   for (const screen of screenOrder()) {
     const row = document.createElement("div");
     row.className = "set-row screen-row";
-    row.draggable = true;
     row.dataset.screen = screen.name;
 
     const grip = document.createElement("span");
@@ -579,46 +588,107 @@ function paintScreens() {
       savePrefs();
     };
 
-    row.append(grip, text, box);
+    /* ⚠️ A colour per screen, and its DEFAULT is the accent rather than a
+     * stored value. Nothing is written until one is picked, so the palette
+     * follows the accent for anybody who never opens this. */
+    const dye = document.createElement("input");
+    dye.type = "color";
+    dye.className = "screen-dye";
+    dye.value = prefs.railColours[screen.name] ?? accentNow();
+    dye.setAttribute("aria-label", `Colour for ${screen.label}`);
+    dye.oninput = () => {
+      prefs.railColours = { ...prefs.railColours, [screen.name]: dye.value };
+      savePrefs();
+    };
+    /* Right-click clears it back to the accent — a colour input has no "none",
+     * and a reset button per row is nine buttons for a thing done twice. */
+    dye.oncontextmenu = event => {
+      event.preventDefault();
+      const rest = { ...prefs.railColours };
+      delete rest[screen.name];
+      prefs.railColours = rest;
+      dye.value = accentNow();
+      savePrefs();
+    };
+
+    row.append(grip, text, dye, box);
     host.append(row);
   }
 }
 
-/* ⚠️ HTML drag and drop, not pointer events. This window is an ordinary
- * focusable window — unlike the island — so the platform's own drag works, and
- * it brings the auto-scroll and the drop cursor with it. The island could not
- * use this; a settings list can. */
-let dragging: string | null = null;
-get("rail-screens").addEventListener("dragstart", event => {
+/* ── Reordering ──────────────────────────────────────────────────────
+ * ⚠️ POINTER events, not HTML5 drag and drop. The first version used the
+ * platform's own drag — it brings auto-scroll and a drop cursor for free — and
+ * it does not work here at all: Tauri intercepts drag events at the window to
+ * implement file drop, so `dragstart` never reaches the page and the rows
+ * simply do not move. It works perfectly in a browser, which is exactly what
+ * makes it the wrong choice: the bug only exists in the app.
+ *
+ * ⚠️ And the row is reordered LIVE rather than on release, so the list under
+ * the pointer is the list you are arranging. A preview that only resolves when
+ * you let go is a guess you have to check afterwards. */
+let carrying: string | null = null;
+let carriedFrom = 0;
+
+function rowUnder(y: number): HTMLElement | null {
+  const rows = [...get("rail-screens").querySelectorAll<HTMLElement>(".screen-row")];
+  return rows.find(row => {
+    const box = row.getBoundingClientRect();
+    return y >= box.top && y <= box.bottom;
+  }) ?? null;
+}
+
+get("rail-screens").addEventListener("pointerdown", event => {
   const row = (event.target as HTMLElement).closest<HTMLElement>(".screen-row");
-  if (!row) return;
-  dragging = row.dataset.screen ?? null;
-  row.classList.add("is-lifting");
-  event.dataTransfer?.setData("text/plain", dragging ?? "");
+  /* ⚠️ Not from the switch. It sits inside the row, and a press on it that
+   * moved a pixel would start a drag instead of toggling — which is most
+   * presses on a 22px target. */
+  if (!row || (event.target as HTMLElement).closest("input")) return;
+  carrying = row.dataset.screen ?? null;
+  carriedFrom = event.clientY;
 });
-get("rail-screens").addEventListener("dragend", event => {
-  (event.target as HTMLElement).closest(".screen-row")?.classList.remove("is-lifting");
-  dragging = null;
-});
-get("rail-screens").addEventListener("dragover", event => {
-  if (!dragging) return;
-  // Without this the drop is refused and the row springs back.
-  event.preventDefault();
-  const over = (event.target as HTMLElement).closest<HTMLElement>(".screen-row");
-  if (!over || over.dataset.screen === dragging) return;
-  const order = screenOrder().map(s => s.name);
-  const from = order.indexOf(dragging);
+
+get("rail-screens").addEventListener("pointermove", event => {
+  if (!carrying) return;
+  const row = get("rail-screens")
+    .querySelector<HTMLElement>(`.screen-row[data-screen="${carrying}"]`);
+  /* ⚠️ Four pixels of slop before it counts as carrying, or every press on a
+   * row is a one-pixel drag and the list twitches under the finger. */
+  if (!row?.classList.contains("is-lifting")) {
+    if (Math.abs(event.clientY - carriedFrom) < 4) return;
+    row?.classList.add("is-lifting");
+    /* Captured only once it IS a drag, so a press that turns out to be a click
+     * on the switch still reaches it. */
+    get("rail-screens").setPointerCapture(event.pointerId);
+  }
+
+  const over = rowUnder(event.clientY);
+  if (!over || over.dataset.screen === carrying) return;
+  const order = screenOrder().map(one => one.name);
+  const from = order.indexOf(carrying);
   const to = order.indexOf(over.dataset.screen ?? "");
   if (from < 0 || to < 0) return;
   order.splice(to, 0, ...order.splice(from, 1));
   prefs.railOrder = order;
   paintScreens();
+  // The rows were rebuilt, so the one being carried has to be marked again.
+  get("rail-screens")
+    .querySelector(`.screen-row[data-screen="${carrying}"]`)?.classList.add("is-lifting");
 });
-get("rail-screens").addEventListener("drop", event => {
-  event.preventDefault();
-  dragging = null;
-  savePrefs();
-});
+
+for (const done of ["pointerup", "pointercancel"] as const) {
+  get("rail-screens").addEventListener(done, event => {
+    if (!carrying) return;
+    const moved = get("rail-screens").querySelector(".screen-row.is-lifting");
+    carrying = null;
+    if (!moved) return;
+    moved.classList.remove("is-lifting");
+    if (get("rail-screens").hasPointerCapture(event.pointerId)) {
+      get("rail-screens").releasePointerCapture(event.pointerId);
+    }
+    savePrefs();
+  });
+}
 
 const railGrip = get<HTMLInputElement>("rail-grip");
 railGrip.oninput = () => {

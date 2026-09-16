@@ -398,10 +398,26 @@ html[data-open=click] .pill-eq:active { scale:.9; transition-duration:90ms; }
    than my content" — and that BEATS `max-width: 0`. Without it every caption
    renders at full width whatever the paint loop writes, so all nine stops are
    word-wide pills sitting on top of each other. */
-/* The one you are on: brighter, and on a lifted ground rather than a bigger
-   one — `lay()` already scales it, and doing both makes it lurch. */
-.rail-stop.is-here { color:#fff; background:#1f1f1f;
-  box-shadow:var(--hairline), var(--gloss); }
+/* ── The one you are on ────────────────────────────────────────────────
+   ⚠️ It was a slightly lighter grey disc among grey discs, which is not a
+   selection — it is the same thing very slightly more so, and on a row of nine
+   it takes a second look to find. Colour is what makes it findable without
+   reading: a ring in the screen's own colour, a wash of it behind the icon,
+   and the glyph itself brought up to white.
+
+   ⚠️ `--stop` per screen, falling through to the accent. Every shade here is
+   mixed off that one value with `color-mix`, so a screen is ONE colour and the
+   rest is arithmetic — the same rule the whole surface follows. */
+.rail-stop { --stop: var(--accent); }
+.rail-stop.is-here { color:#fff;
+  background:color-mix(in srgb, var(--stop) 26%, #101010);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--stop) 72%, transparent),
+    0 0 12px -2px color-mix(in srgb, var(--stop) 55%, transparent),
+    var(--gloss); }
+.rail-stop.is-here svg { color:#fff; }
+/* Off-centre, the colour is a hint rather than a statement: enough to tell two
+   screens apart at a glance, not enough to make a row of nine into bunting. */
+.rail-stop:not(.is-here) svg { color:color-mix(in srgb, var(--stop) 38%, #8f8f8f); }
 .rail-stop.is-live::after { content:""; position:absolute; top:1px; right:1px;
   width:5px; height:5px; border-radius:50%; background:var(--accent); }
 .rail-stop.is-here.is-live::after { display:none; }
@@ -1541,6 +1557,14 @@ button:active:not(:disabled) { background:var(--tile-on); }
    would collapse the list by its own height and every other row would jump,
    which makes the drop target impossible to aim at. */
 .screen-row.is-lifting { opacity:.4; }
+/* ⚠️ The native swatch, stripped back. A colour input paints its own border
+   and padding in the platform's colours, which on a dark panel is a white
+   rectangle around every row. */
+.screen-dye { width:26px; height:26px; flex-shrink:0; padding:0; border:0;
+  border-radius:8px; background:none; cursor:pointer;
+  box-shadow:inset 0 0 0 1px var(--hair); }
+.screen-dye::-webkit-color-swatch-wrapper { padding:0; }
+.screen-dye::-webkit-color-swatch { border:0; border-radius:7px; }
 .set-text { flex:1; min-width:0; }
 .set-text b { display:block; font-size:12.5px; font-weight:500; }
 .set-text span { display:block; font-size:11px; color:#7c7c7c; line-height:1.5; margin-top:2px;

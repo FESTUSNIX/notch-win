@@ -92,7 +92,10 @@ let demoPrefs: Record<string, unknown> = {
      settings window drives it from a file. ⚠️ Comma-separated screen NAMES,
      not labels — the rail matches on `data-tab`. */
   railOrder: (new URLSearchParams(location.search).get("order") ?? "").split(",").filter(Boolean),
-  railHidden: (new URLSearchParams(location.search).get("hide") ?? "").split(",").filter(Boolean), useEverything: true,
+  railHidden: (new URLSearchParams(location.search).get("hide") ?? "").split(",").filter(Boolean),
+  /* `?tint=name:#hex,name:#hex` — the same map the settings window writes. */
+  railColours: Object.fromEntries((new URLSearchParams(location.search).get("tint") ?? "")
+    .split(",").filter(Boolean).map(one => one.split(":")) as [string, string][]), useEverything: true,
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

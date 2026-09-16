@@ -177,6 +177,7 @@ interface Prefs {
   railFlat: boolean;
   railOrder: string[];
   railHidden: string[];
+  railColours: Record<string, string>;
   useEverything: boolean;
   indexApps: boolean;
   mutedModules: string[];
@@ -186,7 +187,7 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [],
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -296,6 +297,7 @@ function stops(): RailStop[] {
     icon: tab.icon,
     label: tab.label,
     live: lit.has(tab.name),
+    colour: prefs.railColours[tab.name],
     /* ⚠️ Home is never hidden, whatever the preferences say. It is where the
      * island opens and where a vanished screen sends you — hiding it leaves
      * nowhere for either to land. */

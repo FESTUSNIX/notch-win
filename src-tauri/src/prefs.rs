@@ -82,6 +82,10 @@ pub struct Prefs {
     pub rail_order: Vec<String>,
     /// The screens that are not on the rail at all.
     pub rail_hidden: Vec<String>,
+    /// A colour per screen, keyed by name. ⚠️ Partial on purpose: anything
+    /// missing takes the accent, so the default is an empty map rather than a
+    /// palette somebody has to maintain alongside the screens.
+    pub rail_colours: BTreeMap<String, String>,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -134,6 +138,7 @@ impl Default for Prefs {
             rail_flat: false,
             rail_order: Vec::new(),
             rail_hidden: Vec::new(),
+            rail_colours: BTreeMap::new(),
             use_everything: true,
             index_apps: true,
             notify_runs: true,

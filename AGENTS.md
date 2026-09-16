@@ -2780,4 +2780,24 @@ The two halves were the same fault.
      island visibly GREW while closing. Masking the contents hid what was in
      it and left the shape doing exactly that. Fold first; restore behind the
      collapsed pill, where it snaps.
+400. ⚠️ **Tauri intercepts drag events at the window, so HTML5 drag and drop
+     does not reach the page.** The settings window's reorder worked perfectly
+     in a browser and not at all in the app — which is exactly what makes the
+     platform's own drag the wrong choice here, because the bug only exists
+     where it cannot be seen. Pointer events work in both, and are testable.
+401. ⚠️ **A tooltip that falls back to `aria-label` is a tooltip on
+     everything.** Everything pressable is labelled, for reasons that have
+     nothing to do with wanting a tooltip — so the fallback put one on every
+     control on the surface, and a tooltip on everything is a tooltip nobody
+     reads. Require `data-tip`, and say it twice where it helps.
+402. ⚠️ **`innerText` counts text clipped to zero width.** The rail hides every
+     caption but the middle one with `max-width: 0; overflow: hidden`, and
+     `innerText` reports all nine — so "does this control already show its own
+     name" answered yes for all of them. A `Range` over the text is no better:
+     it measures the text's own layout and ignores the ancestor clipping it.
+     The text node's PARENT box is what is on screen.
+403. ⚠️ **A selected item has to differ in KIND, not in degree.** The rail's
+     current stop was a slightly lighter grey disc among grey discs, which on a
+     row of nine takes a second look to find. Colour is what makes it findable
+     without reading.
 

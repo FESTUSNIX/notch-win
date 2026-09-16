@@ -69,6 +69,13 @@ restart and a rebuild.
 - [x] ⚠️ **Home cannot be switched off**, in the island as well as in the
       window: it is where the island opens and where a vanished screen sends
       you.
+- [x] ⚠️ **Reordering is POINTER-driven.** HTML5 drag and drop works in a
+      browser and not in the app at all — Tauri intercepts drag events at the
+      window — so the first version was a feature that only worked where it
+      could be tested. AGENTS 400.
+- [x] **A colour per screen**, picked in the same row. The one you are on wears
+      it as a ring, a wash and a glow; the others as a tint on the glyph.
+      Unset falls through to the accent, so the map is partial on purpose.
 - [ ] A hidden screen is still reachable from the palette, which is right — but
       nothing says so except the sentence above the list.
 

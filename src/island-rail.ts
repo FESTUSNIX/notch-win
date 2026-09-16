@@ -30,6 +30,8 @@ export interface RailStop {
   name: string;
   icon: TaskIcon;
   label: string;
+  /** What this screen is coloured, or nothing for the accent. */
+  colour?: string;
   /** A screen with something waiting on it wears a dot, as the tabs did. */
   live?: boolean;
   /** Present but not reachable — the player with nothing playing. */
@@ -190,7 +192,9 @@ export class IslandRail {
   setStops(stops: RailStop[], current: string) {
     const same = stops.length === this.stops.length
       && stops.every((s, i) => s.name === this.stops[i].name
-        && s.live === this.stops[i].live && s.hidden === this.stops[i].hidden);
+        && s.live === this.stops[i].live && s.hidden === this.stops[i].hidden
+        // ⚠️ Colour too, or changing one in settings never reaches the rail.
+        && s.colour === this.stops[i].colour);
     this.stops = stops;
     if (!same) this.paintCells();
     const want = this.live().findIndex(s => s.name === current);
@@ -221,6 +225,11 @@ export class IslandRail {
       cell.dataset.tip = stop.label;
       paintIcon(cell, stop.icon);
       cell.append(element("span", "rail-say", stop.label));
+      /* ⚠️ Written as a custom property, not as a colour. Every shade the
+       * stylesheet wants — the ring, the wash behind the icon, the glow — is
+       * mixed off this one value, so a screen is one colour and the rest is
+       * arithmetic. Left unset it falls through to the accent. */
+      if (stop.colour) cell.style.setProperty("--stop", stop.colour);
       /* ⚠️ `click`, not `pointerup`. A drag that ends on a stop must not also
        * select it, and `dragging` is what tells them apart — but the browser
        * suppresses a click after a real drag anyway, so this is belt and

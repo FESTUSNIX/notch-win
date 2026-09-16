@@ -24,8 +24,13 @@
  */
 import { element } from "./dom";
 
-/** How long the pointer has to rest before the FIRST tip. */
-const WAIT = 380;
+/** How long the pointer has to rest before the FIRST tip.
+ *
+ * ⚠️ Long enough to be a DECISION. At 380 it appeared while the pointer was
+ * still travelling across the panel, so crossing the island lit up whatever
+ * happened to be on the way — which reads as the surface being twitchy rather
+ * than helpful. */
+const WAIT = 650;
 /** How long the row stays "warm" after one closes, during which the next is
  *  immediate. Long enough to cross a gap, short enough that coming back to the
  *  same row a moment later still feels deliberate. */
@@ -52,25 +57,52 @@ function node(): HTMLElement {
 
 /** What this element wants to say, if anything.
  *
- * ⚠️ `data-tip` first, then `aria-label`. Most controls here already carry a
- * label for the screen reader and it is the same sentence — asking for it twice
- * is how the two drift apart. */
+ * ⚠️ `data-tip` ONLY. It fell back to `aria-label` at first, on the reasoning
+ * that most controls here already carry the same sentence for a screen reader
+ * and asking twice is how the two drift apart — and the result was a tooltip on
+ * every single thing on the surface, because everything that can be pressed is
+ * labelled for a reason that has nothing to do with wanting a tooltip. A
+ * tooltip on everything is a tooltip nobody reads. Saying it twice is the
+ * price of saying it only where it helps. */
 function labelOf(el: Element): string {
-  const own = el.getAttribute("data-tip");
-  if (own !== null) return own;
-  return el.getAttribute("aria-label") ?? "";
+  return el.getAttribute("data-tip") ?? "";
 }
 
-/** ⚠️ CONTROLS only, never "the nearest thing with a label". `#island` itself
- *  carries an `aria-label` — as do the panel, the screens and half the regions
- *  inside them — so a bare `closest("[aria-label]")` matches everywhere on the
- *  surface and the whole island grows one tooltip saying its own name. */
-const CONTROLS = "[data-tip], button, a[href], summary, input, [role='tab'], [role='button'], [role='switch']";
+/** Whether this control already says what it is.
+ *
+ * ⚠️ A tooltip on something that is already captioned is the caption again,
+ * a beat later, in a box — and with two dozen of them on the surface that is
+ * most of what you see while the pointer crosses the panel. So the rule is
+ * automatic rather than a list somebody maintains: if the thing shows its own
+ * text, it does not get a tip.
+ *
+ * It falls out exactly right on the rail, where the same control is captioned
+ * in the middle and an icon everywhere else: the one you are on stays quiet,
+ * its neighbours explain themselves. */
+function speaks(el: HTMLElement): boolean {
+  /* ⚠️ The text's own BOX, not `innerText`. A caption clipped to nothing —
+   * `max-width: 0; overflow: hidden`, which is how the rail hides every name
+   * but the middle one — is still in `innerText`, so the obvious one-liner
+   * decides that all nine stops are captioned and none of them ever gets a
+   * tip. A `Range` measures what is actually on screen. */
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    if (!node.textContent?.trim()) continue;
+    /* ⚠️ The text's PARENT box, not a `Range` over the text. A range measures
+     * the text's own layout and ignores an ancestor clipping it — so a caption
+     * held at `max-width: 0` still measures 32 by 16, and the check decides
+     * every rail stop is captioned. The element holding it measures zero,
+     * which is the thing actually on screen. */
+    const box = node.parentElement?.getBoundingClientRect();
+    if (box && box.width > 2 && box.height > 2) return true;
+  }
+  return false;
+}
 
 function target(from: EventTarget | null): HTMLElement | null {
-  const el = from instanceof Element ? from.closest<HTMLElement>(CONTROLS) : null;
-  if (!el || el.hasAttribute("data-no-tip")) return null;
-  return labelOf(el) ? el : null;
+  const el = from instanceof Element ? from.closest<HTMLElement>("[data-tip]") : null;
+  if (!el || !labelOf(el) || speaks(el)) return null;
+  return el;
 }
 
 /** Put it beside the control, inside the window.
