@@ -1,9 +1,13 @@
 /* A countdown in the island's header: a pomodoro, or just a timer.
  *
- * ⚠️ **One engine, two behaviours.** A pomodoro is a countdown that knows what
- * comes after it; a timer is a countdown that does not. Two separate features
- * would be two chips in a header with room for one, and two sets of the same
- * bug about what happens when the app is closed mid-count.
+ * ⚠️ **One engine, two INSTANCES.** A pomodoro is a countdown that knows
+ * what comes after it; a timer is a countdown that does not. They share the
+ * engine — one set of bugs about what happens when the app is closed
+ * mid-count — and they do NOT share the state: one state meant starting a
+ * timer silently threw away a pomodoro that was four rounds in, with no
+ * warning and nothing to undo it. They run side by side now, each with its own
+ * storage key, and the collapsed island has room for both: the pomodoro takes
+ * the strip and the timer is the circle beside it.
  *
  * ⚠️ **This is NOT the focus timer.** `focus-timer.ts` is a stopwatch attached
  * to a task — "how long have I been on this" — and it counts up from zero with
@@ -31,6 +35,8 @@ export const ROUNDS = 4;
 
 export type Phase = "work" | "rest" | "long" | "plain";
 
+export type Kind = "pomodoro" | "plain";
+
 export interface Countdown {
   phase: Phase;
   /** Epoch ms when it ends, or null while it is paused. */
@@ -47,6 +53,14 @@ export interface Countdown {
    *  a plain timer has no declared length anywhere else, so the ring and the
    *  dial had nothing to measure against and the ring sat at zero. */
   whole?: number;
+  /** Waiting to be started, rather than paused part-way through.
+   *
+   * ⚠️ The two look identical in the state — both are `endsAt: null` — and
+   * they are not the same thing to a reader: "paused" means you stopped it,
+   * "ready" means the app is holding the door open for the next round. They
+   * also want different words on the same button.
+   */
+  ready?: boolean;
 }
 
 export type Shape = Countdown | null;
@@ -70,13 +84,32 @@ const minutes = (count: number) => Math.max(1, Math.round(count)) * 60_000;
 /** What follows a phase that has just run out.
  *
  * ⚠️ A finished work round rolls straight into its break, and a finished
- * break does NOT roll into the next round. Resting is the half people skip, so
- * it starts itself; working is the half that should be a decision, and a
- * pomodoro app that has already started your next twenty-five minutes for you
- * is one you end up fighting. A plain timer simply ends.
+ * break hands back the next round READY but not running. Resting is the half
+ * people skip, so it starts itself; working is the half that should be a
+ * decision, and a pomodoro app that has already started your next twenty-five
+ * minutes for you is one you end up fighting.
+ *
+ * ⚠️ But "a decision" is not "throw the run away", which is what this used
+ * to do: a finished break returned NOTHING, so the state went null, the track
+ * emptied, the rounds you had done were forgotten and the whole thing looked
+ * like it had reset itself while you were away from the desk. The run is kept
+ * and the next round waits on its start button. A plain timer simply ends.
  */
 export function next(state: Countdown, lengths: Lengths, now = Date.now()): Shape {
-  if (state.phase !== "work") return null;
+  if (state.phase === "plain") return null;
+  if (state.phase !== "work") {
+    const span = minutes(lengths.work);
+    return {
+      phase: "work",
+      endsAt: null,
+      left: span,
+      // Already counted when the work round that earned this break finished.
+      round: state.round,
+      name: state.name,
+      whole: span,
+      ready: true,
+    };
+  }
   const round = state.round + 1;
   const long = round % ROUNDS === 0;
   const span = minutes(long ? lengths.long : lengths.rest);
@@ -89,6 +122,11 @@ export function next(state: Countdown, lengths: Lengths, now = Date.now()): Shap
     name: state.name,
     whole: span,
   };
+}
+
+/** Which round of the cycle this is, one-based — "3" of four. */
+export function roundOf(state: Countdown): number {
+  return (state.round % ROUNDS) + 1;
 }
 
 /** What to call the phase on screen. */
@@ -112,7 +150,13 @@ export function spokenEnd(state: Countdown, lengths: Lengths): { title: string; 
     };
   }
   if (state.phase === "plain") return { title: "Timer done", body: "The countdown has run out." };
-  return { title: "Break over", body: "Start the next pomodoro when you are ready." };
+  /* ⚠️ Names the round that is WAITING. "Start the next one when you are
+   * ready" was true and useless: it did not say the run had been kept, and
+   * the screen behind it had gone blank, so it read as a run that had ended. */
+  return {
+    title: "Break over",
+    body: `Round ${(state.round % ROUNDS) + 1} of ${ROUNDS} is ready when you are.`,
+  };
 }
 
 /** One segment of a pomodoro cycle, for the track that shows where you are. */
@@ -168,11 +212,18 @@ export function cycle(lengths: Lengths, state: Shape): Session[] {
   return out;
 }
 
-const KEY = "codenotch.timer.v1";
+/** ⚠️ The pomodoro keeps the ORIGINAL key. A plain countdown left in it by
+ *  an older build is dropped by the phase check below rather than loaded as a
+ *  pomodoro, which would have shown a fifteen-minute timer as round one. */
+const KEYS: Record<Kind, string> = {
+  pomodoro: "codenotch.timer.v1",
+  plain: "codenotch.countdown.v1",
+};
 
 /** The header's countdown, persisted so a reload does not lose it. */
 export class Timer {
   state: Shape = null;
+  readonly kind: Kind;
 
   /* ⚠️ Declared and assigned, never `constructor(private changed: ...)`.
    * Node's type stripping refuses a parameter property outright, and the whole
@@ -190,16 +241,21 @@ export class Timer {
    *                to the next phase rather than needing a restart
    */
   constructor(
+    kind: Kind,
     changed: () => void,
     ended: (finished: Countdown) => void,
     lengths: () => Lengths,
   ) {
+    this.kind = kind;
     this.changed = changed;
     this.ended = ended;
     this.lengths = lengths;
     try {
-      const held = JSON.parse(localStorage.getItem(KEY) || "null") as Countdown | null;
-      if (held && typeof held.round === "number" && typeof held.left === "number") {
+      const held = JSON.parse(localStorage.getItem(KEYS[kind]) || "null") as Countdown | null;
+      // ⚠️ Each instance holds its OWN shape of countdown and drops the other's.
+      if (held && (held.phase === "plain") !== (kind === "plain")) {
+        /* nothing: a state from the other kind, left by an older build */
+      } else if (held && typeof held.round === "number" && typeof held.left === "number") {
         /* ⚠️ A stored countdown that ran out while the app was closed is
          * DROPPED, not fired. Otherwise every launch after lunch announces a
          * pomodoro that ended an hour ago — and the one thing a timer must
@@ -214,7 +270,8 @@ export class Timer {
     const lengths = this.lengths();
     const span = minutes(mins ?? lengths.work);
     this.state = {
-      phase: mins ? "plain" : "work",
+      // The INSTANCE decides what it is, not the argument. See `Kind`.
+      phase: this.kind === "plain" ? "plain" : "work",
       endsAt: Date.now() + span,
       left: 0,
       round: 0,
@@ -249,8 +306,11 @@ export class Timer {
   toggle() {
     const state = this.state;
     if (!state) return;
-    if (state.endsAt === null) state.endsAt = Date.now() + Math.max(0, state.left);
-    else {
+    if (state.endsAt === null) {
+      state.endsAt = Date.now() + Math.max(0, state.left);
+      // Started is no longer waiting. See `ready`.
+      delete state.ready;
+    } else {
       state.left = remaining(state);
       state.endsAt = null;
     }
@@ -297,8 +357,9 @@ export class Timer {
 
   private save() {
     try {
-      if (this.state) localStorage.setItem(KEY, JSON.stringify(this.state));
-      else localStorage.removeItem(KEY);
+      const key = KEYS[this.kind];
+      if (this.state) localStorage.setItem(key, JSON.stringify(this.state));
+      else localStorage.removeItem(key);
     } catch { /* private mode, a full disk — the timer still runs */ }
     this.changed();
   }

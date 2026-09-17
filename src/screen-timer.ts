@@ -22,7 +22,7 @@ import { timerText } from "./focus-timer";
 import { setDigits, setText } from "./tween";
 import { tick as click } from "./click";
 import { MOST, clamp, free, offsetFor, ticks } from "./dial";
-import { ROUNDS, cycle, phaseName, type Lengths, type Timer } from "./timer";
+import { ROUNDS, cycle, phaseName, roundOf, type Lengths, type Timer } from "./timer";
 
 /** How long the ruler takes to ease onto a mark once the hand lets go.
  *  Must match `.tm-strip.is-settling` in the stylesheet. */
@@ -39,9 +39,17 @@ export interface TimerDeps {
   changed: () => void;
 }
 
+/** The two countdowns this screen drives. ⚠️ Two, because they RUN at once:
+ *  one engine meant pressing Start on the timer face silently threw away a
+ *  pomodoro four rounds in. Each face holds its own. */
+export interface Timers {
+  pomodoro: Timer;
+  plain: Timer;
+}
+
 export class TimerScreen {
   private host: HTMLElement;
-  private timer: Timer;
+  private timers: Timers;
   private deps: TimerDeps;
 
   /** What the dial is wound to while nothing is running. */
@@ -68,35 +76,34 @@ export class TimerScreen {
   private pill: { pill: HTMLElement; tabs: HTMLElement[] } | null = null;
   private watch?: ResizeObserver;
 
-  constructor(host: HTMLElement, timer: Timer, deps: TimerDeps) {
+  constructor(host: HTMLElement, timers: Timers, deps: TimerDeps) {
     this.host = host;
-    this.timer = timer;
+    this.timers = timers;
     this.deps = deps;
   }
 
-  private drawn = "";
-
-  /** Is the thing that is running this face's own?
-   *
-   * ⚠️ A plain timer and a pomodoro are ONE engine, so both faces can see
-   * whatever is counting — and each has to refuse the other's, or the timer
-   * face draws a running pomodoro's clock above a dial set to something else.
-   */
-  private ours(state: Timer["state"], mode: "timer" | "pomodoro"): Timer["state"] {
-    if (!state) return null;
-    return (mode === "timer") === (state.phase === "plain") ? state : null;
+  /** The engine behind the face that is showing. */
+  private engine(mode = this.deps.mode()): Timer {
+    return mode === "timer" ? this.timers.plain : this.timers.pomodoro;
   }
+
+  private drawn = "";
 
   render() {
     // See `holding`: a rebuild mid-gesture drops the drag it is rebuilding for.
     if (this.holding) return;
     const mode = this.deps.mode();
-    const state = this.ours(this.timer.state, mode);
+    /* ⚠️ Each face reads its OWN engine. Both can be counting at once, and
+     * a face that drew whatever was running drew the other one's clock above
+     * a dial set to something else. */
+    const state = this.engine(mode).state;
     const lengths = this.deps.lengths();
     const key = [
-      mode, state?.phase ?? "", state?.endsAt === null, state?.round ?? 0,
-      state?.name ?? "", this.tuning, this.set,
+      mode, state?.phase ?? "", state?.endsAt === null, state?.ready ?? false,
+      state?.round ?? 0, state?.name ?? "", this.tuning, this.set,
       lengths.work, lengths.rest, lengths.long,
+      // The OTHER face's countdown shows as a dot on its tab.
+      !!(mode === "timer" ? this.timers.pomodoro : this.timers.plain).state,
     ].join("|");
     if (key === this.drawn) return;
     this.drawn = key;
@@ -113,6 +120,11 @@ export class TimerScreen {
       tune.classList.toggle("is-on", this.tuning);
       top.append(tune);
     }
+    /* ⚠️ The phase is an ATTRIBUTE, not a colour written per element. Focus
+     * is the accent; a break is a pale tint of the same accent, so the two
+     * read apart at a glance without a second hue to keep in step with
+     * whatever the user has set. */
+    this.host.dataset.phase = state?.phase ?? "";
     this.host.append(top);
     // Measured, so it has to happen after the row is in the document.
     this.slide(mode);
@@ -132,6 +144,16 @@ export class TimerScreen {
         one === "timer" ? "Timer" : "Pomodoro");
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-pressed", String(one === mode));
+      /* ⚠️ A dot when the face you are NOT looking at has something
+       * counting. The two run side by side now, so the tab you left has to be
+       * able to say so — otherwise a pomodoro running behind the timer face
+       * is invisible from the screen that owns it.
+       *
+       * ⚠️ On the OTHER tab only. The face you are looking at is already a
+       * clock counting down; a dot there says the same thing a second time
+       * and stops the dot meaning "over here". */
+      const own = one === "timer" ? this.timers.plain : this.timers.pomodoro;
+      if (one !== mode && own.state) button.append(element("i", "tm-mode-dot"));
       button.onclick = () => this.deps.setMode(one);
       row.append(button);
       tabs.push(button);
@@ -195,8 +217,9 @@ export class TimerScreen {
   /* ── A timer you wind ────────────────────────────────────────────────── */
 
   private timerFace(state: Timer["state"]) {
+    const timer = this.timers.plain;
     const running = !!state;
-    const minutes = running ? Math.max(0, this.timer.seconds() / 60) : this.set;
+    const minutes = running ? Math.max(0, timer.seconds() / 60) : this.set;
     this.host.append(this.dial(minutes, !running));
 
     /* The row the whole face is built around: what to press on the left, what
@@ -204,16 +227,16 @@ export class TimerScreen {
     const row = element("div", "tm-row");
     const acts = element("div", "tm-acts");
     if (!running) {
-      acts.append(this.button("play", "Start", () => this.timer.start(this.set), "lead"));
+      acts.append(this.button("play", "Start", () => timer.start(this.set), "lead"));
     } else {
       acts.append(this.button(
         state!.endsAt === null ? "play" : "pause",
         state!.endsAt === null ? "Resume" : "Pause",
-        () => this.timer.toggle(), "lead",
+        () => timer.toggle(), "lead",
       ));
-      acts.append(this.button("close", "Stop", () => this.timer.stop()));
+      acts.append(this.button("close", "Stop", () => timer.stop()));
     }
-    row.append(acts, this.clock(running ? timerText(this.timer.seconds()) : `${this.set}:00`));
+    row.append(acts, this.clock(running ? timerText(timer.seconds()) : `${this.set}:00`));
     this.host.append(row);
   }
 
@@ -381,7 +404,7 @@ export class TimerScreen {
     name.onfocus = () => this.deps.focus(true);
     name.onblur = () => {
       this.deps.focus(false);
-      if (state) this.timer.rename(name.value);
+      if (state) this.timers.pomodoro.rename(name.value);
     };
     name.onkeydown = event => {
       if (event.key === "Enter") name.blur();
@@ -389,27 +412,35 @@ export class TimerScreen {
       event.stopPropagation();
     };
     name.oninput = () => {
-      if (this.timer.state) this.timer.state.name = name.value.trim() || undefined;
+      const held = this.timers.pomodoro.state;
+      if (held) held.name = name.value.trim() || undefined;
     };
     this.host.append(name);
     this.host.append(this.track(state, lengths));
 
+    const timer = this.timers.pomodoro;
     const row = element("div", "tm-row");
     const acts = element("div", "tm-acts");
     if (!state) {
-      acts.append(this.button("play", "Start", () => this.timer.start(undefined, name.value), "lead"));
+      acts.append(this.button("play", "Start", () => timer.start(undefined, name.value), "lead"));
     } else {
+      /* ⚠️ A round that is WAITING says "Start round 3", not "Resume". Both
+       * are `endsAt: null` in the state and they mean different things to a
+       * reader: paused is something you did, ready is the app holding the
+       * door open for the next round after a break ran out. */
       acts.append(this.button(
         state.endsAt === null ? "play" : "pause",
-        state.endsAt === null ? "Resume" : "Pause",
-        () => this.timer.toggle(), "lead",
+        state.endsAt === null
+          ? (state.ready ? `Start round ${roundOf(state)}` : "Resume")
+          : "Pause",
+        () => timer.toggle(), "lead",
       ));
-      acts.append(this.button("next", "Skip to the next session", () => this.timer.skip()));
-      acts.append(this.button("close", "Stop", () => this.timer.stop()));
+      acts.append(this.button("next", "Skip to the next session", () => timer.skip()));
+      acts.append(this.button("close", "Stop", () => timer.stop()));
     }
 
     const right = element("div", "tm-right");
-    right.append(this.clock(state ? timerText(this.timer.seconds()) : `${lengths.work}:00`));
+    right.append(this.clock(state ? timerText(timer.seconds()) : `${lengths.work}:00`));
     const said = element("div", "tm-say t-text-swap");
     setText(said, this.phaseLine(state, lengths));
     right.append(said);
@@ -421,9 +452,11 @@ export class TimerScreen {
 
   private phaseLine(state: Timer["state"], lengths: Lengths): string {
     if (!state) return `${lengths.work} min focus · ${lengths.rest} min break`;
+    // See the button above on why these two are not the same word.
+    if (state.ready) return `${phaseName(state)} ${roundOf(state)} of ${ROUNDS} · ready`;
     if (state.endsAt === null) return `${phaseName(state)} · paused`;
     if (state.phase !== "work") return phaseName(state);
-    return `${phaseName(state)} · ${(state.round % ROUNDS) + 1} of ${ROUNDS}`;
+    return `${phaseName(state)} · ${roundOf(state)} of ${ROUNDS}`;
   }
 
   /** The cycle, as dots that elongate.
@@ -443,7 +476,7 @@ export class TimerScreen {
         + ` — ${session.minutes} minutes`);
       if (session.state === "now") {
         const fill = element("i");
-        fill.style.width = `${Math.round(this.timer.through() * 100)}%`;
+        fill.style.width = `${Math.round(this.timers.pomodoro.through() * 100)}%`;
         dot.append(fill);
       }
       row.append(dot);
@@ -512,17 +545,18 @@ export class TimerScreen {
   /** The seconds, the running dot and the phase line, in place — the screen
    *  itself is keyed and must not be rebuilt once a second. */
   tick() {
-    const state = this.ours(this.timer.state, this.deps.mode());
+    const timer = this.engine();
+    const state = timer.state;
     if (!state) return;
     const clock = this.host.querySelector<HTMLElement>(".tm-clock");
     // Per digit, so only the numbers that changed move. See `clock`.
-    if (clock) setDigits(clock, timerText(this.timer.seconds()));
+    if (clock) setDigits(clock, timerText(timer.seconds()));
     const fill = this.host.querySelector<HTMLElement>(".tm-dot.is-now i");
-    if (fill) fill.style.width = `${Math.round(this.timer.through() * 100)}%`;
+    if (fill) fill.style.width = `${Math.round(timer.through() * 100)}%`;
     const said = this.host.querySelector<HTMLElement>(".tm-say");
     if (said) setText(said, this.phaseLine(state, this.deps.lengths()));
     // A running timer's dial reads what is left, so it glides as it goes.
     const strip = this.host.querySelector<HTMLElement>(".tm-dial.is-locked .tm-strip");
-    if (strip) this.place(strip, this.timer.seconds() / 60);
+    if (strip) this.place(strip, timer.seconds() / 60);
   }
 }

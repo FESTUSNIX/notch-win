@@ -32,7 +32,7 @@ import { MediaScreen, MediaSource } from "./screen-media";
 import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
 import { TimerScreen } from "./screen-timer";
-import { DEFAULT_LENGTHS, Timer, phaseName, spokenEnd } from "./timer";
+import { DEFAULT_LENGTHS, ROUNDS, Timer, phaseName, roundOf, spokenEnd, type Countdown } from "./timer";
 import { setClicks } from "./click";
 import { timerText } from "./focus-timer";
 import { NotesScreen } from "./screen-notes";
@@ -214,6 +214,7 @@ interface Prefs {
   noticeMode: boolean;
   timerSound: string;
   timerMode: string;
+  pomodoroPill: string;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -232,6 +233,7 @@ let prefs: Prefs = {
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  pomodoroPill: "bar",
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -274,22 +276,24 @@ const noticeSource = new NoticeSource(() => render(), (what, why) => say(what, w
  * than captured, so changing them in settings applies to the next phase instead
  * of at the next restart — the same live-preferences rule everything else here
  * follows. */
-const timer = new Timer(
-  () => render(),
-  finished => {
-    const said = spokenEnd(finished, lengths());
-    say(said.title, said.body);
-    /* ⚠️ A noise as well as a toast, and not the toast's own: a toast is
-     * suppressed by Focus Assist, which is exactly what somebody running a
-     * pomodoro has switched on. See `sound.rs`. */
-    void call("play_sound", { alias: prefs.timerSound }).catch(() => {});
-    /* ⚠️ And a real toast, because the whole point of a countdown is that
-     * you are not looking at the thing that is counting. The island cannot
-     * reach you inside another window; the shell can. */
-    void call("notify_now", { title: said.title, body: said.body }).catch(() => {});
-  },
-  () => lengths(),
-);
+function announce(finished: Countdown) {
+  const said = spokenEnd(finished, lengths());
+  say(said.title, said.body);
+  /* ⚠️ A noise as well as a toast, and not the toast's own: a toast is
+   * suppressed by Focus Assist, which is exactly what somebody running a
+   * pomodoro has switched on. See `sound.rs`. */
+  void call("play_sound", { alias: prefs.timerSound }).catch(() => {});
+  /* ⚠️ And a real toast, because the whole point of a countdown is that
+   * you are not looking at the thing that is counting. The island cannot
+   * reach you inside another window; the shell can. */
+  void call("notify_now", { title: said.title, body: said.body }).catch(() => {});
+}
+/* ⚠️ TWO countdowns, running side by side. One engine meant that starting
+ * a timer silently threw away a pomodoro four rounds in — no warning, nothing
+ * to undo — and the collapsed island has room for both anyway: the pomodoro
+ * takes the strip, the timer is the circle beside it. */
+const timer = new Timer("pomodoro", () => render(), announce, () => lengths());
+const countdown = new Timer("plain", () => render(), announce, () => lengths());
 const lengths = () => ({
   work: prefs.pomodoroWork || DEFAULT_LENGTHS.work,
   rest: prefs.pomodoroBreak || DEFAULT_LENGTHS.rest,
@@ -334,7 +338,7 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
-const timerScreen = new TimerScreen(get("timer-body"), timer, {
+const timerScreen = new TimerScreen(get("timer-body"), { pomodoro: timer, plain: countdown }, {
   lengths: () => lengths(),
   mode: () => (prefs.timerMode === "timer" ? "timer" : "pomodoro"),
   setMode: mode => { prefs.timerMode = mode; savePrefs(); render(); },
@@ -635,28 +639,35 @@ function noticeClaim(): Activity | null {
 function timerClaim(): Activity | null {
   const state = timer.state;
   if (!state) return null;
-  /* ⚠️ A PLAIN timer does not claim the strip at all — it is a circle
-   * parked beside the notch instead. See island-bubble.ts: twenty minutes of
-   * "Timer · 12:04" costs the date, the clock and the module slot, to say a
-   * number you asked for yourself. A pomodoro keeps the strip because it has
-   * a name and a phase, which are things you look down to be reminded of. */
-  if (state.phase === "plain") return null;
   const held = state.endsAt === null;
+  /* ⚠️ The BAR mode is the quiet one, and it is the default. A 21px
+   * countdown on the strip is the brightest thing on the screen for
+   * twenty-five minutes at a stretch — which is the opposite of what a focus
+   * tool should be doing to your attention. As a fluid line along the bottom
+   * with the name above it, the pomodoro says where it is without asking to
+   * be read; the number comes back under the pointer. */
+  const bar = prefs.pomodoroPill !== "time";
   return {
     priority: 42,
     screen: "timer",
     kind: "focus",
-    icon: "timer",
+    /* ⚠️ The phase gets an ICON as well as a colour. A word is the one
+     * thing you do not read on a strip you are glancing at, and "Focus" and
+     * "Break" are the same length and the same shape at 10px. */
+    icon: state.phase === "work" ? "focus" : "coffee",
+    phase: state.phase,
+    bar,
     /* ⚠️ The NAME, when there is one. "Focus" you already knew — you
      * started it; "Ship the call screen" is the thing you look down at the
      * strip to be reminded of. The phase is the fallback, not the headline. */
     label: state.name || phaseName(state),
-    value: [state.name ? phaseName(state) : "", held ? "paused" : ""]
+    value: [state.name ? phaseName(state) : "",
+      state.ready ? "ready" : held ? "paused" : ""]
       .filter(Boolean).join(" · "),
-    /* ⚠️ Its own slot, and BIG. The countdown used to be the tail of the
-     * grey second line — ten and a half pixels, after the phase and a middle
-     * dot — which is the one number on the strip you are actually looking
-     * for, printed smaller than anything else on it. */
+    /* ⚠️ Its own slot. The countdown used to be the tail of the grey second
+     * line — ten and a half pixels, after the phase and a middle dot — which
+     * is the one number on the strip you are actually looking for, printed
+     * smaller than anything else on it. */
     time: timerText(timer.seconds()),
     held,
     progress: timer.through(),
@@ -671,14 +682,14 @@ function timerClaim(): Activity | null {
  * for a minute at a time, which is what a countdown looks like when it has
  * stopped. Padded, so neither row changes width under the other. */
 function paintBubble() {
-  const state = timer.state;
-  if (!state || state.phase !== "plain") {
+  const state = countdown.state;
+  if (!state) {
     surface.setCountdown(null);
     return;
   }
-  const seconds = timer.seconds();
+  const seconds = countdown.seconds();
   surface.setCountdown({
-    through: timer.through(),
+    through: countdown.through(),
     minutes: String(Math.floor(seconds / 60)).padStart(2, "0"),
     seconds: String(seconds % 60).padStart(2, "0"),
     final: seconds < 60,
@@ -763,11 +774,23 @@ function chipParts(chip: HTMLElement, second: string): { mark: HTMLElement; text
  * when this was unconditional. */
 let headDrawn = "";
 
+/** Which countdown the header speaks for.
+ *
+ * ⚠️ The POMODORO wins when both are running, and it is not arbitrary: the
+ * plain timer has a circle of its own beside the notch, so the chip is the
+ * only place a pomodoro can be while the panel is open. */
+function leading(): Timer {
+  return timer.state ? timer : countdown;
+}
+
 function paintHead() {
-  const running = timer.state;
+  const lead = leading();
+  const running = lead.state;
   const waiting = noticeSource.count;
   const key = [
-    running ? `${running.phase}:${timer.seconds()}:${running.endsAt === null}` : "",
+    running ? `${running.phase}:${lead.seconds()}:${running.endsAt === null}` : "",
+    // Both, so the chip repaints when the OTHER one starts or stops.
+    !!timer.state, !!countdown.state,
     waiting,
   ].join("|");
   if (key === headDrawn) return;
@@ -783,15 +806,21 @@ function paintHead() {
   const chip = get<HTMLButtonElement>("head-timer");
   chip.hidden = false;
   const { mark, text } = chipParts(chip, "head-text");
-  paintIcon(mark, "timer");
+  paintIcon(mark, running?.phase === "rest" || running?.phase === "long" ? "coffee" : "timer");
   chip.dataset.phase = running?.phase ?? "";
   chip.classList.toggle("is-held", !!running && running.endsAt === null);
   chip.classList.toggle("is-idle", !running);
+  /* Both are counting. ⚠️ The chip has room for ONE, so the other has to be
+   * admitted somehow or it is running invisibly behind the screen that owns
+   * it — which is the whole complaint that made them two engines. */
+  chip.classList.toggle("is-both", !!timer.state && !!countdown.state);
   if (running) {
-    const left = timerText(timer.seconds());
+    const left = timerText(lead.seconds());
+    const also = timer.state && countdown.state
+      ? ` — and a ${lead === timer ? "timer" : "pomodoro"} as well` : "";
     text.textContent = left;
-    chip.setAttribute("aria-label", `${phaseName(running)} — ${left} left`);
-    chip.setAttribute("data-tip", `${phaseName(running)} — ${left} left`);
+    chip.setAttribute("aria-label", `${phaseName(running)} — ${left} left${also}`);
+    chip.setAttribute("data-tip", `${phaseName(running)} — ${left} left${also}`);
   } else {
     text.textContent = "";
     chip.setAttribute("aria-label", "Timer");
@@ -975,15 +1004,19 @@ palette.add(query => {
       id: `timer:${count}`,
       icon: "timer",
       title: `Set a timer for ${count} minute${count === 1 ? "" : "s"}`,
-      run: () => { timer.start(count); },
+      run: () => { countdown.start(count); },
       // One id per number would evict forty real entries in an afternoon.
       volatile: true,
     });
   }
-  if (!timer.state) {
+  /* ⚠️ Two sets of verbs, and both name which one they mean. With one
+   * engine "Pause the timer" was unambiguous; with two running side by side a
+   * command that did not say which is a command you cannot use. */
+  const pom = timer.state;
+  if (!pom) {
     out.push({
       id: "timer:pomodoro",
-      icon: "timer",
+      icon: "focus",
       title: "Start a pomodoro",
       note: `${lengths().work} minutes, then a break`,
       run: () => { timer.start(); },
@@ -991,15 +1024,34 @@ palette.add(query => {
   } else {
     out.push({
       id: "timer:toggle",
-      icon: "timer",
-      title: timer.state.endsAt === null ? "Carry on the timer" : "Pause the timer",
+      icon: pom.phase === "work" ? "focus" : "coffee",
+      title: pom.endsAt === null
+        ? (pom.ready ? `Start round ${roundOf(pom)} of ${ROUNDS}` : "Carry on the pomodoro")
+        : `Pause the ${phaseName(pom).toLowerCase()}`,
       run: () => timer.toggle(),
     });
     out.push({
       id: "timer:stop",
       icon: "close",
-      title: `Stop the ${phaseName(timer.state).toLowerCase()}`,
+      title: "Stop the pomodoro",
+      note: `${roundOf(pom)} of ${ROUNDS} — the run is thrown away`,
       run: () => timer.stop(),
+    });
+  }
+  const plain = countdown.state;
+  if (plain) {
+    out.push({
+      id: "countdown:toggle",
+      icon: "timer",
+      title: plain.endsAt === null ? "Carry on the timer" : "Pause the timer",
+      note: timerText(countdown.seconds()),
+      run: () => countdown.toggle(),
+    });
+    out.push({
+      id: "countdown:stop",
+      icon: "close",
+      title: "Stop the timer",
+      run: () => countdown.stop(),
     });
   }
   return out;
@@ -1514,7 +1566,14 @@ get("head-bell").addEventListener("click", () => show("notices"));
  * countdown and starts one when there is not is two controls wearing one hat,
  * and which you get depends on a state you may not have looked at. Pause, stop
  * and the presets are on the screen, where they have room to be labelled. */
-get("head-timer").addEventListener("click", () => show("timer"));
+/* ⚠️ Opens the face of whatever is COUNTING, not whichever you looked at
+ * last. The two run side by side, so "open the timer screen" has an answer
+ * that depends on what is happening rather than on a stored preference. */
+get("head-timer").addEventListener("click", () => {
+  const want = timer.state ? "pomodoro" : countdown.state ? "timer" : null;
+  if (want && prefs.timerMode !== want) { prefs.timerMode = want; savePrefs(); }
+  show("timer");
+});
 
 /* The countdown beside the notch. ⚠️ The ring OPENS the island as well as
  * switching to the screen, the way a ring pick does and for the same reason:
@@ -1528,7 +1587,10 @@ surface.onCountdown(
     surface.pinFor(4000);
   },
   () => {
-    timer.toggle();
+    // ⚠️ The PLAIN one. The circle is the plain timer; `timer` is now the
+    // pomodoro, and pausing the wrong countdown is a silent failure that
+    // looks exactly like a button that does nothing.
+    countdown.toggle();
     paintBubble();
     paintHead();
   },
@@ -1963,10 +2025,17 @@ async function boot() {
     callScreen.tick();
     notices.tick();
     timerScreen.tick();
-    /* The countdown, once a second. ⚠️ `tick` returns whether a phase ENDED,
+    /* The countdowns, once a second. ⚠️ `tick` returns whether a phase ENDED,
      * which needs the whole shell redrawn — the chip alone would leave the
-     * rail and the palette holding a timer that has finished. */
-    if (timer.tick()) render(); else paintHead();
+     * rail and the palette holding a timer that has finished.
+     *
+     * ⚠️ Both are ticked BEFORE either answer is used. `a || b` short
+     * circuits, so a pomodoro that ends in the same second as a timer would
+     * have left the timer unticked — and unticked means unfinished: no sound,
+     * no toast, and a countdown sitting at 00:00 until the next second. */
+    const rolled = timer.tick();
+    const alsoRolled = countdown.tick();
+    if (rolled || alsoRolled) render(); else paintHead();
     paintPill();
   }, 1000);
   window.setInterval(() => { today.tick(); render(); }, 60000);

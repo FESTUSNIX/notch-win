@@ -173,6 +173,17 @@ h1 { margin:0; }
 .pill-label.muted { color:#6a6a6a; font-weight:400; }
 .pill-value { font-size:10.5px; color:#7d7d7d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   font-variant-numeric:tabular-nums; }
+/* ── Which half of a pomodoro you are in ───────────────────
+   ⚠️ A PALE TINT of the accent, never a second hue. The accent is one
+   variable and the user picks it; a hardcoded blue for breaks would clash
+   with half the choices and would have to be kept in step with the other
+   four places the accent is derived. Vivid is work, pale is rest — which
+   also says which of the two is the one you are meant to be doing.
+   ⚠️ And an icon as well as a colour, because a colour alone is not a
+   difference to everybody who uses this. See `coffee` in task-icons.ts. */
+[data-phase=rest], [data-phase=long] {
+  --phase: color-mix(in srgb, var(--accent) 42%, #ffffff); }
+
 /* ── A countdown, at the far end of the strip ────────────────
    ⚠️ Its own slot, and BIG. The time used to be the tail of the grey second
    line — 10.5px, behind the phase and a middle dot — so the one number
@@ -182,12 +193,48 @@ h1 { margin:0; }
 .pill-time { flex-shrink:0; margin-left:2px; font-size:21px; font-weight:640;
   letter-spacing:-.7px; line-height:1; color:#f4f4f4;
   font-variant-numeric:tabular-nums;
-  transition:color var(--duration-quick) var(--ease-smooth-out); }
+  transition:color var(--duration-quick) var(--ease-smooth-out),
+    opacity var(--duration-fast) var(--ease-smooth-out); }
 /* Paused DIMS the number rather than printing the word beside it — a strip
    with room for one line does not spend four characters saying so. */
 #island-collapsed.is-held .pill-time { color:#8a8a8a; }
 /* A side island is ~35px across; the copy is already hidden there. */
 [data-edge=left] .pill-time, [data-edge=right] .pill-time { display:none; }
+
+/* ── The quiet mode: a fluid line instead of a number ──────────
+   ⚠️ The DEFAULT for a pomodoro, and the reason is the whole feature: a 21px
+   countdown is the brightest thing on the screen for twenty-five minutes at a
+   stretch, which is the opposite of what a focus tool should be doing to
+   somebody's attention. The name says what you are on, the line says how far
+   through, and the number — the part that invites you to watch it — comes
+   back only under the pointer.
+   ⚠️ The time keeps its SPACE while it is invisible. Adding it on hover
+   would re-lay the strip out under the pointer, which is the one moment it
+   must hold still. */
+#island-collapsed[data-shape=bar] .pill-value { display:none; }
+#island-collapsed[data-shape=bar] .pill-copy { padding-bottom:4px; }
+#island-collapsed[data-shape=bar] .pill-time { font-size:13.5px;
+  letter-spacing:-.2px; color:#cfcfcf; opacity:0; }
+#island-collapsed[data-shape=bar]:hover .pill-time { opacity:1; }
+#island-collapsed[data-shape=bar] .pill-lead { color:var(--phase, var(--accent)); }
+/* The line itself. ⚠️ Along the BOTTOM edge rather than inside the copy: the
+   strip is 35px tall and every pixel of its middle is spoken for, and a rule
+   on the edge of a shape reads as a property OF the shape rather than as one
+   more thing printed on it. */
+.pill-bar { position:absolute; left:14px; right:14px; bottom:5px; height:3px;
+  border-radius:2px; background:rgba(255,255,255,.09); overflow:hidden; }
+/* ⚠️ A one-second LINEAR width, so it creeps. Anything shorter steps once a
+   second, and a bar that steps is a bar you keep noticing — which is exactly
+   what this mode exists to stop. */
+.pill-bar i { display:block; width:0; height:100%; border-radius:2px;
+  background:var(--phase, var(--accent)); transition:width 1s linear; }
+#island-collapsed.is-held .pill-bar i { background:#7a7a7a; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .pill-bar i { transition:none; }
+}
+html[data-motion=never] .pill-bar i { transition:none; }
+/* A side island has no room for a name, let alone a line under it. */
+[data-edge=left] .pill-bar, [data-edge=right] .pill-bar { display:none; }
 /* Only animates while something is genuinely playing; a frozen equaliser
    would say "playing" about a paused track. */
 /* ── The equaliser, and what it becomes ─────────────────────────────
@@ -297,10 +344,12 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
   transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
-.bub-min { font-size:11px; font-style:normal; }
-.bub-sec { font-size:9px; font-style:normal; font-weight:600; color:#8c8c8c;
-  margin-top:1px; }
-.island-bubble.is-final .bub-sec { color:color-mix(in srgb, var(--accent) 70%, #000); }
+/* ⚠️ The same weight and the same white. They were 11px bold over 9px grey
+   — two different things stacked — when they are one reading split across two
+   lines, and the grey row read as a subtitle about the row above it. */
+.bub-min, .bub-sec { font-size:10.5px; font-style:normal; font-weight:650;
+  color:#ededed; }
+.bub-sec { margin-top:1px; }
 /* ⚠️ The last minute is TINTED, because the middle then holds seconds:
    "45" on a ring that is nearly round would otherwise read as 45 minutes. */
 .island-bubble.is-final .bub-mid { color:var(--accent); }
@@ -3188,9 +3237,19 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
 .head-chip:active { scale:.94; transition-duration:90ms; }
 .head-mark { display:grid; place-items:center; }
 .head-mark svg { width:13px; height:13px; }
-/* A break is not work: the chip says which without a word. */
-.head-chip[data-phase=rest], .head-chip[data-phase=long] { color:var(--accent); }
-.head-chip[data-phase=rest] .head-mark, .head-chip[data-phase=long] .head-mark { color:var(--accent); }
+/* A break is not work: the chip says which without a word. ⚠️ `--phase` is
+   set by the attribute itself further down this sheet, so the tint here is
+   the same one the strip, the track and the screen's own clock use — one
+   derivation of the accent, four readers. */
+.head-chip[data-phase=rest], .head-chip[data-phase=long] { color:var(--phase); }
+.head-chip[data-phase=rest] .head-mark,
+.head-chip[data-phase=long] .head-mark { color:var(--phase); }
+/* Both are counting, and the chip has room for one. A pip says the other is
+   there; the tooltip says what it is. */
+.head-chip.is-both { position:relative; }
+.head-chip.is-both::after { content:""; position:absolute; top:-1px; right:-1px;
+  width:6px; height:6px; border-radius:50%; background:var(--accent);
+  box-shadow:0 0 0 2px #0b0b0b; }
 /* Paused reads as paused rather than as stopped — the digits stay, dimmed. */
 .head-chip.is-held { opacity:.55; }
 .head-count { min-width:13px; text-align:center; }
@@ -3306,7 +3365,13 @@ html[data-motion=never] .notice-row { transition:none; animation:none; }
    700px panel, which left two wide margins of nothing and made every element
    look small. The controls take one side and the number the other, so the
    number can be the biggest thing on the screen. */
-.timer-body { display:flex; flex-direction:column; gap:14px; }
+/* ⚠️ The gap and the bottom padding are TIGHT here, and the clock's line
+   box is tighter still. The panel is sized to its content, so every pixel of
+   slack inside it is a pixel of black at the bottom of the island — and a
+   60px number in a 60px line box carries about fifteen of them under the
+   digits, which landed as a band of nothing under the one screen with the
+   least on it. */
+.timer-body { display:flex; flex-direction:column; gap:11px; padding-bottom:11px; }
 
 .tm-top { display:flex; align-items:center; justify-content:space-between; }
 
@@ -3336,6 +3401,12 @@ html[data-motion=never] .notice-row { transition:none; animation:none; }
   transition:color var(--duration-fast) var(--ease-smooth-out); }
 .tm-mode:hover { color:#c4c4c4; background:none; }
 .tm-mode.is-on { color:#f2f2f2; }
+/* ⚠️ The two countdowns RUN AT ONCE, so the face you are not looking at has
+   to be able to say it is counting — otherwise a pomodoro behind the timer
+   face is running invisibly from the screen that owns it. */
+.tm-mode-dot { position:absolute; top:4px; right:5px; width:5px; height:5px;
+  border-radius:50%; background:var(--accent);
+  box-shadow:0 0 6px -1px var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion=always]) .tm-modes-pill { transition:none; }
 }
@@ -3349,8 +3420,10 @@ html[data-motion=never] .tm-modes-pill { transition:none; }
 /* ⚠️ Tabular and BIG. This is the one number on the screen and it changes
    every second; proportional digits make it breathe in and out, and anything
    under about 50px stops being the thing you read from across a desk. */
-.tm-clock { font-size:60px; font-weight:680; letter-spacing:-2.5px; line-height:1;
-  font-variant-numeric:tabular-nums; color:var(--accent); }
+/* ⚠️ `line-height` under 1 on purpose: see `.timer-body`. Tabular digits
+   have no descenders, so the box can be cut to the ink without clipping. */
+.tm-clock { font-size:60px; font-weight:680; letter-spacing:-2.5px; line-height:.82;
+  font-variant-numeric:tabular-nums; color:var(--phase, var(--accent)); }
 .tm-say { font-size:12.5px; font-weight:500; color:#9a9a9a; }
 
 /* ── The controls ───────────────────────────────────
@@ -3377,12 +3450,12 @@ html[data-motion=never] .tm-modes-pill { transition:none; }
 
 /* The one you came to press. */
 .tm-btn.is-lead { width:54px; height:54px; color:#0b0b0b;
-  background-color:var(--accent);
+  background-color:var(--phase, var(--accent));
   box-shadow:var(--gloss), var(--lift-2),
-    0 0 26px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+    0 0 26px -6px color-mix(in srgb, var(--phase, var(--accent)) 70%, transparent); }
 .tm-btn.is-lead svg { width:23px; height:23px; }
 .tm-btn.is-lead:hover { color:#0b0b0b;
-  background-color:color-mix(in srgb, var(--accent) 88%, #fff); }
+  background-color:color-mix(in srgb, var(--phase, var(--accent)) 88%, #fff); }
 /* And the one you touch on a Tuesday. */
 .tm-btn.is-ghost { width:32px; height:32px; color:#7c7c7c;
   background:none; box-shadow:none; }
@@ -3466,14 +3539,14 @@ html[data-motion=never] .tm-strip i { transition:none; }
    fill alone the segment that is HAPPENING looked exactly like the ones that
    have not started — the one thing the track exists to distinguish. */
 .tm-dot.is-now { width:56px;
-  background:color-mix(in srgb, var(--accent) 14%, rgba(255,255,255,.10));
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+  background:color-mix(in srgb, var(--phase, var(--accent)) 14%, rgba(255,255,255,.10));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--phase, var(--accent)) 40%, transparent); }
 .tm-dot.is-rest.is-now, .tm-dot.is-long.is-now { width:34px; }
 .tm-dot.is-now i { display:block; height:100%; border-radius:7px;
   /* A floor, so a round that has just begun still shows a head of colour. */
   min-width:7px;
-  background:var(--accent);
-  box-shadow:0 0 12px -3px var(--accent);
+  background:var(--phase, var(--accent));
+  box-shadow:0 0 12px -3px var(--phase, var(--accent));
   transition:width 1s linear; }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion=always]) .tm-dot { transition:none; }

@@ -64,6 +64,20 @@ export interface Activity {
   time?: string;
   /** Paused, which dims the countdown rather than adding a word to it. */
   held?: boolean;
+  /** Which half of a pomodoro this is, so the strip can be COLOURED by it.
+   *
+   * ⚠️ An attribute on the pill rather than a colour passed per element:
+   * focus is the accent and a break is a pale tint of the same accent, which
+   * keeps the one-accent rule and cannot drift out of step with whatever the
+   * user has set it to. */
+  phase?: string;
+  /** Draw the countdown as a fluid line along the bottom instead of a number.
+   *
+   * ⚠️ The quiet mode, and the default for a pomodoro. A 21px countdown is
+   * the brightest thing on the screen for twenty-five minutes at a stretch,
+   * which is the opposite of what a focus tool should be doing to your
+   * attention. The number comes back under the pointer. */
+  bar?: boolean;
   accent?: string;
   /** In a call: the microphone's own state, and the one or two controls the
    *  strip carries. ⚠️ Passed in rather than derived here — which controls
@@ -278,6 +292,11 @@ function build(host: HTMLElement, activity: Activity) {
     const image = element("img", "pill-art") as HTMLImageElement;
     image.alt = "";
     lead.append(image);
+  } else if (activity.bar && activity.icon) {
+    /* ⚠️ The ICON, not the ring: the bar along the bottom is the progress
+     * in this mode, and two readings of the same number on one strip is one
+     * of them saying nothing. The lead's job here is which HALF you are in. */
+    paintIcon(lead, activity.icon);
   } else if (activity.progress !== undefined) {
     lead.append(ring());
   } else if (activity.icon) {
@@ -291,6 +310,11 @@ function build(host: HTMLElement, activity: Activity) {
   if (activity.kind === "media") host.append(equaliser());
   // A `t-digit-group`, so only the digits that changed re-enter. See setDigits.
   if (activity.time !== undefined) host.append(element("div", "pill-time t-digit-group"));
+  if (activity.bar) {
+    const bar = element("div", "pill-bar");
+    bar.append(element("i"));
+    host.append(bar);
+  }
   host.dataset.kind = activity.kind;
 }
 
@@ -306,6 +330,7 @@ export function renderResting(host: HTMLElement, resting: Resting) {
   if (host.dataset.kind !== "clock") buildClock(host);
   host.classList.add("is-clock");
   host.classList.remove("is-held");
+  host.dataset.phase = "";
   setDigits(host.querySelector<HTMLElement>(".pill-clock")!, resting.time);
   setText(host.querySelector<HTMLElement>(".pill-date-day")!, resting.day);
   setText(host.querySelector<HTMLElement>(".pill-date-month")!, resting.month);
@@ -324,6 +349,7 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
 
   if (activity.kind === "call") {
     host.classList.remove("is-held");
+    host.dataset.phase = "";
     if (host.dataset.kind !== "call") buildCall(host);
     const art = host.querySelector<HTMLImageElement>(".pill-art")!;
     const mark = host.querySelector<HTMLElement>(".pill-mark")!;
@@ -344,7 +370,17 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   }
   host.removeAttribute("aria-label");
   host.classList.remove("is-muted");
-  if (host.dataset.kind !== activity.kind) build(host, activity);
+  /* ⚠️ The SHAPE, not the kind. The bar and the number are two different
+   * sets of children for the same `focus` claim, so a preference changed
+   * while a pomodoro is running has to rebuild — and keying on the kind
+   * alone left the old furniture in place until the phase changed. */
+  const shape = activity.bar ? "bar" : "";
+  if (host.dataset.kind !== activity.kind || host.dataset.shape !== shape) {
+    build(host, activity);
+    host.dataset.shape = shape;
+  }
+  // The phase colours the strip: see `Activity.phase`.
+  host.dataset.phase = activity.phase ?? "";
 
   const label = host.querySelector<HTMLElement>(".pill-label");
   const value = host.querySelector<HTMLElement>(".pill-value");
@@ -355,13 +391,24 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
    * a second because the seconds beside them moved. */
   if (time) setDigits(time, activity.time ?? "");
   host.classList.toggle("is-held", !!activity.held);
+  /* The fluid line. ⚠️ A width in per cent with a one-second linear
+   * transition, so it CREEPS rather than stepping once a second — a bar that
+   * jumps is a bar you notice, which is the whole thing this mode avoids. */
+  const bar = host.querySelector<HTMLElement>(".pill-bar i");
+  if (bar) bar.style.width = `${Math.max(0, Math.min(1, activity.progress ?? 0)) * 100}%`;
 
   // The icon is repainted every time, not only on a rebuild. Two claims can
   // share a `kind` and carry different icons — System and Calendar both raise
   // an "event" — and without this the pill keeps whichever one it built with.
   // paintIcon is a no-op when the name has not changed.
   const lead = host.querySelector<HTMLElement>(".pill-lead");
-  if (lead && activity.icon && !activity.artwork && activity.progress === undefined) {
+  /* ⚠️ `bar` as well as "no progress". A claim that carries a progress
+   * fraction normally draws a RING in this slot, so repainting an icon over
+   * it would erase it — but in bar mode the progress is the line along the
+   * bottom and the slot holds the phase glyph, which changes when the phase
+   * does. Without this the strip kept the focus icon all through the break. */
+  if (lead && activity.icon && !activity.artwork
+    && (activity.bar || activity.progress === undefined)) {
     paintIcon(lead, activity.icon);
   }
 

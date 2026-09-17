@@ -316,18 +316,143 @@ test("a named session is what the collapsed pill says", async ({ page }) => {
   /* ⚠️ The NAME, not the phase. "Focus" you already knew — you started it;
    * what you look down at the strip for is which thing you said you were on. */
   await expect(pill.locator(".pill-label")).toHaveText("Ship the call screen");
-  await expect(pill.locator(".pill-value")).toHaveText("Focus");
 
-  /* ⚠️ The countdown has a SLOT OF ITS OWN, and it is the biggest thing on
-   * the strip. It used to be the tail of that grey second line — 10.5px,
-   * behind the phase and a middle dot — which printed the one number anybody
-   * looks down for smaller than everything around it. */
+  /* ⚠️ QUIET by default. A 21px countdown is the brightest thing on the
+   * screen for twenty-five minutes at a stretch, which is the opposite of
+   * what a focus tool should be doing to somebody's attention: a line along
+   * the bottom says how far through without asking to be read. */
+  await expect(pill).toHaveAttribute("data-shape", "bar");
+  await expect(pill.locator(".pill-bar")).toHaveCount(1);
   const time = pill.locator(".pill-time");
   await expect(time).toHaveText(/^\d?\d:\d\d$/);
+  /* ⚠️ Invisible, not absent: the number keeps its space while it is hidden,
+   * or the strip re-lays itself out under the pointer — the one moment it
+   * must hold still. */
+  await expect(time).toHaveCSS("opacity", "0");
+  const room = (await time.boundingBox())!;
+  expect(room.width).toBeGreaterThan(0);
+
+  /* ⚠️ The reveal can only be WATCHED in click mode, and the reload is how
+   * to get there: with hover opening, a pointer arriving at the strip has
+   * already replaced it with the panel, so "the number comes back under the
+   * pointer" has nothing to come back onto. It degrades the right way — there
+   * you get the panel's own 60px clock instead — but it cannot be seen from
+   * here. The countdown is an end time on disk, so it survives the trip. */
+  await page.goto("/tasks.html?quiet&click");
+  await expect(pill.locator(".pill-label")).toHaveText("Ship the call screen");
+  await expect(pill.locator(".pill-time")).toHaveCSS("opacity", "0");
+  await pill.hover();
+  await expect(pill.locator(".pill-time")).toHaveCSS("opacity", "1");
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+});
+
+test("the quiet pill can be turned back into the countdown", async ({ page }) => {
+  await page.goto("/tasks.html?quiet&pomtime");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-btn.is-lead").click();
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+
+  const pill = page.locator("#island-collapsed");
+  await expect(pill).toHaveAttribute("data-shape", "");
+  await expect(pill.locator(".pill-bar")).toHaveCount(0);
+  /* In this mode the countdown is the HEADLINE: it used to be the tail of the
+   * grey second line — 10.5px, behind the phase and a middle dot — which
+   * printed the one number anybody looks down for smaller than everything
+   * around it. */
+  await expect(pill.locator(".pill-time")).toHaveCSS("opacity", "1");
   const sizes = await pill.evaluate(el => [".pill-time", ".pill-label", ".pill-value"]
     .map(one => parseFloat(getComputedStyle(el.querySelector(one)!).fontSize)));
   expect(sizes[0]).toBeGreaterThan(sizes[1]);
   expect(sizes[0]).toBeGreaterThan(sizes[2]);
+});
+
+test("a break does not look like the focus it follows", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-btn.is-lead").click();
+
+  const body = page.locator(".timer-body");
+  await expect(body).toHaveAttribute("data-phase", "work");
+  const focus = await body.evaluate(el =>
+    getComputedStyle(el.querySelector(".tm-clock")!).color);
+
+  await page.locator('.tm-btn[aria-label="Skip to the next session"]').click();
+  await expect(body).toHaveAttribute("data-phase", "rest");
+  const rest = await body.evaluate(el =>
+    getComputedStyle(el.querySelector(".tm-clock")!).color);
+  /* ⚠️ A colour AND an icon. A word is the one thing you do not read on a
+   * strip you are glancing at — "Focus" and "Break" are the same length and
+   * much the same shape at 10px — and a colour alone is not a difference to
+   * everybody who uses this. */
+  expect(rest).not.toBe(focus);
+
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-phase", "rest");
+  await expect(page.locator("#island-collapsed .pill-lead")).toHaveAttribute("data-icon", "coffee");
+});
+
+test("a break that runs out hands back the next round rather than resetting", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-btn.is-lead").click();
+  await page.locator('.tm-btn[aria-label="Skip to the next session"]').click();
+  await expect(page.locator(".tm-say")).toHaveText("Break");
+
+  /* Run the break out. ⚠️ Through the STORED state and a reload, because the
+   * alternative is waiting five real minutes: the countdown is an end time on
+   * disk, which is the whole reason it survives a reload at all. */
+  await page.evaluate(() => {
+    const key = "codenotch.timer.v1";
+    const held = JSON.parse(localStorage.getItem(key)!);
+    held.endsAt = Date.now() + 900;
+    localStorage.setItem(key, JSON.stringify(held));
+  });
+  await page.reload();
+  await open(page);
+  await page.locator("#head-timer").click();
+
+  /* ⚠️ The run is KEPT. A finished break used to return nothing, so the
+   * state went, the track emptied and the round already done was forgotten —
+   * a pomodoro left alone through its own break looked like it had reset
+   * itself while you were away from the desk. */
+  await expect(page.locator(".tm-say")).toHaveText(/Focus 2 of 4 · ready/, { timeout: 8000 });
+  await expect(page.locator(".tm-btn.is-lead")).toHaveAttribute("aria-label", "Start round 2");
+  await expect(page.locator(".tm-dot.is-done")).toHaveCount(2, { timeout: 4000 });
+  await expect(page.locator(".tm-dot.is-work.is-now")).toHaveCount(1);
+});
+
+test("a timer and a pomodoro run side by side", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-name").fill("Ship the call screen");
+  await page.locator(".tm-btn.is-lead").click();
+  await expect(page.locator(".tm-say")).toHaveText("Focus · 1 of 4");
+
+  /* ⚠️ Starting a timer used to THROW THE POMODORO AWAY — silently, with
+   * nothing to undo it. They are two engines now, and the tab you are not
+   * looking at wears a dot so the one running behind it is not invisible. */
+  await page.locator('.tm-mode:has-text("Timer")').click();
+  await expect(page.locator('.tm-mode:has-text("Pomodoro") .tm-mode-dot')).toHaveCount(1);
+  await page.locator(".tm-btn.is-lead").click();
+  await expect(page.locator(".tm-clock")).toHaveText(/^(15:00|14:5\d)$/);
+
+  await page.locator('.tm-mode:has-text("Pomodoro")').click();
+  await expect(page.locator(".tm-name")).toHaveValue("Ship the call screen");
+  await expect(page.locator(".tm-say")).toHaveText("Focus · 1 of 4");
+  await expect(page.locator('.tm-mode:has-text("Timer") .tm-mode-dot')).toHaveCount(1);
+
+  // Collapsed, the strip carries the pomodoro and the circle carries the timer.
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "focus");
+  await expect(page.locator("#island-collapsed .pill-label")).toHaveText("Ship the call screen");
+  await expect(page.locator(".island-bubble")).toBeVisible();
 });
 
 test("a plain timer parks beside the notch instead of taking the strip", async ({ page }) => {

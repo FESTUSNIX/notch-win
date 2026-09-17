@@ -13,7 +13,7 @@ import {
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
-  Notification01Icon, Timer01Icon, ArrowLeft01Icon,
+  Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon,
 } from "@hugeicons/core-free-icons";
 
 const icons = {
@@ -55,6 +55,10 @@ const icons = {
   hand: HandIcon, hangup: CallEnd01Icon,
   // The header's two chips.
   bell: Notification01Icon, timer: Timer01Icon, back: ArrowLeft01Icon,
+  /* A pomodoro's two halves. ⚠️ An icon as well as a colour: the words
+     "Focus" and "Break" are the same length and much the same shape at 10px,
+     which is the size the collapsed strip prints them at. */
+  coffee: Coffee02Icon,
 };
 export type TaskIcon = keyof typeof icons;
 

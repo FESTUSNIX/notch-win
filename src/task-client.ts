@@ -145,6 +145,11 @@ let demoPrefs: Record<string, unknown> = {
   callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  /* ⚠️ Staged from the query string, like `?click` and `?edge=`. It decides
+     what the collapsed strip DOES with a running pomodoro — a quiet line or
+     the countdown itself — and there is no other way to reach the other one
+     from a test: it is a segmented control in a window this page cannot open. */
+  pomodoroPill: new URLSearchParams(location.search).has("pomtime") ? "time" : "bar",
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};

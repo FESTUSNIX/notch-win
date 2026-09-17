@@ -27,7 +27,7 @@ test('a paused countdown never runs out', () => {
   assert.ok(!done(null, now));
 });
 
-test('work rolls into its break; a break does not roll into work', () => {
+test('work rolls into its break; a break hands back a round that waits', () => {
   const now = 1_000_000;
   const after = next(at('work', now, 0), DEFAULT_LENGTHS, now);
   assert.equal(after.phase, 'rest');
@@ -36,11 +36,43 @@ test('work rolls into its break; a break does not roll into work', () => {
 
   /* ⚠️ Resting is the half people skip, so it starts itself. Working is the
    * half that should be a decision — an app that has already started your next
-   * twenty-five minutes is one you end up fighting. */
-  assert.equal(next(at('rest', now, 1), DEFAULT_LENGTHS, now), null);
-  assert.equal(next(at('long', now, 4), DEFAULT_LENGTHS, now), null);
+   * twenty-five minutes is one you end up fighting.
+   *
+   * ⚠️ But a decision is not the same as throwing the run away, which is
+   * what returning null did: the state went, the track emptied and the rounds
+   * already done were forgotten, so a pomodoro left alone through its break
+   * looked like it had reset itself. */
+  const waiting = next(at('rest', now, 1), DEFAULT_LENGTHS, now);
+  assert.equal(waiting.phase, 'work');
+  assert.equal(waiting.endsAt, null, 'ready, not running');
+  assert.equal(waiting.ready, true);
+  assert.equal(waiting.round, 1, 'the round it has already done is kept');
+  assert.equal(waiting.left, DEFAULT_LENGTHS.work * 60_000);
+  // Nothing has elapsed, so a ready round is never `done`.
+  assert.ok(!done(waiting, now + 10_000_000));
+
+  const afterLong = next(at('long', now, 4), DEFAULT_LENGTHS, now);
+  assert.equal(afterLong.phase, 'work');
+  assert.equal(afterLong.round, 4);
+
+  // The name carries across the break and out the other side.
+  const named = next({ ...at('rest', now, 1), name: 'Ship it' }, DEFAULT_LENGTHS, now);
+  assert.equal(named.name, 'Ship it');
+
   // And a plain timer is just over.
   assert.equal(next(at('plain', now, 0), DEFAULT_LENGTHS, now), null);
+});
+
+test('a round that is waiting is where the track says it is', () => {
+  /* ⚠️ The point of keeping the run: the track has to show round two as the
+   * one to come, with round one behind it — not an empty track, which is what
+   * "it reset itself" looked like. */
+  const waiting = next(at('rest', 1_000_000, 1), DEFAULT_LENGTHS, 1_000_000);
+  const track = cycle(DEFAULT_LENGTHS, waiting);
+  assert.equal(track[0].state, 'done', 'round one');
+  assert.equal(track[1].state, 'done', 'its break');
+  assert.equal(track[2].state, 'now', 'round two, waiting on you');
+  assert.equal(track[3].state, 'todo');
 });
 
 test('the fourth round earns the long break', () => {

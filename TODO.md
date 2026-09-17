@@ -3,31 +3,29 @@
 ## My ideas for the next features
 
 - Currency converter extension for the command palette
-- ~~Notifications shelf~~ — **done, basic**. Windows' own centre, mirrored on a
-  Notices screen with a bell in the header. ⚠️ A MIRROR: dismissing one here
-  dismisses it there, and nothing is kept on disk. The header shows a count and
-  never a word of content.
-  Cards with the app's own logo, the title, the app and two lines of body — the
-  shape the notification had when it flew past. Dismiss, clear all, and pressing
-  a card opens the app it came from.
-  - [ ] ⚠️ **Reply and snooze are not possible.** A notification cannot be
-        activated from outside — `UserNotification` has no method for it — so
-        the only handle is the app's AUMID, which opens Slack and never the
-        thread. Those actions live in the notification's own buttons, which
-        Windows does not expose.
-  - [ ] The poll is 1.5s now, not 4. Instant would need `NotificationChanged`,
-        which is documented as needing a background-task registration a desktop
-        app cannot make.
-  - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
-        key, the Start Menu) and falls back to a letter tile.
-- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen.
+
+- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen,
+  and then as two ENGINES behind them: a pomodoro and a timer run side by
+  side. One state meant starting a timer silently threw away a run four rounds
+  in. The tab you are not on wears a dot when its countdown is live.
   - **Timer**: a ruler of minutes you drag under a fixed mark, which glides on
     to read what is LEFT once it starts — setting it and watching it are one
     picture. Wheel works too. The strip follows the hand between the marks and
     eases onto one when you let go, the ends give rather than stopping dead,
     and the mark under the arrow lights white. Full width: the fade is a mask
     on the dial, not an opacity written onto 242 ticks every frame.
-  - **Collapsed**: a plain timer is a circle torn off the notch's side —
+  - **Collapsed (pomodoro)**: quiet by default — the phase icon, the session
+    name, and a fluid line along the bottom edge; the countdown comes back
+    under the pointer. ⚠️ Which means it comes back in CLICK mode only, since
+    hover opening replaces the strip with the panel before a pointer lands on
+    it. `Settings → On the notch` switches it back to the number.
+  - **Focus and break** are a vivid accent and a pale tint of the same accent,
+    plus a focus glyph and a coffee cup. ⚠️ A tint rather than a second hue:
+    the accent is one variable and a fixed blue would clash with half of what
+    somebody might pick.
+  - **A finished break** hands back the next round ready rather than ending the
+    run — the rounds you did are kept and the button says "Start round 3".
+  - **Collapsed (timer)**: a circle torn off the notch's side —
     level with its bottom, a shade smaller, tucked into the flare. The ring is
     how far through, the middle is the minutes over the seconds, and under the
     pointer it becomes pause/resume. Pressing the ring opens the screen. ⚠️ It is
@@ -46,6 +44,11 @@
         preference the settings window does. One value, two controls.
   - [ ] No per-session history: how many pomodoros you did yesterday is not
         recorded anywhere. The Review screen is where that would go.
+  - [ ] The header chip speaks for ONE of the two. With both running it shows
+        the pomodoro and wears a pip for the timer; the timer's own figure is
+        on the circle beside the notch, which the open panel hides.
+  - [ ] A ready round waits for ever. Nothing nudges you again after the first
+        toast, so a pomodoro can sit at "round 3, ready" all afternoon.
   - [ ] The dial is timer-only, deliberately: a pomodoro's lengths are a
         setting you choose once, and under a drag they become a thing to fiddle
         with.
@@ -100,18 +103,6 @@
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
 
 - Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
-- ~~Fix: Upcoming event stuck on the island~~ — **done**, and it was three
-  faults wearing one coat:
-  - It never let go. `nextEvent` keeps an event until it ENDS, and the claim
-    only asked "more than thirty minutes away?", so once the meeting began the
-    countdown went NEGATIVE and it held the strip for the whole meeting.
-  - It could not be answered. Every other thing that asks for attention can be
-    quietened — a module muted, an agent snoozed — but the strip is not
-    clickable, because hovering it opens the panel. There is a palette command
-    now, and it exists only while that event is claiming.
-  - Thirty minutes was too long to hold the WHOLE strip. Fifteen now, and from
-    fifteen to three hours the pill's own module covers it, which takes its
-    turn in a rotation instead of owning the slot.
 
 ---
 
@@ -160,6 +151,24 @@ until the answer arrives as a `tool_result`.
   the clock and gains mute + hang up; expanded, it is the call with its own
   screen. Zoom, Teams, Meet, WhatsApp — and Discord and Slack, which the table
   gave away for free.
+- ~~Notifications shelf~~ — **done, basic**. Windows' own centre, mirrored on a
+  Notices screen with a bell in the header. ⚠️ A MIRROR: dismissing one here
+  dismisses it there, and nothing is kept on disk. The header shows a count and
+  never a word of content.
+  Cards with the app's own logo, the title, the app and two lines of body — the
+  shape the notification had when it flew past. Dismiss, clear all, and pressing
+  a card opens the app it came from.
+  - [ ] ⚠️ **Reply and snooze are not possible.** A notification cannot be
+        activated from outside — `UserNotification` has no method for it — so
+        the only handle is the app's AUMID, which opens Slack and never the
+        thread. Those actions live in the notification's own buttons, which
+        Windows does not expose.
+  - [ ] The poll is 1.5s now, not 4. Instant would need `NotificationChanged`,
+        which is documented as needing a background-task registration a desktop
+        app cannot make.
+  - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
+        key, the Start Menu) and falls back to a letter tile.
+- ~~Fix: Upcoming event stuck on the island~~ — **done**
 
 ---
 

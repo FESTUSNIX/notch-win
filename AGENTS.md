@@ -3213,3 +3213,41 @@ The two halves were the same fault.
      the last minute read as forty-five of them. Two rows, minutes over
      seconds, the seconds smaller and quieter: what you read, and what says it
      is running.
+480. ⚠️ **One engine for two features is one feature that eats the other.**
+     A pomodoro and a plain timer shared a single state, so pressing Start on
+     the timer face silently threw away a run that was four rounds in — no
+     warning, nothing to undo, and the only symptom was a track that had gone
+     back to empty. Two instances of the same class with their own storage
+     keys, each dropping the other's shape on load. They run side by side, and
+     the collapsed island had room for both all along.
+481. ⚠️ **"Make it a decision" is not "throw the run away".** A finished
+     break returned nothing, so the state went null, the rounds already done
+     were forgotten and the track emptied: a pomodoro left alone through its
+     own break looked exactly like one that had reset itself. It hands back
+     the next round READY — `endsAt: null` with the whole span left — which is
+     the same shape as paused and has to say a different word on the same
+     button, so the state carries `ready` to tell them apart.
+482. ⚠️ **`a || b` never ticks b.** Both countdowns have to be ticked before
+     either answer is read, or a pomodoro ending in the same second as a timer
+     leaves the timer unfinished: no sound, no toast, and 00:00 on screen
+     until the next second.
+483. ⚠️ **A claim carrying `progress` draws a RING, so nothing repaints its
+     icon.** The strip kept the focus glyph all through the break, because the
+     "repaint the icon every frame" line skips any claim with a progress
+     fraction — which is right when the slot holds a ring and wrong the moment
+     the progress moved to a bar along the bottom.
+484. ⚠️ **"Show it on hover" is unobservable with hover opening.** A pointer
+     arriving at the collapsed strip has already replaced it with the panel,
+     so the reveal can only be watched in click mode. The behaviour degrades
+     correctly — there you get the panel's own 60px clock — but a test for it
+     has to reload into `?click`, and the countdown surviving that trip is the
+     end-time-on-disk rule paying for itself.
+485. ⚠️ **A 60px number in a 60px line box carries fifteen pixels of nothing
+     under it.** The panel is sized to its content, so that slack is black at
+     the bottom of the island — on the one screen with the least on it. Tabular
+     digits have no descenders, so the line box can be cut to the ink.
+486. ⚠️ **A second hue for "break" would be a second colour to keep in step.**
+     The accent is one variable and the user picks it; a fixed blue clashes
+     with half the choices. A pale tint of the accent says rest against work
+     and cannot drift — with an ICON beside it, because a colour on its own is
+     not a difference to everybody who uses this.

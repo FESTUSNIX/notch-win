@@ -52,6 +52,7 @@ interface Prefs {
   noticeMode: boolean;
   timerSound: string;
   timerMode: string;
+  pomodoroPill: string;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -222,6 +223,8 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Long break", "After every fourth one.",
         `<input type="range" id="pom-long" min="5" max="60" step="5"><span class="set-value" id="pom-long-value"></span>`)}
     </div>
+      ${row("On the notch", "A running pomodoro as a quiet line along the bottom, or as the countdown itself.",
+        seg("pompill", [["bar", "A line"], ["time", "The time"]], "Pomodoro on the pill"))}
       ${row("Sound", "What a finished countdown plays. Windows\u2019 own sounds \u2014 nothing is shipped.",
         seg("sound", [["", "None"], ["Notification.Default", "Chime"],
           ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]],
@@ -366,6 +369,7 @@ let prefs: Prefs = {
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  pomodoroPill: "bar",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -805,6 +809,7 @@ panelWidth.oninput = () => {
  * way in, so a typo here is a setting that silently will not stick rather
  * than one that plays the wrong noise. */
 onSeg("sound", value => { prefs.timerSound = value; savePrefs(); });
+onSeg("pompill", value => { prefs.pomodoroPill = value; savePrefs(); });
 onSeg("view", value => { prefs.taskView = value; savePrefs(); });
 
 /* ── The pill ────────────────────────────────────────────────────────── */
@@ -1134,6 +1139,7 @@ function paintPrefs() {
   get<HTMLInputElement>("call-mode").checked = prefs.callMode;
   get<HTMLInputElement>("notice-mode").checked = prefs.noticeMode;
   markSeg("sound", prefs.timerSound);
+  markSeg("pompill", prefs.pomodoroPill === "time" ? "time" : "bar");
   for (const [id, key] of POMODORO) {
     const slider = get<HTMLInputElement>(id);
     slider.value = String(prefs[key]);

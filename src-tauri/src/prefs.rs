@@ -125,6 +125,13 @@ pub struct Prefs {
     pub timer_sound: String,
     /// `timer` or `pomodoro` — which face the screen opens on.
     pub timer_mode: String,
+    /// How a running pomodoro shows on the collapsed strip: `bar` is a quiet
+    /// line along the bottom with the time under the pointer, `time` is the
+    /// countdown itself. ⚠️ `bar` is the default on purpose — a 21px
+    /// countdown is the brightest thing on the screen for twenty-five minutes
+    /// at a stretch, which is the opposite of what a focus tool should do to
+    /// somebody's attention.
+    pub pomodoro_pill: String,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -184,6 +191,7 @@ impl Default for Prefs {
             pomodoro_long: 15,
             timer_sound: "Notification.Reminder".into(),
             timer_mode: "pomodoro".into(),
+            pomodoro_pill: "bar".into(),
             call_mode: true,
             call_mute_mic: true,
             call_open: true,
@@ -254,6 +262,10 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
         timer_mode: match prefs.timer_mode.as_str() {
             "timer" => prefs.timer_mode,
             _ => "pomodoro".into(),
+        },
+        pomodoro_pill: match prefs.pomodoro_pill.as_str() {
+            "time" => prefs.pomodoro_pill,
+            _ => "bar".into(),
         },
         ..prefs
     };
