@@ -18,6 +18,14 @@ export interface ScreenDef {
   name: ScreenName;
   icon: TaskIcon;
   label: string;
+  /** Reached by being SENT there rather than by walking the rail.
+   *
+   * ⚠️ One flag, two readers, and they have to be the same flag: `stops()`
+   * keeps these off the rail, and the header shows a way back on exactly the
+   * screens that have no stop of their own. Written twice, the back arrow
+   * appears on a screen you can already leave, or — which is what happened —
+   * on none at all. */
+  offRail?: true;
 }
 
 export const SCREENS: ScreenDef[] = [
@@ -29,10 +37,10 @@ export const SCREENS: ScreenDef[] = [
   /* ⚠️ And this one is off the rail unless you put it there: the bell in the
    * header is how you reach it. The rail is for places you go on purpose; a
    * notification is something that happened to you. */
-  { name: "notices", icon: "bell", label: "Notices" },
+  { name: "notices", icon: "bell", label: "Notices", offRail: true },
   /* ⚠️ Off the rail unless you put it there, like the notices — the chip in
    * the header is how you reach it, and it is always there. */
-  { name: "timer", icon: "timer", label: "Timer" },
+  { name: "timer", icon: "timer", label: "Timer", offRail: true },
   { name: "today", icon: "today", label: "Today" },
   /* ⚠️ The player's stop exists only while something is playing. */
   { name: "media", icon: "media", label: "Playing" },

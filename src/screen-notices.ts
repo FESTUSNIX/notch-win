@@ -158,33 +158,47 @@ export class NoticesScreen {
       return;
     }
 
-    /* ⚠️ A button here as well as on the arc. The arc is where a screen's
-     * tools live and that is still true — but "clear all" is the one thing you
-     * come to this screen to do when there are fifty of them, and a control
-     * you have to reach for a bare line to find is one you do not know is
-     * there. */
-    const bar = element("div", "notice-bar");
-    bar.append(element("span", "notice-count",
-      `${notices.items.length} notification${notices.items.length === 1 ? "" : "s"}`));
-    const all = element("button", "notice-all", "Clear all");
-    (all as HTMLButtonElement).type = "button";
-    all.onclick = () => this.source.clear();
-    bar.append(all);
-    this.host.append(bar);
-
+    /* ⚠️ ONE clear-all, on the arc. There was a second one on a bar above the
+     * list for a while; two controls for one verb is two places to look for
+     * it, and the bar was a row of chrome over a list whose whole job is to be
+     * skimmed. The arc is where a screen's tools live. */
     for (const notice of notices.items) {
-      this.host.append(this.row(notice));
+      const row = this.row(notice);
+      // Anything that was not on the screen last time arrives rather than
+      // appearing. See `.is-new`.
+      if (!this.seen.has(notice.id)) row.classList.add("is-new");
+      this.host.append(row);
     }
+    this.seen = new Set(notices.items.map(one => one.id));
+  }
+
+  /** Which ids were on screen last time, so only the new ones animate in. */
+  private seen = new Set<number>();
+
+  /** Take a card off the screen, then off the machine.
+   *
+   * ⚠️ The animation runs BEFORE the removal, and it has to: the list is
+   * keyed on its ids, so the moment the source drops one the row is gone from
+   * the next render and there is nothing left to animate. */
+  private dismiss(row: HTMLElement, id: number, toward: number) {
+    if (row.classList.contains("is-going")) return;
+    /* ⚠️ The card's OWN height, measured before it goes. The collapse below
+     * it has to be exactly what is being removed, and a card is two lines tall
+     * or three depending on what the app said. */
+    row.style.setProperty("--gone-height", `${row.getBoundingClientRect().height + 8}px`);
+    row.style.setProperty("--slide", `${toward > 0 ? 120 : -120}%`);
+    row.classList.add("is-going");
+    window.setTimeout(() => this.source.clear(id), 200);
   }
 
   private row(notice: Notice): HTMLElement {
     const row = element("div", "notice-row");
     row.dataset.notice = String(notice.id);
 
-    /* The app's own logo, and a letter when Windows has none. \u26a0\ufe0f A LETTER,
+    /* The app's own logo, and a letter when Windows has none. ⚠️ A LETTER,
      * not a generic bell: the mark is how a list of forty is skimmed, and
      * forty identical bells is a list with no marks at all. Measured on a real
-     * centre, 47 of 48 do have a logo \u2014 see `notices.rs` for the three places
+     * centre, 47 of 48 do have a logo — see `notices.rs` for the three places
      * it is looked for. */
     const plinth = element("div", "notice-mark");
     if (notice.icon) {
@@ -197,8 +211,8 @@ export class NoticesScreen {
       plinth.textContent = (notice.app || notice.title || "?").trim().charAt(0).toUpperCase();
     }
 
-    /* The whole card opens the app; the \u00d7 dismisses it. \u26a0\ufe0f Two SIBLING
-     * buttons, never one inside the other \u2014 a nested button is invalid and
+    /* The whole card opens the app; the × dismisses it. ⚠️ Two SIBLING
+     * buttons, never one inside the other — a nested button is invalid and
      * the inner one stops being reachable by keyboard. */
     const open = element("button", "notice-open");
     (open as HTMLButtonElement).type = "button";
@@ -211,7 +225,7 @@ export class NoticesScreen {
       element("span", "notice-when", ago(notice.at)),
     );
     open.append(head);
-    // The app, then what it said \u2014 the order the notification itself uses.
+    // The app, then what it said — the order the notification itself uses.
     if (notice.app) open.append(element("span", "notice-app", notice.app));
     if (notice.body) open.append(element("p", "notice-body", notice.body));
 
@@ -220,10 +234,79 @@ export class NoticesScreen {
     shut.setAttribute("aria-label", `Dismiss ${notice.title || notice.app}`);
     shut.setAttribute("data-tip", "Dismiss \u2014 this removes it from Windows too");
     paintIcon(shut, "close");
-    shut.onclick = () => this.source.clear(notice.id);
+    shut.onclick = () => this.dismiss(row, notice.id, 1);
 
     row.append(plinth, open, shut);
+    this.draggable(row, notice.id);
     return row;
+  }
+
+  /** Throw a card sideways to be rid of it.
+   *
+   * ⚠️ Horizontal intent has to be PROVED before the card takes the
+   * gesture, or the list cannot be scrolled: a finger moving down the column
+   * is a scroll, and one that has travelled further across than down is a
+   * dismissal. Six pixels is enough to tell them apart and few enough not to
+   * be felt.
+   *
+   * ⚠️ And a drag must not also open the app. The card is a button; without
+   * the guard below, every throw ends in Slack.
+   */
+  private draggable(row: HTMLElement, id: number) {
+    let from: { x: number; y: number } | null = null;
+    let carrying = false;
+
+    row.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      from = { x: event.clientX, y: event.clientY };
+      carrying = false;
+    });
+
+    row.addEventListener("pointermove", event => {
+      if (!from) return;
+      const dx = event.clientX - from.x;
+      const dy = event.clientY - from.y;
+      if (!carrying) {
+        if (Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy)) return;
+        carrying = true;
+        row.classList.add("is-carried");
+        row.setPointerCapture(event.pointerId);
+      }
+      row.style.setProperty("--slide", `${dx}px`);
+      // Fading as it goes is what says the throw is doing something.
+      row.style.setProperty("--fade", String(Math.max(0, 1 - Math.abs(dx) / 220)));
+    });
+
+    const release = (event: PointerEvent) => {
+      if (!from) return;
+      const dx = event.clientX - from.x;
+      from = null;
+      if (!carrying) return;
+      carrying = false;
+      row.classList.remove("is-carried");
+      if (row.hasPointerCapture(event.pointerId)) row.releasePointerCapture(event.pointerId);
+      /* A third of the card's width, or a flick. ⚠️ Measured against the
+       * ROW rather than a fixed number of pixels: the panel is a different
+       * width on a different screen, and a threshold in pixels is a different
+       * gesture on each of them. */
+      if (Math.abs(dx) > row.getBoundingClientRect().width * 0.33) {
+        this.dismiss(row, id, dx);
+        return;
+      }
+      // Not far enough: back where it was.
+      row.style.removeProperty("--slide");
+      row.style.removeProperty("--fade");
+    };
+    row.addEventListener("pointerup", release);
+    row.addEventListener("pointercancel", release);
+
+    /* ⚠️ Capturing, and on the ROW: the press that ends a throw would
+     * otherwise reach the card's own button and open the app. */
+    row.addEventListener("click", event => {
+      if (!row.classList.contains("is-going") && !row.style.getPropertyValue("--slide")) return;
+      event.stopPropagation();
+      event.preventDefault();
+    }, true);
   }
 
   /** The relative times, in place — the rows themselves are keyed. */

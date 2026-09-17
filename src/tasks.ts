@@ -141,6 +141,11 @@ app.innerHTML = `<div id="notch-shell">
              carry that as the one caption among nine glyphs, and the rail
              below carries it too, but the rail can be dragged away from and
              the header cannot. -->
+        <!-- ⚠️ The way BACK. Two screens are reached by being sent there —
+             the bell and the timer chip — and neither is on the rail, so
+             until this existed the only way out was to drag the rail to a
+             stop that was not showing. A door with no handle on the inside. -->
+        <button type="button" class="island-back" id="island-back" hidden></button>
         <h2 class="island-where" id="island-where"></h2>
         <!-- ⚠️ The right-hand end of the header, which was empty on every
              screen. What goes here is what is true whatever screen you are on
@@ -375,8 +380,11 @@ function stops(): RailStop[] {
        * how you reach this, and the rail is for places you go on purpose —
        * see the note on TABS. It is still reorderable and switchable in
        * settings like every other screen, and still in the palette. */
-      || (tab.name === "notices" && screen !== "notices" && !prefs.railOrder.includes("notices"))
-      || (tab.name === "timer" && screen !== "timer" && !prefs.railOrder.includes("timer"))
+      /* ⚠️ Off the rail unless you put it there — the bell and the timer chip
+       * are how these are reached, and the rail is for places you go on
+       * purpose. They DO appear while you are standing on one, or the rail
+       * would highlight a stop you are not on. */
+      || (sentTo(tab.name as ScreenName) && screen !== tab.name)
       || (tab.name !== "home" && prefs.railHidden.includes(tab.name)),
   })).sort((a, b) => rank(a.name as ScreenName) - rank(b.name as ScreenName));
 }
@@ -393,6 +401,11 @@ const SCREEN_EXIT_MS = 150;
  */
 function show(name: ScreenName, live = false) {
   const from = screen;
+  /* ⚠️ Only a RAIL screen is remembered. Going from the notices to the timer
+   * and pressing back should not put you on the notices — neither is a place
+   * you chose to be, and bouncing between two of them is a back button that
+   * cannot get you out. */
+  if (from !== name && !sentTo(from)) cameFrom = from;
   screen = name;
   // Volume, brightness and the device lists are read when the screen is
   // opened — see screen-system.ts on why none of it is polled.
@@ -433,6 +446,7 @@ function show(name: ScreenName, live = false) {
     if (active) section.classList.toggle("is-first", !moving && !live);
   }
   get("island-where").textContent = TABS.find(tab => tab.name === name)?.label ?? "";
+  paintBack();
   /* ⚠️ The width lands BEFORE the render. The panel measures its content at
    * the end of `render()`, and measuring a screen at the previous screen's
    * width gets the wrapping — and therefore the height — right for a layout
@@ -619,6 +633,35 @@ function claims(): (Activity | null)[] {
     restingClaim(),
   ];
 }
+
+/* ── The way back ────────────────────────────────────────
+ *
+ * ⚠️ Only on the screens you were SENT to. Everything on the rail already
+ * has a way back — the rail itself, which is under your thumb — and a back
+ * arrow on all twelve would be a control that does nothing you could not
+ * already do, on every screen, for ever. The two that need one are the two
+ * that have no stop of their own: the notices and the timer.
+ *
+ * ⚠️ And it goes back to where you WERE, not to Home. Home is where the
+ * island opens; it is not where you came from, and a back button that lies
+ * about that is worse than none. */
+let cameFrom: ScreenName = "home";
+
+function paintBack() {
+  const back = get<HTMLButtonElement>("island-back");
+  /* ⚠️ `sentTo`, NOT "is it on the rail right now" — which is what this
+   * asked first, and the answer was always yes: the stop appears while you
+   * stand on it, so the arrow never showed on either screen that needed it. */
+  const sent = sentTo(screen);
+  back.hidden = !sent;
+  if (!sent) return;
+  const label = TABS.find(tab => tab.name === cameFrom)?.label ?? "Home";
+  back.setAttribute("aria-label", `Back to ${label}`);
+  back.setAttribute("data-tip", `Back to ${label}`);
+  if (!back.dataset.icon) paintIcon(back, "back");
+}
+
+get("island-back").addEventListener("click", () => show(cameFrom));
 
 /* ── The header's right-hand end ─────────────────────────────────
  * Two chips that are true on every screen, so they can live on the one line
@@ -1410,6 +1453,16 @@ let wheeledAt = 0;
  * something. It was latent while the player sat third (you had to wheel twice
  * to meet it); a call sitting second made the very first notch do nothing.
  */
+/** Is this a screen you are sent to rather than one you walk to?
+ *
+ * ⚠️ The preferences win: put it on the rail in settings and it stops being
+ * a place you are sent, which is what the flag means. One answer, two readers
+ * — the rail and the back arrow. */
+function sentTo(name: ScreenName): boolean {
+  return !!SCREENS.find(one => one.name === name)?.offRail
+    && !prefs.railOrder.includes(name);
+}
+
 function reachable(): ScreenName[] {
   return stops().filter(stop => !stop.hidden).map(stop => stop.name as ScreenName);
 }

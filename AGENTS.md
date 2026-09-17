@@ -3027,3 +3027,32 @@ The two halves were the same fault.
      exactly like an intermittent bug in the pill. Assert the shape, and assert
      it against the page's own `new Date()` if you want to know it is the wall
      clock.
+445. ⚠️ **A box measured while the panel is still resizing is the width of the
+     screen you just left.** Every screen animates the island to its own width,
+     so `boundingBox()` taken the instant a screen changes is wrong for about
+     400ms. A notification card reported 789px wide and was 511 by the time the
+     press landed — so the press went to whatever had taken that pixel and the
+     drag did nothing, which looks exactly like a drag handler that does not
+     work. Poll for two identical readings before measuring, the way
+     `reachIsland` does for the arc.
+446. ⚠️ **Prove horizontal intent before a card takes a drag**, or the list
+     cannot be scrolled: a finger moving down a column is a scroll and one that
+     has travelled further across than down is a dismissal. And guard the
+     click — the card is a button, so without it every throw ends in the app
+     the card came from.
+447. ⚠️ **A dismissal has to animate BEFORE the row leaves the model.** The
+     list is keyed on its ids, so the moment the source drops one there is
+     nothing left to animate; and the gap it leaves has to collapse by the
+     card's own measured height, or every card below it jumps up.
+448. ⚠️ **A back arrow belongs only on screens you were SENT to.** Everything
+     on the rail already has a way back — the rail — so an arrow on all twelve
+     is a control that does nothing new, on every screen, for ever. The flag
+     lives on the screen definition and is read by both the rail and the
+     header: written twice, the arrow appeared on screens that could already be
+     left and on none of the two that could not.
+449. ⚠️ **A python patch script that inserts after an anchor is not
+     idempotent**, and writing `⚠` inside an escaped python string puts the
+     literal characters `⚠` into the file. In a TypeScript string literal
+     that still renders correctly, which is why it survived review; in a
+     COMMENT it is just wrong. Grep for a literal backslash-u after any bulk
+     patch.

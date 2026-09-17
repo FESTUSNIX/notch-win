@@ -3110,67 +3110,103 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
 /* ── Notices ───────────────────────────────────────
    Somebody else's words, in somebody else's voice, so each one is its own
    CARD rather than a row in our list — the shape the notification had when it
-   flew past, which is the shape you already know how to read.
+   flew past, which is the shape you already know how to read. */
+#notices-body { display:flex; flex-direction:column; gap:8px; }
 
-   ⚠️ And NARROW. The first version was 1560 design px, the width the notes
-   screen wants for prose you wrote; a notification is a glance, and at that
-   width the title, the app and the time end up so far apart that the eye has
-   to travel between three things that belong together. */
-.notice-bar { display:flex; align-items:center; justify-content:space-between;
-  gap:12px; padding:0 4px 2px; }
-.notice-count { font-size:11px; color:#7c7c7c; }
-.notice-all { height:24px; padding:0 10px; border-radius:8px;
-  font-size:11.5px; font-weight:600; color:#c4c4c4;
-  background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss); }
-.notice-all:hover { color:#fff; background-color:var(--tile-hi); }
-.notice-all:active { scale:.96; transition-duration:90ms; }
-
-.notice-row { position:relative; display:flex; align-items:flex-start; gap:11px;
-  padding:10px 11px; border-radius:14px;
-  background-color:var(--tile); box-shadow:var(--hairline); }
+.notice-row { position:relative; display:flex; align-items:flex-start; gap:12px;
+  padding:12px 13px; border-radius:15px;
+  background-color:var(--tile); box-shadow:var(--hairline);
+  /* ⚠️ `translate`, the independent property — never `transform`. The enter
+     animation below is spent on a transform, and a drag written there would
+     cancel it mid-flight. The same rule the island's own press follows. */
+  translate:var(--slide, 0) 0;
+  opacity:var(--fade, 1);
+  transition:translate var(--duration-fast) var(--ease-smooth-out),
+    opacity var(--duration-fast) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
 .notice-row:hover { background-color:var(--tile-hi); }
+/* While a finger is on it there is no transition: the card has to sit under
+   the pointer rather than chase it. */
+.notice-row.is-carried { transition:background-color var(--duration-quick) var(--ease-smooth-out);
+  cursor:grabbing; }
 
-.notice-mark { display:grid; place-items:center; width:30px; height:30px;
-  flex-shrink:0; border-radius:9px; overflow:hidden; }
+/* Thrown away. ⚠️ The height collapses as well as the card sliding, or the
+   ones below it jump up the moment it goes rather than closing the gap. */
+.notice-row.is-going { translate:var(--slide) 0; opacity:0;
+  margin-bottom:calc(-1 * var(--gone-height, 74px)); scale:.96;
+  pointer-events:none;
+  transition:translate 200ms var(--ease-smooth-out), opacity 200ms var(--ease-smooth-out),
+    scale 200ms var(--ease-smooth-out), margin-bottom 200ms var(--ease-smooth-out); }
+
+/* Arriving. Only on cards that were not on screen last time — see `seen`. */
+.notice-row.is-new { animation:notice-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes notice-in {
+  from { opacity:0; transform:translateY(-8px) scale(.97); filter:blur(2px); }
+  to { opacity:1; transform:none; filter:blur(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .notice-row { transition:none; animation:none; }
+}
+html[data-motion=never] .notice-row { transition:none; animation:none; }
+
+.notice-mark { display:grid; place-items:center; width:34px; height:34px;
+  flex-shrink:0; border-radius:10px; overflow:hidden; }
 .notice-logo { width:100%; height:100%; object-fit:contain; display:block; }
 /* ⚠️ A LETTER when Windows has no logo, not a generic bell. The mark is how
    a list of forty is skimmed, and forty identical bells is a list with no
    marks at all. Measured: 47 of 48 real notifications do have one. */
-.notice-mark.is-letter { font-size:14px; font-weight:700; color:#c4c4c4;
+.notice-mark.is-letter { font-size:15px; font-weight:700; color:#c4c4c4;
   background:rgba(255,255,255,.07); box-shadow:inset 0 0 0 1px var(--hair); }
 
 /* The whole card opens the app. ⚠️ A real button, laid out as the card's
    text column — not a stretched overlay: an overlay swallows the × beside it
    and cannot be reached by keyboard. */
 .notice-open { flex:1; min-width:0; display:flex; flex-direction:column;
-  align-items:stretch; gap:1px; padding:0; text-align:left;
+  align-items:stretch; gap:2px; padding:0; text-align:left;
   background:none; border-radius:0; cursor:pointer; }
 .notice-open:hover, .notice-open:focus-visible { background:none; }
-.notice-head { display:flex; align-items:baseline; gap:8px; min-width:0; }
-.notice-title { flex:1; min-width:0; font-size:12.5px; font-weight:650;
-  color:#f0f0f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.notice-when { flex-shrink:0; font-size:10.5px; color:#6a6a6a;
+.notice-head { display:flex; align-items:baseline; gap:10px; min-width:0; }
+/* ⚠️ Bigger than the app's own lists. This is somebody else's sentence read
+   at a glance from across a desk, not a label on a control — 12.5px was the
+   size of a caption and it read like one. */
+.notice-title { flex:1; min-width:0; font-size:14px; font-weight:650;
+  letter-spacing:-.15px; color:#f4f4f4;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.notice-when { flex-shrink:0; font-size:11px; color:#7c7c7c;
   font-variant-numeric:tabular-nums; }
 /* The app, then what it said — the order the notification itself uses. */
-.notice-app { font-size:10.5px; color:#7c7c7c; }
+.notice-app { font-size:11.5px; color:#8a8a8a; }
 /* ⚠️ Two lines, then clipped. A body is arbitrary text somebody else wrote,
    and a long one would give the panel a height of its own and push every other
    card off the screen. */
-.notice-body { margin:2px 0 0; font-size:11.5px; line-height:1.45; color:#a4a4a4;
+.notice-body { margin:3px 0 0; font-size:12.5px; line-height:1.5; color:#b4b4b4;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   overflow:hidden; }
 
-.notice-shut { display:grid; place-items:center; width:22px; height:22px;
+.notice-shut { display:grid; place-items:center; width:24px; height:24px;
   flex-shrink:0; padding:0; border-radius:50%; color:#8a8a8a; opacity:0;
   background:rgba(255,255,255,.08); box-shadow:inset 0 0 0 1px var(--hair);
   transition:opacity var(--duration-quick) var(--ease-smooth-out),
     color var(--duration-quick) var(--ease-smooth-out); }
-.notice-shut svg { width:12px; height:12px; }
+.notice-shut svg { width:13px; height:13px; }
 /* ⚠️ Shown on hover AND on focus. Hidden until hovered is right for a column
    of forty; unreachable by keyboard is not. */
 .notice-row:hover .notice-shut, .notice-shut:focus-visible { opacity:1; }
 .notice-shut:hover { color:#fff; background:rgba(255,255,255,.18); }
+
+/* ── The way back ────────────────────────────────────── */
+.island-back { display:grid; place-items:center; width:22px; height:22px;
+  flex-shrink:0; padding:0; margin-right:-4px; border-radius:7px; color:#8f8f8f; }
+.island-back svg { width:15px; height:15px; }
+.island-back:hover { color:#fff; background:var(--tile-hi); }
+.island-back:active { scale:.9; transition-duration:90ms; }
+/* ⚠️ The title TAKES the middle, rather than the header spacing three
+   children out evenly. With `space-between` and an arrow added on the left,
+   the screen name drifted to the centre of the panel and the chips to the
+   far edge — a header that rearranges itself depending on whether you were
+   sent to this screen or walked to it. */
+.island-head { gap:8px; }
+.island-where { flex:1; min-width:0; }
 
 /* ── The timer's own screen ────────────────────────────────
    The chip in the header is a readout and a door; everything that is a

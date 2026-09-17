@@ -68,26 +68,99 @@ test("dismissing one takes it off the screen and out of the count", async ({ pag
   await expect(page.locator("#head-bell .head-count")).toHaveText("3");
 });
 
-test("clear all empties it, and the card offers the app it came from", async ({ page }) => {
+test("clearing them all lives on the arc, and nowhere else", async ({ page }) => {
   await page.goto("/tasks.html?notices&quiet");
   await open(page);
   await page.locator("#head-bell").click();
 
-  /* \u26a0\ufe0f A button on the screen as well as on the arc. Clearing is the one
-   * thing you come here to do when there are fifty of them, and a control you
-   * have to reach a bare line for is one you do not know is there. */
-  await expect(page.locator(".notice-count")).toHaveText("4 notifications");
+  /* ⚠️ ONE clear-all. There was a second on a bar above the list; two controls
+   * for one verb is two places to look for it, and the bar was a row of chrome
+   * over a list whose whole job is to be skimmed. */
+  await expect(page.locator(".notice-all")).toHaveCount(0);
+  await expect(page.locator(".notice-bar")).toHaveCount(0);
+  const tools = await page.evaluate(() =>
+    [...document.querySelectorAll("#island-tools .arc-act")]
+      .map(one => one.getAttribute("aria-label")));
+  expect(tools).toContain("Clear them all");
+
   /* The quick action is OPEN THE APP, and it is named for exactly that. A
    * notification carries no way to activate itself from outside, so pressing
-   * a row can open Slack and never the thread \u2014 see `notices.rs`. */
+   * a row can open Slack and never the thread — see `notices.rs`. */
   await expect(page.locator(".notice-row").first().locator(".notice-open"))
     .toHaveAttribute("data-tip", "Open Slack");
+});
 
-  await page.locator(".notice-all").click();
-  await expect(page.locator(".notice-row")).toHaveCount(0);
-  await expect(page.locator("#head-bell")).toBeHidden();
-  await expect(page.locator('[data-screen="notices"] .home-empty'))
-    .toHaveText("Nothing in the notification centre.");
+/** A card's box, once it has stopped moving.
+ *
+ * ⚠️ The panel ANIMATES to each screen's own width, so a box measured the
+ * instant the screen changes is the width of the screen you just left. Measured
+ * during the narrowing, this card reported 789px wide and was 511 by the time
+ * the press landed — so the press went to whatever had taken that pixel, and
+ * the drag did nothing at all. Two identical readings in a row is settled; the
+ * same rule `reachIsland` in tasks.spec follows for the arc. */
+async function settled(page: Page, selector: string) {
+  let last = "";
+  await expect.poll(async () => {
+    const box = await page.locator(selector).boundingBox();
+    const now = JSON.stringify(box);
+    const same = now === last;
+    last = now;
+    return same;
+  }, { timeout: 4000 }).toBe(true);
+  return (await page.locator(selector).boundingBox())!;
+}
+
+test("a card can be thrown away, and a nudge is not a throw", async ({ page }) => {
+  await page.goto("/tasks.html?notices&quiet");
+  await open(page);
+  await page.locator("#head-bell").click();
+  await expect(page.locator(".notice-row")).toHaveCount(4);
+
+  const card = await settled(page, '.notice-row[data-notice="2"]');
+  const throwIt = async (distance: number) => {
+    await page.mouse.move(card.x + 120, card.y + card.height / 2);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step++) {
+      await page.mouse.move(card.x + 120 + (distance * step) / 10, card.y + card.height / 2);
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+  };
+
+  /* ⚠️ A nudge springs back AND does not open the app. The card is a button,
+   * so without the guard on the click every throw would end in Slack. */
+  await throwIt(40);
+  await expect(page.locator('.notice-row[data-notice="2"]')).toHaveCount(1);
+  await expect(page.locator("#island-where")).toHaveText("Notices");
+
+  // Past a third of the card's own width, and it goes.
+  await throwIt(card.width * 0.5);
+  await expect(page.locator('.notice-row[data-notice="2"]')).toHaveCount(0);
+  await expect(page.locator(".notice-row")).toHaveCount(3);
+  await expect(page.locator("#head-bell .head-count")).toHaveText("3");
+});
+
+test("a screen you were sent to has a way back; one you walked to does not", async ({ page }) => {
+  await page.goto("/tasks.html?notices&quiet");
+  await open(page);
+  /* ⚠️ Not on a rail screen. Everything on the rail already has a way back —
+   * the rail — and an arrow on all twelve would be a control that does nothing
+   * you could not already do, on every screen, for ever. */
+  await expect(page.locator("#island-back")).toBeHidden();
+
+  await run(page, "Notes", "Notes");
+  await expect(page.locator("#island-where")).toHaveText("Notes");
+  await expect(page.locator("#island-back")).toBeHidden();
+
+  await page.locator("#head-bell").click();
+  await expect(page.locator("#island-where")).toHaveText("Notices");
+  const back = page.locator("#island-back");
+  await expect(back).toBeVisible();
+  /* And it goes back to where you WERE, not to Home — Home is where the island
+   * opens, which is not the same thing. */
+  await expect(back).toHaveAttribute("data-tip", "Back to Notes");
+  await back.click();
+  await expect(page.locator("#island-where")).toHaveText("Notes");
 });
 
 test("an empty screen says WHY it is empty", async ({ page }) => {
@@ -110,7 +183,7 @@ test("an empty screen says WHY it is empty", async ({ page }) => {
 test("the timer chip is always there, and it opens the screen", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  /* \u26a0\ufe0f Visible with NOTHING running. Hidden when idle it was a control with
+  /* ⚠️ Visible with NOTHING running. Hidden when idle it was a control with
    * no way in: the only way to start a pomodoro was to know the palette
    * command, and a feature you have to be told about is one nobody uses. */
   const chip = page.locator("#head-timer");
@@ -161,7 +234,7 @@ test("a plain timer is one press, and it is not a pomodoro", async ({ page }) =>
   await page.locator("#head-timer").click();
   await page.locator('.timer-preset:has-text("10m")').click();
   await expect(page.locator(".timer-clock")).toHaveText(/^(10:00|09:5\d)$/);
-  /* \u26a0\ufe0f "Timer", not "Focus": a plain countdown has nothing after it, and
+  /* ⚠️ "Timer", not "Focus": a plain countdown has nothing after it, and
    * calling it a pomodoro would promise a break that never comes. */
   await expect(page.locator(".timer-say")).toHaveText("Timer");
   await expect(page.locator("#head-timer")).toHaveAttribute("data-phase", "plain");
@@ -173,7 +246,7 @@ test("a running countdown says so on the collapsed pill", async ({ page }) => {
   await page.locator("#head-timer").click();
   await page.locator('.timer-preset:has-text("15m")').click();
 
-  /* Off the island, so it folds. \u26a0\ufe0f The whole point of the claim: the
+  /* Off the island, so it folds. ⚠️ The whole point of the claim: the
    * countdown has to be readable with the panel shut, which is how it spends
    * almost all of its fifteen minutes. */
   await page.mouse.move(10, 700);

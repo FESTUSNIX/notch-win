@@ -62,8 +62,8 @@ function draw() {
     glyph.setAttribute("width", "22");
     glyph.setAttribute("height", "22");
     glyph.dataset.screen = screen.name;
-    /* \u26a0\ufe0f The glyph is a SIBLING of its wedge, not a child, so the custom
-     * property has to be set on it too \u2014 it cannot inherit from a shape it is
+    /* ⚠️ The glyph is a SIBLING of its wedge, not a child, so the custom
+     * property has to be set on it too — it cannot inherit from a shape it is
      * merely drawn on top of. */
     if (tint) glyph.style.setProperty("--stop", tint);
     svg.append(glyph);
@@ -80,7 +80,7 @@ function draw() {
     svg.append(caption);
   });
 
-  /* The middle is the palette. \u26a0\ufe0f A ring holds eight things and the app has
+  /* The middle is the palette. ⚠️ A ring holds eight things and the app has
    * more than eight; the way out of a menu that cannot list everything is the
    * one surface that can. */
   const heart = document.createElementNS(NS, "circle");
