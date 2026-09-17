@@ -323,8 +323,15 @@ export class MediaScreen {
      * fast enough to feel right would be a request every few seconds for a
      * list that almost never moves. */
     const playing = `${media.title} ${media.artist}`;
-    if (this.queueOpen && media.active && playing !== this.fetchedFor) {
-      this.fetchedFor = playing;
+    /* ⚠️ Keyed on the shuffle as well as the track. Shuffling is the one
+     * thing that changes what comes NEXT without changing what is playing, so
+     * on the track alone the panel sat there showing the order that had just
+     * been thrown away — and it only corrected itself when the queue was
+     * closed and opened again. This also catches a shuffle turned on in
+     * Spotify itself rather than from here. */
+    const order = `${playing}${media.shuffle}`;
+    if (this.queueOpen && media.active && order !== this.fetchedFor) {
+      this.fetchedFor = order;
       void this.load();
     }
     /* The words, on the same key and for the same reason. ⚠️ `media:changed`
@@ -465,7 +472,14 @@ export class MediaScreen {
       shuffle.setAttribute("aria-pressed", String(!!media.shuffle));
       shuffle.dataset.tip = media.shuffle ? "Shuffle is on" : "Shuffle";
       paintIcon(shuffle, "shuffle");
-      shuffle.onclick = () => this.deps.source.control("shuffle");
+      shuffle.onclick = () => {
+        this.deps.source.control("shuffle");
+        /* ⚠️ And asked AGAIN a beat later. The key above refetches the moment
+         * the island flips its own optimistic state — which is before Spotify
+         * has reshuffled anything, so the answer is the old order arriving as
+         * if it were the new one. The second ask is the one that is true. */
+        if (this.queueOpen) window.setTimeout(() => { void this.load(); }, 600);
+      };
       /* ⚠️ Appended in ORDER, not placed relative to the queue button — which
        * has no parent yet at this point, so `after` on it did nothing at all
        * and the control simply was not there. */

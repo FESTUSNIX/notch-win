@@ -3421,3 +3421,12 @@ The two halves were the same fault.
      which does exactly that on every render from the preference. A test that
      wants a different accent has to put it in a sheet with `!important`, or it
      is testing whether anything happened to redraw in between.
+519. ⚠️ **Shuffling changes what comes NEXT without changing what is
+     playing.** The queue was keyed on the track alone — for good reason, since
+     `media:changed` fires as the playhead moves — so the panel went on showing
+     the order that had just been thrown away and only corrected itself when it
+     was closed and opened again. The key carries the shuffle now, and the
+     button asks a second time a beat later: the first ask happens when the
+     island flips its own optimistic state, which is before Spotify has
+     reshuffled anything, so the answer is the old order arriving as if it were
+     the new one.

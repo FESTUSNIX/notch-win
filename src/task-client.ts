@@ -24,6 +24,14 @@ const demoMixer = [
   { pid: 4396, name: "Brave", path: "C:/brave.exe", volume: 0.65, muted: false, active: true },
   { pid: 15816, name: "Spotify", path: "C:/spotify.exe", volume: 1, muted: false, active: false },
 ];
+const demoQueue = [
+    {id:"q1", title:"Heroine (Cryogenic's Second Wind)", artist:"CRYOGENIC", artwork:""},
+    {id:"q2", title:"Roulette", artist:"Bilal Wahib, Boef", artwork:""},
+    {id:"q3", title:"Habiba", artist:"Boef", artwork:""},
+    {id:"q4", title:"Murder To Excellence", artist:"JAY-Z, Kanye West", artwork:""},
+    {id:"q5", title:"No, No, No", artist:"Eve, Stephen Marley", artwork:""},
+    {id:"q6", title:"Winnetka Exit", artist:"Styles Of Beyond", artwork:""},
+  ];
 let demoMedia = {
   active: !quiet, playing: !quiet,
   title: "I turned my potion shop into a chaotic factory!",
@@ -315,14 +323,13 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   /* ⚠️ SIX, not three. Three is exactly the number the list is capped at, so
      a fixture of three proves nothing about the cap — and the cap is the whole
      reason the panel does not grow to the height of a Spotify queue. */
-  if (command === "spotify_queue") return {connected:true, note:"", tracks:[
-    {id:"q1", title:"Heroine (Cryogenic's Second Wind)", artist:"CRYOGENIC", artwork:""},
-    {id:"q2", title:"Roulette", artist:"Bilal Wahib, Boef", artwork:""},
-    {id:"q3", title:"Habiba", artist:"Boef", artwork:""},
-    {id:"q4", title:"Murder To Excellence", artist:"JAY-Z, Kanye West", artwork:""},
-    {id:"q5", title:"No, No, No", artist:"Eve, Stephen Marley", artwork:""},
-    {id:"q6", title:"Winnetka Exit", artist:"Styles Of Beyond", artwork:""},
-  ]} as T;
+  /* ⚠️ The order depends on the SHUFFLE, which is the whole point of the
+     fixture: shuffling is the one thing that changes what comes next without
+     changing what is playing, and a queue that answers the same list either
+     way cannot tell a refetch from a stale panel. */
+  if (command === "spotify_queue") return {connected:true, note:"", tracks:(demoMedia.shuffle
+    ? [...demoQueue].reverse() : demoQueue)} as T;
+
   if (command === "spotify_search") {
     const wanted = String(args.query ?? "").toLowerCase();
     return [

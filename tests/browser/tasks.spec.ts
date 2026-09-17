@@ -2229,3 +2229,28 @@ test("System is a chip rather than a rail stop, and it carries the mixer", async
   await expect(rows.first()).toHaveClass(/is-muted/);
   await expect(page.locator(".sys-controls .pip").first()).not.toHaveClass(/is-on/);
 });
+
+test("shuffling re-reads what is next, without the panel being closed", async ({page}) => {
+  await page.setViewportSize({width: 1200, height: 900});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "media");
+  await page.locator('.media-side[aria-label="Playing next"]').click();
+
+  const first = page.locator(".media-queue-list .media-track-title").first();
+  await expect(first).not.toHaveText("");
+  const was = await first.textContent();
+
+  /* ⚠️ Shuffling is the one thing that changes what comes NEXT without
+   * changing what is playing, and the queue was keyed on the track alone — so
+   * the panel sat there showing the order that had just been thrown away, and
+   * only corrected itself when it was closed and opened again. */
+  await page.locator('.media-side[aria-label="Shuffle"]').click();
+  await expect(page.locator('.media-side[aria-label="Shuffle"]')).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => first.textContent(), {timeout: 5000}).not.toBe(was);
+  // And the panel never went away to do it.
+  await expect(page.locator(".media-queue-list")).toBeVisible();
+});
