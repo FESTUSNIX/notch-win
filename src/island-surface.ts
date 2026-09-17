@@ -18,7 +18,6 @@ import { listen } from "@tauri-apps/api/event";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
 import { IslandBubble, type BubbleReading } from "./island-bubble";
-import { element } from "./dom";
 import { IslandRail, type RailPrefs, type RailStop } from "./island-rail";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
@@ -128,7 +127,6 @@ export class IslandSurface {
    * stop looking at the screen. A pomodoro leaves its progress line on the
    * bezel — three pixels, no text, nothing to read — and pointing at it
    * brings the island back the way the reveal strip already does. */
-  private peek = element("div", "island-peek pill-bar");
   private peeked: { through: number; phase: string; held: boolean } | null = null;
   /** The palette is up. ⚠️ The arcs and the rail are SIBLINGS of the island,
    *  so the class that hides the panel behind the palette cannot reach them —
@@ -150,9 +148,8 @@ export class IslandSurface {
     this.global.mount(this.shell);
     this.rail.mount(this.shell);
     this.bubble.mount(this.shell);
-    this.peek.append(element("i"));
-    this.peek.hidden = true;
-    this.shell.append(this.peek);
+    // The parked height, for the transform in the stylesheet. One number.
+    document.documentElement.style.setProperty("--line-show", `${cpx(FRAME.islandLineShow)}px`);
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height", `${cpx(FRAME.taskRowHeight)}px`);
     window.addEventListener("resize", () => this.measure());
@@ -376,6 +373,13 @@ export class IslandSurface {
 
   private applyHidden() {
     document.documentElement.classList.toggle("chrome-hidden", this.hidden && !this.peeking);
+    /* ⚠️ A pomodoro parks the island SHORT of gone rather than leaving a
+     * second line behind it. The first version drew its own strip on the
+     * bezel, which meant two progress lines for the moment the island slid
+     * back — the one on the bezel and the one on the strip's own bottom edge.
+     * Sliding it most of the way off leaves exactly one line, and it is the
+     * same element in both states. */
+    document.documentElement.classList.toggle("chrome-line", this.lining());
     this.report();
   }
 
@@ -669,43 +673,7 @@ export class IslandSurface {
       right: `translateX(${-back}px)`,
     }[this.edge];
     this.expanded.style.transform = nudge;
-    this.paintPeek(x, y, g);
     this.report();
-  }
-
-  /** The pomodoro's line, on the bezel, while everything else is away.
-   *
-   * ⚠️ Placed on the REVEAL STRIP, not on the island: the island is
-   * translated off the screen by `chrome-hidden`, so anything drawn against
-   * its box goes with it. This is a sibling, positioned from the same
-   * geometry `revealStrip` reports as interactive — so the thing you can see
-   * and the thing you can point at are one rectangle by construction. */
-  private paintPeek(x: number, y: number, g: ReturnType<IslandSurface["geometry"]>) {
-    const show = !!this.peeked && this.hidden && !this.peeking && !this.searching;
-    this.peek.hidden = !show;
-    if (!show || !this.peeked) return;
-    const long = cpx(FRAME.islandPillLong);
-    const vertical = isVertical(this.edge);
-    const thick = 3;
-    Object.assign(this.peek.style, vertical ? {
-      left: `${this.edge === "left" ? x : x + g.width - thick}px`,
-      top: `${y + (g.height - long) / 2}px`,
-      width: `${thick}px`,
-      height: `${long}px`,
-    } : {
-      left: `${x + (g.width - long) / 2}px`,
-      top: `${this.edge === "top" ? y : y + g.height - thick}px`,
-      width: `${long}px`,
-      height: `${thick}px`,
-    });
-    this.peek.dataset.phase = this.peeked.phase;
-    this.peek.classList.toggle("is-held", this.peeked.held);
-    const fill = this.peek.firstElementChild as HTMLElement | null;
-    const through = Math.max(0, Math.min(1, this.peeked.through));
-    if (fill) {
-      if (vertical) { fill.style.height = `${through * 100}%`; fill.style.width = "100%"; }
-      else fill.style.width = `${through * 100}%`;
-    }
   }
 
   /** The sliver left behind when the island is away.
@@ -716,7 +684,11 @@ export class IslandSurface {
    * even visible. */
   private revealStrip() {
     const origin = box(this.shell);
-    const depth = 3;
+    /* ⚠️ As deep as what is showing. Parked with its line out, the island
+     * leaves about ten pixels on screen; a three-pixel strip would mean most
+     * of the visible thing was not pointable, which reads as a line that
+     * ignores the pointer. */
+    const depth = this.lining() ? cpx(FRAME.islandLineShow) : 3;
     const long = cpx(FRAME.islandPillLong);
     if (isVertical(this.edge)) {
       return {
@@ -773,8 +745,15 @@ export class IslandSurface {
    * see the end of, and the bezel of a full-screen window is not the place to
    * spend a second permanent mark on it. */
   setPeek(reading: { through: number; phase: string; held: boolean } | null) {
+    const had = !!this.peeked;
     this.peeked = reading;
+    if (had !== !!reading) this.applyHidden();
     this.paint();
+  }
+
+  /** Is the island parked with only its line showing? */
+  private lining(): boolean {
+    return !!this.peeked && this.hidden && !this.peeking && !this.searching;
   }
 
   /** What the countdown beside the notch says, or null for no countdown. */

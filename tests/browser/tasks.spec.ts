@@ -2045,3 +2045,42 @@ test("a long device list opens in place and the panel travels to fit", async ({p
 });
 
 
+
+test("the player follows the words, and only the line that has started", async ({page}) => {
+  await page.setViewportSize({width: 1100, height: 780});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "media");
+
+  /* ⚠️ Seek to a known second FIRST. The fixture's playhead runs in real
+   * time from wherever the page loaded it, so by the time a test has walked
+   * to this screen the track is several seconds further on than the fixture
+   * says — which is a test that passes or fails on how fast the machine is. */
+  const rail = (await page.locator(".media-rail").boundingBox())!;
+  const seekTo = (seconds: number) => page.locator(".media-rail")
+    .click({position: {x: rail.width * (seconds / 1878), y: rail.height / 2}});
+  await seekTo(262);
+
+  /* At 4:22 the line that has STARTED is the one at 4:20 — not the one at
+   * 4:25, however much closer it is. */
+  const now = page.locator(".media-word.is-now");
+  await expect(now).toHaveText("nobody said a word");
+  await expect(page.locator(".media-word.is-back")).toHaveText(/lights came up/);
+  await expect(page.locator(".media-word.is-next")).toHaveText("we just stood there");
+
+  /* Past the next stamp and the three lines all move up one. ⚠️ Aimed at
+   * the MIDDLE of a line's span rather than just past its stamp, for the same
+   * reason the seek above exists. */
+  await seekTo(268);
+  await expect(now).toHaveText("we just stood there");
+  await expect(page.locator(".media-word.is-back")).toHaveText("nobody said a word");
+
+  /* ⚠️ A gap the file marks explicitly is a real line with no words, and it
+   * empties the slot rather than holding the last thing sung. */
+  await seekTo(280);
+  await expect(page.locator(".media-words")).toBeVisible();
+  await expect(now).toHaveText("");
+});

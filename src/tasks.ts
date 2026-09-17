@@ -2069,6 +2069,11 @@ async function boot() {
     callScreen.tick();
     notices.tick();
     timerScreen.tick();
+    /* ⚠️ The player has a clock too, and until the lyrics arrived nothing
+     * moved it: the screen redrew on events and once a minute, so the scrub
+     * bar sat wherever the last event left it. In place, never a redraw — the
+     * queue can be scrolled and the search field can hold a caret. */
+    player.tick();
     /* The countdowns, once a second. ⚠️ `tick` returns whether a phase ENDED,
      * which needs the whole shell redrawn — the chip alone would leave the
      * rail and the palette holding a timer that has finished.

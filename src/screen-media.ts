@@ -8,6 +8,8 @@ import { call, native } from "./task-client";
 import { clock, sourceName } from "./media-format";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
+import { setText } from "./tween";
+import { lineAt, parseLrc, worth, type Line } from "./lyrics";
 
 // Re-exported so the screens that already import them from here keep working.
 export { clock, sourceName } from "./media-format";
@@ -188,6 +190,16 @@ export class MediaScreen {
   private searched = 0;
   private said = "";
 
+  /* ── The words ──────────────────────────────────────
+   * ⚠️ Keyed on the TRACK, like the queue and for the same reason:
+   * `media:changed` fires as the playhead moves, and asking LRCLIB about the
+   * same song several times a second is not a thing to do to somebody's free
+   * service. The Rust side caches it again by the same fingerprint. */
+  private wordsFor = "";
+  private lines: Line[] = [];
+  /** Which line is lit, so a repaint that changes nothing animates nothing. */
+  private lit = -2;
+
   constructor(private host: HTMLElement, private deps: MediaDeps, private changed: () => void) {}
 
   get open(): boolean { return this.queueOpen; }
@@ -266,6 +278,16 @@ export class MediaScreen {
     if (this.queueOpen && media.active && playing !== this.fetchedFor) {
       this.fetchedFor = playing;
       void this.load();
+    }
+    /* The words, on the same key and for the same reason. ⚠️ `media:changed`
+     * fires as the playhead moves, so asking LRCLIB about the same song
+     * several times a second is not a thing to do to somebody's free service.
+     * The Rust side caches it again by the same fingerprint. */
+    if (media.active && playing !== this.wordsFor) {
+      this.wordsFor = playing;
+      this.lines = [];
+      this.lit = -2;
+      void this.words(media);
     }
     this.host.replaceChildren();
     this.host.classList.toggle("has-queue", this.queueOpen);
@@ -366,7 +388,10 @@ export class MediaScreen {
     output.onclick = event => { event.stopPropagation(); void this.pickDevice(); };
 
     transport.append(queueButton, keys, output);
-    now.append(head, scrub, transport);
+    now.append(head, scrub);
+    const said = this.saying(this.deps.source.position());
+    if (said) now.append(said);
+    now.append(transport);
     if (this.devicesOpen) now.append(this.deviceMenu());
     this.host.append(now);
 
@@ -376,6 +401,85 @@ export class MediaScreen {
      * on the way out it was gone before the column could shrink. The column is
      * what opens and closes; the panel just sits in it and is clipped. */
     this.host.append(this.renderQueue());
+  }
+
+  /** Three lines: what was said, what is being said, and what is next.
+   *
+   * ⚠️ Three rather than a scroller. The panel is a wide, short box and a
+   * column of forty lines in it is a wall you have to find your place in —
+   * which is the one job this has. The line you are on is the bright one and
+   * its neighbours are context, which is the shape every player that does this
+   * well has settled on.
+   *
+   * ⚠️ Nothing at all when the file is unsynced. LRCLIB serves plain words
+   * too, and pacing them by dividing the track's length by the line count is
+   * an invention that is wrong from the second line on. */
+  private saying(at: number): HTMLElement | null {
+    if (!this.lines.length) return null;
+    const box = element("div", "media-words");
+    for (const which of ["is-back", "is-now", "is-next"]) {
+      box.append(element("p", `media-word ${which}`));
+    }
+    this.lit = -2;
+    this.paintWords(box, at);
+    return box;
+  }
+
+  /** Written in PLACE, once a second — never rebuilt. See `tick`. */
+  private paintWords(box: HTMLElement, at: number) {
+    const index = lineAt(this.lines, at);
+    if (index === this.lit) return;
+    this.lit = index;
+    const parts = box.querySelectorAll<HTMLElement>(".media-word");
+    /* ⚠️ Before the first line there IS no current line, and that is not
+     * line zero: an intro of eight seconds would otherwise hold the first
+     * words up as if they were being sung over it. */
+    const said = [this.lines[index - 1], this.lines[index], this.lines[index + 1]];
+    parts.forEach((part, slot) => setText(part, said[slot]?.text ?? ""));
+    box.classList.toggle("is-waiting", index < 0);
+  }
+
+  /** Ask for this track's lyrics. ⚠️ Never an error anybody sees: a song
+   *  nobody has transcribed, a network that is down and a service having a bad
+   *  day are the same thing here — nothing to show. */
+  private async words(media: Media) {
+    const mine = this.wordsFor;
+    try {
+      const got = await call<{ synced: string; plain: string }>("get_lyrics", {
+        artist: media.artist,
+        track: media.title,
+        album: media.album,
+        seconds: Math.round(media.duration),
+      });
+      // The track may have changed while the request was out.
+      if (mine !== this.wordsFor) return;
+      const lines = parseLrc(got.synced || "");
+      if (!worth(lines)) return;
+      this.lines = lines;
+      this.changed();
+    } catch { /* nothing to show, which is the ordinary case */ }
+  }
+
+  /** The playhead and the words, once a second, in place.
+   *
+   * ⚠️ In place and not a redraw: this screen holds a queue that can be
+   * scrolled, an open device menu and a search field with a caret in it, and
+   * rebuilding it once a second would throw all three away. Same contract as
+   * `TodayScreen.paintTimer`. */
+  tick() {
+    const media = this.deps.source.media;
+    if (!media.active) return;
+    const at = this.deps.source.position();
+    const elapsed = this.host.querySelector<HTMLElement>(".media-time:not(.media-left)");
+    if (elapsed) elapsed.textContent = clock(at);
+    const left = this.host.querySelector<HTMLElement>(".media-left");
+    if (left && media.duration > 0) left.textContent = `-${clock(Math.max(0, media.duration - at))}`;
+    const fill = this.host.querySelector<HTMLElement>(".media-rail i");
+    if (fill && media.duration > 0) {
+      fill.style.width = `${Math.max(0, Math.min(100, (at / media.duration) * 100))}%`;
+    }
+    const box = this.host.querySelector<HTMLElement>(".media-words");
+    if (box) this.paintWords(box, at);
   }
 
   /** The output picker, on the same grammar as the composer's chips. */

@@ -226,8 +226,14 @@ h1 { margin:0; }
    ⚠️ Stacked in ONE grid cell at a fixed width. Side by side they would both
    be spoken for; and a swap that changes the strip's layout moves the name
    out from under the eye that came to read it. */
-.pill-side { position:relative; display:grid; place-items:center; height:22px;
-  min-width:50px; flex-shrink:0; }
+/* ⚠️ Right-ALIGNED, not centred in its own slot. Centred, the glyph floated
+   about twenty-five pixels in from the edge with nothing to its right, which
+   reads as a thing that has come loose rather than as the far end of a row.
+   ⚠️ And lifted off the line, like the name beside it: a glyph sitting on
+   the progress bar reads as part of it. */
+.pill-side { position:relative; display:grid; align-items:center;
+  justify-items:end; height:22px; min-width:50px; flex-shrink:0;
+  padding-bottom:5px; }
 .pill-side > * { grid-area:1 / 1; }
 .pill-phase { display:grid; place-items:center; color:var(--phase, var(--accent));
   transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
@@ -290,23 +296,6 @@ html[data-motion=never] .pill-bar i { transition:none; animation:none; }
 [data-edge=left] #island-collapsed .pill-bar,
 [data-edge=right] #island-collapsed .pill-bar { display:none; }
 
-/* ── The line the pomodoro leaves on the bezel ────────────────
-   Full screen slides the island away, which is right for everything except
-   the one thing you started BECAUSE you were about to stop looking at the
-   screen. ⚠️ It is a SIBLING of the island, not part of it: `chrome-hidden`
-   translates the island off the edge, so anything drawn against its box goes
-   with it. Placed on the reveal strip, so what you can see and what you can
-   point at are the same rectangle — and pointing at it brings the island back
-   the way that strip already did.
-   ⚠️ It carries `.pill-bar`, so the fill colour, the paused grey and the
-   travelling sheen are the ones the strip uses. One line, two places. */
-.island-peek { position:absolute; z-index:2; border-radius:0;
-  background:rgba(255,255,255,.07); }
-/* Upright, the floor is a height rather than a width. */
-[data-edge=left] .island-peek i, [data-edge=right] .island-peek i {
-  min-width:0; min-height:12px; }
-.island-peek.is-held i { background-color:#7a7a7a;
-  background-image:none; animation:none; }
 /* Only animates while something is genuinely playing; a frozen equaliser
    would say "playing" about a paused track. */
 /* ── The equaliser, and what it becomes ─────────────────────────────
@@ -1302,6 +1291,30 @@ html[data-motion=never] .media-body { transition:none; }
 .media-eq.on i:nth-child(4) { animation-delay:-150ms; }
 
 /* ── Where you are in it ─────────────────────────────────────────────── */
+/* ── Live lyrics ───────────────────────────────────
+   Three lines: what was said, what is being said, what is next. ⚠️ Three
+   rather than a scroller — the panel is a wide, short box, and forty lines in
+   it is a wall you have to find your place in, which is the one job this has.
+   ⚠️ The lines are CENTRED and the box has a fixed height. Lyrics are of
+   wildly different lengths, and left-aligned against a ragged edge the whole
+   block twitches sideways every few seconds; a height that follows the words
+   would re-lay the panel out under them. */
+.media-words { display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:2px; height:58px; text-align:center;
+  padding:0 8px; overflow:hidden;
+  mask-image:linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+  -webkit-mask-image:linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent); }
+.media-word { margin:0; width:100%; line-height:1.25;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* The one being sung, and its neighbours as context — not as competition. */
+.media-word.is-now { font-size:14.5px; font-weight:620; color:#f4f4f4;
+  letter-spacing:-.2px; }
+.media-word.is-back, .media-word.is-next { font-size:11.5px; font-weight:500;
+  color:#6e6e6e; }
+.media-word:empty { display:none; }
+/* Before the first line, nothing is being sung — an intro is not a lyric. */
+.media-words.is-waiting .media-word.is-next { color:#8a8a8a; }
+
 .media-scrub { display:flex; align-items:center; gap:11px; }
 /* ⚠️ Bright, and big enough to read without stopping. It was 11px of #7c7c7c
    — the same grey as a caption — for the one number on this screen that changes
@@ -1996,6 +2009,33 @@ html.chrome-hidden #island[data-edge=top], html.chrome-hidden #stage[data-edge=t
 html.chrome-hidden #island[data-edge=bottom], html.chrome-hidden #stage[data-edge=bottom] { transform:translateY(118%); }
 html.chrome-hidden #island[data-edge=left], html.chrome-hidden #stage[data-edge=left] { transform:translateX(-118%); }
 html.chrome-hidden #island[data-edge=right], html.chrome-hidden #stage[data-edge=right] { transform:translateX(118%); }
+
+/* ── Parked, with the line still showing ────────────────────
+   Full screen slides the island away, which is right for everything except
+   the one thing you started BECAUSE you were about to stop looking at the
+   screen. A pomodoro parks it SHORT of gone instead: the title and the clock
+   ride up out of sight and the progress line stays on the edge, with a hair
+   of the notch's own rounded corner under it — so it reads as the notch
+   rather than as a rule drawn across the top of the display.
+   ⚠️ Parked rather than replaced. The first version left a separate strip
+   on the bezel, which meant TWO progress lines for the moment the island slid
+   back: the one on the bezel and the strip's own. One element in both states
+   cannot disagree with itself. */
+html.chrome-line #island { opacity:1; }
+html.chrome-line #island[data-edge=top] {
+  transform:translateY(calc(-100% + var(--line-show))); }
+html.chrome-line #island[data-edge=bottom] {
+  transform:translateY(calc(100% - var(--line-show))); }
+html.chrome-line #island[data-edge=left] {
+  transform:translateX(calc(-100% + var(--line-show))); }
+html.chrome-line #island[data-edge=right] {
+  transform:translateX(calc(100% - var(--line-show))); }
+/* ⚠️ And the words go, explicitly. The geometry alone very nearly hides
+   them, and "very nearly" on a descender is a strip with the bottom of a
+   sentence poking over the edge of the screen. */
+html.chrome-line #island-collapsed .pill-copy,
+html.chrome-line #island-collapsed .pill-side,
+html.chrome-line #island-collapsed .pill-lead { opacity:0; }
 
 /* A number that changed, rather than a number that was replaced. */
 @keyframes bump { from { opacity:0; transform:translateY(calc(var(--distance-micro) * -1)); } to { opacity:1; transform:none; } }

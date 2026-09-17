@@ -667,7 +667,7 @@ test("the island opens on what is happening, not on where you were", async ({ pa
   await expect(page.locator("#island-where")).toHaveText("Notes");
 });
 
-test("full screen takes the island away and leaves the pomodoro's line", async ({ page }) => {
+test("full screen parks the island with its line still showing", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator("#head-timer").click();
@@ -675,23 +675,29 @@ test("full screen takes the island away and leaves the pomodoro's line", async (
   await run(page, "Hide the chrome", "Hide the chrome");
   await page.mouse.move(10, 700);
 
-  /* ⚠️ The island is gone and this is NOT part of it. `chrome-hidden`
-   * translates the island off the edge, so a line drawn against its box would
-   * go with it; this is a sibling placed on the reveal strip, which is the
-   * rectangle that was already interactive — so what you can see and what you
-   * can point at are one thing by construction. */
-  const line = page.locator(".island-peek");
-  await expect(line).toBeVisible();
-  await expect(page.locator("#island-collapsed")).not.toBeVisible();
-  const box = (await line.boundingBox())!;
-  expect(box.y).toBeLessThan(2);
-  expect(Math.round(box.height)).toBe(3);
-  /* A floor under the fill: at twenty-five minutes the first minute is four
-   * tenths of a pixel, which is a line that has not started. */
-  expect(await line.locator("i").evaluate(el => parseFloat(getComputedStyle(el).width)))
-    .toBeGreaterThanOrEqual(12);
+  /* ⚠️ PARKED, not replaced. The first version left a separate strip on the
+   * bezel, which meant two progress lines for the moment the island slid back
+   * — the one on the bezel and the strip's own. Sliding it most of the way off
+   * leaves exactly one, and it is the same element in both states. */
+  await expect(page.locator("html")).toHaveClass(/chrome-line/);
+  /* ⚠️ Polled, not measured once. Hiding the chrome folds an open panel first
+   * and the fold is a spring, so the first reading is of a panel on its way
+   * down rather than of the sliver it is heading for. */
+  const edge = async () => {
+    const b = (await page.locator("#island").boundingBox())!;
+    return b.y + b.height;
+  };
+  await expect.poll(edge, { timeout: 4000 }).toBeLessThan(18);
+  const showing = await edge();
+  expect(showing).toBeGreaterThan(4);
+  const box = (await page.locator("#island").boundingBox())!;
+  // The words ride up out of sight; the line does not.
+  await expect(page.locator("#island-collapsed .pill-copy")).toHaveCSS("opacity", "0");
+  const bar = (await page.locator(".pill-bar").boundingBox())!;
+  expect(bar.y).toBeLessThan(showing);
+  expect(bar.y).toBeGreaterThan(0);
 
-  // Pointing at it brings the island back, the way that strip already did.
-  await line.hover();
-  await expect(line).not.toBeVisible();
+  // Pointing at it brings the whole island back.
+  await page.mouse.move(box.x + box.width / 2, 3);
+  await expect(page.locator("html")).not.toHaveClass(/chrome-line/);
 });

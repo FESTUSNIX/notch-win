@@ -34,7 +34,19 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
-- Feature (media): live lyrics sync using LRCLIB
+- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Three lines on
+  the player: what was said, what is being said, what is next. ⚠️ LRCLIB's
+  `/api/get` is a fingerprint (artist + track + album + duration) and answers
+  404 on a near miss, which is the behaviour to want — nothing beats another
+  recording's words against this one's clock. No key, no account, cached by
+  the same fingerprint on both sides.
+  - [ ] Unsynced files are ignored. LRCLIB serves plain words too, and pacing
+        them by dividing the track's length by the line count is an invention
+        that is wrong from the second line on. A block of static text would be
+        honest and is not drawn yet.
+  - [ ] Nothing on the collapsed strip. A line of lyric is the most tempting
+        thing to put there and the one most likely to be read over somebody's
+        shoulder — the same argument that keeps a notification's words off it.
 
 - Feature (media): Add volume mixer. Control volume per app
 
@@ -42,15 +54,6 @@
 
 - Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
 - Style: replace generic agents icon (in the collapsed pill) with the agent logo (Claude, Codex etc.)
-- ~~Improve: context awareness for the notch~~ — **done**. Opening it lands on
-  whatever is happening rather than wherever you last were: the pill has
-  already picked the most live claim, and the island follows it. ⚠️ Above 40
-  only — a call, an agent waiting, a meeting about to start, a countdown — and
-  never for a toast, which outranks everything and is a message rather than a
-  place. `Settings → Island → Opening` switches it off.
-  - [ ] It follows on EVERY open, so walking to Notes and reopening goes back
-        to the call. That is the feature; if it grates, the escape is a grace
-        period after a deliberate screen change rather than a new setting.
 
 ---
 
@@ -122,6 +125,16 @@ until the answer arrives as a `tool_result`.
   and then as two ENGINES behind them: a pomodoro and a timer run side by
   side. One state meant starting a timer silently threw away a run four rounds
   in. The tab you are not on wears a dot when its countdown is live.
+
+- ~~Improve: context awareness for the notch~~ — **done**. Opening it lands on
+  whatever is happening rather than wherever you last were: the pill has
+  already picked the most live claim, and the island follows it. ⚠️ Above 40
+  only — a call, an agent waiting, a meeting about to start, a countdown — and
+  never for a toast, which outranks everything and is a message rather than a
+  place. `Settings → Island → Opening` switches it off.
+  - [ ] It follows on EVERY open, so walking to Notes and reopening goes back
+        to the call. That is the feature; if it grates, the escape is a grace
+        period after a deliberate screen change rather than a new setting.
 
 ---
 

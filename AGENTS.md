@@ -3296,4 +3296,41 @@ The two halves were the same fault.
      against its box goes with it.** The line a running pomodoro leaves on the
      bezel is a SIBLING, placed on the reveal strip — the rectangle that was
      already interactive — so the thing you can see and the thing you can
-     point at are one rectangle by construction rather than by agreement.
+     point at are one rectangle by construction rather than by agreement.  **Superseded by 494.**
+494. ⚠️ **Two lines for one fact, for the length of an animation.** That
+     separate strip meant the bezel's line AND the strip's own were both on
+     screen for the moment the island slid back — briefly duplicated, then one
+     vanished. The island is PARKED short of gone instead: the words ride up
+     out of sight and the same element stays on the edge, so there is nothing
+     to keep in step. ⚠️ The parked rules have identical specificity to the
+     hidden ones, so they must come after them in the sheet.
+495. ⚠️ **A glyph centred in its own slot floats.** The phase sat twenty-five
+     pixels in from the strip's edge with nothing to its right, which reads as
+     something that has come loose rather than as the end of a row. Aligned to
+     the end of the slot it shares with the countdown, and lifted off the
+     progress line — a glyph resting on a bar reads as part of it.
+496. ⚠️ **LRCLIB's `/api/get` is a fingerprint, not a search.** Artist, track,
+     album AND duration, or it answers 404 — which is the behaviour to want: a
+     near miss returns nothing rather than another recording's words scrolling
+     against this one's clock. `/api/search` exists and is not used.
+497. ⚠️ **An LRC file is not one format.** `[mm:ss.xx]`, `[mm:ss.mmm]`,
+     `[mm:ss]`, several stamps on one line for a repeated chorus, metadata
+     headers that look exactly like stamps apart from what is left of the
+     colon, and a `[offset:]` whose POSITIVE value means the words come
+     EARLIER. Only the stamps at the FRONT of a line count, or a bracketed
+     aside inside the words prints the rest of the song against the wrong
+     minute.
+498. ⚠️ **A `MutexGuard` held across an `await` makes the future non-Send**,
+     which Tauri's command machinery refuses — and the state handle has to go
+     out of scope before the guard does, or the borrow outlives what it
+     borrows. Both in one small block before the request.
+499. ⚠️ **The player had a clock that nothing moved.** The media screen redrew
+     on events and once a minute, so the scrub bar sat wherever the last event
+     left it; the lyrics are what made it visible. A `tick` that writes in
+     place, because that screen holds a scrollable queue, an open device menu
+     and a search field with a caret in it.
+500. ⚠️ **A fixture whose playhead runs in real time is a test that depends
+     on how fast the machine is.** By the time a test walks to the player the
+     demo track is several seconds further on than the fixture says. Seek to a
+     known second first, and aim at the MIDDLE of a line's span rather than
+     just past its stamp.

@@ -189,6 +189,21 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "everything_running") return true as T;
   if (command === "reset_position" || command === "open_log" || command === "quit_app") return undefined as T;
   if (command === "get_media") return structuredClone(demoMedia) as T;
+  /* ⚠️ Staged, not fetched. The preview has no network and LRCLIB should not
+     be asked what a fixture is listening to — and "what does a lyric look like
+     against a wide, short panel" is the question the preview exists for. The
+     stamps are around the demo track's own position, 263 seconds. */
+  if (command === "get_lyrics") {
+    return { known: true, plain: "", synced: [
+      "[ti:A demo]", "[offset:0]",
+      "[04:14.00]and the lights came up over the water",
+      "[04:20.00]nobody said a word",
+      "[04:25.50]we just stood there",
+      "[04:31.00]the way you do when it is over",
+      "[04:38.00]",
+      "[04:44.00]and the lights came up over the water",
+    ].join(String.fromCharCode(10)) } as T;
+  }
   if (command === "get_call") return structuredClone(demoCall) as T;
   if (command === "get_notices") return structuredClone(demoNotices) as T;
   if (command === "notice_dismiss") {

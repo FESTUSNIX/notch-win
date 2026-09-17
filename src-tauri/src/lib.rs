@@ -6,6 +6,7 @@ mod call;
 mod config;
 mod credentials;
 mod drag;
+mod lyrics;
 mod apps;
 mod everything;
 mod fixtures;
@@ -467,6 +468,7 @@ pub fn run() {
         .manage(InteractiveRects::default())
         .manage(DisplayItems::default())
         .manage(weather::Latest::default())
+        .manage(lyrics::Cache::default())
         .manage(sessions::Sessions::default())
         .manage(snooze::Store::default())
         .manage(notes::Store::default())
@@ -552,6 +554,7 @@ pub fn run() {
             sessions::get_sessions,
             sessions::focus_session,
             weather::get_weather,
+            lyrics::get_lyrics,
             weather::set_weather_place,
             media::get_media,
             media::media_command,

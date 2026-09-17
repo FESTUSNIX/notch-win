@@ -125,6 +125,11 @@ export const FRAME = {
      from a two-line sentence to a glyph and a token. Past about 700 the strip
      stops reading as a notch welded to the bezel and starts reading as a
      toolbar someone left open. */
+  /** How much of the island stays on screen while a pomodoro is parked.
+   *  ⚠️ Enough for the progress line plus a hair of the notch's own rounded
+   *  edge under it — the point is that it reads as the notch, not as a rule
+   *  somebody drew across the top of the screen. */
+  islandLineShow: 21,
   islandPillLong: 470,
   islandPillThin: 74,
   /** Wider than it is tall, on purpose: the island is read at a glance across,
