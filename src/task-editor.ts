@@ -53,6 +53,7 @@ interface Prefs {
   timerSound: string;
   timerMode: string;
   pomodoroPill: string;
+  followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -181,6 +182,7 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Show the island", "Off, only the usage notch remains.", check("notch-visible"))}
     </div></div>
     <div><p class="set-label">Opening</p><div class="set-group">
+      ${row("Open on what is happening", "A call, an agent waiting, a meeting about to start or a running countdown — the island opens on that screen rather than where you last were.", check("follow-live"))}
       ${row("Open on hover", "Off, it takes a click — or the shortcut.", check("open-on-hover"))}
       ${row("Stays open for", "How long the panel waits after the pointer leaves.",
         `<input type="range" id="fold-delay" min="120" max="2000" step="20"><span class="set-value" id="fold-delay-value"></span>`)}
@@ -211,6 +213,7 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Mute the microphone too", "As well as pressing the app\u2019s own mute. Off, the mute is only as reliable as that shortcut.", check("call-mute-mic"))}
       ${row("Go to the call", "A call starting puts the island on its screen, so opening it shows the call.", check("call-open"))}
     </div>
+    <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>
     <div><p class="set-label">Notifications</p><div class="set-group">
       ${row("Mirror the notification centre", "The header shows how many are waiting, and the Notices screen shows them.", check("notice-mode"))}
     </div>
@@ -222,7 +225,6 @@ const PANE_HTML: Record<PaneId, string> = {
         `<input type="range" id="pom-break" min="1" max="30" step="1"><span class="set-value" id="pom-break-value"></span>`)}
       ${row("Long break", "After every fourth one.",
         `<input type="range" id="pom-long" min="5" max="60" step="5"><span class="set-value" id="pom-long-value"></span>`)}
-    </div>
       ${row("On the notch", "A running pomodoro as a quiet line along the bottom, or as the countdown itself.",
         seg("pompill", [["bar", "A line"], ["time", "The time"]], "Pomodoro on the pill"))}
       ${row("Sound", "What a finished countdown plays. Windows\u2019 own sounds \u2014 nothing is shipped.",
@@ -230,8 +232,7 @@ const PANE_HTML: Record<PaneId, string> = {
           ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]],
           "Timer sound"))}
     </div>
-    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. The lengths are on the Timer screen too \u2014 the same number, reachable from either. Wind the dial there for a plain countdown, or type \u201ctimer 12\u201d in the palette.</p></div>
-    <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>`,
+    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. The lengths are on the Timer screen too \u2014 the same number, reachable from either. Wind the dial there for a plain countdown, or type \u201ctimer 12\u201d in the palette.</p></div>`,
 
   pill: `
     <div><p class="set-label">What it may say</p><div class="set-group" id="modules"></div>
@@ -369,7 +370,7 @@ let prefs: Prefs = {
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
-  pomodoroPill: "bar",
+  pomodoroPill: "bar", followLive: true,
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -570,7 +571,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
  * layer up. */
 for (const [id, key] of [
   ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
-  ["notice-mode", "noticeMode"],
+  ["notice-mode", "noticeMode"], ["follow-live", "followLive"],
 ] as const) {
   get<HTMLInputElement>(id).onchange = event => {
     prefs[key] = (event.target as HTMLInputElement).checked;
@@ -1147,6 +1148,7 @@ function paintPrefs() {
   }
   get<HTMLInputElement>("call-mute-mic").checked = prefs.callMuteMic;
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
+  get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   paintScreens();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;

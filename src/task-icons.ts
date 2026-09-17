@@ -13,8 +13,27 @@ import {
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
-  Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon,
+  Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon,
 } from "@hugeicons/core-free-icons";
+
+/* An agent's OWN mark, hand-written rather than from the icon set — Hugeicons
+   has no Claude. Same shape as a Hugeicons entry (`[tag, attributes]`), so
+   `taskIcon` draws it with no special case.
+
+   ⚠️ A burst of strokes rather than the filled trademark: it is drawn in
+   `currentColor` like every other glyph here, so it takes the colour of
+   whatever it sits in — a two-tone logo would be the one icon in the app that
+   ignored the phase, the hover and the accent. */
+const CLAUDE_MARK: [string, Record<string, string>][] = [
+  ["path", {
+    d: "M12 9.8V4 M12 14.2V20 M14.2 12H19 M9.8 12H5"
+      + " M13.56 10.44L16.6 7.4 M10.44 10.44L7.4 7.4"
+      + " M10.44 13.56L7.4 16.6 M13.56 13.56L16.6 16.6",
+    stroke: "currentColor",
+    strokeWidth: "1.9",
+    strokeLinecap: "round",
+  }],
+];
 
 const icons = {
   pause: PauseIcon, play: PlayIcon, stop: StopIcon, check: Tick02Icon, list: ListViewIcon,
@@ -59,6 +78,12 @@ const icons = {
      "Focus" and "Break" are the same length and much the same shape at 10px,
      which is the size the collapsed strip prints them at. */
   coffee: Coffee02Icon,
+  /* A pomodoro's two halves. ⚠️ `focus` is a CROSSHAIR — four corner ticks
+     and a dot — which at sixteen pixels on a black strip is a smudge rather
+     than a symbol. Concentric rings read as one thing at that size. */
+  target: Target01Icon,
+  // Whose agent it is. See CLAUDE_MARK.
+  claude: CLAUDE_MARK,
 };
 export type TaskIcon = keyof typeof icons;
 

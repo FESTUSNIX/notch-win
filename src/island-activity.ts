@@ -55,6 +55,15 @@ export interface Activity {
   playing?: boolean;
   /** 0..1, drawn as a ring. */
   progress?: number;
+  /** Whether opening the island should LAND on this claim's screen.
+   *
+   * ⚠️ A claim can be the most live thing on the strip and still be the
+   * wrong place to be sent. A toast about something that just happened
+   * outranks everything by design — it is a message, and it has already said
+   * its piece on the strip; being dropped on the System screen because one
+   * went past is a navigation you did not ask for and cannot undo. Unset
+   * means "yes, if it is live enough"; false means never. */
+  steers?: boolean;
   /** A countdown, in its own slot at the far end of the strip.
    *
    * ⚠️ NOT part of `value`. It was the tail of that grey second line —
@@ -292,11 +301,6 @@ function build(host: HTMLElement, activity: Activity) {
     const image = element("img", "pill-art") as HTMLImageElement;
     image.alt = "";
     lead.append(image);
-  } else if (activity.bar && activity.icon) {
-    /* ⚠️ The ICON, not the ring: the bar along the bottom is the progress
-     * in this mode, and two readings of the same number on one strip is one
-     * of them saying nothing. The lead's job here is which HALF you are in. */
-    paintIcon(lead, activity.icon);
   } else if (activity.progress !== undefined) {
     lead.append(ring());
   } else if (activity.icon) {
@@ -306,14 +310,28 @@ function build(host: HTMLElement, activity: Activity) {
   }
   const copy = element("div", "pill-copy");
   copy.append(element("span", "pill-label"), element("span", "pill-value"));
-  host.append(lead, copy);
+  /* ⚠️ In bar mode there is no lead at all. The progress is the line along
+   * the bottom, so a ring there would be the same number twice; and the phase
+   * has moved to the far end, where it trades places with the clock. What is
+   * left on the left is the name, which is what you look down for. */
+  if (activity.bar) host.append(copy);
+  else host.append(lead, copy);
   if (activity.kind === "media") host.append(equaliser());
   // A `t-digit-group`, so only the digits that changed re-enter. See setDigits.
-  if (activity.time !== undefined) host.append(element("div", "pill-time t-digit-group"));
+  const clock = element("div", "pill-time t-digit-group");
   if (activity.bar) {
+    /* One slot, two readings, stacked. ⚠️ Stacked rather than side by side,
+     * and the slot is a fixed width: they swap under the pointer, and a swap
+     * that changes the strip's layout is one that moves the name out from
+     * under the eye that came to read it. */
+    const side = element("div", "pill-side");
+    side.append(element("span", "pill-phase"), clock);
+    host.append(side);
     const bar = element("div", "pill-bar");
     bar.append(element("i"));
     host.append(bar);
+  } else if (activity.time !== undefined) {
+    host.append(clock);
   }
   host.dataset.kind = activity.kind;
 }
@@ -401,14 +419,16 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   // share a `kind` and carry different icons — System and Calendar both raise
   // an "event" — and without this the pill keeps whichever one it built with.
   // paintIcon is a no-op when the name has not changed.
+  // The phase, at the far end. See `build`.
+  const phase = host.querySelector<HTMLElement>(".pill-phase");
+  if (phase && activity.icon) paintIcon(phase, activity.icon);
   const lead = host.querySelector<HTMLElement>(".pill-lead");
   /* ⚠️ `bar` as well as "no progress". A claim that carries a progress
    * fraction normally draws a RING in this slot, so repainting an icon over
    * it would erase it — but in bar mode the progress is the line along the
    * bottom and the slot holds the phase glyph, which changes when the phase
    * does. Without this the strip kept the focus icon all through the break. */
-  if (lead && activity.icon && !activity.artwork
-    && (activity.bar || activity.progress === undefined)) {
+  if (lead && activity.icon && !activity.artwork && activity.progress === undefined) {
     paintIcon(lead, activity.icon);
   }
 

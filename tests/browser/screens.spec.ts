@@ -137,3 +137,29 @@ test("a screen can have its own colour, and the one you are on wears it", async 
     getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(plain).toBe(accent);
 });
+
+test("every settings page is inside the scroller, and scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 700 });
+  await page.goto("/task-editor.html");
+
+  /* ⚠️ A stray `</div>` in one pane's template took the SCROLLER with it. An
+   * end tag with no matching open is applied to the nearest open div in
+   * scope, and a `<section>` does not block that search — so every pane after
+   * the broken one was parsed as a sibling of `.settings-scroll` rather than
+   * a child: no scrolling, and none of the side padding, which lives on the
+   * scroller. Nothing errored, and the panes before it looked perfect. */
+  const homes = await page.evaluate(() => [...document.querySelectorAll(".settings-pane")]
+    .map(el => (el.parentElement as HTMLElement).className));
+  expect(homes.length).toBeGreaterThan(5);
+  expect(new Set(homes)).toEqual(new Set(["settings-scroll"]));
+
+  // And a page taller than the window is reachable rather than cut off.
+  await page.locator('[role=tab]', { hasText: "Island" }).click();
+  const room = await page.evaluate(() => {
+    const el = document.querySelector<HTMLElement>(".settings-scroll")!;
+    el.scrollTop = 10_000;
+    return { over: el.scrollHeight - el.clientHeight, at: el.scrollTop };
+  });
+  expect(room.over).toBeGreaterThan(50);
+  expect(room.at).toBeGreaterThan(50);
+});

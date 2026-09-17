@@ -3251,3 +3251,49 @@ The two halves were the same fault.
      with half the choices. A pale tint of the accent says rest against work
      and cannot drift — with an ICON beside it, because a colour on its own is
      not a difference to everybody who uses this.
+487. ⚠️ **A stray `</div>` does not stay inside the element it was written
+     in.** One extra closer in a settings pane's template closed
+     `.settings-scroll` itself: an end tag with no matching open is applied to
+     the nearest open div IN SCOPE, and `<section>` is not on the list of
+     elements that block that search. Every pane after the broken one was
+     parsed as a SIBLING of the scroller — no scrolling, and none of the side
+     padding, which lives on it. Nothing errored and the panes before it were
+     perfect. The guard is one line: every pane's parent must be the scroller.
+488. ⚠️ **A lean means the opposite thing the moment the content behind it
+     changes.** Dragging the rail leans the panel the way the hand went, which
+     is right for the screen going OUT — and on the frame the new screen
+     arrives, that same lean puts the new content on the side you dragged away
+     from, so it walks in backwards against its own entrance animation. It is
+     mirrored once at the swap, and the paint loop is told to keep its hands
+     off for the length of the return: the real offset is zero by then, so one
+     more frame of it would snap the panel home.
+489. ⚠️ **Being the most live claim is not the same as being somewhere to
+     be sent.** A toast outranks everything on the strip by design; landing on
+     the System screen because one went past is a navigation nobody asked for.
+     `steers: false` says "draw me, do not go there", and the bar for the rest
+     is 40 — the line between "this is happening to you" and "this is a fact
+     about your day". A player that steals the panel because music is on is
+     the behaviour that makes people switch the feature off.
+490. ⚠️ **Two measurements racing through one fold.** Landing on a live screen
+     was called from inside the panel's own open work, and `show` caps the
+     body, renders and measures — so two screens were measured through one
+     opening. It landed as a screen visited LATER sitting ten pixels short at
+     the bottom, on a full test run and nowhere else. A frame later it is an
+     ordinary screen change.
+491. ⚠️ **A glyph at the head of the strip costs the name its place.** The
+     phase sat between the edge and the session name with a gap either side —
+     three things in a row with room for two — and pushed the one word you
+     actually read a third of the way in. It moved to the far end and shares
+     ONE fixed-width grid cell with the countdown: they trade places under the
+     pointer, and a swap that re-lays the strip out moves the name out from
+     under the eye that came to read it.
+492. ⚠️ **A bar that fills at a third of a pixel a second has stopped, as far
+     as anyone can tell.** Twenty-five minutes of progress is invisible as
+     motion. A sheen travelling along the fill is what says RUNNING; the width
+     says how far. And the fill needs a floor, or the first minute is a line
+     that never started — the same trade the pomodoro's dots already make.
+493. ⚠️ **Full screen slides the island off the edge, and anything drawn
+     against its box goes with it.** The line a running pomodoro leaves on the
+     bezel is a SIBLING, placed on the reveal strip — the rectangle that was
+     already interactive — so the thing you can see and the thing you can
+     point at are one rectangle by construction rather than by agreement.

@@ -215,6 +215,7 @@ interface Prefs {
   timerSound: string;
   timerMode: string;
   pomodoroPill: string;
+  followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -233,7 +234,7 @@ let prefs: Prefs = {
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
-  pomodoroPill: "bar",
+  pomodoroPill: "bar", followLive: true,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -248,6 +249,29 @@ let prefs: Prefs = {
  * and did nothing, and hovering the island brought back a palette that had
  * never been given the caret — visible, and impossible to type in or click.
  * Folding is the one signal that covers every route into that state. */
+/** How live a claim has to be before opening the island lands on its screen.
+ *
+ * ⚠️ Forty, which is the line between "this is happening to you" and "this
+ * is a fact about your day". A call, an agent waiting, a meeting about to
+ * start and a countdown are all above it; a track playing, the day's tally and
+ * the weather are below. Being sent to the player because music is on is the
+ * behaviour that makes people turn a feature like this off. */
+const LANDS = 40;
+
+/** Open on whatever is actually happening, rather than wherever you were.
+ *
+ * ⚠️ The pill has ALREADY decided this. It picks the most live claim every
+ * second and draws it, so the screen to open on is the screen behind the thing
+ * you just looked down at — and deriving it a second way here would be two
+ * answers to one question that disagree at the edges. */
+function landOn() {
+  if (!prefs.followLive) return;
+  const best = pick(claims());
+  if (!best || best.steers === false || best.priority < LANDS) return;
+  if (best.screen === screen) return;
+  show(best.screen);
+}
+
 const surface = new IslandSurface(open => {
   if (open) {
     /* ⚠️ The mask comes off HERE, not when the palette closed — and the
@@ -258,6 +282,13 @@ const surface = new IslandSurface(open => {
     palette.unmask();
     surface.capBody(cpx(widthOf(screen)));
     render();
+    /* ⚠️ On the NEXT frame, never inside this one. `show` caps the body,
+     * renders and measures; doing that in the middle of the panel's own open
+     * work is two measurements of two different screens racing through one
+     * fold, and it landed as a screen visited later sitting ten pixels short
+     * at the bottom — on a full test run and nowhere else. A frame later it is
+     * an ordinary screen change, the same one a tab press makes. */
+    requestAnimationFrame(() => landOn());
   } else if (palette.open) void palette.hide();
 });
 
@@ -620,6 +651,8 @@ function noticeClaim(): Activity | null {
     screen: "system",
     kind: "day",
     icon: "system",
+    // It is a message about something that happened, not a place. See `steers`.
+    steers: false,
     label: notice.label,
     value: notice.value,
   };
@@ -654,7 +687,7 @@ function timerClaim(): Activity | null {
     /* ⚠️ The phase gets an ICON as well as a colour. A word is the one
      * thing you do not read on a strip you are glancing at, and "Focus" and
      * "Break" are the same length and the same shape at 10px. */
-    icon: state.phase === "work" ? "focus" : "coffee",
+    icon: state.phase === "work" ? "target" : "coffee",
     phase: state.phase,
     bar,
     /* ⚠️ The NAME, when there is one. "Focus" you already knew — you
@@ -847,6 +880,12 @@ function paintHead() {
  *  parts blank — it is three independent things sharing a strip. */
 function paintPill(live = claims()) {
   paintBubble();
+  /* Full screen takes the island away, which is right for everything except
+   * the thing you started because you were about to stop looking. */
+  const pom = timer.state;
+  surface.setPeek(pom
+    ? { through: timer.through(), phase: pom.phase, held: pom.endsAt === null }
+    : null);
   const best = pick(live);
   if (best && best.priority > 0) {
     /* ⚠️ A call keeps the clock, so the shell hands it over — it owns the
@@ -1095,7 +1134,12 @@ palette.add(() => {
       run: () => surface.pin() },
     { id: "cmd:hide", title: "Hide the chrome", keywords: "dismiss away present",
       icon: "close", hint: "Do", keep: { title: "Hide the chrome", note: "command", icon: "close", kind: "", path: "" },
-      run: () => call("toggle_chrome") },
+      /* ⚠️ The preview has no shell to ask, and the listener that answers
+       * `chrome:hidden` lives inside the `native` guard — so without this the
+       * command is a row in the palette that does nothing at all in a
+       * browser, which is also where every test of what the hidden state
+       * looks like has to run. */
+      run: () => { if (native) void call("toggle_chrome"); else surface.setHidden(!surface.isHidden); } },
     { id: "cmd:clock", title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock",
       keywords: "time format", icon: "clock", hint: "Do",
       keep: { title: clock24 ? "Use a 12-hour clock" : "Use a 24-hour clock", note: "command", icon: "clock", kind: "", path: "" },

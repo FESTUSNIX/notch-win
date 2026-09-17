@@ -1,4 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
+
+/* ⚠️ `nofollow` in every fixture here. Opening the island lands on whatever
+ * is live — the demo data always has an agent waiting for you — and this file
+ * is about the rail, which starts wherever the island put it. Without the flag
+ * every test here starts on Agents and reads as a rail bug. */
 import { FRAME } from "../../src/layout";
 
 /* The rail: where you are, under the middle of the island.
@@ -34,7 +39,7 @@ const here = (page: Page) =>
 
 test("the rail centres where you are and blurs the rest away", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   /* ⚠️ Exactly one stop is the one you are on, and it is the only one
@@ -79,7 +84,7 @@ test("the rail centres where you are and blurs the rest away", async ({page}) =>
 });
 
 test("dragging the rail walks the screens, and a press still picks one", async ({page}) => {
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
   expect(await here(page)).toBe("home");
 
@@ -255,7 +260,7 @@ test("dragging the rail walks the screens, and a press still picks one", async (
 });
 
 test("the name waits for the rail to stop, and the ends do not carry", async ({page}) => {
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   /* ⚠️ The name arrives LATE, and that is the point. A caption is wider than
@@ -316,7 +321,7 @@ test("the name waits for the rail to stop, and the ends do not carry", async ({p
 });
 
 test("a slow drag walks the screens; a long one saves them all for the release", async ({page}) => {
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   /** Every screen the panel actually showed, in order. */
@@ -370,7 +375,7 @@ test("a slow drag walks the screens; a long one saves them all for the release",
 });
 
 test("a long sweep does not rock the panel once it stops changing screens", async ({page}) => {
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   const pitch = await page.locator(".rail-stop").evaluateAll(stops => {
@@ -431,7 +436,7 @@ test("a long sweep does not rock the panel once it stops changing screens", asyn
 
 test("the palette takes the whole surface, furniture included", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
   await expect(page.locator("#island-rail")).toBeVisible();
   await expect(page.locator("#island-global")).toBeVisible();
@@ -452,7 +457,7 @@ test("the palette takes the whole surface, furniture included", async ({page}) =
 });
 
 test("closing the palette with the pointer away folds without showing the panel", async ({page}) => {
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   /* ⚠️ On a WIDE screen, so the difference is visible. The palette narrows the
@@ -513,7 +518,7 @@ test("closing the palette with the pointer away folds without showing the panel"
 
 test("laid out flat, every screen is sharp and one press away", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
-  await page.goto("/tasks.html?agents&flat");
+  await page.goto("/tasks.html?agents&nofollow&flat");
   await open(page);
 
   /* ⚠️ The carousel is the better shape for nine screens on a strip you
@@ -536,7 +541,7 @@ test("laid out flat, every screen is sharp and one press away", async ({page}) =
 
 test("the hint sits against the island, not adrift below it", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
-  await page.goto("/tasks.html?agents");
+  await page.goto("/tasks.html?agents&nofollow");
   await open(page);
 
   /* ⚠️ The host is as deep as a STOP — it has to be, the stops live in it —
@@ -557,7 +562,7 @@ test("the hint sits against the island, not adrift below it", async ({page}) => 
 
 test("the rail turns with the island, and never leaves it without one", async ({page}) => {
   await page.emulateMedia({reducedMotion: "reduce"});
-  await page.goto("/tasks.html?agents&edge=left");
+  await page.goto("/tasks.html?agents&nofollow&edge=left");
   await open(page);
 
   /* ⚠️ All four edges. It ran across the island's end only at first, which left
@@ -570,4 +575,34 @@ test("the rail turns with the island, and never leaves it without one", async ({
   });
   expect(shape.upright).toBe(true);
   expect(await here(page)).toBe("home");
+});
+
+test("a drag past where the screens stopped following hands the panel over", async ({ page }) => {
+  await page.goto("/tasks.html?quiet&nofollow");
+  await open(page);
+  const rail = (await page.locator("#island-rail").boundingBox())!;
+  const y = rail.y + rail.height / 2;
+  const from = rail.x + rail.width / 2;
+
+  /* A long, quick drag: past `railLiveStops` the screens stop following, so
+   * the panel is left leaning at a screen the rail has already gone by. */
+  await page.mouse.move(from, y);
+  await page.mouse.down();
+  for (let step = 1; step <= 8; step++) {
+    await page.mouse.move(from - step * 30, y);
+    await page.waitForTimeout(10);
+  }
+  const lean = () => page.evaluate(() =>
+    parseFloat(getComputedStyle(document.getElementById("island-expanded")!).translate) || 0);
+  // Dragging forward pushes the screen you are on out to the LEFT.
+  expect(await lean()).toBeLessThan(-5);
+
+  await page.mouse.up();
+  /* ⚠️ MIRRORED at the swap. Left as it was, the same lean means the opposite
+   * thing — the new screen would be the one sitting off to the left, walking
+   * in from the side you dragged away from, against both the gesture and the
+   * entrance animation playing over it. */
+  expect(await lean()).toBeGreaterThan(5);
+  // And then home, without the frame loop snapping it there.
+  await expect.poll(lean, { timeout: 2000 }).toBe(0);
 });

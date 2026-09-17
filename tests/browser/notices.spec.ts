@@ -392,7 +392,11 @@ test("a break does not look like the focus it follows", async ({ page }) => {
   await page.mouse.move(10, 700);
   await expect(page.locator("#island-expanded")).not.toBeVisible();
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-phase", "rest");
-  await expect(page.locator("#island-collapsed .pill-lead")).toHaveAttribute("data-icon", "coffee");
+  /* ⚠️ At the FAR END, in the slot the countdown comes back into. Beside the
+   * name it was a third thing in a row with room for two, and it pushed the
+   * one word you actually read into the middle of the notch. */
+  await expect(page.locator("#island-collapsed .pill-phase")).toHaveAttribute("data-icon", "coffee");
+  await expect(page.locator("#island-collapsed .pill-lead")).toHaveCount(0);
 });
 
 test("a break that runs out hands back the next round rather than resetting", async ({ page }) => {
@@ -635,4 +639,59 @@ test("and it can be dismissed, which nothing on the strip could be", async ({ pa
   await run(page, "Dismiss", "Dismiss Design review");
   await page.mouse.move(10, 700);
   await expect(pill).toHaveAttribute("data-kind", "clock");
+});
+
+test("the island opens on what is happening, not on where you were", async ({ page }) => {
+  await page.goto("/tasks.html?quiet&call");
+  await open(page);
+  /* A call is the loudest thing that can be true, so the island opens on it
+   * rather than on wherever the last visit left you. */
+  await expect(page.locator("#island-where")).toHaveText("Call");
+
+  // Walk somewhere else, fold, and it goes back to the call on the way in.
+  await page.locator('.rail-stop[data-tab="notes"]').click();
+  await expect(page.locator("#island-where")).toHaveText("Notes");
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+  await open(page);
+  await expect(page.locator("#island-where")).toHaveText("Call");
+
+  /* ⚠️ And it can be switched off, because "put me where the new thing is" is
+   * exactly the behaviour some people cannot stand. */
+  await page.goto("/tasks.html?quiet&call&nofollow");
+  await open(page);
+  await page.locator('.rail-stop[data-tab="notes"]').click();
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+  await open(page);
+  await expect(page.locator("#island-where")).toHaveText("Notes");
+});
+
+test("full screen takes the island away and leaves the pomodoro's line", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-btn.is-lead").click();
+  await run(page, "Hide the chrome", "Hide the chrome");
+  await page.mouse.move(10, 700);
+
+  /* ⚠️ The island is gone and this is NOT part of it. `chrome-hidden`
+   * translates the island off the edge, so a line drawn against its box would
+   * go with it; this is a sibling placed on the reveal strip, which is the
+   * rectangle that was already interactive — so what you can see and what you
+   * can point at are one thing by construction. */
+  const line = page.locator(".island-peek");
+  await expect(line).toBeVisible();
+  await expect(page.locator("#island-collapsed")).not.toBeVisible();
+  const box = (await line.boundingBox())!;
+  expect(box.y).toBeLessThan(2);
+  expect(Math.round(box.height)).toBe(3);
+  /* A floor under the fill: at twenty-five minutes the first minute is four
+   * tenths of a pixel, which is a line that has not started. */
+  expect(await line.locator("i").evaluate(el => parseFloat(getComputedStyle(el).width)))
+    .toBeGreaterThanOrEqual(12);
+
+  // Pointing at it brings the island back, the way that strip already did.
+  await line.hover();
+  await expect(line).not.toBeVisible();
 });

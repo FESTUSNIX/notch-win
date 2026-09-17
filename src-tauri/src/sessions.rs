@@ -223,6 +223,15 @@ pub fn spoken(seconds: u64) -> String {
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
     pub id: String,
+    /// Which agent this is — `claude`, and one day something else.
+    ///
+    /// ⚠️ Constant today, and carried anyway. The watcher reads one
+    /// directory, so every session it finds is Claude's; the island draws the
+    /// agent's own mark rather than a generic robot, and the alternative to
+    /// this field is the WEB layer assuming what the watcher happens to read.
+    /// The day a second provider is watched, that assumption is a wrong logo
+    /// on the strip with nothing in the code to notice it.
+    pub provider: String,
     /// The working directory's last component — "akcesfonia", not a path.
     pub project: String,
     /// Whatever branch the transcript last recorded, where it recorded one.
@@ -405,6 +414,7 @@ impl Watcher {
 
             views.push(SessionView {
                 id: session.session_id.clone(),
+                provider: "claude".to_string(),
                 project: entry.project.clone(),
                 branch: entry.branch.clone(),
                 pid: entry.pid,

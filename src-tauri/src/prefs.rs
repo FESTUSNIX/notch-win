@@ -132,6 +132,11 @@ pub struct Prefs {
     /// at a stretch, which is the opposite of what a focus tool should do to
     /// somebody's attention.
     pub pomodoro_pill: String,
+    /// Opening the island lands on whatever is actually happening — the call,
+    /// the agent waiting, the meeting about to start — rather than on wherever
+    /// you last were. ⚠️ The pill has already decided which that is; this
+    /// only says whether to follow it.
+    pub follow_live: bool,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -192,6 +197,7 @@ impl Default for Prefs {
             timer_sound: "Notification.Reminder".into(),
             timer_mode: "pomodoro".into(),
             pomodoro_pill: "bar".into(),
+            follow_live: true,
             call_mode: true,
             call_mute_mic: true,
             call_open: true,

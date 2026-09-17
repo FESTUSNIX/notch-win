@@ -4,66 +4,6 @@
 
 - Currency converter extension for the command palette
 
-- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen,
-  and then as two ENGINES behind them: a pomodoro and a timer run side by
-  side. One state meant starting a timer silently threw away a run four rounds
-  in. The tab you are not on wears a dot when its countdown is live.
-  - **Timer**: a ruler of minutes you drag under a fixed mark, which glides on
-    to read what is LEFT once it starts — setting it and watching it are one
-    picture. Wheel works too. The strip follows the hand between the marks and
-    eases onto one when you let go, the ends give rather than stopping dead,
-    and the mark under the arrow lights white. Full width: the fade is a mask
-    on the dial, not an opacity written onto 242 ticks every frame.
-  - **Collapsed (pomodoro)**: quiet by default — the phase icon, the session
-    name, and a fluid line along the bottom edge; the countdown comes back
-    under the pointer. ⚠️ Which means it comes back in CLICK mode only, since
-    hover opening replaces the strip with the panel before a pointer lands on
-    it. `Settings → On the notch` switches it back to the number.
-  - **Focus and break** are a vivid accent and a pale tint of the same accent,
-    plus a focus glyph and a coffee cup. ⚠️ A tint rather than a second hue:
-    the accent is one variable and a fixed blue would clash with half of what
-    somebody might pick.
-  - **A finished break** hands back the next round ready rather than ending the
-    run — the rounds you did are kept and the button says "Start round 3".
-  - **Collapsed (timer)**: a circle torn off the notch's side —
-    level with its bottom, a shade smaller, tucked into the flare. The ring is
-    how far through, the middle is the minutes over the seconds, and under the
-    pointer it becomes pause/resume. Pressing the ring opens the screen. ⚠️ It is
-    reported as a PASSIVE rect: clickable, and not a thing you open the island
-    by pointing at. A pomodoro still takes the strip, with the countdown as
-    the biggest thing on it.
-  - **Pomodoro**: an optional session name as a big borderless heading (it is
-    what the collapsed pill then says, because "Focus" you already knew), the
-    whole four-round cycle drawn as a track sized by real minutes, and Start /
-    Pause / Skip / Stop. Lengths behind a button on the screen itself.
-  - **Sound**: Windows' own notification sounds, nothing shipped. Chime,
-    Calendar, Alarm or none, in Settings. ⚠️ Played directly rather than
-    through the toast, because Focus Assist suppresses a toast and Focus Assist
-    is what somebody running a pomodoro has switched on.
-  - [ ] The lengths are in two places on purpose — the drawer writes the same
-        preference the settings window does. One value, two controls.
-  - [ ] No per-session history: how many pomodoros you did yesterday is not
-        recorded anywhere. The Review screen is where that would go.
-  - [ ] The header chip speaks for ONE of the two. With both running it shows
-        the pomodoro and wears a pip for the timer; the timer's own figure is
-        on the circle beside the notch, which the open panel hides.
-  - [ ] A ready round waits for ever. Nothing nudges you again after the first
-        toast, so a pomodoro can sit at "round 3, ready" all afternoon.
-  - [ ] The dial is timer-only, deliberately: a pomodoro's lengths are a
-        setting you choose once, and under a drag they become a thing to fiddle
-        with.
-  - [ ] No momentum on the dial. A flick that carries on is right for a list
-        and wrong for a value you are aiming at — the release would routinely
-        land ten minutes past the one you stopped on.
-  - [ ] The bubble's middle is the only pause, so the ring around it is the
-        only way to open the screen. That annulus is about six pixels wide —
-        the right way round (a mis-hit pauses, which costs one press, rather
-        than opening the panel over what you were looking at) but still thin.
-        Two actions on a 29px control is one too many; if it annoys, the
-        circle should just open the screen and the pause should go.
-  - [ ] Nothing counts down beside the notch on a vertical edge unless the
-        island has room below it; it is placed there, untested on a real
-        side-mounted display.
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than
@@ -94,8 +34,6 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
-- Improve: Context awareness for the notch. It's aware of what we are doing (call, timer/pomodoro, music/media etc.), we can use that even better to open up (expand) the notch on the correct screen isntead of opening it on home screen every time
-
 - Feature (media): live lyrics sync using LRCLIB
 
 - Feature (media): Add volume mixer. Control volume per app
@@ -103,6 +41,16 @@
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
 
 - Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
+- Style: replace generic agents icon (in the collapsed pill) with the agent logo (Claude, Codex etc.)
+- ~~Improve: context awareness for the notch~~ — **done**. Opening it lands on
+  whatever is happening rather than wherever you last were: the pill has
+  already picked the most live claim, and the island follows it. ⚠️ Above 40
+  only — a call, an agent waiting, a meeting about to start, a countdown — and
+  never for a toast, which outranks everything and is a message rather than a
+  place. `Settings → Island → Opening` switches it off.
+  - [ ] It follows on EVERY open, so walking to Notes and reopening goes back
+        to the call. That is the feature; if it grates, the escape is a grace
+        period after a deliberate screen change rather than a new setting.
 
 ---
 
@@ -169,6 +117,11 @@ until the answer arrives as a `tool_result`.
   - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
         key, the Start Menu) and falls back to a letter tile.
 - ~~Fix: Upcoming event stuck on the island~~ — **done**
+
+- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen,
+  and then as two ENGINES behind them: a pomodoro and a timer run side by
+  side. One state meant starting a timer silently threw away a run four rounds
+  in. The tab you are not on wears a dot when its countdown is live.
 
 ---
 

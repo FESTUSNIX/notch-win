@@ -212,11 +212,44 @@ h1 { margin:0; }
    would re-lay the strip out under the pointer, which is the one moment it
    must hold still. */
 #island-collapsed[data-shape=bar] .pill-value { display:none; }
-#island-collapsed[data-shape=bar] .pill-copy { padding-bottom:4px; }
-#island-collapsed[data-shape=bar] .pill-time { font-size:13.5px;
-  letter-spacing:-.2px; color:#cfcfcf; opacity:0; }
-#island-collapsed[data-shape=bar]:hover .pill-time { opacity:1; }
-#island-collapsed[data-shape=bar] .pill-lead { color:var(--phase, var(--accent)); }
+/* Room for the line, and the name lifted off it. */
+#island-collapsed[data-shape=bar] .pill-copy { padding-bottom:5px; }
+#island-collapsed[data-shape=bar] .pill-label { font-size:13px; font-weight:560; }
+
+/* ── The phase and the clock, in ONE slot ───────────────────
+   ⚠️ At the FAR END, not beside the name, and the two trade places under the
+   pointer. On the left the glyph sat between the strip's edge and the name
+   with a gap either side of it — three things in a row with room for two —
+   and it pushed the one word you actually read a third of the way into the
+   notch. Here it answers "which half am I in", in the same place the answer
+   to "how long is left" appears when you ask for it.
+   ⚠️ Stacked in ONE grid cell at a fixed width. Side by side they would both
+   be spoken for; and a swap that changes the strip's layout moves the name
+   out from under the eye that came to read it. */
+.pill-side { position:relative; display:grid; place-items:center; height:22px;
+  min-width:50px; flex-shrink:0; }
+.pill-side > * { grid-area:1 / 1; }
+.pill-phase { display:grid; place-items:center; color:var(--phase, var(--accent));
+  transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
+.pill-phase svg { width:16px; height:16px; }
+/* transitions.dev's icon swap, both ways — scale .25 to 1, blur 4px to 0, the
+   same values the equaliser's mark and the countdown circle already use. */
+#island-collapsed[data-shape=bar] .pill-time { margin-left:0; font-size:14px;
+  letter-spacing:-.3px; color:#e8e8e8; opacity:0; scale:.25; filter:blur(4px); }
+#island-collapsed[data-shape=bar]:hover .pill-time {
+  opacity:1; scale:1; filter:blur(0); }
+#island-collapsed[data-shape=bar]:hover .pill-phase {
+  opacity:0; scale:.25; filter:blur(4px); }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .pill-phase,
+  html:not([data-motion=always]) #island-collapsed[data-shape=bar] .pill-time {
+    transition:none; }
+}
+html[data-motion=never] .pill-phase,
+html[data-motion=never] #island-collapsed[data-shape=bar] .pill-time {
+  transition:none; }
 /* The line itself. ⚠️ Along the BOTTOM edge rather than inside the copy: the
    strip is 35px tall and every pixel of its middle is spoken for, and a rule
    on the edge of a shape reads as a property OF the shape rather than as one
@@ -227,14 +260,53 @@ h1 { margin:0; }
    second, and a bar that steps is a bar you keep noticing — which is exactly
    what this mode exists to stop. */
 .pill-bar i { display:block; width:0; height:100%; border-radius:2px;
-  background:var(--phase, var(--accent)); transition:width 1s linear; }
-#island-collapsed.is-held .pill-bar i { background:#7a7a7a; }
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-motion=always]) .pill-bar i { transition:none; }
+  /* A floor, so a round that has just begun still shows a head of colour —
+     and so the sweep has something to travel along. At 25 minutes the first
+     minute is four tenths of a pixel, which is a line that has not started. */
+  min-width:12px;
+  background-color:var(--phase, var(--accent));
+  /* ⚠️ And a sheen TRAVELLING along it. At twenty-five minutes the width
+     changes by about a third of a pixel a second, which is indistinguishable
+     from a bar that has stopped — the sweep is what says running, the width
+     says how far. A background-position animation on the fill itself: no
+     extra element, and it is clipped to the filled part for free. */
+  background-image:linear-gradient(90deg, transparent,
+    color-mix(in srgb, #fff 55%, transparent), transparent);
+  background-size:46px 100%; background-repeat:no-repeat;
+  transition:width 1s linear; animation:bar-sweep 2.3s linear infinite; }
+@keyframes bar-sweep {
+  from { background-position:-46px 0; }
+  to   { background-position:calc(100% + 46px) 0; }
 }
-html[data-motion=never] .pill-bar i { transition:none; }
+/* Paused is paused: grey, and the sweep stops. This is the one state where
+   "is it still running" must not be a guess. */
+#island-collapsed.is-held .pill-bar i { background-color:#7a7a7a;
+  background-image:none; animation:none; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .pill-bar i { transition:none; animation:none; }
+}
+html[data-motion=never] .pill-bar i { transition:none; animation:none; }
 /* A side island has no room for a name, let alone a line under it. */
-[data-edge=left] .pill-bar, [data-edge=right] .pill-bar { display:none; }
+[data-edge=left] #island-collapsed .pill-bar,
+[data-edge=right] #island-collapsed .pill-bar { display:none; }
+
+/* ── The line the pomodoro leaves on the bezel ────────────────
+   Full screen slides the island away, which is right for everything except
+   the one thing you started BECAUSE you were about to stop looking at the
+   screen. ⚠️ It is a SIBLING of the island, not part of it: `chrome-hidden`
+   translates the island off the edge, so anything drawn against its box goes
+   with it. Placed on the reveal strip, so what you can see and what you can
+   point at are the same rectangle — and pointing at it brings the island back
+   the way that strip already did.
+   ⚠️ It carries `.pill-bar`, so the fill colour, the paused grey and the
+   travelling sheen are the ones the strip uses. One line, two places. */
+.island-peek { position:absolute; z-index:2; border-radius:0;
+  background:rgba(255,255,255,.07); }
+/* Upright, the floor is a height rather than a width. */
+[data-edge=left] .island-peek i, [data-edge=right] .island-peek i {
+  min-width:0; min-height:12px; }
+.island-peek.is-held i { background-color:#7a7a7a;
+  background-image:none; animation:none; }
 /* Only animates while something is genuinely playing; a frozen equaliser
    would say "playing" about a paused track. */
 /* ── The equaliser, and what it becomes ─────────────────────────────

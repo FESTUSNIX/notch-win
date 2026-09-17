@@ -26,6 +26,11 @@ import { still } from "./motion-pref";
 import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 
+/** How long the panel takes to come back from a mirrored lean. ⚠️ Must match
+ *  the `translate` transition on `#island-expanded:not(.is-carried)` — this is
+ *  only how long the frame loop keeps its hands off it. */
+const HANDOFF = 280;
+
 export interface RailStop {
   name: string;
   icon: TaskIcon;
@@ -121,6 +126,9 @@ export class IslandRail {
    *  re-runs a screen's entrance when it is handed the screen already on, so a
    *  drag that wobbles over one stop makes it flash. */
   private told = "";
+  /** The panel is easing back from a mirrored lean — see `arrive`. While this
+   *  is set the frame loop does not touch the carry. */
+  private handing = 0;
   /** Latched once a gesture has gone too far or too fast to be choosing.
    *
    * ⚠️ LATCHED for the rest of the drag, not re-tested each frame. Slowing
@@ -287,6 +295,9 @@ export class IslandRail {
     this.grabbed = true;
     this.dragging = false;
     this.coasting = false;
+    // A new gesture outranks the last one's return. See `arrive`.
+    clearTimeout(this.handing);
+    this.handing = 0;
     this.grabX = this.upright ? event.clientY : event.clientX;
     this.grabAt = this.at.value;
     this.lastX = this.upright ? event.clientY : event.clientX;
@@ -364,7 +375,7 @@ export class IslandRail {
     this.at.snap(want);
     this.renaming(false);
     this.lay();
-    this.carry(this.offset(), false);
+    if (!this.handing) this.carry(this.offset(), false);
     /* ⚠️ Once the gesture is clearly TRAVELLING rather than choosing, nothing
      * in between is drawn. Every screen has its own width and height, so
      * animating through five of them is five resizes of the island inside half
@@ -428,8 +439,33 @@ export class IslandRail {
   private arrive(index: number, live: boolean) {
     const stop = this.live()[index];
     if (!stop || stop.name === this.told) return;
+    /* ⚠️ The lean is MIRRORED at the swap, and this is the whole fix for a
+     * drag that ended somewhere the screens had stopped following.
+     *
+     * While the gesture runs, the panel leans the way the hand went: drag
+     * forward and the screen you are ON slides out to the left. The instant
+     * the new screen replaces it, that same lean means the OPPOSITE thing —
+     * the new content is now the thing sitting off to the left, and easing it
+     * back to zero walks it in from the side you dragged AWAY from, against
+     * both the gesture and the entrance animation playing on top of it.
+     *
+     * Flipped once, here, it is one movement: the old screen leaves the way
+     * you pushed it and the new one arrives from the side it was fetched
+     * from. ⚠️ Mid-drag (`live`) there is nothing to flip — the panel is
+     * following the rail continuously and the lean is already correct. */
+    const lean = live ? 0 : this.offset();
     this.told = stop.name;
     this.choose(stop.name, live);
+    if (Math.abs(lean) < 0.05) return;
+    this.carry(-lean, false);
+    /* ⚠️ The paint loop is told to keep its hands off for the length of the
+     * return. The CSS transition owns it from here, and a per-frame write of
+     * the real offset — which is zero, the rail having already arrived —
+     * would snap the panel home on the very next frame. */
+    clearTimeout(this.handing);
+    this.handing = window.setTimeout(() => { this.handing = 0; }, HANDOFF);
+    // Next frame, so the mirrored value is painted before the transition.
+    requestAnimationFrame(() => this.carry(0, true));
   }
 
   /** Take the name away now; put it back when the rail has been still for a
@@ -530,7 +566,7 @@ export class IslandRail {
       opacity: String(Math.max(0, Math.min(1, frame.fold * 1.6 - 0.6))),
     });
     this.lay();
-    if (this.at.settled && !this.grabbed) {
+    if (this.at.settled && !this.grabbed && !this.handing) {
       this.carry(0, true);
       /* Nothing has moved this frame; start counting towards the name.
        *

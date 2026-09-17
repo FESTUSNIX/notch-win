@@ -1816,7 +1816,10 @@ test("an event opens into a panel, and nothing is striped", async ({page}) => {
 
 test("every screen ends the same way, and a card that lights up goes somewhere", async ({page}) => {
   await page.setViewportSize({width: 1060, height: 760});
-  await page.goto("/tasks.html");
+  /* ⚠️ `nofollow`: this walks every screen deliberately, and opening the
+   * island lands on whatever is live — which in the full fixture is an agent
+   * waiting for you. The steering is tested where it belongs. */
+  await page.goto("/tasks.html?nofollow");
   await open(page);
   /* Through the palette. ⚠️ Not the control on the arc: that is bare
    * until it is reached for, and these tests are not about reaching for

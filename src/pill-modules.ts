@@ -144,7 +144,11 @@ const memory: Module = ctx => {
  *  worth a warning, and the usage notch carries the finish. */
 const agents: Module = ({ agents: running }) => {
   if (running < 1) return null;
-  return { id: "agents", urgency: 25, icon: "agent", text: String(running) };
+  /* ⚠️ The agent's own mark rather than a generic brain. Every session the
+   * watcher finds is Claude's — it reads one directory — and a strip that has
+   * room for one glyph should spend it saying WHOSE rather than that this is
+   * artificial intelligence, which the number beside it already implies. */
+  return { id: "agents", urgency: 25, icon: "claude", text: String(running) };
 };
 
 const tasks: Module = ({ tasks: day }) => {

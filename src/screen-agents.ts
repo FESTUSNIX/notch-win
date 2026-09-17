@@ -11,7 +11,7 @@
  */
 import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
-import { paintIcon } from "./task-icons";
+import { paintIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import { byProject, share, short, sum, total } from "./spend";
 import type { Run } from "./screen-review";
@@ -23,6 +23,8 @@ export type AgentState = "working" | "waiting" | "idle";
 
 export interface SessionView {
   id: string;
+  /** Which agent it is — `claude` today. See `markFor`. */
+  provider?: string;
   project: string;
   branch: string | null;
   pid: number;
@@ -36,6 +38,15 @@ export interface SessionView {
   /** What it is doing right now — `editing palette.ts`. Absent unless it
    *  is working: a phrase that outlives its run is a status that WAS true. */
   doing?: string | null;
+}
+
+/** The glyph for an agent, by provider.
+ *
+ * ⚠️ Falls back to the generic one rather than to Claude's. Only Claude is
+ * watched today, so a fallback of "draw the Claude mark" would be right by
+ * accident and would go on being drawn over whatever is added next. */
+export function markFor(provider?: string): TaskIcon {
+  return provider === "claude" ? "claude" : "agent";
 }
 
 const WORDS: Record<AgentState, string> = {
@@ -86,7 +97,10 @@ export class AgentsScreen {
       priority: 55,
       screen: "agents",
       kind: "event",
-      icon: "agent",
+      /* ⚠️ The AGENT'S OWN mark, not a generic brain. The strip says one
+       * thing at a time and this claim outranks almost everything on it, so
+       * the glyph is doing the work of a sentence: whose agent is waiting. */
+      icon: markFor(first.provider),
       label: waiting.length === 1 ? first.project : `${waiting.length} agents waiting`,
       value: waiting.length === 1 ? `waiting ${held(first.forSecs)}` : first.project,
     };

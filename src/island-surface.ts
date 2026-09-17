@@ -18,6 +18,7 @@ import { listen } from "@tauri-apps/api/event";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
 import { IslandBubble, type BubbleReading } from "./island-bubble";
+import { element } from "./dom";
 import { IslandRail, type RailPrefs, type RailStop } from "./island-rail";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
@@ -121,6 +122,14 @@ export class IslandSurface {
   );
   private onCountdownOpen?: () => void;
   private onCountdownToggle?: () => void;
+  /* ── The line left behind when the chrome is away ──────────────
+   * Full screen slides the whole island off the edge, which is right for
+   * everything except the one thing you started BECAUSE you were about to
+   * stop looking at the screen. A pomodoro leaves its progress line on the
+   * bezel — three pixels, no text, nothing to read — and pointing at it
+   * brings the island back the way the reveal strip already does. */
+  private peek = element("div", "island-peek pill-bar");
+  private peeked: { through: number; phase: string; held: boolean } | null = null;
   /** The palette is up. ⚠️ The arcs and the rail are SIBLINGS of the island,
    *  so the class that hides the panel behind the palette cannot reach them —
    *  they would go on hanging off a shape that is now a search bar, offering
@@ -141,6 +150,9 @@ export class IslandSurface {
     this.global.mount(this.shell);
     this.rail.mount(this.shell);
     this.bubble.mount(this.shell);
+    this.peek.append(element("i"));
+    this.peek.hidden = true;
+    this.shell.append(this.peek);
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height", `${cpx(FRAME.taskRowHeight)}px`);
     window.addEventListener("resize", () => this.measure());
@@ -657,7 +669,43 @@ export class IslandSurface {
       right: `translateX(${-back}px)`,
     }[this.edge];
     this.expanded.style.transform = nudge;
+    this.paintPeek(x, y, g);
     this.report();
+  }
+
+  /** The pomodoro's line, on the bezel, while everything else is away.
+   *
+   * ⚠️ Placed on the REVEAL STRIP, not on the island: the island is
+   * translated off the screen by `chrome-hidden`, so anything drawn against
+   * its box goes with it. This is a sibling, positioned from the same
+   * geometry `revealStrip` reports as interactive — so the thing you can see
+   * and the thing you can point at are one rectangle by construction. */
+  private paintPeek(x: number, y: number, g: ReturnType<IslandSurface["geometry"]>) {
+    const show = !!this.peeked && this.hidden && !this.peeking && !this.searching;
+    this.peek.hidden = !show;
+    if (!show || !this.peeked) return;
+    const long = cpx(FRAME.islandPillLong);
+    const vertical = isVertical(this.edge);
+    const thick = 3;
+    Object.assign(this.peek.style, vertical ? {
+      left: `${this.edge === "left" ? x : x + g.width - thick}px`,
+      top: `${y + (g.height - long) / 2}px`,
+      width: `${thick}px`,
+      height: `${long}px`,
+    } : {
+      left: `${x + (g.width - long) / 2}px`,
+      top: `${this.edge === "top" ? y : y + g.height - thick}px`,
+      width: `${long}px`,
+      height: `${thick}px`,
+    });
+    this.peek.dataset.phase = this.peeked.phase;
+    this.peek.classList.toggle("is-held", this.peeked.held);
+    const fill = this.peek.firstElementChild as HTMLElement | null;
+    const through = Math.max(0, Math.min(1, this.peeked.through));
+    if (fill) {
+      if (vertical) { fill.style.height = `${through * 100}%`; fill.style.width = "100%"; }
+      else fill.style.width = `${through * 100}%`;
+    }
   }
 
   /** The sliver left behind when the island is away.
@@ -716,6 +764,17 @@ export class IslandSurface {
       fold: Math.max(0, this.fold.value),
       gone: this.hidden || this.searching,
     });
+  }
+
+  /** What the line on the bezel says while the chrome is away, or null.
+   *
+   * ⚠️ Only a POMODORO gets one. A plain timer has its circle, which is
+   * hidden with everything else — but a timer is a thing you started and can
+   * see the end of, and the bezel of a full-screen window is not the place to
+   * spend a second permanent mark on it. */
+  setPeek(reading: { through: number; phase: string; held: boolean } | null) {
+    this.peeked = reading;
+    this.paint();
   }
 
   /** What the countdown beside the notch says, or null for no countdown. */
