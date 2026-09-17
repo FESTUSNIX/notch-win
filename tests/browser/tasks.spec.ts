@@ -2099,3 +2099,42 @@ test("the player follows the words, and only the line that has started", async (
   // And the panel is the island's own height: opening it grew the shape.
   expect((await page.locator("#island").boundingBox())!.height).toBeGreaterThan(tall + 80);
 });
+
+test("the lyrics panel costs the screen nothing while it is shut", async ({page}) => {
+  await page.setViewportSize({width: 1100, height: 860});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "media");
+  await page.locator('.media-side[aria-label="Playing next"]').click();
+
+  /* ⚠️ The panel is always in the DOM and closed to nothing, which is what
+   * lets it animate — and a `gap` on the body would then space the screen away
+   * from a box with no height. The island's measure unions its children's
+   * boxes, and a gap is not a box, so those pixels were a screen that scrolled
+   * with nothing in the overflow. */
+  const scrolls = () => page.locator("#media-body")
+    .evaluate(el => el.scrollHeight > el.clientHeight + 1);
+  await expect.poll(scrolls).toBe(false);
+
+  /* ⚠️ And the screen does not REDRAW while the playhead moves. `media:changed`
+   * fires several times a second; rebuilding on it threw away the hover, the
+   * caret in the search field, and the lyrics' own scroll position mid
+   * animation — which is what made the words appear and then vanish. */
+  const builds = await page.evaluate(async () => {
+    let n = 0;
+    const host = document.querySelector("#media-body")!;
+    const watch = new MutationObserver(() => { n++; });
+    watch.observe(host, {childList: true});
+    await new Promise(done => setTimeout(done, 2600));
+    watch.disconnect();
+    return n;
+  });
+  expect(builds).toBe(0);
+  // The clock still moves, because `tick` writes it in place.
+  const said = () => page.locator(".media-time").first().textContent();
+  const first = await said();
+  await expect.poll(said, {timeout: 4000}).not.toBe(first);
+});

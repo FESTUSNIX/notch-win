@@ -3348,3 +3348,29 @@ The two halves were the same fault.
      and blur have to come OUT from the current line by distance, which is what
      puts the eye where the voice is without being told to. `--far` per row,
      one class for the middle.
+504. ⚠️ **`media:changed` fires as the PLAYHEAD moves**, several times a
+     second, and the screen redrew on every one of them — so the hover went,
+     the caret in the search field went, and the lyrics' scroll position was
+     reset mid-animation, which is why the words appeared and then vanished.
+     The source compares the SHAPE of the track (everything that changes what
+     is drawn, position excluded) and stays quiet otherwise; `tick` writes the
+     playhead in place, which is what it is for.
+505. ⚠️ **`offsetTop` is measured against the nearest POSITIONED ancestor**,
+     and a scroller with no `position` is not one. The lyric rows reported
+     offsets that included the artwork and the transport above them, so
+     centring the current line scrolled most of a panel too far. One
+     `position: relative` on the scroller.
+506. ⚠️ **A box that is not in the document has no height and every child at
+     offset zero.** Painting the lyric window inside the builder, before the
+     caller appended it, scrolled to the top and recorded the line as already
+     drawn — so the words sat at the beginning of the song and would not move.
+     Measure after the append, never before.
+507. ⚠️ **`gap` is a row gap too.** With a second row below the player, the
+     body grew fourteen pixels the island's measure cannot see: it unions the
+     children's boxes and a gap is not a box — so the screen scrolled with
+     nothing in the overflow. `column-gap` for the columns, and a MARGIN on the
+     panel, which pushes its box down and is therefore inside the union.
+508. ⚠️ **`" b7"` in a Python string is a NUL byte, not a CSS escape.** The
+     stylesheet carried three literal zeroes and the browser drew replacement
+     glyphs. Write the character itself when the tool in the middle has its own
+     backslash rules.

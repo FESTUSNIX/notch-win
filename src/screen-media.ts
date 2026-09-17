@@ -68,14 +68,31 @@ export class MediaSource {
     try { this.receive(await call<Media>("get_media")); } catch { /* no session yet */ }
   }
 
+  /** Everything about a track that changes what is DRAWN.
+   *
+   * ⚠️ The position is deliberately not in it: that is the playhead, and it
+   * moves several times a second. See `receive`. */
+  private static shape(media: Media): string {
+    return [media.active, media.playing, media.title, media.artist, media.album,
+      media.source, Math.round(media.duration), media.artwork,
+      media.canSeek, media.canNext, media.canPrevious, media.canPlayPause].join("");
+  }
+
   private receive(next: Media) {
     // Track when it stopped, not merely that it did: a player paused a minute
     // ago is not news, and it should hand the pill back to the clock.
     if (next.playing) this.pausedAt = null;
     else if (this.pausedAt === null || !this.media.active) this.pausedAt = Date.now();
+    const was = this.media;
     this.media = next;
     this.sampledAt = Date.now();
-    this.changed();
+    /* ⚠️ Only when the SHAPE changed. `media:changed` fires as the playhead
+     * moves — several times a second — and redrawing on it rebuilt the whole
+     * screen that often: the hover went, the caret in the search field went,
+     * and the lyrics' own scroll position was reset mid-animation, which is
+     * what made the words appear and then vanish. The playhead is written in
+     * place by `MediaScreen.tick`, once a second, which is what it is for. */
+    if (MediaSource.shape(was) !== MediaSource.shape(next)) this.changed();
   }
 
   /** How long the pill keeps a paused track before the clock takes over. */
@@ -402,7 +419,7 @@ export class MediaScreen {
     words.setAttribute("aria-label", "Lyrics");
     words.setAttribute("aria-expanded", String(this.lyricsOpen));
     words.dataset.tip = this.lines.length ? "Lyrics" : "No lyrics for this one";
-    paintIcon(words, "words");
+    paintIcon(words, "mic");
     words.onclick = () => {
       this.lyricsOpen = !this.lyricsOpen;
       this.lit = -2;
@@ -425,6 +442,9 @@ export class MediaScreen {
      * height is what opens and closes, and an element added on the toggle
      * arrives at full size in the frame it is told to grow from nothing. */
     this.host.append(this.saying(this.deps.source.position()));
+    // In the document now, so it can be measured. See `saying`.
+    const scroll = this.host.querySelector<HTMLElement>(".media-words");
+    if (scroll && this.lyricsOpen) this.paintWords(scroll, this.deps.source.position());
     this.beat();
   }
 
@@ -452,8 +472,13 @@ export class MediaScreen {
     scroll.addEventListener("wheel", () => { this.scrolled = Date.now(); }, { passive: true });
     scroll.addEventListener("pointerdown", () => { this.scrolled = Date.now(); });
     box.append(scroll);
+    /* ⚠️ NOT painted here. The window is centred on the current line by
+     * measuring it, and an element that is not in the document yet has a
+     * client height of nothing and every row at offset zero — so the scroll
+     * went to the top and `lit` recorded the line as already drawn, which is
+     * why the words sat at the beginning of the song and would not move. See
+     * the paint at the end of `render`. */
     this.lit = -2;
-    if (open) this.paintWords(scroll, at);
     return box;
   }
 
