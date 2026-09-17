@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_LENGTHS, ROUNDS, done, next, phaseName, remaining, spokenEnd } from '../src/timer.ts';
+import {
+  DEFAULT_LENGTHS, ROUNDS, cycle, done, next, phaseName, remaining, spokenEnd,
+} from '../src/timer.ts';
 
 const at = (phase, endsAt, round = 0, left = 0) => ({ phase, endsAt, left, round });
 
@@ -79,4 +81,63 @@ test('what the toast says matches what actually happened next', () => {
   assert.match(fourth.body, /^4 so far — 15 minute break started\.$/);
   assert.equal(spokenEnd(at('rest', 1, 1), DEFAULT_LENGTHS).title, 'Break over');
   assert.equal(spokenEnd(at('plain', 1), DEFAULT_LENGTHS).title, 'Timer done');
+});
+
+/** The track as a compact string: `W` focus, `b` break, `L` long, and the
+ *  state as `.` to come, `>` running, `x` behind you. */
+const track = state => cycle(DEFAULT_LENGTHS, state)
+  .map(one => {
+    const letter = one.phase === "work" ? "W" : one.phase === "long" ? "L" : "b";
+    const mark = one.state === "done" ? "x" : one.state === "now" ? ">" : ".";
+    return letter + mark;
+  })
+  .join(" ");
+
+test('the track is always the same eight segments', () => {
+  /* ⚠️ Four rounds and their breaks, whatever is running. A row of segments
+   * that grows under you cannot be used to tell where you are, which is the
+   * only job it has. */
+  for (const state of [null, at('work', 1, 0), at('rest', 1, 1), at('long', 1, 4)]) {
+    const all = cycle(DEFAULT_LENGTHS, state);
+    assert.equal(all.length, ROUNDS * 2);
+    assert.deepEqual(all.map(one => one.phase),
+      ['work', 'rest', 'work', 'rest', 'work', 'rest', 'work', 'long']);
+  }
+  // Each carries its own length, so the track can be drawn to scale.
+  const [focus, breather] = cycle(DEFAULT_LENGTHS, null);
+  assert.equal(focus.minutes, DEFAULT_LENGTHS.work);
+  assert.equal(breather.minutes, DEFAULT_LENGTHS.rest);
+  assert.equal(cycle(DEFAULT_LENGTHS, null)[7].minutes, DEFAULT_LENGTHS.long);
+});
+
+test('where you are on the track is where you actually are', () => {
+  // Nothing running: nothing is behind you and nothing is lit.
+  assert.equal(track(null), 'W. b. W. b. W. b. W. L.');
+
+  // The first focus round.
+  assert.equal(track(at('work', 1, 0)), 'W> b. W. b. W. b. W. L.');
+
+  /* ⚠️ The break after round ONE is the FIRST break, not the second. `round`
+   * counts finished rounds, which is not a position — reading it as one put
+   * three segments behind you the moment you skipped the first round. */
+  assert.equal(track(at('rest', 1, 1)), 'Wx b> W. b. W. b. W. L.');
+
+  // Second round running: the first break is behind you now.
+  assert.equal(track(at('work', 1, 1)), 'Wx bx W> b. W. b. W. L.');
+  assert.equal(track(at('rest', 1, 2)), 'Wx bx Wx b> W. b. W. L.');
+
+  // The fourth round, and the long break it earns.
+  assert.equal(track(at('work', 1, 3)), 'Wx bx Wx bx Wx bx W> L.');
+  assert.equal(track(at('long', 1, 4)), 'Wx bx Wx bx Wx bx Wx L>');
+});
+
+test('a second cycle starts the track again rather than growing it', () => {
+  /* ⚠️ After the fourth round `round % 4` is 0, which would empty the whole
+   * track while the long break it earned is still running — so the long break
+   * is the one case that reads as the END of a cycle rather than the start of
+   * the next. */
+  assert.equal(track(at('long', 1, 4)), 'Wx bx Wx bx Wx bx Wx L>');
+  assert.equal(track(at('work', 1, 4)), 'W> b. W. b. W. b. W. L.', 'round five is a fresh track');
+  assert.equal(track(at('rest', 1, 5)), 'Wx b> W. b. W. b. W. L.');
+  assert.equal(track(at('long', 1, 8)), 'Wx bx Wx bx Wx bx Wx L>', 'and again after eight');
 });

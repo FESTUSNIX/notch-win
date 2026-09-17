@@ -131,6 +131,7 @@ let demoPrefs: Record<string, unknown> = {
     .split(",").filter(Boolean).map(one => one.split(":")) as [string, string][]), useEverything: true,
   callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
+  timerSound: "Notification.Reminder", timerMode: "pomodoro",
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
@@ -178,6 +179,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return structuredClone(demoNotices) as T;
   }
   if (command === "notify_now" || command === "notice_open") return true as T;
+  if (command === "play_sound") return undefined as T;
   if (command === "call_action") {
     const action = String(args.action ?? "");
     /* Only the mute changes anything the preview can show, which is the honest

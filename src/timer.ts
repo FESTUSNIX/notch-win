@@ -39,6 +39,14 @@ export interface Countdown {
   left: number;
   /** Work rounds finished so far in this run. */
   round: number;
+  /** What this run is FOR, in the user's own words. Optional, and the pill
+   *  shows it instead of the phase when it is there — "Ship the call screen"
+   *  is what you need to see at a glance; "Focus" you already knew. */
+  name?: string;
+  /** How long this phase was asked for, in ms. ⚠️ Stored rather than derived:
+   *  a plain timer has no declared length anywhere else, so the ring and the
+   *  dial had nothing to measure against and the ring sat at zero. */
+  whole?: number;
 }
 
 export type Shape = Countdown | null;
@@ -61,21 +69,25 @@ const minutes = (count: number) => Math.max(1, Math.round(count)) * 60_000;
 
 /** What follows a phase that has just run out.
  *
- * ⚠️ A finished work round rolls straight into its break, and a finished break
- * does NOT roll into the next round. Resting is the half people skip, so it
- * starts itself; working is the half that should be a decision, and a pomodoro
- * app that has already started your next twenty-five minutes for you is one
- * you end up fighting. A plain timer simply ends.
+ * ⚠️ A finished work round rolls straight into its break, and a finished
+ * break does NOT roll into the next round. Resting is the half people skip, so
+ * it starts itself; working is the half that should be a decision, and a
+ * pomodoro app that has already started your next twenty-five minutes for you
+ * is one you end up fighting. A plain timer simply ends.
  */
 export function next(state: Countdown, lengths: Lengths, now = Date.now()): Shape {
   if (state.phase !== "work") return null;
   const round = state.round + 1;
   const long = round % ROUNDS === 0;
+  const span = minutes(long ? lengths.long : lengths.rest);
   return {
     phase: long ? "long" : "rest",
-    endsAt: now + minutes(long ? lengths.long : lengths.rest),
+    endsAt: now + span,
     left: 0,
     round,
+    // What the run is for carries across its own breaks.
+    name: state.name,
+    whole: span,
   };
 }
 
@@ -101,6 +113,59 @@ export function spokenEnd(state: Countdown, lengths: Lengths): { title: string; 
   }
   if (state.phase === "plain") return { title: "Timer done", body: "The countdown has run out." };
   return { title: "Break over", body: "Start the next pomodoro when you are ready." };
+}
+
+/** One segment of a pomodoro cycle, for the track that shows where you are. */
+export interface Session {
+  phase: Phase;
+  minutes: number;
+  /** `done` is behind you, `now` is running, `todo` is still to come. */
+  state: "done" | "now" | "todo";
+}
+
+/** The whole cycle laid out, so it can be SEEN rather than counted.
+ *
+ * ⚠️ Four work rounds and their breaks, always the same shape, so the track
+ * does not change length as you move along it. A row of segments that grows
+ * under you is one you cannot use to tell where you are, which is its only job.
+ */
+export function cycle(lengths: Lengths, state: Shape): Session[] {
+  const out: Session[] = [];
+  /* `round` counts FINISHED work rounds. ⚠️ Which is not the same as the
+   * position in the track, and conflating the two is how the first version put
+   * three segments behind you the moment you skipped one: after finishing work
+   * round 1 you are on the break that FOLLOWS index 0, not on index 1. */
+  const finished = state?.round ?? 0;
+  const resting = !!state && (state.phase === "rest" || state.phase === "long");
+  /* Where we are within this cycle of four, so a long run keeps the same
+   * track rather than growing one. ⚠️ The long break is the exception: after
+   * the fourth round `finished % 4` is 0, which would empty the whole track
+   * while the long break it earned is still running. */
+  const within = resting && finished > 0 && finished % ROUNDS === 0
+    ? ROUNDS
+    : finished % ROUNDS;
+
+  for (let index = 0; index < ROUNDS; index++) {
+    const last = index === ROUNDS - 1;
+    out.push({
+      phase: "work",
+      minutes: lengths.work,
+      state: index < within ? "done"
+        : index === within && !resting && !!state ? "now"
+        : "todo",
+    });
+    out.push({
+      phase: last ? "long" : "rest",
+      minutes: last ? lengths.long : lengths.rest,
+      /* The break that follows work round `n` is at index `n - 1`: it is
+       * running while you are resting after that round, and behind you once
+       * the next round has started. */
+      state: index < within - 1 ? "done"
+        : index === within - 1 ? (resting ? "now" : "done")
+        : "todo",
+    });
+  }
+  return out;
 }
 
 const KEY = "codenotch.timer.v1";
@@ -145,11 +210,38 @@ export class Timer {
   }
 
   /** Start a pomodoro, or a plain countdown of `mins` minutes. */
-  start(mins?: number) {
+  start(mins?: number, name?: string) {
     const lengths = this.lengths();
-    this.state = mins
-      ? { phase: "plain", endsAt: Date.now() + minutes(mins), left: 0, round: 0 }
-      : { phase: "work", endsAt: Date.now() + minutes(lengths.work), left: 0, round: 0 };
+    const span = minutes(mins ?? lengths.work);
+    this.state = {
+      phase: mins ? "plain" : "work",
+      endsAt: Date.now() + span,
+      left: 0,
+      round: 0,
+      name: name?.trim() || undefined,
+      whole: span,
+    };
+    this.save();
+  }
+
+  /** Rename the run without disturbing it. */
+  rename(name: string) {
+    if (!this.state) return;
+    this.state = { ...this.state, name: name.trim() || undefined };
+    this.save();
+  }
+
+  /** End this phase now and take whatever comes after it.
+   *
+   * ⚠️ Cutting a break short is the commonest thing anybody wants mid-cycle
+   * and there was no way to do it: stopping threw the whole run away, and
+   * waiting out five minutes you did not need is how a pomodoro app gets
+   * closed. Skipping WORK counts the round — you decided it was finished. */
+  skip() {
+    const state = this.state;
+    if (!state) return;
+    this.state = next({ ...state, endsAt: Date.now() }, this.lengths());
+    if (this.state && state.name) this.state.name = state.name;
     this.save();
   }
 
@@ -189,18 +281,18 @@ export class Timer {
   through(now = Date.now()): number {
     const state = this.state;
     if (!state) return 0;
-    const lengths = this.lengths();
-    const whole = minutes(
-      state.phase === "work" ? lengths.work
-        : state.phase === "rest" ? lengths.rest
-        : state.phase === "long" ? lengths.long
-        : 0,
-    );
-    /* A plain timer has no declared length to measure against — it is however
-     * many minutes you asked for — so the ring is filled from what is left of
-     * the longest it has been, which is simply its own start. */
-    const total = state.phase === "plain" ? Math.max(remaining(state, now), state.left || 1) : whole;
+    /* ⚠️ The length this phase was ASKED FOR, carried on the state itself.
+     * It used to be re-derived from the preferences, which works for a
+     * pomodoro and not at all for a plain timer — a timer has no declared
+     * length anywhere else, so the ring was measured against what was left of
+     * it and sat at zero for the whole count. */
+    const total = state.whole ?? minutes(this.lengths().work);
     return total <= 0 ? 0 : 1 - remaining(state, now) / total;
+  }
+
+  /** How long this phase was asked for, in seconds — what the dial reads. */
+  span(): number {
+    return Math.round((this.state?.whole ?? 0) / 1000);
   }
 
   private save() {

@@ -89,8 +89,10 @@ const WIDTH: Record<ScreenName, number> = {
    * as the controls and no wider — a full-width island with six buttons
    * huddled in the middle reads as a window somebody left open. */
   call: 1180,
-  /* A clock, two buttons and a row of presets. Nothing here wants width. */
-  timer: 1040,
+  /* ⚠️ Wide enough for the DIAL to be a ruler rather than a stub: at 1040
+   * design px only about eight minutes of it were visible either side of the
+   * marker, which is a control you have to drag four times to cross. */
+  timer: 1500,
   /* ⚠️ NARROW, and narrower than anything else here. A notification is a
    * glance, not a document: at the notes screen's width the title, the app and
    * the time sit so far apart that the eye has to travel between three things
@@ -209,6 +211,8 @@ interface Prefs {
   railHidden: string[];
   railColours: Record<string, string>;
   noticeMode: boolean;
+  timerSound: string;
+  timerMode: string;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -226,6 +230,7 @@ let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
+  timerSound: "Notification.Reminder", timerMode: "pomodoro",
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -273,6 +278,10 @@ const timer = new Timer(
   finished => {
     const said = spokenEnd(finished, lengths());
     say(said.title, said.body);
+    /* ⚠️ A noise as well as a toast, and not the toast's own: a toast is
+     * suppressed by Focus Assist, which is exactly what somebody running a
+     * pomodoro has switched on. See `sound.rs`. */
+    void call("play_sound", { alias: prefs.timerSound }).catch(() => {});
     /* ⚠️ And a real toast, because the whole point of a countdown is that
      * you are not looking at the thing that is counting. The island cannot
      * reach you inside another window; the shell can. */
@@ -324,7 +333,23 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
-const timerScreen = new TimerScreen(get("timer-body"), timer, () => lengths());
+const timerScreen = new TimerScreen(get("timer-body"), timer, {
+  lengths: () => lengths(),
+  mode: () => (prefs.timerMode === "timer" ? "timer" : "pomodoro"),
+  setMode: mode => { prefs.timerMode = mode; savePrefs(); render(); },
+  /* ⚠️ Writes the SAME preference the settings window writes. One stored
+   * value with two controls is not the thing the one-settings-window rule
+   * forbids; two places that each remember their own answer is. */
+  setLengths: next => {
+    prefs.pomodoroWork = next.work;
+    prefs.pomodoroBreak = next.rest;
+    prefs.pomodoroLong = next.long;
+    savePrefs();
+    render();
+  },
+  focus: active => { void surface.input(active); },
+  changed: () => render(),
+});
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -614,8 +639,12 @@ function timerClaim(): Activity | null {
     screen: "timer",
     kind: "focus",
     icon: "timer",
-    label: phaseName(state),
-    value: timerText(timer.seconds()) + (state.endsAt === null ? " paused" : ""),
+    /* ⚠️ The NAME, when there is one. "Focus" you already knew — you
+     * started it; "Ship the call screen" is the thing you look down at the
+     * strip to be reminded of. The phase is the fallback, not the headline. */
+    label: state.name || phaseName(state),
+    value: (state.name ? `${phaseName(state)} · ` : "")
+      + timerText(timer.seconds()) + (state.endsAt === null ? " paused" : ""),
     progress: timer.through(),
   };
 }
@@ -1321,6 +1350,22 @@ palette.add(query => {
  *
  * ⚠️ Idempotent and safe to call at any time: it runs at boot, on every
  * write from the settings window, and nothing here assumes it is the first. */
+/** Write the preferences from the ISLAND.
+ *
+ * ⚠️ The whole struct, exactly as the settings window sends it: `set_prefs`
+ * takes all of it or none, so a partial write is a stale copy of everything
+ * else. Rust echoes the cleaned result back to every window as `notch:prefs`,
+ * which is what keeps the two windows agreeing — this does not apply its own
+ * write, it waits to be told like everyone else.
+ *
+ * ⚠️ And the island only ever READ preferences until now. It writes two:
+ * which face the timer opens on, and the pomodoro lengths, both of which are
+ * controls that belong on the screen you are looking at rather than two
+ * windows away. */
+function savePrefs() {
+  void call("set_prefs", { prefs }).catch(() => {});
+}
+
 function applyPrefs(next: Prefs) {
   prefs = next;
   document.documentElement.style.setProperty("--accent", next.accent);

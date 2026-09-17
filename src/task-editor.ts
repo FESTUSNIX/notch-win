@@ -50,6 +50,8 @@ interface Prefs {
   railHidden: string[];
   railColours: Record<string, string>;
   noticeMode: boolean;
+  timerSound: string;
+  timerMode: string;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -220,7 +222,12 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Long break", "After every fourth one.",
         `<input type="range" id="pom-long" min="5" max="60" step="5"><span class="set-value" id="pom-long-value"></span>`)}
     </div>
-    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. Set a plain countdown from the palette \u2014 type \u201ctimer 12\u201d.</p></div>
+      ${row("Sound", "What a finished countdown plays. Windows\u2019 own sounds \u2014 nothing is shipped.",
+        seg("sound", [["", "None"], ["Notification.Default", "Chime"],
+          ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]],
+          "Timer sound"))}
+    </div>
+    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. The lengths are on the Timer screen too \u2014 the same number, reachable from either. Wind the dial there for a plain countdown, or type \u201ctimer 12\u201d in the palette.</p></div>
     <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>`,
 
   pill: `
@@ -358,6 +365,7 @@ let prefs: Prefs = {
   railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
+  timerSound: "Notification.Reminder", timerMode: "pomodoro",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -792,6 +800,11 @@ panelWidth.oninput = () => {
   savePrefs();
 };
 
+/* ⚠️ The four ids here have to match `sound::CHOICES` in Rust, which is the
+ * VALIDATOR: anything it does not know is replaced with the default on the
+ * way in, so a typo here is a setting that silently will not stick rather
+ * than one that plays the wrong noise. */
+onSeg("sound", value => { prefs.timerSound = value; savePrefs(); });
 onSeg("view", value => { prefs.taskView = value; savePrefs(); });
 
 /* ── The pill ────────────────────────────────────────────────────────── */
@@ -1120,6 +1133,7 @@ function paintPrefs() {
   get<HTMLInputElement>("rail-flat").checked = prefs.railFlat;
   get<HTMLInputElement>("call-mode").checked = prefs.callMode;
   get<HTMLInputElement>("notice-mode").checked = prefs.noticeMode;
+  markSeg("sound", prefs.timerSound);
   for (const [id, key] of POMODORO) {
     const slider = get<HTMLInputElement>(id);
     slider.value = String(prefs[key]);

@@ -3208,44 +3208,133 @@ html[data-motion=never] .notice-row { transition:none; animation:none; }
 .island-head { gap:8px; }
 .island-where { flex:1; min-width:0; }
 
-/* ── The timer's own screen ────────────────────────────────
-   The chip in the header is a readout and a door; everything that is a
-   DECISION is here, where there is room to label it. */
-.timer-body { display:flex; flex-direction:column; align-items:center; gap:14px; }
-.timer-face { display:flex; flex-direction:column; align-items:center; gap:3px; }
-/* ⚠️ Tabular, and big. This is the one number on the screen and it changes
-   every second; proportional digits make it breathe in and out. */
-.timer-clock { font-size:44px; font-weight:650; letter-spacing:-1.5px; line-height:1;
-  font-variant-numeric:tabular-nums; color:#f4f4f4; }
-.timer-say { font-size:11.5px; color:#8a8a8a; }
-/* How many pomodoros are behind you in this run — only while one is going. */
-.timer-rounds { display:flex; gap:5px; margin-top:6px; }
-.timer-rounds i { width:6px; height:6px; border-radius:50%;
-  background:rgba(255,255,255,.14); }
-.timer-rounds i.is-done { background:var(--accent); }
+/* ── The timer, and the pomodoro ───────────────────────────
+   Two faces on one screen, because a timer is a number you choose and a
+   pomodoro is a shape you move along — and neither wants the other's controls.
 
-.timer-acts { display:flex; align-items:center; gap:10px; }
-.timer-key { display:flex; align-items:center; gap:7px; height:34px; padding:0 15px;
-  border-radius:10px; font-size:12px; font-weight:600; color:#d8d8d8;
+   ⚠️ BOLD. Everything on this screen is either the one number you came to
+   read or a control you came to press, so nothing here is a caption: the clock
+   is 58px, the buttons are 40 tall and carry words, and the smallest type on
+   the screen is 11.5px. An earlier version lost its own controls at 10px grey
+   on grey. */
+.timer-body { display:flex; flex-direction:column; align-items:center; gap:16px; }
+
+/* The two faces. A segmented switch, not tabs: these are modes of one thing. */
+.tm-modes { display:flex; gap:2px; padding:3px; border-radius:11px;
+  background:rgba(255,255,255,.05); box-shadow:inset 0 0 0 1px var(--hair); }
+.tm-mode { height:26px; padding:0 14px; border-radius:8px; background:none;
+  font-size:12px; font-weight:600; color:#8a8a8a; }
+.tm-mode:hover { color:#d8d8d8; background:rgba(255,255,255,.06); }
+.tm-mode.is-on { color:#0b0b0b; background:var(--accent);
+  background-image:var(--sheen); box-shadow:var(--gloss); }
+
+.tm-face { display:flex; flex-direction:column; align-items:center; gap:4px; }
+/* ⚠️ Tabular and BIG. This is the one number on the screen and it changes
+   every second; proportional digits make it breathe in and out, and anything
+   under about 50px stops being the thing you look at from across a desk. */
+.tm-clock { font-size:58px; font-weight:650; letter-spacing:-2px; line-height:1;
+  font-variant-numeric:tabular-nums; color:var(--accent); }
+.tm-say { font-size:12.5px; color:#9a9a9a; }
+
+/* ── The dial ───────────────────────────────────────
+   A ruler of minutes that slides under a mark that does not move. ⚠️ The MARK
+   is fixed and the strip moves: a pointer that has to land on a moving target
+   is a pointer that has to chase one. */
+.tm-dial { position:relative; width:100%; height:62px; overflow:hidden;
+  cursor:grab; touch-action:none; }
+.tm-dial.is-winding { cursor:grabbing; }
+/* Locked while it runs — the strip then reads what is LEFT rather than taking
+   a drag, so setting it and watching it are one picture. */
+.tm-dial.is-locked { cursor:default; }
+.tm-strip { position:absolute; left:50%; top:0; height:100%; will-change:translate; }
+/* ⚠️ No transition while a finger is on it, and a gentle one while it runs:
+   the strip has to sit under the pointer rather than chase it, and glide when
+   it is moving itself. */
+.tm-dial.is-locked .tm-strip { transition:translate 1s linear; }
+.tm-strip i { position:absolute; top:14px; width:2px; height:14px; border-radius:1px;
+  background:#8a8a8a; translate:-1px 0; }
+.tm-strip i.is-major { top:8px; height:26px; background:#e4e4e4; }
+.tm-tick-say { position:absolute; top:38px; font-size:11.5px; font-weight:600;
+  color:#9a9a9a; font-variant-numeric:tabular-nums; translate:-50% 0; }
+/* The mark. ⚠️ Accent, and the only accent on the strip, so "where am I"
+   needs no reading at all. */
+.tm-marker { position:absolute; left:50%; top:4px; width:3px; height:34px;
+  border-radius:2px; background:var(--accent); translate:-50% 0;
+  box-shadow:0 0 12px -2px var(--accent); }
+.tm-marker::after { content:""; position:absolute; left:50%; top:34px;
+  border:5px solid transparent; border-top-color:var(--accent); translate:-50% 0; }
+
+/* ── The session track ────────────────────────────────
+   Where you are in the cycle, as a PLACE rather than a number to remember.
+   ⚠️ Each segment is sized by its own minutes, so a five-minute break is
+   visibly a fifth of a focus — equal segments would say the cycle is eight
+   equal things, which is the one thing it is not. */
+.tm-track { display:flex; align-items:center; gap:4px; width:100%; height:16px; }
+/* ⚠️ Tall enough to READ. At 10px the whole cycle was a hairline that looked
+   like a progress bar somebody had left in, and the difference between a focus
+   and a break — the one thing the track is for — was four pixels of height. */
+.tm-seg { position:relative; height:100%; border-radius:6px; overflow:hidden;
+  background:rgba(255,255,255,.09); box-shadow:inset 0 0 0 1px var(--hair);
+  transition:background-color var(--duration-fast) var(--ease-smooth-out); }
+.tm-seg.is-rest, .tm-seg.is-long { height:9px; }
+.tm-seg.is-done { background:color-mix(in srgb, var(--accent) 55%, #1a1a1a); }
+.tm-seg.is-now { background:rgba(255,255,255,.10);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.tm-seg.is-now i { display:block; height:100%; border-radius:6px;
+  background:var(--accent);
+  transition:width 1s linear; }
+
+/* ── What you are working on ────────────────────────────
+   ⚠️ NO box and no background. It is optional and usually empty, and an
+   empty bordered input is a hole in the middle of the screen; as a big quiet
+   line it reads as a heading you are invited to write. */
+.tm-name { width:100%; padding:0; border:0; background:none; text-align:center;
+  font-family:inherit; font-size:19px; font-weight:600; letter-spacing:-.4px;
+  color:#f0f0f0; }
+.tm-name::placeholder { color:#5a5a5a; font-weight:500; }
+.tm-name:focus { outline:none; }
+/* Only while it is being used: a rule under an empty field is furniture. */
+.tm-name:focus::placeholder { color:#7c7c7c; }
+.tm-name:hover::placeholder { color:#6a6a6a; }
+
+/* ── The controls ─────────────────────────────────── */
+.tm-acts { display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  justify-content:center; }
+.tm-key { display:flex; align-items:center; gap:8px; height:40px; padding:0 17px;
+  border-radius:12px; font-size:12.5px; font-weight:600; color:#e0e0e0;
   background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.timer-key svg { width:16px; height:16px; }
-.timer-key:hover { color:#fff; background-color:var(--tile-hi); }
-.timer-key:active { scale:.96; transition-duration:90ms; }
-/* The one you came here to press. */
-.timer-key.is-lead { color:#0b0b0b; background-color:var(--accent);
-  background-image:var(--sheen); box-shadow:var(--gloss), var(--lift-1); }
-.timer-key.is-lead:hover { color:#0b0b0b;
+.tm-key svg { width:17px; height:17px; }
+.tm-key:hover { color:#fff; background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+.tm-key:active { scale:.96; transition-duration:90ms; }
+/* The one you came to press. */
+.tm-key.is-lead { color:#0b0b0b; background-color:var(--accent);
+  box-shadow:var(--gloss), var(--lift-1); }
+.tm-key.is-lead:hover { color:#0b0b0b;
   background-color:color-mix(in srgb, var(--accent) 88%, #fff); }
+.tm-key.is-on { color:#fff; background-color:var(--tile-hi);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
 
-.timer-presets { display:flex; align-items:center; gap:6px; }
-.timer-presets-say { font-size:11px; color:#6a6a6a; margin-right:3px; }
-.timer-preset { height:26px; padding:0 10px; border-radius:8px;
-  font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums;
-  color:#b4b4b4; background-color:var(--tile); box-shadow:var(--hairline); }
-.timer-preset:hover { color:#fff; background-color:var(--tile-hi); }
-.timer-preset:active { scale:.94; transition-duration:90ms; }
-/* ⚠️ The lengths are NOT editable here. One settings window is the rule the
-   whole app is built on; this line says where they live rather than being a
-   second place to change them. */
-.timer-note { margin:0; font-size:10.5px; color:#5f5f5f; text-align:center; }
+/* ── The lengths, behind a button ─────────────────────────
+   ⚠️ These write the SAME preference the settings window writes. One stored
+   value with two controls is not the thing the one-settings-window rule
+   forbids; two places that each remember their own answer is. */
+.tm-drawer { display:flex; flex-direction:column; gap:7px; width:100%;
+  padding:12px 14px; border-radius:14px;
+  background:rgba(255,255,255,.04); box-shadow:inset 0 0 0 1px var(--hair);
+  animation:tm-drawer-in var(--duration-fast) var(--ease-smooth-out); }
+@keyframes tm-drawer-in {
+  from { opacity:0; transform:translateY(-6px); }
+  to { opacity:1; transform:none; }
+}
+.tm-tune { display:flex; align-items:center; gap:10px; }
+.tm-tune-say { flex:1; font-size:12.5px; color:#c4c4c4; }
+.tm-tune-value { min-width:42px; text-align:center; font-size:13px; font-weight:650;
+  font-variant-numeric:tabular-nums; color:#f0f0f0; }
+.tm-step { display:grid; place-items:center; width:28px; height:28px; padding:0;
+  border-radius:9px; font-size:16px; font-weight:600; color:#c4c4c4;
+  background-color:var(--tile); box-shadow:var(--hairline); }
+.tm-step:hover { color:#fff; background-color:var(--tile-hi); }
+.tm-step:active { scale:.9; transition-duration:90ms; }
+.tm-note { margin:2px 0 0; font-size:11.5px; color:#6a6a6a; text-align:center; }

@@ -20,14 +20,25 @@
         app cannot make.
   - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
         key, the Start Menu) and falls back to a letter tile.
-- ~~Pomodoro widget~~ — **done**. A chip in the header that is always there
-  (idle it is a door, running it is the countdown), its own screen with start,
-  pause, stop and five presets, and a claim on the collapsed pill at priority
-  42 so it is readable with the panel shut. Lengths in Settings; `timer 12` in
-  the palette.
-  - [ ] The lengths are only in Settings, deliberately — one settings window.
-        The screen says where they are rather than being a second place.
-  - [ ] No sound when one ends, only a toast and the pill.
+- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen.
+  - **Timer**: a ruler of minutes you drag under a fixed mark, which glides on
+    to read what is LEFT once it starts — setting it and watching it are one
+    picture. Wheel works too.
+  - **Pomodoro**: an optional session name as a big borderless heading (it is
+    what the collapsed pill then says, because "Focus" you already knew), the
+    whole four-round cycle drawn as a track sized by real minutes, and Start /
+    Pause / Skip / Stop. Lengths behind a button on the screen itself.
+  - **Sound**: Windows' own notification sounds, nothing shipped. Chime,
+    Calendar, Alarm or none, in Settings. ⚠️ Played directly rather than
+    through the toast, because Focus Assist suppresses a toast and Focus Assist
+    is what somebody running a pomodoro has switched on.
+  - [ ] The lengths are in two places on purpose — the drawer writes the same
+        preference the settings window does. One value, two controls.
+  - [ ] No per-session history: how many pomodoros you did yesterday is not
+        recorded anywhere. The Review screen is where that would go.
+  - [ ] The dial is timer-only, deliberately: a pomodoro's lengths are a
+        setting you choose once, and under a drag they become a thing to fiddle
+        with.
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than

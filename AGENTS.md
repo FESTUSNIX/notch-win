@@ -3056,3 +3056,44 @@ The two halves were the same fault.
      that still renders correctly, which is why it survived review; in a
      COMMENT it is just wrong. Grep for a literal backslash-u after any bulk
      patch.
+450. ⚠️ **Windows owns every sound a timer needs, so ship none.**
+     `C:\Windows\media` holds the notification and alarm sounds the machine
+     already uses, registered under `AppEvents` as aliases. No asset, no
+     licence question, and a noise the person already recognises as "the
+     computer wants me".
+451. ⚠️ **These registry values are `REG_EXPAND_SZ` and come back RAW.** The
+     alarm sounds resolve to `%SystemRoot%\media\Alarm01.wav`, which
+     `PlaySound` cannot open — and with `SND_NODEFAULT` that is silence and no
+     error, a setting that offers a sound and does nothing. Two of the four
+     offered happened to be stored expanded, which is why it half worked. The
+     `#[ignore]`d test that resolves every offered alias is what caught it.
+452. ⚠️ **And `SND_NODEFAULT` is not optional.** Without it a path that cannot
+     be opened plays the system default ding: a wrong noise instead of a silent
+     failure, which is much harder to notice and impossible to debug from the
+     sound alone. Same reason the alias is resolved here rather than passed to
+     `SND_ALIAS`, which falls back the same way.
+453. ⚠️ **Play the sound DIRECTLY, not through the toast.** A toast carries one
+     and it would have been less code — but a toast is suppressed by Focus
+     Assist, and Focus Assist is exactly what somebody running a pomodoro has
+     switched on.
+454. ⚠️ **A round counter is not a position.** `round` counts FINISHED work
+     rounds, and the session track reads it as an index — the break after round
+     one is the FIRST break, not the second. Conflating them put three segments
+     behind you the moment the first round was skipped. And the long break is
+     the one case where `round % 4 === 0` means the END of a cycle rather than
+     the start of the next, or the whole track empties while it runs.
+455. ⚠️ **Two faces sharing one engine must each refuse the other's state.** A
+     plain timer and a pomodoro are the same countdown underneath, so the timer
+     face happily drew a running pomodoro's clock above a dial set to something
+     else — two different times on one screen, both correct, neither useful.
+456. ⚠️ **A screen with state of its OWN needs a way to ask for a redraw.**
+     The lengths drawer set a flag and cleared its render key, and nothing
+     repainted until the next whole minute: a button that works and appears to
+     do nothing. Every other screen's state changes come through a source that
+     already calls back.
+457. ⚠️ **Replacing a span between two anchors deletes whatever a later patch
+     put between them.** Rewriting `cycle` by cutting from its own name to the
+     next top-level `const` took six exported functions with it, because an
+     earlier patch in the same session had inserted `cycle` above them rather
+     than below. `tsc` caught it instantly — but only because they were
+     exported and used; a private helper would have gone silently.

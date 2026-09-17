@@ -118,6 +118,13 @@ pub struct Prefs {
     pub pomodoro_work: u32,
     pub pomodoro_break: u32,
     pub pomodoro_long: u32,
+    /// Which of Windows' own notification sounds a finished countdown makes.
+    /// Empty is silence. ⚠️ Validated against the offered list on the way in:
+    /// an alias Windows does not know plays the system DEFAULT ding rather
+    /// than nothing, which is a wrong noise instead of a silent failure.
+    pub timer_sound: String,
+    /// `timer` or `pomodoro` — which face the screen opens on.
+    pub timer_mode: String,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -175,6 +182,8 @@ impl Default for Prefs {
             pomodoro_work: 25,
             pomodoro_break: 5,
             pomodoro_long: 15,
+            timer_sound: "Notification.Reminder".into(),
+            timer_mode: "pomodoro".into(),
             call_mode: true,
             call_mute_mic: true,
             call_open: true,
@@ -237,6 +246,15 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
         pomodoro_work: prefs.pomodoro_work.clamp(1, 180),
         pomodoro_break: prefs.pomodoro_break.clamp(1, 60),
         pomodoro_long: prefs.pomodoro_long.clamp(1, 120),
+        timer_sound: if crate::sound::is_known(&prefs.timer_sound) {
+            prefs.timer_sound
+        } else {
+            Prefs::default().timer_sound
+        },
+        timer_mode: match prefs.timer_mode.as_str() {
+            "timer" => prefs.timer_mode,
+            _ => "pomodoro".into(),
+        },
         ..prefs
     };
     let snapshot = {

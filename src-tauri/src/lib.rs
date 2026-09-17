@@ -25,6 +25,7 @@ mod runlog;
 mod shelf;
 mod thumbs;
 mod snooze;
+mod sound;
 mod prefs;
 mod stars;
 mod workspaces;
@@ -562,6 +563,7 @@ pub fn run() {
             notices::notice_dismiss,
             notices::notice_open,
             notify::notify_now,
+            sound::play_sound,
             media::media_seek,
             audio::get_audio_devices,
             audio::set_audio_device,

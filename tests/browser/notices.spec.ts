@@ -193,66 +193,122 @@ test("the timer chip is always there, and it opens the screen", async ({ page })
 
   await chip.click();
   await expect(page.locator("#island-where")).toHaveText("Timer");
-  await expect(page.locator(".timer-say")).toHaveText("Nothing running");
-  // Every preset is a real countdown, and the lead button is the pomodoro.
-  await expect(page.locator(".timer-preset")).toHaveCount(5);
-  await expect(page.locator(".timer-key.is-lead")).toContainText("pomodoro");
+  // It opens on the pomodoro, which is the one with a method behind it.
+  await expect(page.locator(".tm-mode.is-on")).toHaveText("Pomodoro");
+  await expect(page.locator(".tm-key.is-lead")).toContainText("Start");
 });
 
-test("the screen starts it, pauses it and stops it", async ({ page }) => {
+test("the two faces keep their own controls, and their own clock", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator("#head-timer").click();
-  await page.locator(".timer-key.is-lead").click();
 
-  const chip = page.locator("#head-timer");
-  await expect(chip).toHaveAttribute("data-phase", "work");
-  await expect(chip).not.toHaveClass(/is-idle/);
-  await expect(chip.locator(".head-text")).toHaveText(/^2[45]:\d\d$/);
-  await expect(page.locator(".timer-clock")).toHaveText(/^2[45]:\d\d$/);
-  await expect(page.locator(".timer-say")).toHaveText("Focus");
+  /* ⚠️ The dial belongs to the TIMER alone. A pomodoro's lengths are a
+   * setting you choose once; under a drag they become a thing to fiddle with,
+   * which is the opposite of what the method is for. */
+  await expect(page.locator(".tm-dial")).toHaveCount(0);
+  await expect(page.locator(".tm-track")).toHaveCount(1);
+  await expect(page.locator(".tm-name")).toHaveCount(1);
 
-  // It is really counting, not sitting there.
-  const first = await page.locator(".timer-clock").textContent();
-  await expect.poll(async () => page.locator(".timer-clock").textContent()).not.toBe(first);
+  await page.locator('.tm-mode:has-text("Timer")').click();
+  await expect(page.locator(".tm-dial")).toHaveCount(1);
+  await expect(page.locator(".tm-track")).toHaveCount(0);
+  await expect(page.locator(".tm-name")).toHaveCount(0);
+  await expect(page.locator(".tm-clock")).toHaveText("15:00");
 
-  await page.locator('.timer-key:has-text("Pause")').click();
-  await expect(page.locator(".timer-say")).toHaveText("Focus \u00b7 paused");
-  await expect(chip).toHaveClass(/is-held/);
-  const held = await page.locator(".timer-clock").textContent();
-  await page.waitForTimeout(1200);
-  await expect(page.locator(".timer-clock")).toHaveText(held!);
-
-  await page.locator('.timer-key:has-text("Stop")').click();
-  await expect(page.locator(".timer-say")).toHaveText("Nothing running");
-  await expect(chip).toHaveClass(/is-idle/);
+  /* ⚠️ And a countdown running on ONE face must not be drawn on the other:
+   * both faces are one engine, so the Timer face happily showed a running
+   * pomodoro's time above a dial set to something else — two different times
+   * on one screen. */
+  await page.locator('.tm-mode:has-text("Pomodoro")').click();
+  await page.locator(".tm-key.is-lead").click();
+  await expect(page.locator(".tm-clock")).toHaveText(/^2[45]:\d\d$/);
+  await page.locator('.tm-mode:has-text("Timer")').click();
+  await expect(page.locator(".tm-clock")).toHaveText("15:00");
 });
 
-test("a plain timer is one press, and it is not a pomodoro", async ({ page }) => {
+test("the dial winds the timer, and the wound number is what starts", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator("#head-timer").click();
-  await page.locator('.timer-preset:has-text("10m")').click();
-  await expect(page.locator(".timer-clock")).toHaveText(/^(10:00|09:5\d)$/);
-  /* ⚠️ "Timer", not "Focus": a plain countdown has nothing after it, and
-   * calling it a pomodoro would promise a break that never comes. */
-  await expect(page.locator(".timer-say")).toHaveText("Timer");
+  await page.locator('.tm-mode:has-text("Timer")').click();
+  await expect(page.locator(".tm-clock")).toHaveText("15:00");
+
+  const dial = (await page.locator(".tm-dial").boundingBox())!;
+  /* ⚠️ Dragging LEFT winds it UP. The ruler moves with the hand and its
+   * numbers run left to right, so pulling it leftward brings the bigger ones
+   * under a mark that does not move. */
+  await page.mouse.move(dial.x + dial.width / 2, dial.y + dial.height / 2);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step++) {
+    await page.mouse.move(dial.x + dial.width / 2 - step * 15, dial.y + dial.height / 2);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await expect(page.locator(".tm-clock")).toHaveText("25:00");
+
+  await page.locator(".tm-key.is-lead").click();
+  await expect(page.locator(".tm-clock")).toHaveText(/^(25:00|24:5\d)$/);
   await expect(page.locator("#head-timer")).toHaveAttribute("data-phase", "plain");
 });
 
-test("a running countdown says so on the collapsed pill", async ({ page }) => {
+test("a pomodoro shows the whole cycle, and can be skipped through", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
   await page.locator("#head-timer").click();
-  await page.locator('.timer-preset:has-text("15m")').click();
+  await page.locator(".tm-key.is-lead").click();
+
+  /* Four focus rounds and their breaks — the shape does not change as you
+   * move along it, which is the only way it can say where you are. */
+  await expect(page.locator(".tm-seg")).toHaveCount(8);
+  await expect(page.locator(".tm-seg.is-now")).toHaveCount(1);
+  await expect(page.locator(".tm-seg.is-work.is-now")).toHaveCount(1);
+  await expect(page.locator(".tm-say")).toHaveText("Focus · 1 of 4");
+
+  /* ⚠️ Skip exists because cutting a break short is the commonest thing
+   * anybody wants mid-cycle, and stopping threw the whole run away. */
+  await page.locator('.tm-key:has-text("Skip")').click();
+  await expect(page.locator(".tm-say")).toHaveText("Break");
+  await expect(page.locator(".tm-seg.is-rest.is-now")).toHaveCount(1);
+  await expect(page.locator(".tm-seg.is-done")).toHaveCount(1);
+
+  await page.locator('.tm-key:has-text("Stop")').click();
+  await expect(page.locator(".tm-seg.is-now")).toHaveCount(0);
+});
+
+test("a named session is what the collapsed pill says", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator(".tm-name").fill("Ship the call screen");
+  await page.locator(".tm-key.is-lead").click();
 
   /* Off the island, so it folds. ⚠️ The whole point of the claim: the
    * countdown has to be readable with the panel shut, which is how it spends
-   * almost all of its fifteen minutes. */
+   * almost all of its twenty-five minutes. */
   await page.mouse.move(10, 700);
   await expect(page.locator("#island-expanded")).not.toBeVisible();
   const pill = page.locator("#island-collapsed");
   await expect(pill).toHaveAttribute("data-kind", "focus");
-  await expect(pill.locator(".pill-label")).toHaveText("Timer");
-  await expect(pill.locator(".pill-value")).toHaveText(/^\d?\d:\d\d$/);
+  /* ⚠️ The NAME, not the phase. "Focus" you already knew — you started it;
+   * what you look down at the strip for is which thing you said you were on. */
+  await expect(pill.locator(".pill-label")).toHaveText("Ship the call screen");
+  await expect(pill.locator(".pill-value")).toHaveText(/^Focus · \d?\d:\d\d$/);
+});
+
+test("the lengths are on the screen as well, behind a button", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await expect(page.locator(".tm-drawer")).toHaveCount(0);
+
+  await page.locator('.tm-key:has-text("Lengths")').click();
+  await expect(page.locator(".tm-drawer")).toHaveCount(1);
+  await expect(page.locator(".tm-tune")).toHaveCount(3);
+  await expect(page.locator(".tm-tune-value").first()).toHaveText("25m");
+
+  // Shorter by one, and the face agrees straight away.
+  await page.locator('.tm-tune:has-text("Focus") .tm-step').first().click();
+  await expect(page.locator(".tm-tune-value").first()).toHaveText("24m");
+  await expect(page.locator(".tm-clock")).toHaveText("24:00");
 });
