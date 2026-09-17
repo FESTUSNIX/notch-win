@@ -3057,6 +3057,10 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; }
 .agent-state { display:flex; align-items:baseline; gap:6px; font-size:11px; color:#7d7d7d; }
 .agent-for { font-variant-numeric:tabular-nums; }
+/* The word that makes a bare duration a sentence. ⚠️ Deliberately NOT
+   `.agent-word`: that one takes the state's colour, and "for" is not a
+   status — it would print the accent on the quietest thing on the card. */
+.agent-since { color:#5f5f5f; }
 .agent-meta { display:flex; flex-direction:column; align-items:flex-end; gap:2px;
   font-size:10px; color:#5f5f5f; font-variant-numeric:tabular-nums; flex-shrink:0; }
 
@@ -3071,6 +3075,72 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .agent-row.is-working .agent-mark { color:var(--accent); background-color:color-mix(in srgb, var(--accent) 10%, transparent);
   box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), var(--gloss); }
 .agent-row.is-idle { opacity:.62; }
+
+/* ⚠️ The card grows a CHECKLIST, so the mark and the figures stop being
+   centred against it. Centred, a 30px disc floats in the middle of a
+   five-line card beside a name at the top — the mark belongs with the name it
+   marks. */
+.agent-row:has(.agent-steps) .agent-go { align-items:flex-start; }
+.agent-row:has(.agent-steps) .agent-mark { margin-top:1px; }
+
+/* The state as a badge beside the name.
+   ⚠️ `align-self:center`, because `.agent-head` aligns on the BASELINE and a
+   pill whose first child is an empty dot has no baseline worth aligning to —
+   it hangs a couple of pixels low and reads as a mistake rather than a badge. */
+.agent-badge { display:inline-flex; align-items:center; align-self:center; gap:4px;
+  flex-shrink:0; padding:1px 6px 1px 5px; border-radius:999px;
+  font-size:9.5px; font-weight:600; letter-spacing:.02em; color:#8b8b8b;
+  background-color:rgba(255,255,255,.055); box-shadow:inset 0 0 0 1px var(--hair); }
+.agent-pip { width:5px; height:5px; border-radius:50%; background:currentColor;
+  flex-shrink:0; }
+.agent-row.is-waiting .agent-badge { color:var(--warn);
+  background-color:rgba(255,159,10,.13); box-shadow:inset 0 0 0 1px rgba(255,159,10,.26); }
+.agent-row.is-working .agent-badge { color:var(--accent);
+  background-color:color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent); }
+/* ⚠️ Only the WORKING pip breathes. Motion here means "this is happening right
+   now", and a waiting session is precisely the one where nothing is — a
+   blinking dot on it would be an alarm for a thing that is standing still. */
+.agent-row.is-working .agent-pip { animation:agent-breathe 1.8s var(--ease-in-out) infinite; }
+@keyframes agent-breathe { 0%, 100% { opacity:1; } 50% { opacity:.34; } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-row.is-working .agent-pip { animation:none; }
+}
+
+/* ── What it has been doing ─────────────────────────
+   A checklist, the way the transcript itself reads: the calls that came back,
+   and the one still out. ⚠️ Quiet enough to SCAN rather than read — it is
+   four short lines under a name, not the content of the card, and the moment
+   it competes with the project name the screen stops answering "who wants
+   me" at a glance, which is the only question it exists for. */
+.agent-steps { display:flex; flex-direction:column; margin-top:4px; }
+.agent-step { display:flex; align-items:center; gap:6px; min-width:0;
+  font-size:10.5px; line-height:1.55; color:#6a6a6a; }
+.agent-tick { display:grid; place-items:center; width:11px; height:11px;
+  flex-shrink:0; color:#4e4e4e; }
+/* ⚠️ 9px, so `paintIcon`'s own 20px is overridden here as it is on the head
+   marks. A tick drawn at icon size beside 10px text is a bullet, not a tick. */
+.agent-tick svg { width:9px; height:9px; }
+.agent-step-say { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The one in flight is the only lit line: everything above it has happened,
+   and a list where every row is equally bright has no "now" in it. */
+.agent-step.is-now { color:#c6c6c6; }
+.agent-step.is-now .agent-tick { color:var(--accent); }
+.agent-row.is-waiting .agent-step.is-now .agent-tick { color:var(--warn); }
+
+/* What the session cost, as a shape.
+   ⚠️ The bar is the OUTPUT share, not the total. The total is the two figures
+   printed directly above it; how much of a session was the model talking back
+   is the thing those two numbers do not say at a glance, and it is what tells
+   a long read apart from a long write. */
+.agent-spend { width:52px; height:3px; border-radius:999px;
+  background:rgba(255,255,255,.09); overflow:hidden; }
+.agent-spend i { display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 45%, transparent), var(--accent));
+  transition:width var(--duration-slow) var(--ease-smooth-out); }
+.agent-row.is-waiting .agent-spend i { background:linear-gradient(90deg,
+  rgba(255,159,10,.45), var(--warn)); }
 
 /* ── The shelf ───────────────────────────────────────────────────────
    Cards, not rows. What is on the shelf is mostly FILES, and a file is a thing

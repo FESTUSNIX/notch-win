@@ -68,6 +68,22 @@
         strongest thing this screen could say and it needs history the app
         does not keep yet. The Review screen is where that would come from.
 
+- ~~Improve (agents): more statistics, and states worth looking at~~ — **done**.
+  A card was a glyph for its state, a name and two grey numbers, repeated three
+  times down the screen.
+  - **Whose agent it is**, as the mark: Claude's burst rather than a fourth
+    drawing of the state. The state moved to a badge beside the name.
+  - **What it has been doing**, as a checklist — the last four tool calls,
+    ticked as their results come back, the one in flight lit. What an agent is
+    doing is a list, not a sentence.
+  - **What it cost**, as a shape: a bar of the output share beside the figures.
+  - [ ] Nothing is kept once a session ends, so there is no "this run took
+        18 minutes and 40 calls" — the transcript has it and the app reads
+        only the tail. That is the same history the Today streak wants.
+  - [ ] The steps are Claude's transcript format only. A second provider would
+        need its own reader, which is why `markFor` falls back to the generic
+        mark rather than to Claude's.
+
 ---
 
 ---

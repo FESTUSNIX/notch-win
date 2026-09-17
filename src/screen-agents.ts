@@ -38,6 +38,13 @@ export interface SessionView {
   /** What it is doing right now — `editing palette.ts`. Absent unless it
    *  is working: a phrase that outlives its run is a status that WAS true. */
   doing?: string | null;
+  /** The last few tool calls, oldest first, and whether each came back.
+   *
+   * ⚠️ What an agent is doing is a LIST, not a sentence. One phrase says
+   * "running cargo test" and nothing about the four things before it — which
+   * is most of what somebody glancing at this wants, because it is the
+   * difference between stuck and working through. */
+  steps?: { id: string; say: string; done: boolean }[];
 }
 
 /** The glyph for an agent, by provider.
@@ -53,6 +60,16 @@ const WORDS: Record<AgentState, string> = {
   waiting: "waiting for you",
   working: "working",
   idle: "idle",
+};
+
+/** The word for the state, as a badge. ⚠️ Shorter than `WORDS`, which is a
+ *  sentence fragment for a screen reader and for the pill; a badge beside a
+ *  project name has room for one word and is read as a label rather than as
+ *  prose. */
+const BADGE: Record<AgentState, string> = {
+  waiting: "Waiting",
+  working: "Working",
+  idle: "Idle",
 };
 
 export class AgentsScreen {
@@ -138,28 +155,71 @@ export class AgentsScreen {
     go.setAttribute("aria-label", `Go to ${session.project}, ${WORDS[session.state]}`);
     go.onclick = () => { void this.focus(session); };
 
+    /* ⚠️ The AGENT'S own mark, not a glyph for its state. The state is said
+     * twice over already — by the badge, by the colour of the card and by the
+     * words under it — and whose agent this is was said nowhere at all. */
     const mark = element("span", "agent-mark");
-    paintIcon(mark, session.state === "waiting" ? "agent" : session.state === "working" ? "focus" : "clock");
+    paintIcon(mark, markFor(session.provider));
+
     const copy = element("div", "agent-copy");
     const head = element("div", "agent-head");
     head.append(element("span", "agent-project", session.project));
+    /* The state as a BADGE beside the name, the way the picture of a working
+     * agent has it: one word, in the colour the whole card is keyed to. */
+    const badge = element("span", "agent-badge");
+    badge.append(element("i", "agent-pip"), element("span", "", BADGE[session.state]));
+    head.append(badge);
     if (session.branch) head.append(element("span", "agent-branch", session.branch));
+
     const state = element("div", "agent-state");
     /* ⚠️ The WORK, where there is any, rather than the state. "working" is
      * three bits of information about something you are watching closely;
      * "editing palette.ts" is the thing you actually wanted to know, and the
-     * transcript has been carrying it all along. The state word stays where
-     * there is no phrase — waiting and idle have nothing to describe. */
-    state.append(element("span", "agent-word", session.doing || WORDS[session.state]));
+     * transcript has been carrying it all along.
+     *
+     * ⚠️ And where there is NO phrase, the line does not fall back to the
+     * state word any more — the badge two millimetres above it is already
+     * that word, and "Waiting / waiting for you" is one fact printed twice on
+     * consecutive lines. What is left is the only thing the line still knows:
+     * how long it has been that way. */
+    if (session.doing) state.append(element("span", "agent-word", session.doing));
+    else state.append(element("span", "agent-since", "for"));
     const clock = element("span", "agent-for", held(session.forSecs));
     this.clocks.set(session.id, clock);
     state.append(clock);
     copy.append(head, state);
 
+    /* ── What it has been doing ────────────────────────────
+     * ⚠️ The last few, not all of them. A run makes hundreds of calls and the
+     * question this answers is "is it moving", which four lines answer as well
+     * as forty and a card can hold. The one in flight is last and wears the
+     * mark that says so. */
+    const steps = (session.steps ?? []).slice(-4);
+    if (steps.length) {
+      const list = element("div", "agent-steps");
+      for (const step of steps) {
+        const line = element("div", `agent-step${step.done ? " is-done" : " is-now"}`);
+        const tick = element("span", "agent-tick");
+        paintIcon(tick, step.done ? "check" : "play");
+        line.append(tick, element("span", "agent-step-say", step.say));
+        list.append(line);
+      }
+      copy.append(list);
+    }
+
     const meta = element("div", "agent-meta");
     if (session.input || session.output) {
+      /* ⚠️ A BAR as well as the figures. Two numbers in grey say what was
+       * spent; a bar says how much of it was the model talking back, which is
+       * the shape of a session and is readable without being read. */
+      const spent = element("div", "agent-spend");
+      const share = session.input + session.output;
+      const out = element("i");
+      out.style.width = share ? `${(session.output / share) * 100}%` : "0%";
+      spent.append(out);
+      spent.title = `${tokens(session.output)} written of ${tokens(session.input + session.output)}`;
       meta.append(element("span", "agent-tokens",
-        `${tokens(session.input)} / ${tokens(session.output)}`));
+        `${tokens(session.input)} / ${tokens(session.output)}`), spent);
     }
     if (session.lastRunSecs) {
       meta.append(element("span", "agent-run", `last ${spoken(session.lastRunSecs)}`));

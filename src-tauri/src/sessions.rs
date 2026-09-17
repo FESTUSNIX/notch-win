@@ -258,6 +258,13 @@ pub struct SessionView {
     /// ⚠️ `None` whenever the session is not working. A phrase left behind by
     /// a finished run is a status that WAS true, which is worse than none.
     pub doing: Option<String>,
+    /// The last few tool calls, oldest first, with whether each has come back.
+    ///
+    /// ⚠️ What an agent is DOING is a list, not a sentence. One phrase says
+    /// "running cargo test" and says nothing about the four things before it
+    /// — which is most of what somebody glancing at the screen wants to know,
+    /// because it is the difference between stuck and working through.
+    pub steps: Vec<crate::transcript::Step>,
 }
 
 struct Tracked {
@@ -276,6 +283,11 @@ struct Tracked {
     /// the difference. See `Finished::input`.
     usage_at_start: crate::transcript::Usage,
     doing: Option<crate::transcript::Doing>,
+    /// The last few tool calls, oldest first. ⚠️ Held ACROSS scans: a call
+    /// and the result that finishes it are minutes apart, and the poll reads a
+    /// few hundred bytes at a time, so a list rebuilt per chunk would be a
+    /// list of things that were started.
+    steps: Vec<crate::transcript::Step>,
     project: String,
     branch: Option<String>,
     pid: u32,
@@ -324,6 +336,21 @@ impl Watcher {
                         turn,
                         // Whatever the opening tail already showed it doing.
                         doing: opening.doing.clone(),
+                        /* ⚠️ And whatever it had already done, with the results
+                         * that had already landed applied — a session first
+                         * seen mid-run otherwise shows every step as still in
+                         * flight, which reads as an agent that has stalled. */
+                        steps: {
+                            let mut steps = opening.steps.clone();
+                            for id in &opening.finished {
+                                if let Some(step) = steps.iter_mut().find(|one| &one.id == id) {
+                                    step.done = true;
+                                }
+                            }
+                            let over = steps.len().saturating_sub(8);
+                            steps.drain(..over);
+                            steps
+                        },
                         usage_at_start: crate::transcript::Usage::default(),
                         state: state_of(turn),
                         since: Instant::now(),
@@ -372,6 +399,26 @@ impl Watcher {
                             | Some(crate::transcript::Turn::Done))
                     {
                         entry.doing = scanned.doing;
+                    }
+                    /* The list of steps, patched rather than replaced. ⚠️ The
+                     * results are applied FIRST: a chunk routinely carries a
+                     * call and its own result, and applying them the other way
+                     * round marks the new call done the moment it arrives. */
+                    for id in &scanned.finished {
+                        if let Some(step) = entry.steps.iter_mut().find(|one| &one.id == id) {
+                            step.done = true;
+                        }
+                    }
+                    if scanned.cleared {
+                        entry.steps.clear();
+                    }
+                    entry.steps.extend(scanned.steps);
+                    /* ⚠️ Capped from the FRONT. A run can make hundreds of
+                     * calls; the screen has room for about five, and the ones
+                     * worth keeping are the newest. */
+                    let over = entry.steps.len().saturating_sub(8);
+                    if over > 0 {
+                        entry.steps.drain(..over);
                     }
                 }
             }
@@ -430,6 +477,7 @@ impl Watcher {
                 doing: (entry.state == Activity::Working)
                     .then(|| entry.doing.as_ref().map(|d| d.say()))
                     .flatten(),
+                steps: entry.steps.clone(),
             });
         }
 

@@ -3499,3 +3499,28 @@ The two halves were the same fault.
      finished from the phone or by a sync, so "the day just emptied" is fired
      from the render that made it true rather than from the tick that caused
      it — and held, so a redraw does not replay it at somebody trying to read.
+535. ⚠️ **A tool call and the result that finishes it are TWO records, minutes
+     apart, and the only thing joining them is `tool_use_id`.** Drop it and the
+     screen is a list of things that were STARTED — which reads as an agent
+     that never finishes anything, and is the opposite of the fact it was put
+     there to carry. The result also arrives in a USER record, because it is
+     fed back to the agent as input; its own turn never says its call landed.
+536. ⚠️ **The results of a chunk have to be applied BEFORE that chunk's new
+     calls.** A poll reads a few hundred bytes at a time and a chunk routinely
+     holds a call and its own result; patched the other way round, every new
+     call is marked finished the instant it arrives and nothing is ever seen
+     in flight. Same reason the list is held across scans rather than rebuilt:
+     a list rebuilt per chunk is a list of what started in the last second.
+537. ⚠️ **The mark said the STATE, which was already said twice.** The badge
+     says it, the colour of the card says it and the words under the name said
+     it — while whose agent it is was said nowhere at all. A glyph is worth
+     most where it is the only thing carrying its fact.
+538. ⚠️ **Only the WORKING pip breathes.** Motion means "this is happening
+     right now", so a blinking dot on a waiting session is an alarm about a
+     thing that is standing still — the one state where nothing is happening
+     is the one it would shout about.
+539. ⚠️ **A badge and the line under it are the same fact twice.** "Waiting"
+     over "waiting for you" cost the second line the only thing it still knew
+     — how long it had been that way. The sentence stays in the `aria-label`,
+     because a badge is legible at a glance only by sitting beside a name;
+     read aloud in order it is a lone word.

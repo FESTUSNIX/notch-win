@@ -26,6 +26,7 @@
 //! machine. Everything here works on a bounded tail, or on the bytes appended
 //! since the last look.
 
+use serde::Serialize;
 use std::path::Path;
 
 /// What the transcript says is happening. Ordered by how much it wants you.
@@ -183,6 +184,90 @@ pub fn doing(line: &str) -> Option<Doing> {
     ))
 }
 
+/// One thing the agent did, for the list of them on the Agents screen.
+///
+/// ⚠️ The ID is the whole point. A tool call and the result that finishes it
+/// are two records, minutes apart, and the only thing joining them is
+/// `tool_use_id` — without it a list of steps is a list of things that were
+/// STARTED, which reads as an agent that never finishes anything.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Step {
+    pub id: String,
+    /// Already conjugated and shortened: `running cargo test`, `reading x.ts`.
+    pub say: String,
+    /// Whether its result has come back.
+    pub done: bool,
+}
+
+/// Every tool call an assistant record makes, in order.
+///
+/// ⚠️ ALL of them, where `doing` takes only the last. One assistant turn can
+/// carry several calls and the pill wants the newest; a list wants every one,
+/// or it skips steps and reads as an agent that did half the work.
+pub fn steps_of(line: &str) -> Vec<Step> {
+    let mut out = Vec::new();
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return out;
+    };
+    if value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true) {
+        return out;
+    }
+    if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
+        return out;
+    }
+    let Some(content) = value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    else {
+        return out;
+    };
+    for block in content {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_use") {
+            continue;
+        }
+        let Some(id) = block.get("id").and_then(|v| v.as_str()) else { continue };
+        let say = phrase(
+            block.get("name").and_then(|v| v.as_str()).unwrap_or("a tool"),
+            block.get("input"),
+        )
+        .say();
+        out.push(Step { id: id.to_string(), say, done: false });
+    }
+    out
+}
+
+/// The ids of the tool calls a user record is answering.
+///
+/// ⚠️ A `tool_result` arrives in a USER record, which is the thing that is
+/// easy to get wrong here: the agent's own turn never says that its call
+/// finished, because the result is fed back to it as input.
+pub fn results_of(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return out;
+    };
+    if value.get("type").and_then(|v| v.as_str()) != Some("user") {
+        return out;
+    }
+    let Some(content) = value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    else {
+        return out;
+    };
+    for block in content {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+            continue;
+        }
+        if let Some(id) = block.get("tool_use_id").and_then(|v| v.as_str()) {
+            out.push(id.to_string());
+        }
+    }
+    out
+}
+
 /// Classify one JSONL line, or `None` if it is not a conversational record.
 ///
 /// ⚠️ `isSidechain` records are a **subagent's** conversation, not yours. A
@@ -274,6 +359,16 @@ pub struct Scan {
     /// read "editing palette.ts" — that is a status that was true and is now a
     /// lie, which is worse than no status at all.
     pub doing: Option<Doing>,
+    /// The tool calls seen in this chunk, oldest first.
+    pub steps: Vec<Step>,
+    /// The ids finished in this chunk. ⚠️ Kept separately from `steps`,
+    /// because a result routinely lands in a chunk whose call was read minutes
+    /// ago — the caller holds the list across scans and this is the patch.
+    pub finished: Vec<String>,
+    /// ⚠️ A turn that ENDED clears the list as well as the phrase. The steps
+    /// of a run that finished are what the agent did last time, and a screen
+    /// still showing them while the agent waits for you says it is busy.
+    pub cleared: bool,
 }
 
 /// Walk a chunk of transcript, newest fact winning.
@@ -288,8 +383,14 @@ pub fn scan(chunk: &str) -> Scan {
             out.turn = Some(turn);
             if matches!(turn, Turn::Waiting | Turn::Done) {
                 out.doing = None;
+                out.cleared = true;
             }
         }
+        for step in steps_of(line) {
+            out.cleared = false;
+            out.steps.push(step);
+        }
+        out.finished.extend(results_of(line));
         if let Some(action) = doing(line) {
             out.doing = Some(action);
         }
@@ -364,6 +465,80 @@ pub fn opening_scan(path: &Path) -> Scan {
 
 #[cfg(test)]
 mod tests {
+    fn step_call(id: &str, name: &str, input: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"{id}","name":"{name}","input":{input}}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn a_step_is_only_done_when_its_result_comes_back() {
+        /* ⚠️ The ID is the whole point. A call and the result that finishes it
+         * are two records minutes apart, and `tool_use_id` is the only thing
+         * joining them — without it a list of steps is a list of things that
+         * were STARTED, which reads as an agent that finishes nothing. */
+        let chunk = [
+            // ⚠️ Forward slashes: a raw string keeps a backslash literal, and `\w` is
+            // not a valid JSON escape — the record simply fails to parse and the
+            // step vanishes, which is exactly what a wrong fixture looks like.
+            step_call("t1", "Read", r#"{"file_path":"work/palette.ts"}"#),
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#.to_string(),
+            step_call("t2", "Bash", r#"{"command":"cargo test --lib"}"#),
+        ]
+        .join("
+");
+        let seen = scan(&chunk);
+        assert_eq!(seen.steps.len(), 2);
+        assert_eq!(seen.finished, vec!["t1".to_string()]);
+        assert!(seen.steps[0].say.contains("palette.ts"));
+        assert!(seen.steps[1].say.contains("cargo test"));
+        // The scan reports; joining them up is the caller's, across chunks.
+        assert!(!seen.steps[0].done);
+    }
+
+    #[test]
+    fn several_calls_in_one_turn_are_all_steps() {
+        /* ⚠️ ALL of them, where `doing` takes only the last: one assistant
+         * turn routinely carries several calls, and a list that kept the last
+         * would skip steps and read as an agent that did half the work. */
+        let line = r#"{"type":"assistant","message":{"content":[
+            {"type":"tool_use","id":"a","name":"Read","input":{"file_path":"one.ts"}},
+            {"type":"tool_use","id":"b","name":"Read","input":{"file_path":"two.ts"}}
+        ]}}"#;
+        let steps = steps_of(line);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        // And `doing` still answers with the newest, which is what a pill wants.
+        assert!(doing(line).unwrap().say().contains("two.ts"));
+    }
+
+    #[test]
+    fn a_subagents_calls_are_not_the_sessions_steps() {
+        // Same rule `classify` follows: a sidechain is a subagent's own
+        // conversation, and counting it makes every Task call look like work
+        // the session is doing.
+        let line = format!(
+            r#"{{"isSidechain":true,"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"x","name":"Read","input":{{"file_path":"a.ts"}}}}]}}}}"#
+        );
+        assert!(steps_of(&line).is_empty());
+    }
+
+    #[test]
+    fn a_turn_that_ends_clears_the_list() {
+        /* ⚠️ The steps of a run that finished are what the agent did LAST
+         * time, and a screen still showing them while it waits for you says it
+         * is busy. */
+        let chunk = [
+            step_call("t1", "Bash", r#"{"command":"ls"}"#),
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#.to_string(),
+        ]
+        .join("
+");
+        assert!(scan(&chunk).cleared);
+        // And a chunk that ends mid-call does not.
+        assert!(!scan(&step_call("t9", "Bash", r#"{"command":"ls"}"#)).cleared);
+    }
+
     use super::*;
 
     fn call(name: &str, input: serde_json::Value) -> String {

@@ -851,11 +851,57 @@ test("a working session says what it is doing, not that it is working", async ({
   await expect(working.locator(".agent-word")).toHaveText("running cargo test --lib");
 
   /* And where there is no work there is no phrase: waiting and idle have
-   * nothing to describe, so the state word stays. A phrase left behind by a
-   * finished run would be a status that WAS true, which is worse than none. */
-  await expect(page.locator(".agent-row.is-waiting .agent-word").first())
-    .toHaveText("waiting for you");
+   * nothing to describe. ⚠️ The state word does NOT stand in for it — the
+   * badge on the line above is already that word, and printing it twice on
+   * consecutive lines cost the line the one thing it still knew. */
+  const waiting = page.locator(".agent-row.is-waiting").first();
+  await expect(waiting.locator(".agent-word")).toHaveCount(0);
+  await expect(waiting.locator(".agent-since")).toHaveText("for");
+  await expect(waiting.locator(".agent-for")).toHaveText(/\d+m/);
+  /* ⚠️ But the aria-label keeps the whole sentence. A badge is readable at a
+   * glance because it sits beside a name; read aloud in order it is a lone
+   * word, and "Go to akcesfonia, waiting for you" is the thing said. */
+  await expect(waiting.locator(".agent-go"))
+    .toHaveAttribute("aria-label", /waiting for you/);
   await page.screenshot({path: "test-results/island-agents-doing.png"});
+});
+
+test("a working session shows the last few things it did, and which is still out", async ({page}) => {
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await goTo(page, "agents");
+
+  /* ⚠️ What an agent is doing is a LIST, not a sentence. One phrase says
+   * "running cargo test" and nothing about the four calls before it — which
+   * is most of what somebody glancing at this wants, because it is the
+   * difference between stuck and working through. */
+  const working = page.locator(".agent-row.is-working").first();
+  const steps = working.locator(".agent-step");
+  await expect(steps).toHaveCount(4);
+  await expect(steps.nth(0)).toHaveText("reading nz_2.png");
+  await expect(steps.nth(3)).toHaveText("running grep -n");
+
+  /* ⚠️ Exactly ONE is in flight, and it is the last. A tool call and the
+   * result that finishes it are two records minutes apart, joined only by
+   * `tool_use_id` — lose that and every step reads as started and none as
+   * finished, which is an agent that never gets anywhere. */
+  await expect(working.locator(".agent-step.is-now")).toHaveCount(1);
+  await expect(steps.nth(3)).toHaveClass(/is-now/);
+  await expect(working.locator(".agent-step.is-done")).toHaveCount(3);
+
+  // The state is a badge beside the name, in the colour the card is keyed to.
+  await expect(working.locator(".agent-badge")).toHaveText("Working");
+  await expect(page.locator(".agent-row.is-waiting .agent-badge").first())
+    .toHaveText("Waiting");
+
+  /* The bar is the OUTPUT share, not the total: the total is the two figures
+   * printed above it, and how much of a session was the model talking back is
+   * what tells a long read apart from a long write. */
+  const share = await working.locator(".agent-spend i").evaluate(
+    el => (el as HTMLElement).style.width);
+  expect(parseFloat(share)).toBeGreaterThan(0);
+  expect(parseFloat(share)).toBeLessThan(100);
+  await page.screenshot({path: "test-results/island-agents-steps.png"});
 });
 
 
