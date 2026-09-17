@@ -3430,3 +3430,27 @@ The two halves were the same fault.
      island flips its own optimistic state, which is before Spotify has
      reshuffled anything, so the answer is the old order arriving as if it were
      the new one.
+520. ⚠️ **A grid with `auto` rows STRETCHES them into spare room, and the
+     island's measure reads that back as content.** The queue is
+     `align-self: stretch`, so it grew into whatever height the island happened
+     to have; the island then measured the stretched content and kept the
+     taller size, and the two agreed with each other for ever. Closing the
+     lyrics left seventy pixels of nothing under the player with nothing on
+     screen to explain it. `align-content: start` is the whole fix.
+521. ⚠️ **`railOrder` is a SORT KEY, not a membership list**, and reading it
+     as one was silent: reordering any screen writes the whole list, so the
+     moment somebody dragged one stop the notices, the timer and the system
+     screen all came back onto the rail and lost their back buttons. Nobody
+     asked for any of that and nothing said it had happened.
+522. ⚠️ **`paintIcon` draws at its own 20px.** Only `.head-mark`'s rule shrinks
+     a header glyph to thirteen, so an icon painted straight into the button
+     came out half again the size of the two beside it — which is the one thing
+     a row of chips must not do.
+523. ⚠️ **A rail with no handle is a progress bar.** It says how loud
+     something is and gives no sign that it can be moved, which is the whole
+     difference between a readout and a control. And `.pip` dropped into a grid
+     cell comes out a flat oval: it is sized by the row it was written for.
+524. ⚠️ **A box measured on the frame after a press is where the thing was
+     going, not where it is.** The island grows over a spring, so a wheel aimed
+     at a panel that had just been opened landed on whatever was there instead
+     — and the test failed only under a full run, which is the tell.

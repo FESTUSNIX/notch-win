@@ -39,8 +39,9 @@
   ⚠️ `eRender` sessions, read on OPEN and never polled — it is a COM walk of
   every session on the machine. A write goes to every session of that process,
   because a browser opens one per renderer.
-  - [ ] No icons on the rows, only names. The path is carried for it; the
-        shell's icon extractor is the piece that is not wired up.
+  - [x] The app's own icon on each row, from the shell — the same extractor
+        the palette and the call strip use, so there is one leaky-handle path
+        rather than three.
   - [ ] Pid 0 — Windows' own system sounds — is left out: it has no process to
         name and no icon, and a row that cannot say what it is is a slider
         nobody dares move.

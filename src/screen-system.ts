@@ -37,6 +37,8 @@ export interface AppVolume {
   pid: number;
   name: string;
   path: string;
+  /** The app's own icon as a data URI, or empty — the shell's, from the exe. */
+  icon: string;
   /** 0..1 — the capsule wants 0..100, so it is scaled where it is drawn. */
   volume: number;
   muted: boolean;
@@ -235,7 +237,20 @@ export class SystemScreen {
       const row = element("div", `mix-row${app.muted ? " is-muted" : ""}`);
       row.dataset.pid = String(app.pid);
       const name = element("div", "mix-name");
-      name.append(element("span", "mix-word", app.name));
+      /* ⚠️ The app's own icon, and a glyph when the shell has none. A name is
+       * a word to read; an icon is the thing you recognise without reading,
+       * which is what a column of near-identical rows wants. */
+      const face = element("span", "mix-face");
+      if (app.icon) {
+        const image = element("img") as HTMLImageElement;
+        image.src = app.icon;
+        image.alt = "";
+        face.append(image);
+      } else {
+        face.classList.add("blank");
+        paintIcon(face, "app");
+      }
+      name.append(face, element("span", "mix-word", app.name));
       /* ⚠️ A dot for what is actually making a sound, not a label. An app
        * can hold a session for hours after it went quiet — the list is most of
        * the machine by the afternoon — and which of them you can hear right now

@@ -2254,3 +2254,69 @@ test("shuffling re-reads what is next, without the panel being closed", async ({
   // And the panel never went away to do it.
   await expect(page.locator(".media-queue-list")).toBeVisible();
 });
+
+test("closing the lyrics gives the island back its height, queue or no queue", async ({page}) => {
+  await page.setViewportSize({width: 1200, height: 900});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "media");
+  await page.locator('.media-side[aria-label="Playing next"]').click();
+
+  const tall = async () => Math.round((await page.locator("#island").boundingBox())!.height);
+  await expect.poll(tall).toBeGreaterThan(100);
+  const shut = await tall();
+  await page.locator('.media-side[aria-label="Lyrics"]').click();
+  await expect.poll(tall).toBeGreaterThan(shut + 80);
+
+  /* ⚠️ Back to EXACTLY where it was. A grid with `auto` rows and spare room
+   * stretches those rows to fill it, and the queue is `align-self: stretch` —
+   * so it grew into whatever height the island happened to have, the island
+   * measured the stretched content and kept the taller size, and the two
+   * agreed with each other for ever. Seventy pixels of nothing under the
+   * player, with nothing on screen to explain it. */
+  await page.locator('.media-side[aria-label="Lyrics"]').click();
+  await expect.poll(tall, {timeout: 4000}).toBe(shut);
+});
+
+test("a hand on the lyrics offers the way back to the song", async ({page}) => {
+  await page.setViewportSize({width: 1200, height: 900});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "media");
+  await page.locator('.media-side[aria-label="Lyrics"]').click();
+
+  /* ⚠️ Only while the follow is standing down. Reading ahead is deliberate and
+   * the panel should stay put — but somebody who scrolled by accident is
+   * watching a verse they are not on with nothing to say why. */
+  const back = page.locator(".media-resync");
+  await expect(back).toHaveCSS("opacity", "0");
+  /* ⚠️ Measured once the island has STOPPED growing. Opening the panel
+   * extends the shape over a spring, so a box read on the frame after the
+   * press is where the words were on their way to — and the wheel lands on
+   * whatever is there instead. */
+  let last = "";
+  await expect.poll(async () => {
+    const now = JSON.stringify(await page.locator(".media-words").boundingBox());
+    const same = now === last;
+    last = now;
+    return same;
+  }, {timeout: 4000}).toBe(true);
+  const box = (await page.locator(".media-words").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 80);
+  await expect(back).toHaveCSS("opacity", "1");
+
+  await back.click();
+  /* The class first: it is the fact. The opacity follows it through a 250ms
+   * transition, and under load a reading taken on the frame of the press
+   * catches the pill part way out. */
+  await expect(page.locator(".media-words.is-reading")).toHaveCount(0);
+  await expect.poll(() => back.evaluate(el => getComputedStyle(el).opacity),
+    {timeout: 4000}).toBe("0");
+});

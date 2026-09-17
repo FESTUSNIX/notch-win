@@ -867,8 +867,14 @@ function paintHead() {
    * for — and a screen with no way in is a screen nobody opens. */
   const machine = get<HTMLButtonElement>("head-system");
   machine.hidden = false;
-  if (!machine.dataset.icon) {
-    paintIcon(machine, "system");
+  if (!machine.querySelector(".head-mark")) {
+    /* ⚠️ Into a `.head-mark`, not straight into the button. `paintIcon` draws
+     * at its own 20px and only the mark's rule shrinks it to thirteen — so
+     * painted bare this glyph came out half again the size of the two beside
+     * it, which is the one thing a row of chips must not do. */
+    const mark = element("span", "head-mark");
+    machine.replaceChildren(mark);
+    paintIcon(mark, "system");
     machine.setAttribute("aria-label", "System");
     machine.setAttribute("data-tip", "The machine, and the volume of each app");
     machine.classList.add("is-idle");
@@ -1713,8 +1719,12 @@ let wheeledAt = 0;
  * a place you are sent, which is what the flag means. One answer, two readers
  * — the rail and the back arrow. */
 function sentTo(name: ScreenName): boolean {
-  return !!SCREENS.find(one => one.name === name)?.offRail
-    && !prefs.railOrder.includes(name);
+  /* ⚠️ `railOrder` is NOT a membership list, and reading it as one was a
+   * silent bug: reordering ANY screen writes the whole list, so the moment
+   * somebody dragged one stop the notices, the timer and the system screen
+   * all came back onto the rail and lost their back buttons — none of which
+   * anybody asked for. It is a sort key; `railHidden` is the membership. */
+  return !!SCREENS.find(one => one.name === name)?.offRail;
 }
 
 function reachable(): ScreenName[] {

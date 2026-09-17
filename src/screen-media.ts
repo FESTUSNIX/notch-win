@@ -546,7 +546,20 @@ export class MediaScreen {
     };
     scroll.addEventListener("wheel", reading, { passive: true });
     scroll.addEventListener("pointerdown", reading);
-    box.append(scroll);
+    /* ⚠️ A way BACK. Reading ahead stands the follow down for seven seconds,
+     * which is right — and leaves somebody who scrolled by accident watching a
+     * verse they are not on with no idea why. The button is the answer to
+     * "where was I", and it is only there while the answer is not obvious. */
+    const back = element("button", "media-resync", "Back to the song");
+    (back as HTMLButtonElement).type = "button";
+    back.onclick = () => {
+      this.scrolled = 0;
+      window.clearTimeout(this.resting);
+      scroll.classList.remove("is-reading");
+      this.lit = -2;
+      this.paintWords(scroll, this.deps.source.position());
+    };
+    box.append(scroll, back);
     /* ⚠️ NOT painted here. The window is centred on the current line by
      * measuring it, and an element that is not in the document yet has a
      * client height of nothing and every row at offset zero — so the scroll

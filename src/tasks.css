@@ -1249,8 +1249,15 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
    fourteen pixels that the island's measure cannot see: it unions the
    children's boxes, and a gap is not a box. The panel that is closed to zero
    height had nothing to be spaced from, and the screen scrolled. */
+/* ⚠️ `align-content: start`, and it is a FEEDBACK LOOP without it. A grid
+   with `auto` rows and spare room stretches those rows to fill it — that is
+   what `normal` means here — and the queue is `align-self: stretch`, so it grew
+   into whatever height the island happened to have. The island then measured
+   the stretched content, kept the taller size, and the two agreed with each
+   other for ever: closing the lyrics left seventy pixels of nothing under the
+   player and nothing on screen to explain it. */
 .media-body { display:grid; grid-template-columns:500px 0px;
-  column-gap:0; row-gap:0; min-width:0; align-items:start;
+  column-gap:0; row-gap:0; min-width:0; align-items:start; align-content:start;
   transition:grid-template-columns 560ms cubic-bezier(0.32, 1.22, 0.36, 1),
     column-gap 560ms cubic-bezier(0.32, 1.22, 0.36, 1); }
 .media-body.has-queue { grid-template-columns:500px 260px; column-gap:14px; }
@@ -1367,6 +1374,22 @@ html[data-motion=never] .media-body { transition:none; }
    because that is what it was. */
 .media-words.is-reading .media-word { opacity:.72; filter:none; }
 .media-words.is-reading .media-word.is-now { opacity:1; }
+/* ⚠️ Only while the follow is standing down. Reading ahead is deliberate
+   and the panel should stay where it was put — but somebody who scrolled by
+   accident is watching a verse they are not on with nothing to say why, and
+   this is the answer to "where was I". */
+.media-resync { position:absolute; left:50%; bottom:6px; translate:-50% 0;
+  padding:4px 11px; border-radius:99px; font-size:10.5px; font-weight:600;
+  color:#0b0b0b; background-color:var(--accent); background-image:var(--sheen);
+  box-shadow:var(--gloss), var(--lift-1); white-space:nowrap;
+  opacity:0; scale:.8; pointer-events:none;
+  transition:opacity var(--duration-fast) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-bounce); }
+.media-lyrics:has(.media-words.is-reading) .media-resync {
+  opacity:1; scale:1; pointer-events:auto; }
+.media-resync:active { scale:.92; transition-duration:90ms; }
+/* The panel is the positioning context for it. */
+.media-lyrics { position:relative; }
 /* An instrumental gap is a real line with no words: it keeps its place in the
    column so the following lines do not slide up into the silence. */
 .media-word:empty::before { content:"···"; letter-spacing:3px; }
@@ -3442,10 +3465,26 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
    length is whatever happens to be open — two rows on a quiet afternoon and
    nine with a browser going — and a tile that changes height cannot share a
    row with ones that do not. */
-.sys-mixer { grid-column:1 / -1; display:flex; flex-direction:column; gap:8px; }
-.mix-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto;
-  align-items:center; gap:10px; }
-.mix-name { display:flex; align-items:center; gap:6px; min-width:0; }
+/* ⚠️ Capped, not full width. The bento is nearly two thousand design pixels
+   across and a slider that long is one you cannot aim: a hundred pixels of
+   travel is a percent either way. It stays a list on the left. */
+.sys-mixer { grid-column:1 / -1; max-width:600px;
+  display:flex; flex-direction:column; gap:7px; }
+.mix-row { display:grid; grid-template-columns:118px minmax(0,1fr) auto;
+  align-items:center; gap:12px; }
+.mix-name { display:flex; align-items:center; gap:7px; min-width:0; }
+/* The app's own picture. ⚠️ A fixed plinth, so a row is the same height
+   whether the shell had an icon or not — a list that goes ragged where an
+   icon is missing reads as a fault rather than as an absence. */
+.mix-face { width:20px; height:20px; flex-shrink:0; border-radius:5px;
+  overflow:hidden; display:grid; place-items:center; }
+.mix-face img { width:100%; height:100%; object-fit:contain; display:block; }
+.mix-face.blank { color:#6a6a6a; background:var(--tile); box-shadow:var(--hairline); }
+.mix-face.blank svg { width:12px; height:12px; }
+/* ⚠️ Sized here. `.pip` is shared with the controls tile, where it sits in a
+   row that stretches it — dropped into a grid cell it came out as a flat oval
+   rather than a button. */
+.mix-row .pip { width:30px; height:30px; padding:0; flex-shrink:0; }
 .mix-word { font-size:12px; font-weight:560; color:#d2d2d2;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* ⚠️ A dot for what is making a sound RIGHT NOW, not a label. An app holds
@@ -3465,6 +3504,16 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
 .mix-rail i { position:relative; height:4px; border-radius:2px;
   background:var(--accent); min-width:4px;
   transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+/* ⚠️ A HANDLE at the end of the fill. Without one the rail is a progress
+   bar — it says how loud something is and gives no sign that it can be
+   moved, which is the whole difference between a readout and a control. */
+.mix-rail i::after { content:""; position:absolute; right:-6px; top:50%;
+  width:13px; height:13px; border-radius:50%; translate:0 -50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.55), var(--hairline);
+  transition:scale var(--duration-quick) var(--ease-smooth-out); }
+.mix-rail:hover i::after { scale:1.12; }
+.mix-rail.is-held i::after { scale:1.2; }
+.mix-row.is-muted .mix-rail i::after { background:#9a9a9a; }
 .mix-rail:hover i, .mix-rail.is-held i {
   box-shadow:0 0 10px -2px var(--accent); }
 .mix-rail:focus-visible { outline:2px solid var(--accent); outline-offset:3px;

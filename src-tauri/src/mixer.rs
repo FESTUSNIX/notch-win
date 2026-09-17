@@ -34,8 +34,14 @@ pub struct AppVolume {
     /// that empty, and the ones that fill it write things like
     /// "@%SystemRoot%\System32\AudioSrv.Dll,-202".
     pub name: String,
-    /// The executable's full path, so the island can ask the shell for an icon.
+    /// The executable's full path.
     pub path: String,
+    /// The app's own icon as a data URI, or empty. ⚠️ The SHELL's, taken from
+    /// the executable — the same call `apps.rs` makes for the palette and
+    /// `call.rs` for the strip, so there is one leaky-handle path rather than
+    /// three. A name is a word to read; an icon is the thing you recognise
+    /// without reading, which is what a list of sliders wants.
+    pub icon: String,
     /// 0..1.
     pub volume: f32,
     pub muted: bool,
@@ -123,6 +129,7 @@ pub fn get_mixer() -> Vec<AppVolume> {
             out.push(AppVolume {
                 pid,
                 name,
+                icon: crate::apps::icon_of(&path).unwrap_or_default(),
                 path,
                 volume: volume.GetMasterVolume().unwrap_or(1.0),
                 muted: volume.GetMute().map(|m| m.as_bool()).unwrap_or(false),

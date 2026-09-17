@@ -21,8 +21,8 @@ const agentsFixture = new URLSearchParams(location.search).has("agents");
  * alone — the two flags silence different competitors for the pill. */
 const nocal = quiet || new URLSearchParams(location.search).has("nocal");
 const demoMixer = [
-  { pid: 4396, name: "Brave", path: "C:/brave.exe", volume: 0.65, muted: false, active: true },
-  { pid: 15816, name: "Spotify", path: "C:/spotify.exe", volume: 1, muted: false, active: false },
+  { pid: 4396, name: "Brave", path: "C:/brave.exe", icon: "", volume: 0.65, muted: false, active: true },
+  { pid: 15816, name: "Spotify", path: "C:/spotify.exe", icon: "", volume: 1, muted: false, active: false },
 ];
 const demoQueue = [
     {id:"q1", title:"Heroine (Cryogenic's Second Wind)", artist:"CRYOGENIC", artwork:""},
