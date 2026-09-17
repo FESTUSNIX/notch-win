@@ -3374,3 +3374,15 @@ The two halves were the same fault.
      stylesheet carried three literal zeroes and the browser drew replacement
      glyphs. Write the character itself when the tool in the middle has its own
      backslash rules.
+509. ⚠️ **A depth of field is a trap the moment somebody scrolls.** The fade
+     and blur put the eye on the line being sung, which is right while the song
+     is driving — and the instant you scroll away from that line, every line
+     you are scrolling TOWARDS is the dim, blurred end of the gradient. It read
+     as scrolling into darkness because it was. A hand on the wheel turns the
+     effect off and the song takes the scroller back seven seconds later.
+510. ⚠️ **The NEXT line is not just another neighbour.** No transcript is
+     perfectly timed and the ones on LRCLIB are a second out as often as not,
+     so the line about to be sung is what rescues a stamp that lands late — it
+     has to stay readable while everything else falls away. The line just sung
+     needs no such help: you have heard it, and two bright lines either side of
+     the current one is three lines competing.

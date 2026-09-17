@@ -1321,8 +1321,12 @@ html[data-motion=never] .media-body { transition:none; }
   padding:46px 10px; scrollbar-width:none;
   /* Faded at both ends rather than cut: a line half-clipped by a hard edge
      reads as a rendering fault, and the fade is what says "there is more". */
-  mask-image:linear-gradient(180deg, transparent, #000 34%, #000 66%, transparent);
-  -webkit-mask-image:linear-gradient(180deg, transparent, #000 34%, #000 66%, transparent); }
+  /* ⚠️ A WIDE plateau. At a third either side only the middle line was ever
+     fully painted, so anything scrolled to arrived already half gone — and
+     with the depth of field on top of it, reading ahead meant reading into
+     the dark. */
+  mask-image:linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent);
+  -webkit-mask-image:linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent); }
 .media-words::-webkit-scrollbar { width:0; }
 /* ⚠️ Distance, not a binary state. One class on the current line and
    nothing on the rest is a wall of identical grey with one bright line in it;
@@ -1339,6 +1343,24 @@ html[data-motion=never] .media-body { transition:none; }
     font-size var(--duration-slow) var(--ease-smooth-out); }
 .media-word.is-now { font-size:15.5px; font-weight:650; color:#fff;
   letter-spacing:-.2px; opacity:1; filter:none; }
+/* ⚠️ The NEXT line is not just another neighbour. No transcript is perfectly
+   timed — the ones on LRCLIB are a second out as often as not — so the line
+   about to be sung is what rescues a stamp that lands late: it stays readable
+   while everything else falls away. The line just SUNG gets no such help; you
+   have heard it, and two bright lines either side of the current one is three
+   lines competing. */
+.media-word.is-next { opacity:.92; filter:none; color:#cfcfcf; font-weight:560;
+  font-size:13.5px; }
+.media-word.is-past { opacity:calc(0.8 - var(--far, 2) * 0.2); }
+
+/* ── Reading by hand ─────────────────────────────────
+   ⚠️ The depth of field goes OFF the moment somebody scrolls. It puts the eye
+   on the line being sung, which is right while the song is driving — and the
+   instant you scroll away from that line, every line you are scrolling TOWARDS
+   is the dim, blurred end of the gradient. It read as scrolling into darkness
+   because that is what it was. */
+.media-words.is-reading .media-word { opacity:.72; filter:none; }
+.media-words.is-reading .media-word.is-now { opacity:1; }
 /* An instrumental gap is a real line with no words: it keeps its place in the
    column so the following lines do not slide up into the silence. */
 .media-word:empty::before { content:"···"; letter-spacing:3px; }

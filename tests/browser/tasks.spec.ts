@@ -2084,6 +2084,33 @@ test("the player follows the words, and only the line that has started", async (
     [...el.children].map(row => (row as HTMLElement).style.getPropertyValue("--far")));
   expect(fars).toEqual(["1", "0", "1", "2", "3", "4"]);
 
+  /* ⚠️ The NEXT line is not just another neighbour. No transcript is
+   * perfectly timed — the ones on LRCLIB are a second out as often as not —
+   * so the line about to be sung is what rescues a stamp that lands late: it
+   * stays readable while everything else falls away. The line just SUNG gets
+   * no such help; you have heard it. */
+  const lit = (sel: string) => page.locator(sel).evaluate(el => ({
+    fade: Number(getComputedStyle(el).opacity),
+    blur: getComputedStyle(el).filter,
+  }));
+  const ahead = await lit(".media-word.is-next");
+  const behind = await lit(".media-word.is-past");
+  expect(ahead.fade).toBeGreaterThan(behind.fade + 0.2);
+  expect(ahead.blur).toBe("none");
+
+  /* ⚠️ And a hand on the wheel turns the depth of field OFF. It puts the
+   * eye on the line being sung, which is right while the song is driving —
+   * and the instant you scroll away from that line, every line you are
+   * scrolling TOWARDS is the dim, blurred end of the gradient. */
+  const words = (await page.locator(".media-words").boundingBox())!;
+  await page.mouse.move(words.x + words.width / 2, words.y + words.height / 2);
+  await page.mouse.wheel(0, 90);
+  await expect(page.locator(".media-words.is-reading")).toHaveCount(1);
+  /* ⚠️ Polled: the blur is transitioned over four hundred milliseconds, so
+   * a reading measured on the frame the wheel turned catches it half gone. */
+  await expect.poll(async () => (await lit(".media-word:last-child")).blur).toBe("none");
+  expect((await lit(".media-word:last-child")).fade).toBeGreaterThan(0.5);
+
   /* Past the next stamp and the window moves on. ⚠️ Aimed at the MIDDLE of
    * a line's span rather than just past its stamp, for the same reason the
    * seek above exists. */

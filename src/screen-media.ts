@@ -10,6 +10,11 @@ import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { lineAt, parseLrc, worth, type Line } from "./lyrics";
 
+/** How long the words stay where a hand left them before the song takes the
+ *  scroller back. ⚠️ Long enough to read a verse ahead and short enough that
+ *  a scroll nobody meant does not strand the panel for the rest of the song. */
+const READING = 7000;
+
 // Re-exported so the screens that already import them from here keep working.
 export { clock, sourceName } from "./media-format";
 import { listen } from "@tauri-apps/api/event";
@@ -222,6 +227,7 @@ export class MediaScreen {
   private beating = 0;
   /** When the reader last scrolled by hand, so the follow stands down. */
   private scrolled = 0;
+  private resting = 0;
 
   constructor(private host: HTMLElement, private deps: MediaDeps, private changed: () => void) {}
 
@@ -469,8 +475,24 @@ export class MediaScreen {
      * nowhere and the words never appear to MOVE — which is the one thing
      * that makes a lyric feel synced rather than merely correct. It is also
      * what makes it scrollable: reading ahead is a wheel, not a feature. */
-    scroll.addEventListener("wheel", () => { this.scrolled = Date.now(); }, { passive: true });
-    scroll.addEventListener("pointerdown", () => { this.scrolled = Date.now(); });
+    /* ⚠️ Reading by hand turns the depth of field OFF. The fade and blur
+     * put the eye on the line being sung, which is right while the song is
+     * driving — and the moment somebody scrolls away from it, every line they
+     * are scrolling TOWARDS is the dim, blurred end of that gradient. It read
+     * as scrolling into darkness, because it was. */
+    const reading = () => {
+      this.scrolled = Date.now();
+      scroll.classList.add("is-reading");
+      window.clearTimeout(this.resting);
+      this.resting = window.setTimeout(() => {
+        scroll.classList.remove("is-reading");
+        const now = this.host.querySelector<HTMLElement>(".media-words");
+        // Put it back where the song is, rather than leaving it adrift.
+        if (now) { this.lit = -2; this.paintWords(now, this.deps.source.position()); }
+      }, READING);
+    };
+    scroll.addEventListener("wheel", reading, { passive: true });
+    scroll.addEventListener("pointerdown", reading);
     box.append(scroll);
     /* ⚠️ NOT painted here. The window is centred on the current line by
      * measuring it, and an element that is not in the document yet has a
@@ -496,6 +518,13 @@ export class MediaScreen {
       const far = Math.min(4, Math.abs(slot - index));
       row.style.setProperty("--far", String(far));
       row.classList.toggle("is-now", slot === index);
+      /* ⚠️ The NEXT line is not just another neighbour. No transcript is
+       * perfectly timed and the ones on LRCLIB are a second out as often as
+       * not, so the line about to be sung is the one that rescues a stamp
+       * that lands late — it stays readable while everything else falls away.
+       * The line just sung does not need the same: you have heard it. */
+      row.classList.toggle("is-next", slot === index + 1);
+      row.classList.toggle("is-past", slot < index);
     });
     /* ⚠️ Before the first line there is NO current line — not line zero. An
      * intro of eight seconds would otherwise hold the first words up as if
@@ -503,7 +532,7 @@ export class MediaScreen {
     scroll.classList.toggle("is-waiting", index < 0);
     const target = rows[Math.max(0, index)];
     // Hands off for a moment after somebody scrolls it themselves.
-    if (!target || Date.now() - this.scrolled < 6000) return;
+    if (!target || Date.now() - this.scrolled < READING) return;
     scroll.scrollTo({
       top: target.offsetTop - (scroll.clientHeight - target.offsetHeight) / 2,
       behavior: "smooth",

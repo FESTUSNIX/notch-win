@@ -57,9 +57,6 @@
 
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
 
-- Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
-- Style: replace generic agents icon (in the collapsed pill) with the agent logo (Claude, Codex etc.)
-
 ---
 
 ---
