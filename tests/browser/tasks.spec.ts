@@ -2047,7 +2047,7 @@ test("a long device list opens in place and the panel travels to fit", async ({p
 
 
 test("the player follows the words, and only the line that has started", async ({page}) => {
-  await page.setViewportSize({width: 1100, height: 780});
+  await page.setViewportSize({width: 1100, height: 860});
   await page.goto("/tasks.html?nofollow");
   await open(page);
   await page.keyboard.press("Control+k");
@@ -2055,10 +2055,17 @@ test("the player follows the words, and only the line that has started", async (
   await page.keyboard.press("Enter");
   await goTo(page, "media");
 
+  /* ⚠️ Closed by default, like the queue: lyrics are the thing you want
+   * sometimes and the thing that doubles the height of the panel always. */
+  await expect(page.locator(".media-lyrics.is-open")).toHaveCount(0);
+  const tall = (await page.locator("#island").boundingBox())!.height;
+  await page.locator('.media-side[aria-label="Lyrics"]').click();
+  await expect(page.locator(".media-lyrics.is-open")).toHaveCount(1);
+
   /* ⚠️ Seek to a known second FIRST. The fixture's playhead runs in real
-   * time from wherever the page loaded it, so by the time a test has walked
-   * to this screen the track is several seconds further on than the fixture
-   * says — which is a test that passes or fails on how fast the machine is. */
+   * time from wherever the page loaded it, so by the time a test has walked to
+   * this screen the track is several seconds further on than the fixture says
+   * — a test that passes or fails on how fast the machine is. */
   const rail = (await page.locator(".media-rail").boundingBox())!;
   const seekTo = (seconds: number) => page.locator(".media-rail")
     .click({position: {x: rail.width * (seconds / 1878), y: rail.height / 2}});
@@ -2068,19 +2075,27 @@ test("the player follows the words, and only the line that has started", async (
    * 4:25, however much closer it is. */
   const now = page.locator(".media-word.is-now");
   await expect(now).toHaveText("nobody said a word");
-  await expect(page.locator(".media-word.is-back")).toHaveText(/lights came up/);
-  await expect(page.locator(".media-word.is-next")).toHaveText("we just stood there");
+  // The whole file is there to be scrolled; the window is what moves.
+  await expect(page.locator(".media-word")).toHaveCount(6);
+  /* ⚠️ Distance, not a binary state: one bright line in a wall of identical
+   * grey is a list, and the fade out from the middle is what puts the eye
+   * where the voice is. */
+  const fars = await page.locator(".media-words").evaluate(el =>
+    [...el.children].map(row => (row as HTMLElement).style.getPropertyValue("--far")));
+  expect(fars).toEqual(["1", "0", "1", "2", "3", "4"]);
 
-  /* Past the next stamp and the three lines all move up one. ⚠️ Aimed at
-   * the MIDDLE of a line's span rather than just past its stamp, for the same
-   * reason the seek above exists. */
+  /* Past the next stamp and the window moves on. ⚠️ Aimed at the MIDDLE of
+   * a line's span rather than just past its stamp, for the same reason the
+   * seek above exists. */
   await seekTo(268);
   await expect(now).toHaveText("we just stood there");
-  await expect(page.locator(".media-word.is-back")).toHaveText("nobody said a word");
 
-  /* ⚠️ A gap the file marks explicitly is a real line with no words, and it
-   * empties the slot rather than holding the last thing sung. */
+  /* ⚠️ A gap the file marks explicitly is a real line with no words. It
+   * keeps its place in the column, so the lines after it do not slide up into
+   * the silence. */
   await seekTo(280);
-  await expect(page.locator(".media-words")).toBeVisible();
   await expect(now).toHaveText("");
+
+  // And the panel is the island's own height: opening it grew the shape.
+  expect((await page.locator("#island").boundingBox())!.height).toBeGreaterThan(tall + 80);
 });

@@ -34,8 +34,13 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
-- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Three lines on
-  the player: what was said, what is being said, what is next. ⚠️ LRCLIB's
+- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Its own panel
+  under the player and the queue, opened from the button beside the output
+  picker and closed by default; the island grows for it. The whole file is in
+  the DOM and the window travels over it, fading and blurring out from the
+  line being sung — so it can be scrolled to read ahead, and a line change
+  reads as movement rather than as a caption being replaced. The change itself
+  is a timer aimed at the next line's own second, not a poll. ⚠️ LRCLIB's
   `/api/get` is a fingerprint (artist + track + album + duration) and answers
   404 on a near miss, which is the behaviour to want — nothing beats another
   recording's words against this one's clock. No key, no account, cached by

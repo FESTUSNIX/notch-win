@@ -3334,3 +3334,17 @@ The two halves were the same fault.
      demo track is several seconds further on than the fixture says. Seek to a
      known second first, and aim at the MIDDLE of a line's span rather than
      just past its stamp.
+501. ⚠️ **A once-a-second tick lands a lyric up to a second late**, which on
+     a line being sung is the difference between following the song and
+     trailing it. A timer aimed at the NEXT line's own second instead, re-armed
+     from the real position each time it fires — and the tick kept as the floor,
+     so a timer that fires late under load is caught within the second.
+502. ⚠️ **Three slots rewritten in place never appear to MOVE.** Every line
+     arrives from nowhere, which is correct and reads as a caption rather than
+     as a lyric. The whole file goes in the DOM and the window travels over it:
+     that is what makes it feel synced, and it is also what makes it
+     scrollable — reading ahead becomes a wheel rather than a feature.
+503. ⚠️ **One bright line in a wall of identical grey is a list.** The fade
+     and blur have to come OUT from the current line by distance, which is what
+     puts the eye where the voice is without being told to. `--far` per row,
+     one class for the middle.

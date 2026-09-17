@@ -8,7 +8,6 @@ import { call, native } from "./task-client";
 import { clock, sourceName } from "./media-format";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
-import { setText } from "./tween";
 import { lineAt, parseLrc, worth, type Line } from "./lyrics";
 
 // Re-exported so the screens that already import them from here keep working.
@@ -199,6 +198,13 @@ export class MediaScreen {
   private lines: Line[] = [];
   /** Which line is lit, so a repaint that changes nothing animates nothing. */
   private lit = -2;
+  /** ⚠️ Closed by default, like the queue. Lyrics are the thing you want
+   *  sometimes and the thing that doubles the height of the panel always. */
+  private lyricsOpen = false;
+  /** The timer aimed at the NEXT line's own second. See `beat`. */
+  private beating = 0;
+  /** When the reader last scrolled by hand, so the follow stands down. */
+  private scrolled = 0;
 
   constructor(private host: HTMLElement, private deps: MediaDeps, private changed: () => void) {}
 
@@ -387,11 +393,25 @@ export class MediaScreen {
     paintIcon(output, "speaker");
     output.onclick = event => { event.stopPropagation(); void this.pickDevice(); };
 
-    transport.append(queueButton, keys, output);
-    now.append(head, scrub);
-    const said = this.saying(this.deps.source.position());
-    if (said) now.append(said);
-    now.append(transport);
+    /* ⚠️ Beside the output picker, not among the transport keys: it opens a
+     * panel, which is what the queue button beside it does, and the three in
+     * the middle are the ones that touch what is playing. */
+    const words = element("button", `media-side${this.lyricsOpen ? " is-on" : ""}`);
+    (words as HTMLButtonElement).type = "button";
+    (words as HTMLButtonElement).disabled = !this.lines.length;
+    words.setAttribute("aria-label", "Lyrics");
+    words.setAttribute("aria-expanded", String(this.lyricsOpen));
+    words.dataset.tip = this.lines.length ? "Lyrics" : "No lyrics for this one";
+    paintIcon(words, "words");
+    words.onclick = () => {
+      this.lyricsOpen = !this.lyricsOpen;
+      this.lit = -2;
+      this.changed();
+    };
+
+    transport.append(queueButton, keys, element("div", "media-side-pair"));
+    (transport.lastElementChild as HTMLElement).append(words, output);
+    now.append(head, scrub, transport);
     if (this.devicesOpen) now.append(this.deviceMenu());
     this.host.append(now);
 
@@ -401,6 +421,11 @@ export class MediaScreen {
      * on the way out it was gone before the column could shrink. The column is
      * what opens and closes; the panel just sits in it and is clipped. */
     this.host.append(this.renderQueue());
+    /* ⚠️ ALWAYS appended, like the queue, and for the same reason: the
+     * height is what opens and closes, and an element added on the toggle
+     * arrives at full size in the frame it is told to grow from nothing. */
+    this.host.append(this.saying(this.deps.source.position()));
+    this.beat();
   }
 
   /** Three lines: what was said, what is being said, and what is next.
@@ -414,29 +439,74 @@ export class MediaScreen {
    * ⚠️ Nothing at all when the file is unsynced. LRCLIB serves plain words
    * too, and pacing them by dividing the track's length by the line count is
    * an invention that is wrong from the second line on. */
-  private saying(at: number): HTMLElement | null {
-    if (!this.lines.length) return null;
-    const box = element("div", "media-words");
-    for (const which of ["is-back", "is-now", "is-next"]) {
-      box.append(element("p", `media-word ${which}`));
-    }
+  private saying(at: number): HTMLElement {
+    const open = this.lyricsOpen && this.lines.length > 0;
+    const box = element("div", `media-lyrics${open ? " is-open" : ""}`);
+    const scroll = element("div", "media-words");
+    for (const line of this.lines) scroll.append(element("p", "media-word", line.text));
+    /* ⚠️ The whole file is in the DOM and the window moves over it, rather
+     * than three slots being rewritten. Rewritten, every line arrives from
+     * nowhere and the words never appear to MOVE — which is the one thing
+     * that makes a lyric feel synced rather than merely correct. It is also
+     * what makes it scrollable: reading ahead is a wheel, not a feature. */
+    scroll.addEventListener("wheel", () => { this.scrolled = Date.now(); }, { passive: true });
+    scroll.addEventListener("pointerdown", () => { this.scrolled = Date.now(); });
+    box.append(scroll);
     this.lit = -2;
-    this.paintWords(box, at);
+    if (open) this.paintWords(scroll, at);
     return box;
   }
 
-  /** Written in PLACE, once a second — never rebuilt. See `tick`. */
-  private paintWords(box: HTMLElement, at: number) {
+  /** Written in PLACE — never rebuilt. See `beat` and `tick`. */
+  private paintWords(scroll: HTMLElement, at: number) {
     const index = lineAt(this.lines, at);
     if (index === this.lit) return;
     this.lit = index;
-    const parts = box.querySelectorAll<HTMLElement>(".media-word");
-    /* ⚠️ Before the first line there IS no current line, and that is not
-     * line zero: an intro of eight seconds would otherwise hold the first
-     * words up as if they were being sung over it. */
-    const said = [this.lines[index - 1], this.lines[index], this.lines[index + 1]];
-    parts.forEach((part, slot) => setText(part, said[slot]?.text ?? ""));
-    box.classList.toggle("is-waiting", index < 0);
+    const rows = [...scroll.children] as HTMLElement[];
+    rows.forEach((row, slot) => {
+      /* ⚠️ Distance, not a binary state. One class on the current line and
+       * nothing on the rest gives a wall of identical grey with one bright
+       * line in it; fading and blurring OUT from the middle is what makes the
+       * eye land where the voice is without being told to. */
+      const far = Math.min(4, Math.abs(slot - index));
+      row.style.setProperty("--far", String(far));
+      row.classList.toggle("is-now", slot === index);
+    });
+    /* ⚠️ Before the first line there is NO current line — not line zero. An
+     * intro of eight seconds would otherwise hold the first words up as if
+     * they were being sung over it. */
+    scroll.classList.toggle("is-waiting", index < 0);
+    const target = rows[Math.max(0, index)];
+    // Hands off for a moment after somebody scrolls it themselves.
+    if (!target || Date.now() - this.scrolled < 6000) return;
+    scroll.scrollTo({
+      top: target.offsetTop - (scroll.clientHeight - target.offsetHeight) / 2,
+      behavior: "smooth",
+    });
+  }
+
+  /** Wake exactly when the next line starts.
+   *
+   * ⚠️ A timer aimed at the line's own second, not a poll. The screen's
+   * tick is once a second, so a line landed up to a second late — which on a
+   * lyric is the difference between following the song and trailing it. The
+   * tick stays as the floor: a timer that fires late under load is caught by
+   * it within the second, and re-armed from the real position rather than
+   * from where the last one thought it was. */
+  private beat() {
+    window.clearTimeout(this.beating);
+    this.beating = 0;
+    if (!this.lyricsOpen || !this.lines.length) return;
+    const media = this.deps.source.media;
+    if (!media.active || !media.playing) return;
+    const at = this.deps.source.position();
+    const next = this.lines[lineAt(this.lines, at) + 1];
+    if (!next) return;
+    this.beating = window.setTimeout(() => {
+      const scroll = this.host.querySelector<HTMLElement>(".media-words");
+      if (scroll) this.paintWords(scroll, this.deps.source.position());
+      this.beat();
+    }, Math.max(30, (next.at - at) * 1000));
   }
 
   /** Ask for this track's lyrics. ⚠️ Never an error anybody sees: a song
@@ -457,6 +527,7 @@ export class MediaScreen {
       if (!worth(lines)) return;
       this.lines = lines;
       this.changed();
+      this.beat();
     } catch { /* nothing to show, which is the ordinary case */ }
   }
 
@@ -479,7 +550,7 @@ export class MediaScreen {
       fill.style.width = `${Math.max(0, Math.min(100, (at / media.duration) * 100))}%`;
     }
     const box = this.host.querySelector<HTMLElement>(".media-words");
-    if (box) this.paintWords(box, at);
+    if (box && this.lyricsOpen) this.paintWords(box, at);
   }
 
   /** The output picker, on the same grammar as the composer's chips. */
