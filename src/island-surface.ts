@@ -158,15 +158,22 @@ export class IslandSurface {
        * hover itself is one boolean over every reported rect, so without the
        * point there is no way to tell "the pointer is on the notch" from "the
        * pointer is on the circle parked beside it". */
-      await listen<{ hover: boolean; x: number; y: number }>("tasks:hover", e =>
-        this.hover(e.payload.hover && !this.onlyPassive(e.payload.x, e.payload.y)));
+      await listen<{ hover: boolean; x: number; y: number }>("tasks:hover", e => {
+        // The report subtracts the shell's own offset; put it back to compare.
+        const origin = box(this.shell);
+        this.hover(e.payload.hover
+          && !this.onPassive(e.payload.x + origin.x, e.payload.y + origin.y));
+      });
       await listen<{ edge: Edge }>("tasks:placement", e => { void this.place(e.payload.edge); });
       await listen("island:toggle", () => this.toggle());
       await listen<boolean>("chrome:hidden", e => this.setHidden(e.payload));
     } else {
       document.body.classList.add("preview");
+      /* ⚠️ The same two-part rule the native listener above follows, and it
+       * has to be: the preview is where every hover test runs, so a rule that
+       * lived only in the `native` branch would be a rule nothing checks. */
       document.addEventListener("pointermove", e =>
-        this.hover(this.masks.some(r =>
+        this.hover(!this.onPassive(e.clientX, e.clientY) && this.masks.some(r =>
           e.clientX >= r.x && e.clientX < r.x + r.width && e.clientY >= r.y && e.clientY < r.y + r.height)));
       document.documentElement.addEventListener("pointerleave", () => this.hover(false));
     }
@@ -705,6 +712,7 @@ export class IslandSurface {
     this.bubble.paint({
       x, y, width: g.width, height: g.height,
       edge: this.edge,
+      curl: g.curl,
       fold: Math.max(0, this.fold.value),
       gone: this.hidden || this.searching,
     });
@@ -837,15 +845,17 @@ export class IslandSurface {
     }
   }
 
-  /** Is the pointer on passive chrome and nothing else? */
-  private onlyPassive(x: number, y: number): boolean {
-    if (!this.passive.length) return false;
-    // The report subtracts the shell's own offset; put it back to compare.
-    const origin = box(this.shell);
-    const px = x + origin.x;
-    const py = y + origin.y;
-    const on = (r: { x: number; y: number; width: number; height: number }) =>
-      px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height;
-    return this.passive.some(on) && !this.masks.some(on);
+  /** Is the pointer on chrome that must not open the island? Viewport pixels.
+   *
+   * ⚠️ Passive WINS the overlap, rather than losing to it. The island's box
+   * runs a whole flare past its own silhouette, and the countdown is tucked
+   * into exactly that corner — so it sits inside the island's mask while
+   * sitting well outside the island's shape. A point on the circle must not
+   * open the panel merely because the notch's hover slack also reaches the
+   * empty corner the circle is parked in.
+   */
+  private onPassive(px: number, py: number): boolean {
+    return this.passive.some(r =>
+      px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height);
   }
 }

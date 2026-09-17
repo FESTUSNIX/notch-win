@@ -285,12 +285,22 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
   stroke-linecap:round; transform:rotate(-90deg); transform-origin:center;
   transition:stroke-dashoffset 1s linear; }
 .island-bubble.is-held .bub-ring .arc { stroke:#7a7a7a; }
-/* What is LEFT, in whole minutes — there is room for two characters. */
-.bub-mid { font-size:13.5px; font-weight:650; color:#ededed; line-height:1;
-  font-variant-numeric:tabular-nums;
+/* What is LEFT, in two rows: the minutes over the seconds.
+   ⚠️ Two rows and not one. A single row of whole minutes was ambiguous in
+   the last minute — "45" on a ring that is nearly round reads as forty-five of
+   them — and it was also STILL for a minute at a time, which is what a
+   countdown looks like when it has stopped. The seconds are the smaller and
+   quieter of the two: they are what says it is running, not what you read. */
+.bub-mid { display:flex; flex-direction:column; align-items:center;
+  font-weight:650; color:#ededed; line-height:1;
+  font-variant-numeric:tabular-nums; letter-spacing:-.2px;
   transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
+.bub-min { font-size:11px; font-style:normal; }
+.bub-sec { font-size:9px; font-style:normal; font-weight:600; color:#8c8c8c;
+  margin-top:1px; }
+.island-bubble.is-final .bub-sec { color:color-mix(in srgb, var(--accent) 70%, #000); }
 /* ⚠️ The last minute is TINTED, because the middle then holds seconds:
    "45" on a ring that is nearly round would otherwise read as 45 minutes. */
 .island-bubble.is-final .bub-mid { color:var(--accent); }
@@ -298,15 +308,18 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
    1, blur 4px to 0 — the same values the equaliser's mark uses.
    ⚠️ SMALLER than the circle on purpose: the ring around it is what opens
    the screen, and a centre button filling the whole face would mean every
-   press paused instead. */
-.bub-act { position:absolute; left:50%; top:50%; width:21px; height:21px;
+   press paused instead. The circle is 29px and this is 16, which leaves about
+   six pixels of ring — thin, and the right way round: a mis-hit pauses, which
+   costs one more press, rather than opening the panel over whatever you were
+   looking at. */
+.bub-act { position:absolute; left:50%; top:50%; width:16px; height:16px;
   translate:-50% -50%; display:grid; place-items:center; padding:0;
   border-radius:50%; color:#0b0b0b; background:var(--accent);
   opacity:0; scale:.25; filter:blur(4px); pointer-events:none;
   transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
-.bub-act svg { width:12px; height:12px; }
+.bub-act svg { width:10px; height:10px; }
 .island-bubble:hover .bub-mid,
 .island-bubble:focus-within .bub-mid { opacity:0; scale:.5; filter:blur(3px); }
 .island-bubble:hover .bub-act,

@@ -33,10 +33,15 @@ const RING = 106.81;
 export interface BubbleReading {
   /** 0..1 of the countdown that has gone, drawn as the ring. */
   through: number;
-  /** What the middle says at rest — whole minutes, or the seconds in the last
-   *  one. There is room for two characters and no more. */
-  text: string;
-  /** The last minute, which is tinted so "45" cannot be read as 45 minutes. */
+  /** Two rows, minutes over seconds. ⚠️ One row of whole minutes was
+   *  ambiguous in the last minute — "45" on a ring that is nearly round reads
+   *  as forty-five of them — and it also made the circle look stopped: the
+   *  only moving thing on a notch at rest should not sit still for a minute
+   *  at a time. The minutes are what you read; the seconds are what says it
+   *  is running. */
+  minutes: string;
+  seconds: string;
+  /** Under a minute, which tints the whole middle. */
   final: boolean;
   /** Paused, so the control offers to start it again. */
   held: boolean;
@@ -50,6 +55,12 @@ export interface BubbleFrame {
   width: number;
   height: number;
   edge: Edge;
+  /** The island's flare: how far back from the end of its BOX the shape's
+   *  free edge actually stops. ⚠️ The notch curls out to the bezel at each
+   *  end, so its box is a good deal longer than the silhouette — a gap
+   *  measured from the box is a gap plus a whole flare, which is what left
+   *  the circle floating half a notch away from the thing it came off. */
+  curl: number;
   /** 0 collapsed, 1 open. The bubble belongs to the collapsed pill. */
   fold: number;
   /** The island is away, or a search has taken its place. */
@@ -64,6 +75,8 @@ export class IslandBubble {
   private opener = element("button", "bub-open") as HTMLButtonElement;
   private act = element("button", "bub-act") as HTMLButtonElement;
   private mid = element("span", "bub-mid");
+  private big = element("b", "bub-min");
+  private small = element("i", "bub-sec");
   private arc: SVGCircleElement;
   private reading: BubbleReading | null = null;
   private drawn = "";
@@ -84,6 +97,7 @@ export class IslandBubble {
     }
     this.arc = svg.querySelector<SVGCircleElement>(".arc")!;
 
+    this.mid.append(this.big, this.small);
     this.opener.type = "button";
     this.opener.append(svg, this.mid);
     this.act.type = "button";
@@ -111,11 +125,12 @@ export class IslandBubble {
     /* Written in place and only when something changed: this is repainted
      * every second, and an element rebuilt every second can never be hovered,
      * focused or animated. Same rule the pill and the header chips follow. */
-    const key = [reading.text, reading.final, reading.held,
+    const key = [reading.minutes, reading.seconds, reading.final, reading.held,
       Math.round(reading.through * 400)].join("|");
     if (key === this.drawn) return;
     this.drawn = key;
-    this.mid.textContent = reading.text;
+    this.big.textContent = reading.minutes;
+    this.small.textContent = reading.seconds;
     this.element.classList.toggle("is-final", reading.final);
     this.element.classList.toggle("is-held", reading.held);
     const fraction = Math.max(0, Math.min(1, reading.through));
@@ -136,24 +151,30 @@ export class IslandBubble {
     this.element.hidden = !show;
     if (!show) return;
 
-    /* The notch's own depth, so the circle stands as tall as the thing it is
-     * parked beside — which is what makes it read as part of the same object
-     * rather than as a bubble that happens to be near one. */
-    const size = cpx(FRAME.islandPillThin);
-    const gap = cpx(FRAME.tailGap);
+    /* A shade under the notch's own depth. ⚠️ The proportion is the whole
+     * illusion: level along the free edge and slightly the smaller of the two,
+     * it reads as a piece torn off the notch's side — the notch's end cap is
+     * a half-round of exactly half its depth, so a circle near that size
+     * carries the same curve. Matching it exactly reads as a second notch;
+     * much smaller reads as a badge stuck on beside one. */
+    const size = Math.round(cpx(FRAME.islandPillThin) * 0.82);
+    const gap = 7;
     const vertical = isVertical(frame.edge);
     let left: number;
     let top: number;
+    /* ⚠️ Level with the island's FREE edge — the one away from the bezel —
+     * and set in from the end of the box by the flare, so the gap is measured
+     * from the shape rather than from the empty corner the flare leaves
+     * behind. Pinned to that edge rather than centred on the box, because the
+     * box grows as the panel opens and a bubble centred on it slides down the
+     * side of the panel while it fades: a control that drifts as it goes is
+     * one the eye follows instead of ignoring. */
     if (vertical) {
-      top = frame.y + frame.height + gap;
-      left = frame.edge === "left" ? frame.x : frame.x + frame.width - size;
+      top = frame.y + frame.height - frame.curl + gap;
+      left = frame.edge === "left" ? frame.x + frame.width - size : frame.x;
     } else {
-      left = frame.x + frame.width + gap;
-      /* ⚠️ Pinned to the BEZEL end of the island, not centred on its box. The
-       * box grows as the panel opens, and a bubble centred on it slides down
-       * the side of the panel while it fades — a control that drifts while it
-       * goes is one the eye follows instead of ignoring. */
-      top = frame.edge === "top" ? frame.y : frame.y + frame.height - size;
+      left = frame.x + frame.width - frame.curl + gap;
+      top = frame.edge === "top" ? frame.y + frame.height - size : frame.y;
     }
     Object.assign(this.element.style, {
       left: `${left}px`,

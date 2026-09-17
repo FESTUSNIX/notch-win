@@ -27,9 +27,10 @@
     eases onto one when you let go, the ends give rather than stopping dead,
     and the mark under the arrow lights white. Full width: the fade is a mask
     on the dial, not an opacity written onto 242 ticks every frame.
-  - **Collapsed**: a plain timer is a circle parked beside the notch — the
-    ring is what is left, the middle is the minutes, and under the pointer it
-    becomes pause/resume. Pressing the ring opens the screen. ⚠️ It is
+  - **Collapsed**: a plain timer is a circle torn off the notch's side —
+    level with its bottom, a shade smaller, tucked into the flare. The ring is
+    how far through, the middle is the minutes over the seconds, and under the
+    pointer it becomes pause/resume. Pressing the ring opens the screen. ⚠️ It is
     reported as a PASSIVE rect: clickable, and not a thing you open the island
     by pointing at. A pomodoro still takes the strip, with the countdown as
     the biggest thing on it.
@@ -52,7 +53,11 @@
         and wrong for a value you are aiming at — the release would routinely
         land ten minutes past the one you stopped on.
   - [ ] The bubble's middle is the only pause, so the ring around it is the
-        only way to open the screen. That annulus is about seven pixels wide.
+        only way to open the screen. That annulus is about six pixels wide —
+        the right way round (a mis-hit pauses, which costs one press, rather
+        than opening the panel over what you were looking at) but still thin.
+        Two actions on a 29px control is one too many; if it annoys, the
+        circle should just open the screen and the pause should go.
   - [ ] Nothing counts down beside the notch on a vertical edge unless the
         island has room below it; it is placed there, untested on a real
         side-mounted display.

@@ -665,9 +665,11 @@ function timerClaim(): Activity | null {
 
 /** The plain timer, as a circle beside the notch.
  *
- * ⚠️ Whole minutes, because there is room for two characters. The seconds
- * are shown in the last minute only, and TINTED there — "45" on a ring that
- * is nearly round would otherwise read as forty-five minutes. */
+ * ⚠️ Two rows, minutes over seconds. One row of whole minutes was both
+ * ambiguous in the last minute — "45" reads as forty-five of them — and
+ * STILL: the only moving thing on a resting notch should not sit unchanged
+ * for a minute at a time, which is what a countdown looks like when it has
+ * stopped. Padded, so neither row changes width under the other. */
 function paintBubble() {
   const state = timer.state;
   if (!state || state.phase !== "plain") {
@@ -675,11 +677,11 @@ function paintBubble() {
     return;
   }
   const seconds = timer.seconds();
-  const final = seconds < 60;
   surface.setCountdown({
     through: timer.through(),
-    text: final ? String(seconds) : String(Math.ceil(seconds / 60)),
-    final,
+    minutes: String(Math.floor(seconds / 60)).padStart(2, "0"),
+    seconds: String(seconds % 60).padStart(2, "0"),
+    final: seconds < 60,
     held: state.endsAt === null,
     label: `Timer — ${timerText(seconds)} left`,
   });

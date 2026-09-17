@@ -354,12 +354,27 @@ test("a plain timer parks beside the notch instead of taking the strip", async (
       const r = document.querySelector(one)!.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     }));
-  // Beside the notch, clear of it, round, and as tall as it.
-  expect(circle.x).toBeGreaterThan(notch.x + notch.width);
-  expect(Math.round(circle.height)).toBe(Math.round(notch.height));
+  /* Beside the notch and round. ⚠️ Clear of the SILHOUETTE, not of the box:
+   * the notch flares back out to the bezel at each end, so its box runs a good
+   * deal past the shape, and a gap measured from the box is a gap plus a whole
+   * flare — which left the circle floating half a notch from the thing it is
+   * supposed to have come off. */
+  expect(circle.x).toBeGreaterThan(notch.x + notch.width * 0.9);
+  expect(circle.x).toBeLessThan(notch.x + notch.width);
   expect(Math.round(circle.width)).toBe(Math.round(circle.height));
-  // Whole minutes: there is room for two characters and no more.
-  await expect(bubble.locator(".bub-mid")).toHaveText(/^\d{1,2}$/);
+  /* Two rows, minutes over seconds. ⚠️ The seconds are not decoration: one
+   * row of whole minutes was ambiguous in the last minute, and it also sat
+   * unchanged for a minute at a time — which is what a countdown looks like
+   * when it has stopped. */
+  await expect(bubble.locator(".bub-min")).toHaveText(/^\d\d$/);
+  await expect(bubble.locator(".bub-sec")).toHaveText(/^\d\d$/);
+
+  /* ⚠️ Level along the island's free edge and slightly the smaller of the
+   * two, which is what makes it read as a piece torn off the notch's side
+   * rather than a badge stuck on beside one. */
+  expect(Math.abs((circle.y + circle.height) - (notch.y + notch.height))).toBeLessThan(1);
+  expect(circle.height).toBeLessThan(notch.height);
+  expect(circle.height).toBeGreaterThan(notch.height * 0.7);
 
   /* The middle is the pause. ⚠️ And pressing it must NOT open the island:
    * it sits on the button that does, so without a stopped press the only way
@@ -372,7 +387,7 @@ test("a plain timer parks beside the notch instead of taking the strip", async (
 
   /* And the ring around it opens the screen. ⚠️ Off centre on purpose —
    * the middle of this button is the pause. */
-  await page.locator(".bub-open").click({ position: { x: 4, y: circle.height / 2 } });
+  await page.locator(".bub-open").click({ position: { x: 2, y: circle.height / 2 } });
   await expect(page.locator("#island-expanded")).toBeVisible();
   await expect(page.locator("#island-where")).toHaveText("Timer");
 });

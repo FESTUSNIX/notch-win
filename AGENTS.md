@@ -3193,3 +3193,23 @@ The two halves were the same fault.
      built to escape it. Two lists: `masks` open the island, `passive` only
      make the window clickable. The `tasks:hover` payload has carried the
      pointer's x/y all along, which is what makes the two answerable apart.
+477. ⚠️ **The notch's BOX is a whole flare longer than its shape.** It curls
+     back out to the bezel at each end, so anything spaced off `x + width`
+     is spaced off an empty corner: the countdown parked a gap plus a flare
+     away and read as a bubble that happened to be near the notch rather than
+     one torn off its side. Measure from `width - curl`, and level the circle
+     with the island's FREE edge — the one away from the bezel.
+478. ⚠️ **A passive rect that overlaps a mask has to WIN the overlap.** Tucked
+     into the flare's corner the countdown sits inside the island's hover box
+     while sitting well outside the island's shape, so "on a mask and not on a
+     passive rect" opened the panel the moment you reached for the circle —
+     the same failure the passive list was added to prevent, one geometry
+     change later. And the rule has to be written in BOTH hover paths: the
+     preview's `pointermove` is where every hover test runs, so a rule living
+     only in the `native` branch is a rule nothing checks.
+479. ⚠️ **One number that only changes once a minute looks stopped.** The
+     circle showed whole minutes, which on a resting notch is the only moving
+     thing on screen sitting still for sixty seconds at a time — and "45" in
+     the last minute read as forty-five of them. Two rows, minutes over
+     seconds, the seconds smaller and quieter: what you read, and what says it
+     is running.
