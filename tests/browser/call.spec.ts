@@ -18,7 +18,14 @@ test("a call takes the strip's sides and leaves the clock where it was", async (
   await page.goto("/tasks.html?quiet&click");
   const collapsed = page.locator("#island-collapsed");
   await expect(collapsed).toHaveAttribute("data-kind", "clock");
-  const resting = await page.locator(".pill-clock").textContent();
+  /* ⚠️ The SHAPE of the resting clock, not the string it happened to show.
+   * This compared the text across two page loads for a while, which fails
+   * whenever the minute rolls between them — about once an hour, in a suite
+   * that takes five minutes, which looks exactly like an intermittent bug in
+   * the pill and is a bug in the test. */
+  const looksLikeAClock = /^\d?\d:\d\d$/;
+  expect((await page.locator(".pill-clock").textContent())!.trim())
+    .toMatch(looksLikeAClock);
 
   await page.goto("/tasks.html?call&quiet&click");
   await expect(collapsed).toHaveAttribute("data-kind", "call");
@@ -27,7 +34,18 @@ test("a call takes the strip's sides and leaves the clock where it was", async (
    * minutes, and a notch that could not tell you the time for forty minutes
    * would be trading the thing you look at it for against a title you already
    * know. */
-  await expect(page.locator(".pill-clock")).toHaveText(resting!.trim());
+  expect((await page.locator(".pill-clock").textContent())!.trim())
+    .toMatch(looksLikeAClock);
+  /* And it is the WALL clock rather than anything the call made up: the same
+   * minute the page itself is in. */
+  const both = await page.evaluate(() => {
+    const now = new Date();
+    return {
+      shown: document.querySelector(".pill-clock")!.textContent!.trim(),
+      minute: `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`,
+    };
+  });
+  expect(both.shown).toBe(both.minute);
   /* And it is in the same PLACE, not merely present: both layouts are
    * `1fr auto 1fr` so the digits do not slide sideways when a call starts. */
   const middle = await page.evaluate(() => {

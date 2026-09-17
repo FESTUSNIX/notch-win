@@ -560,6 +560,7 @@ pub fn run() {
             ring::ring_close,
             notices::get_notices,
             notices::notice_dismiss,
+            notices::notice_open,
             notify::notify_now,
             media::media_seek,
             audio::get_audio_devices,

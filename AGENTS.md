@@ -2992,3 +2992,38 @@ The two halves were the same fault.
      the hand is accurate and the advantage of a radial menu — aim rather than
      read — is gone. What does not fit belongs in the palette, which is what
      the middle of the ring opens.
+439. ⚠️ **`AppDisplayInfo::GetLogo` only answers for a PACKAGED app.** Measured
+     on a real notification centre: 7 of 48 notifications carried a logo and
+     the other 41 — every desktop app on the machine — came back empty. A list
+     where six rows in seven have no mark is a list you cannot skim, which is
+     most of what the icon is for. Three places to look, in order: the WinRT
+     logo, then `IconUri` under `HKCU\Software\Classes\AppUserModelId\<id>`
+     (what an app writes when it registers its own toasts), then the Start Menu
+     entry with the same display name. That took it to 47 of 48.
+440. ⚠️ **A notification cannot be activated from outside.** `UserNotification`
+     has no method for it, so the only quick action available is the app's
+     AUMID through `shell:AppsFolder\<id>` — which opens Slack, never the
+     thread. Reply and snooze belong to the notification's own actions and are
+     not exposed at all. Name the button for what it does.
+441. ⚠️ **A control that is hidden when idle is a control with no way in.** The
+     timer chip appeared only while something was counting, so the only way to
+     start a pomodoro was to already know the palette command. Something that
+     can only be reached by knowing about it is a feature nobody uses. Idle it
+     is a bare glyph and a door; running it is the readout.
+442. ⚠️ **One press, one meaning.** The chip briefly paused a running countdown
+     and did nothing otherwise — two controls wearing one hat, where which one
+     you get depends on a state you may not have looked at. It opens the screen
+     either way now, and the screen carries pause, stop and the presets with
+     room to label them.
+443. ⚠️ **A patch script that inserts after an anchor is not idempotent**, and
+     a failed run half-way down means the next run re-applies everything above
+     the failure. Two runs put `| "timer"` in the union twice and the screen in
+     the list twice — which compiles, and quietly gives the rail a duplicate
+     stop. Check the count after any re-run of a partially applied script.
+444. ⚠️ **Never compare a CLOCK's text across two page loads.** A test captured
+     the resting pill's time, reloaded with a call staged, and asserted the two
+     strings matched. They do match — except when the minute rolls between the
+     loads, which in a five-minute suite happens about once an hour and reads
+     exactly like an intermittent bug in the pill. Assert the shape, and assert
+     it against the page's own `new Date()` if you want to know it is the wall
+     clock.

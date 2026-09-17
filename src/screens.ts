@@ -30,6 +30,9 @@ export const SCREENS: ScreenDef[] = [
    * header is how you reach it. The rail is for places you go on purpose; a
    * notification is something that happened to you. */
   { name: "notices", icon: "bell", label: "Notices" },
+  /* ⚠️ Off the rail unless you put it there, like the notices — the chip in
+   * the header is how you reach it, and it is always there. */
+  { name: "timer", icon: "timer", label: "Timer" },
   { name: "today", icon: "today", label: "Today" },
   /* ⚠️ The player's stop exists only while something is playing. */
   { name: "media", icon: "media", label: "Playing" },

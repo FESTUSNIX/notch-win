@@ -31,6 +31,7 @@ import { MediaScreen, MediaSource } from "./screen-media";
  * working in. That join is the whole feature. */
 import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
+import { TimerScreen } from "./screen-timer";
 import { DEFAULT_LENGTHS, Timer, phaseName, spokenEnd } from "./timer";
 import { timerText } from "./focus-timer";
 import { NotesScreen } from "./screen-notes";
@@ -88,8 +89,14 @@ const WIDTH: Record<ScreenName, number> = {
    * as the controls and no wider — a full-width island with six buttons
    * huddled in the middle reads as a window somebody left open. */
   call: 1180,
-  // Rows of prose somebody else wrote, so the same measure as the notes.
-  notices: 1560,
+  /* A clock, two buttons and a row of presets. Nothing here wants width. */
+  timer: 1040,
+  /* ⚠️ NARROW, and narrower than anything else here. A notification is a
+   * glance, not a document: at the notes screen's width the title, the app and
+   * the time sit so far apart that the eye has to travel between three things
+   * that belong together. This is about 540 CSS px — roughly what Windows
+   * gives the notification itself. */
+  notices: 1130,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -150,6 +157,7 @@ app.innerHTML = `<div id="notch-shell">
       <div class="screens">
         <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
+        <section class="screen" data-screen="timer" role="tabpanel" aria-label="Timer" hidden><div class="screen-body timer-body spans" id="timer-body"></div></section>
         <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
         <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
@@ -311,6 +319,7 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
+const timerScreen = new TimerScreen(get("timer-body"), timer, () => lengths());
 const review = new ReviewScreen(get("review-body"), { today, calendar });
 const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
 
@@ -367,6 +376,7 @@ function stops(): RailStop[] {
        * see the note on TABS. It is still reorderable and switchable in
        * settings like every other screen, and still in the palette. */
       || (tab.name === "notices" && screen !== "notices" && !prefs.railOrder.includes("notices"))
+      || (tab.name === "timer" && screen !== "timer" && !prefs.railOrder.includes("timer"))
       || (tab.name !== "home" && prefs.railHidden.includes(tab.name)),
   })).sort((a, b) => rank(a.name as ScreenName) - rank(b.name as ScreenName));
 }
@@ -571,10 +581,36 @@ function noticeClaim(): Activity | null {
   };
 }
 
+/** The countdown, on the collapsed strip.
+ *
+ * ⚠️ 42: over whatever is playing, under a focus session on a task (45) and
+ * well under a call. A countdown you started is more live than music and less
+ * live than the meeting you are in — and the one thing it must never do is
+ * take the strip from the mute button.
+ *
+ * ⚠️ A PAUSED one still claims it. A countdown you paused and then could not
+ * see is one you forget to start again, which is the failure the whole thing
+ * exists to avoid; it says "paused" rather than hiding.
+ */
+function timerClaim(): Activity | null {
+  const state = timer.state;
+  if (!state) return null;
+  return {
+    priority: 42,
+    screen: "timer",
+    kind: "focus",
+    icon: "timer",
+    label: phaseName(state),
+    value: timerText(timer.seconds()) + (state.endsAt === null ? " paused" : ""),
+    progress: timer.through(),
+  };
+}
+
 function claims(): (Activity | null)[] {
   return [
     noticeClaim(),
     callSource.activity(),
+    timerClaim(),
     agentsScreen.activity(),
     system.activity(),
     today.activity(),
@@ -627,21 +663,29 @@ function paintHead() {
   if (key === headDrawn) return;
   headDrawn = key;
 
+  /* ⚠️ ALWAYS on screen, running or not. Hidden when idle, it was a control
+   * with no way in: the only way to start a pomodoro was to know the palette
+   * command, and a feature you have to be told about is one nobody uses. Idle
+   * it is a bare glyph — a door to the screen; running it is the countdown.
+   *
+   * ⚠️ Written in place, not rebuilt: this changes every second, and a chip
+   * rebuilt every second can never be hovered, focused or animated. */
   const chip = get<HTMLButtonElement>("head-timer");
-  chip.hidden = !running;
+  chip.hidden = false;
+  const { mark, text } = chipParts(chip, "head-text");
+  paintIcon(mark, "timer");
+  chip.dataset.phase = running?.phase ?? "";
+  chip.classList.toggle("is-held", !!running && running.endsAt === null);
+  chip.classList.toggle("is-idle", !running);
   if (running) {
     const left = timerText(timer.seconds());
-    chip.dataset.phase = running.phase;
-    chip.classList.toggle("is-held", running.endsAt === null);
-    /* ⚠️ Written in place, not rebuilt: this changes every second, and a
-     * chip rebuilt every second can never be hovered, focused or animated. */
-    const { mark, text } = chipParts(chip, "head-text");
-    paintIcon(mark, "timer");
     text.textContent = left;
     chip.setAttribute("aria-label", `${phaseName(running)} — ${left} left`);
-    chip.setAttribute("data-tip", running.endsAt === null
-      ? `${phaseName(running)} paused — press to carry on`
-      : `${phaseName(running)} — press to pause`);
+    chip.setAttribute("data-tip", `${phaseName(running)} — ${left} left`);
+  } else {
+    text.textContent = "";
+    chip.setAttribute("aria-label", "Timer");
+    chip.setAttribute("data-tip", "Timer and pomodoro");
   }
 
   const bell = get<HTMLButtonElement>("head-bell");
@@ -697,6 +741,7 @@ function render() {
   player.render();
   callScreen.render();
   notices.render();
+  timerScreen.render();
   paintHead();
   /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
    * handle is the call ending while you are LOOKING at it, which would leave
@@ -1312,10 +1357,12 @@ collapsedLayer.addEventListener("click", event => {
 }, true);
 
 get("head-bell").addEventListener("click", () => show("notices"));
-/* ⚠️ Press to PAUSE, not to stop. Stopping is in the palette, where a
- * destructive verb belongs — a countdown you cannot get back is a bad thing to
- * put under the same press that pauses it. */
-get("head-timer").addEventListener("click", () => timer.toggle());
+/* ⚠️ The chip OPENS the screen; it does not pause. One press, one meaning,
+ * whether or not something is running — a button that pauses when there is a
+ * countdown and starts one when there is not is two controls wearing one hat,
+ * and which you get depends on a state you may not have looked at. Pause, stop
+ * and the presets are on the screen, where they have room to be labelled. */
+get("head-timer").addEventListener("click", () => show("timer"));
 
 /* The call's own controls, in click mode. ⚠️ Capturing, and the press must
  * not reach the pill underneath — muting must not also open the island, which
@@ -1735,6 +1782,7 @@ async function boot() {
     agentsScreen.tick();
     callScreen.tick();
     notices.tick();
+    timerScreen.tick();
     /* The countdown, once a second. ⚠️ `tick` returns whether a phase ENDED,
      * which needs the whole shell redrawn — the chip alone would leave the
      * rail and the palette holding a timer that has finished. */

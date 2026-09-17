@@ -52,12 +52,12 @@ let demoNotices = {
   // Present and not a refusal. (`?notices` alone parses as an empty string.)
   items: noticeFlag !== null && noticeFlag !== "denied" ? [
     {id:1, app:"Slack", title:"Marek Nowak", body:"Can you look at the PR before standup?",
-     at:Date.now() - 90_000},
-    {id:2, app:"Outlook", title:"Design Sync in 15 minutes", body:"Teams meeting", at:Date.now() - 12 * 60_000},
+     at:Date.now() - 90_000, icon:"", aumid:"com.slack"},
+    {id:2, app:"Outlook", title:"Design Sync in 15 minutes", body:"Teams meeting", at:Date.now() - 12 * 60_000, icon:"", aumid:"com.outlook"},
     {id:3, app:"Codenotch", title:"akcesfonia stopped", body:"Claude Code ran for 21m 10s.",
-     at:Date.now() - 55 * 60_000},
+     at:Date.now() - 55 * 60_000, icon:"", aumid:"com.vinz.codenotch"},
     {id:4, app:"Brave", title:"Norton Password Manager", body:"Vault is synced and ready!",
-     at:Date.now() - 5 * 3_600_000},
+     at:Date.now() - 5 * 3_600_000, icon:"", aumid:"Brave"},
   ] : [],
 };
 let demoDevices = [
@@ -177,7 +177,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
       items: id === undefined ? [] : demoNotices.items.filter(one => one.id !== id)};
     return structuredClone(demoNotices) as T;
   }
-  if (command === "notify_now") return true as T;
+  if (command === "notify_now" || command === "notice_open") return true as T;
   if (command === "call_action") {
     const action = String(args.action ?? "");
     /* Only the mute changes anything the preview can show, which is the honest

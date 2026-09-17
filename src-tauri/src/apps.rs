@@ -288,6 +288,16 @@ pub fn scan() -> Vec<App> {
         .collect()
 }
 
+/// What has already been indexed, or nothing.
+///
+/// ⚠️ Never BUILDS the index — that is a shell call per shortcut and about
+/// 1.7s. A caller that wants an icon for a notification would rather have no
+/// icon than stall the poll behind a Start Menu walk, and the list warms on
+/// its own at launch.
+pub fn known() -> Vec<App> {
+    cache().lock().ok().and_then(|held| held.clone()).unwrap_or_default()
+}
+
 /// Build it if it is not built, and hand back what there is.
 pub fn warm() {
     let apps = scan();

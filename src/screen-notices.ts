@@ -24,6 +24,10 @@ export interface Notice {
   body: string;
   /** Unix ms. */
   at: number;
+  /** The app's own logo as a data URI, or empty. */
+  icon: string;
+  /** The app's model id, which is what can open it again. */
+  aumid: string;
 }
 
 export interface Notices {
@@ -79,6 +83,20 @@ export class NoticeSource {
 
   get count(): number {
     return this.notices.items.length;
+  }
+
+  /** Bring the app that raised one to the front.
+   *
+   * ⚠️ The APP, not the conversation. A notification carries no way to
+   * activate itself from outside — `UserNotification` has no such method — so
+   * this opens Slack, never the thread. The button is named for what it does.
+   */
+  open(id: number) {
+    this.error = "";
+    void call("notice_open", { id }).catch(error => {
+      const why = String(error).replace(/^invoke error: /i, "");
+      this.say("Notifications", why.slice(0, 120));
+    });
   }
 
   /** Dismiss one, or every one of them. */
@@ -139,6 +157,21 @@ export class NoticesScreen {
       this.host.append(element("p", "home-empty", whyEmpty(notices.access)));
       return;
     }
+
+    /* ⚠️ A button here as well as on the arc. The arc is where a screen's
+     * tools live and that is still true — but "clear all" is the one thing you
+     * come to this screen to do when there are fifty of them, and a control
+     * you have to reach for a bare line to find is one you do not know is
+     * there. */
+    const bar = element("div", "notice-bar");
+    bar.append(element("span", "notice-count",
+      `${notices.items.length} notification${notices.items.length === 1 ? "" : "s"}`));
+    const all = element("button", "notice-all", "Clear all");
+    (all as HTMLButtonElement).type = "button";
+    all.onclick = () => this.source.clear();
+    bar.append(all);
+    this.host.append(bar);
+
     for (const notice of notices.items) {
       this.host.append(this.row(notice));
     }
@@ -148,28 +181,48 @@ export class NoticesScreen {
     const row = element("div", "notice-row");
     row.dataset.notice = String(notice.id);
 
-    const mark = element("div", "notice-mark");
-    paintIcon(mark, "bell");
+    /* The app's own logo, and a letter when Windows has none. \u26a0\ufe0f A LETTER,
+     * not a generic bell: the mark is how a list of forty is skimmed, and
+     * forty identical bells is a list with no marks at all. Measured on a real
+     * centre, 47 of 48 do have a logo \u2014 see `notices.rs` for the three places
+     * it is looked for. */
+    const plinth = element("div", "notice-mark");
+    if (notice.icon) {
+      const art = element("img", "notice-logo") as HTMLImageElement;
+      art.src = notice.icon;
+      art.alt = "";
+      plinth.append(art);
+    } else {
+      plinth.classList.add("is-letter");
+      plinth.textContent = (notice.app || notice.title || "?").trim().charAt(0).toUpperCase();
+    }
 
-    const copy = element("div", "notice-copy");
+    /* The whole card opens the app; the \u00d7 dismisses it. \u26a0\ufe0f Two SIBLING
+     * buttons, never one inside the other \u2014 a nested button is invalid and
+     * the inner one stops being reachable by keyboard. */
+    const open = element("button", "notice-open");
+    (open as HTMLButtonElement).type = "button";
+    open.setAttribute("data-tip", notice.app ? `Open ${notice.app}` : "Open the app");
+    open.onclick = () => this.source.open(notice.id);
+
     const head = element("div", "notice-head");
     head.append(
       element("b", "notice-title", notice.title || notice.app || "Notification"),
       element("span", "notice-when", ago(notice.at)),
     );
-    copy.append(head);
-    if (notice.body) copy.append(element("p", "notice-body", notice.body));
-    // The app goes last and small: it is how you skim the list, not what it says.
-    if (notice.app) copy.append(element("span", "notice-app", notice.app));
+    open.append(head);
+    // The app, then what it said \u2014 the order the notification itself uses.
+    if (notice.app) open.append(element("span", "notice-app", notice.app));
+    if (notice.body) open.append(element("p", "notice-body", notice.body));
 
     const shut = element("button", "notice-shut");
     (shut as HTMLButtonElement).type = "button";
     shut.setAttribute("aria-label", `Dismiss ${notice.title || notice.app}`);
-    shut.setAttribute("data-tip", "Dismiss — this removes it from Windows too");
+    shut.setAttribute("data-tip", "Dismiss \u2014 this removes it from Windows too");
     paintIcon(shut, "close");
     shut.onclick = () => this.source.clear(notice.id);
 
-    row.append(mark, copy, shut);
+    row.append(plinth, open, shut);
     return row;
   }
 

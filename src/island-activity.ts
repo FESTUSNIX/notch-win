@@ -24,6 +24,8 @@ export type ScreenName =
   | "call"
   /** Windows' own notification centre, mirrored. */
   | "notices"
+  /** The pomodoro, and whatever else is counting down. */
+  | "timer"
   /** ⚠️ Real, but its tab is only on screen while something is playing — see
    *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
    *  that is not there. */

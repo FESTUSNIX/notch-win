@@ -7,15 +7,27 @@
   Notices screen with a bell in the header. ⚠️ A MIRROR: dismissing one here
   dismisses it there, and nothing is kept on disk. The header shows a count and
   never a word of content.
-  - [ ] No quick actions yet beyond dismiss and clear — no reply, no snooze,
-        and no opening the app that sent it.
-  - [ ] No app icons on the rows; the app's NAME is the only mark. `AppInfo`
-        can give a logo and that is the obvious next thing.
-  - [ ] A 4s poll, so a toast takes up to four seconds to land on the screen.
-- ~~Pomodoro widget~~ — **done**, in the header beside the bell, with a plain
-  countdown in the same chip (`timer 12` in the palette). Lengths in Settings.
-  - [ ] It does not claim the collapsed pill, so a running pomodoro is only
-        visible with the island open. Deliberate for now — the pill is busy.
+  Cards with the app's own logo, the title, the app and two lines of body — the
+  shape the notification had when it flew past. Dismiss, clear all, and pressing
+  a card opens the app it came from.
+  - [ ] ⚠️ **Reply and snooze are not possible.** A notification cannot be
+        activated from outside — `UserNotification` has no method for it — so
+        the only handle is the app's AUMID, which opens Slack and never the
+        thread. Those actions live in the notification's own buttons, which
+        Windows does not expose.
+  - [ ] The poll is 1.5s now, not 4. Instant would need `NotificationChanged`,
+        which is documented as needing a background-task registration a desktop
+        app cannot make.
+  - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
+        key, the Start Menu) and falls back to a letter tile.
+- ~~Pomodoro widget~~ — **done**. A chip in the header that is always there
+  (idle it is a door, running it is the countdown), its own screen with start,
+  pause, stop and five presets, and a claim on the collapsed pill at priority
+  42 so it is readable with the panel shut. Lengths in Settings; `timer 12` in
+  the palette.
+  - [ ] The lengths are only in Settings, deliberately — one settings window.
+        The screen says where they are rather than being a second place.
+  - [ ] No sound when one ends, only a toast and the pill.
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than
@@ -46,28 +58,10 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
+- Improve: Context awareness for the notch. It's aware of what we are doing (call, timer/pomodoro, music/media etc.), we can use that even better to open up (expand) the notch on the correct screen isntead of opening it on home screen every time
+
 - Feature (media): live lyrics sync using LRCLIB
-- ~~Feature: In call mode with controls~~ — **done**. The microphone is the
-  signal: an app with an active capture session is in a call, which is the same
-  fact Windows draws its own microphone glyph for. Collapsed, the strip keeps
-  the clock and gains mute + hang up; expanded, it is the call with its own
-  screen. Zoom, Teams, Meet, WhatsApp — and Discord and Slack, which the table
-  gave away for free.
-  - [ ] Controls are the apps' own keyboard shortcuts, so the call window comes
-        forward for an instant when you press one. There is no other mechanism:
-        `PostMessage` does not reach a Chromium or WebView2 window. AGENTS 413.
-  - [ ] **Google Meet cannot be hung up from the keyboard** and WhatsApp
-        publishes no in-call shortcuts at all, so neither offers those buttons.
-        The microphone is still cut for both, which is what the mute mostly is.
-  - [ ] No participant count, and there cannot be one: nothing on Windows says
-        how many people are in a meeting. The elapsed time is in that slot.
-  - [ ] Nothing reads back whether the APP thinks it is muted — no API does.
-        The mute presses both the app's button and the microphone endpoint, so
-        the state shown is the endpoint's, which is the one that is true.
-  - [ ] Detection is a 1.5s poll, so joining shows up a beat late.
-  - [ ] Only tested against a capture stream this repo opens itself (AGENTS
-        412). The app table, the window titles and every keystroke are
-        unexercised until a real meeting.
+
 - Feature (media): Add volume mixer. Control volume per app
 
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
@@ -115,6 +109,12 @@ until the answer arrives as a `tool_result`.
   shelf ID — not Tauri's asset protocol, which would have handed the WebView
   the disk. Asked once per file per modification time, and a file the shell
   has nothing for keeps its glyph.
+- ~~Feature: In call mode with controls~~ — **done**. The microphone is the
+  signal: an app with an active capture session is in a call, which is the same
+  fact Windows draws its own microphone glyph for. Collapsed, the strip keeps
+  the clock and gains mute + hang up; expanded, it is the call with its own
+  screen. Zoom, Teams, Meet, WhatsApp — and Discord and Slack, which the table
+  gave away for free.
 
 ---
 

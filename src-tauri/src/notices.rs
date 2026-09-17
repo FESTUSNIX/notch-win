@@ -36,12 +36,15 @@ use crate::media::block;
 
 /// How often the centre is re-read.
 ///
-/// ⚠️ Four seconds, and the cost is not the read: it is that a toast arriving
-/// while you are looking at the screen takes up to four seconds to appear.
-/// `NotificationChanged` would be instant and is documented as needing a
-/// background task registration a desktop app has no way to make, so this is
-/// the honest trade rather than the lazy one.
-const POLL: Duration = Duration::from_secs(4);
+/// ⚠️ A second and a half, not four seconds, and the cost of the shorter
+/// interval is almost nothing: the ids come back cheap and the TEXT of a
+/// notification is read once and cached for as long as it is in the centre —
+/// see `read`. What the interval buys is how long a toast takes to appear on
+/// the screen while you are looking at it, and four seconds of that is long
+/// enough to look like a bug. `NotificationChanged` would be instant and is
+/// documented as needing a background-task registration a desktop app cannot
+/// make.
+const POLL: Duration = Duration::from_millis(1500);
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +57,13 @@ pub struct Notice {
     pub body: String,
     /// Unix milliseconds.
     pub at: i64,
+    /// The app's own icon as a `data:` URI, or empty when Windows has none for
+    /// it. ⚠️ Read ONCE per app and cached: it is the same picture for every
+    /// notification that app ever raises, and decoding it per row per poll
+    /// would be a stream opened forty times a second.
+    pub icon: String,
+    /// The app's model id, which is the only thing that can launch it again.
+    pub aumid: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -131,13 +141,114 @@ fn words(notification: &windows::UI::Notifications::UserNotification) -> (String
     (title, lines.join(" — "))
 }
 
-fn app_name(notification: &windows::UI::Notifications::UserNotification) -> String {
-    notification
-        .AppInfo()
-        .and_then(|info| info.DisplayInfo())
-        .and_then(|display| display.DisplayName())
-        .map(|name| name.to_string())
-        .unwrap_or_default()
+/// What the app is called, its model id, and its logo.
+fn about_app(notification: &windows::UI::Notifications::UserNotification) -> (String, String, String) {
+    let Ok(info) = notification.AppInfo() else {
+        return (String::new(), String::new(), String::new());
+    };
+    let aumid = info.AppUserModelId().map(|id| id.to_string()).unwrap_or_default();
+    let Ok(display) = info.DisplayInfo() else { return (String::new(), aumid, String::new()) };
+    let name = display.DisplayName().map(|name| name.to_string()).unwrap_or_default();
+    let icon = logo(&display, &aumid, &name);
+    (name, aumid, icon)
+}
+
+/// The app's logo, remembered by model id.
+///
+/// ⚠️ Cached for the life of the process and keyed on the AUMID rather than
+/// on the notification: it is the same picture every time that app speaks, and
+/// a stream opened, drained and base64'd per row per poll is real work for a
+/// picture that has not changed since the app was installed.
+fn logo(display: &windows::ApplicationModel::AppDisplayInfo, aumid: &str, name: &str) -> String {
+    static HELD: std::sync::OnceLock<Mutex<HashMap<String, String>>> = std::sync::OnceLock::new();
+    let cache = HELD.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(found) = cache.lock().ok().and_then(|held| held.get(aumid).cloned()) {
+        return found;
+    }
+    /* ⚠️ THREE places to look, because `GetLogo` only answers for a PACKAGED
+     * app. Measured on a real centre: 7 of 48 notifications carried one, and
+     * the other 41 — every desktop app on the machine — came back empty. A
+     * notification list where six rows in seven have no mark is a list you
+     * cannot skim, which is most of what the icon is for. */
+    let made = draw_logo(display)
+        .or_else(|| from_registry(aumid))
+        .or_else(|| from_start_menu(name))
+        .unwrap_or_default();
+    if let Ok(mut held) = cache.lock() {
+        held.insert(aumid.to_string(), made.clone());
+    }
+    made
+}
+
+/// What a desktop app said about itself when it registered its model id.
+///
+/// The same key `notify.rs` writes for this app: `IconUri` under
+/// `AppUserModelId\<id>`. Apps that register properly get their real icon;
+/// plenty do not register at all, which is what the next fallback is for.
+fn from_registry(aumid: &str) -> Option<String> {
+    let key = windows_registry::CURRENT_USER
+        .open(format!("Software\\Classes\\AppUserModelId\\{aumid}"))
+        .ok()?;
+    let path = key.get_string("IconUri").ok()?;
+    if path.is_empty() {
+        return None;
+    }
+    crate::apps::icon_of(&path)
+}
+
+/// The Start Menu entry with the same name.
+///
+/// ⚠️ Matched on the DISPLAY NAME, which is a heuristic and is allowed to be
+/// one: the worst case is the wrong icon beside a notification, and the list
+/// this rescues is otherwise 41 rows of nothing. The index is `apps.rs`'s, so
+/// this costs one lookup in a list that is already in memory — and only once
+/// per app, because the answer is cached above.
+fn from_start_menu(name: &str) -> Option<String> {
+    if name.trim().is_empty() {
+        return None;
+    }
+    let wanted = name.trim().to_lowercase();
+    crate::apps::known()
+        .into_iter()
+        .find(|app| app.name.to_lowercase() == wanted)
+        .and_then(|app| app.icon)
+}
+
+fn draw_logo(display: &windows::ApplicationModel::AppDisplayInfo) -> Option<String> {
+    use base64::Engine;
+    use windows::Foundation::Size;
+    use windows::Storage::Streams::DataReader;
+
+    /* 32 square: the row draws it at 26 CSS px, and asking for the size you
+     * will use is the difference between a crisp mark and a resampled one. */
+    let reference = display.GetLogo(Size { Width: 32.0, Height: 32.0 }).ok()?;
+    let stream = reference.OpenReadAsync().and_then(block).ok()?;
+    let size = stream.Size().ok()?;
+    // A logo that big is not a logo; refuse it rather than pump it over IPC.
+    if size == 0 || size > 1024 * 1024 {
+        return None;
+    }
+    let input = stream.GetInputStreamAt(0).ok()?;
+    let reader = DataReader::CreateDataReader(&input).ok()?;
+    reader.LoadAsync(size as u32).and_then(block).ok()?;
+    let mut bytes = vec![0u8; size as usize];
+    reader.ReadBytes(&mut bytes).ok()?;
+    /* ⚠️ Sniffed from the magic bytes, not assumed. Windows hands these back
+     * as PNG for a packaged app and as anything at all for a desktop one, and
+     * a wrong `data:` prefix renders nothing and reports no error. */
+    let mime = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        "image/jpeg"
+    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
+        "image/svg+xml"
+    } else {
+        return None;
+    };
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    ))
 }
 
 /// What is in the centre right now.
@@ -159,7 +270,7 @@ fn read(listener: &UserNotificationListener, known: &mut HashMap<u32, Notice>) -
             continue;
         }
         let (title, body) = words(&notification);
-        let app = app_name(&notification);
+        let (app, aumid, icon) = about_app(&notification);
         // Nothing to say and nobody to say it: not worth a row.
         if title.is_empty() && body.is_empty() && app.is_empty() {
             continue;
@@ -174,7 +285,7 @@ fn read(listener: &UserNotificationListener, known: &mut HashMap<u32, Notice>) -
                 (time.UniversalTime / 10_000) - 11_644_473_600_000
             })
             .unwrap_or(0);
-        let notice = Notice { id, app, title, body, at };
+        let notice = Notice { id, app, title, body, at, icon, aumid };
         known.insert(id, notice.clone());
         out.push(notice);
     }
@@ -274,6 +385,27 @@ pub async fn notice_dismiss(app: AppHandle, id: Option<u32>) -> Result<Notices, 
     Ok(fresh)
 }
 
+/// Bring the app that raised one to the front.
+///
+/// ⚠️ The AUMID through `shell:AppsFolder`, which is the only handle a
+/// notification gives you — there is no "activate this notification" on
+/// `UserNotification`, so pressing a row cannot open the CONVERSATION it came
+/// from, only the app. That is the honest limit and the button is named for
+/// it: "Open Slack", never "Reply".
+#[tauri::command]
+pub fn notice_open(app: AppHandle, id: u32) -> Result<(), String> {
+    let held = app.state::<NoticeState>().snapshot();
+    let found = held
+        .items
+        .iter()
+        .find(|one| one.id == id)
+        .ok_or("That notification has gone.")?;
+    if found.aumid.is_empty() {
+        return Err(format!("Windows will not say how to open {}.", found.app));
+    }
+    crate::calendar::open_path(&format!("shell:AppsFolder\\{}", found.aumid))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +429,9 @@ mod tests {
     #[ignore]
     fn reads_the_real_centre() {
         enter_apartment();
+        // ⚠️ The Start Menu index has to be warm, or the third fallback finds
+        // nothing and this probe under-reports what the app will really show.
+        crate::apps::warm();
         let listener = listener().expect("a listener");
         let status = access(&listener);
         println!("access: {status}");
@@ -305,11 +440,18 @@ mod tests {
         let all = read(&listener, &mut known);
         println!("{} notice(s)", all.len());
         for notice in all.iter().take(8) {
-            println!("  [{}] {} \u{2014} {:?}", notice.app, notice.title, notice.body);
+            println!(
+                "  [{}] {} \u{2014} {:?}",
+                notice.app, notice.title, notice.body,
+            );
+            println!("     icon={} bytes  aumid={}", notice.icon.len(), notice.aumid);
         }
         /* ⚠️ The second read must come back the same. It is served from the
          * cache, and a cache keyed on an id that is not stable would quietly
          * double the list or empty it. */
+        let with_icons = all.iter().filter(|one| !one.icon.is_empty()).count();
+        let with_ids = all.iter().filter(|one| !one.aumid.is_empty()).count();
+        println!("{with_icons} of {} carry a logo, {with_ids} an app id", all.len());
         let again = read(&listener, &mut known);
         assert_eq!(all.len(), again.len());
     }

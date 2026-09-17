@@ -68,6 +68,28 @@ test("dismissing one takes it off the screen and out of the count", async ({ pag
   await expect(page.locator("#head-bell .head-count")).toHaveText("3");
 });
 
+test("clear all empties it, and the card offers the app it came from", async ({ page }) => {
+  await page.goto("/tasks.html?notices&quiet");
+  await open(page);
+  await page.locator("#head-bell").click();
+
+  /* \u26a0\ufe0f A button on the screen as well as on the arc. Clearing is the one
+   * thing you come here to do when there are fifty of them, and a control you
+   * have to reach a bare line for is one you do not know is there. */
+  await expect(page.locator(".notice-count")).toHaveText("4 notifications");
+  /* The quick action is OPEN THE APP, and it is named for exactly that. A
+   * notification carries no way to activate itself from outside, so pressing
+   * a row can open Slack and never the thread \u2014 see `notices.rs`. */
+  await expect(page.locator(".notice-row").first().locator(".notice-open"))
+    .toHaveAttribute("data-tip", "Open Slack");
+
+  await page.locator(".notice-all").click();
+  await expect(page.locator(".notice-row")).toHaveCount(0);
+  await expect(page.locator("#head-bell")).toBeHidden();
+  await expect(page.locator('[data-screen="notices"] .home-empty'))
+    .toHaveText("Nothing in the notification centre.");
+});
+
 test("an empty screen says WHY it is empty", async ({ page }) => {
   /* ⚠️ "Nothing has happened" and "Windows will not let this app look" draw
    * the same empty screen and want different words — and only one of them is
@@ -85,34 +107,79 @@ test("an empty screen says WHY it is empty", async ({ page }) => {
   await expect(page.locator("#head-bell")).toBeHidden();
 });
 
-test("a pomodoro runs in the header, and the press pauses it", async ({ page }) => {
+test("the timer chip is always there, and it opens the screen", async ({ page }) => {
   await page.goto("/tasks.html?quiet");
   await open(page);
-  await expect(page.locator("#head-timer")).toBeHidden();
-
-  await run(page, "pomodoro", "Start a pomodoro");
-  await open(page);
+  /* \u26a0\ufe0f Visible with NOTHING running. Hidden when idle it was a control with
+   * no way in: the only way to start a pomodoro was to know the palette
+   * command, and a feature you have to be told about is one nobody uses. */
   const chip = page.locator("#head-timer");
   await expect(chip).toBeVisible();
-  await expect(chip).toHaveAttribute("data-phase", "work");
-  // 25 minutes, counting down rather than sitting there.
-  await expect(chip.locator(".head-text")).toHaveText(/^2[45]:\d\d$/);
-  const first = await chip.locator(".head-text").textContent();
-  await expect.poll(async () => chip.locator(".head-text").textContent()).not.toBe(first);
-
-  /* ⚠️ The press PAUSES; stopping is in the palette. A countdown you cannot
-   * get back does not belong under the same press that pauses it. */
-  await chip.click();
-  await expect(chip).toHaveClass(/is-held/);
-  const held = await chip.locator(".head-text").textContent();
-  await page.waitForTimeout(1200);
-  await expect(chip.locator(".head-text")).toHaveText(held!);
+  await expect(chip).toHaveClass(/is-idle/);
+  await expect(chip.locator(".head-text")).toHaveText("");
 
   await chip.click();
-  await expect(chip).not.toHaveClass(/is-held/);
+  await expect(page.locator("#island-where")).toHaveText("Timer");
+  await expect(page.locator(".timer-say")).toHaveText("Nothing running");
+  // Every preset is a real countdown, and the lead button is the pomodoro.
+  await expect(page.locator(".timer-preset")).toHaveCount(5);
+  await expect(page.locator(".timer-key.is-lead")).toContainText("pomodoro");
+});
 
-  // And the palette is where it can be stopped outright.
-  await run(page, "stop", "Stop the focus");
+test("the screen starts it, pauses it and stops it", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
   await open(page);
-  await expect(page.locator("#head-timer")).toBeHidden();
+  await page.locator("#head-timer").click();
+  await page.locator(".timer-key.is-lead").click();
+
+  const chip = page.locator("#head-timer");
+  await expect(chip).toHaveAttribute("data-phase", "work");
+  await expect(chip).not.toHaveClass(/is-idle/);
+  await expect(chip.locator(".head-text")).toHaveText(/^2[45]:\d\d$/);
+  await expect(page.locator(".timer-clock")).toHaveText(/^2[45]:\d\d$/);
+  await expect(page.locator(".timer-say")).toHaveText("Focus");
+
+  // It is really counting, not sitting there.
+  const first = await page.locator(".timer-clock").textContent();
+  await expect.poll(async () => page.locator(".timer-clock").textContent()).not.toBe(first);
+
+  await page.locator('.timer-key:has-text("Pause")').click();
+  await expect(page.locator(".timer-say")).toHaveText("Focus \u00b7 paused");
+  await expect(chip).toHaveClass(/is-held/);
+  const held = await page.locator(".timer-clock").textContent();
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".timer-clock")).toHaveText(held!);
+
+  await page.locator('.timer-key:has-text("Stop")').click();
+  await expect(page.locator(".timer-say")).toHaveText("Nothing running");
+  await expect(chip).toHaveClass(/is-idle/);
+});
+
+test("a plain timer is one press, and it is not a pomodoro", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator('.timer-preset:has-text("10m")').click();
+  await expect(page.locator(".timer-clock")).toHaveText(/^(10:00|09:5\d)$/);
+  /* \u26a0\ufe0f "Timer", not "Focus": a plain countdown has nothing after it, and
+   * calling it a pomodoro would promise a break that never comes. */
+  await expect(page.locator(".timer-say")).toHaveText("Timer");
+  await expect(page.locator("#head-timer")).toHaveAttribute("data-phase", "plain");
+});
+
+test("a running countdown says so on the collapsed pill", async ({ page }) => {
+  await page.goto("/tasks.html?quiet");
+  await open(page);
+  await page.locator("#head-timer").click();
+  await page.locator('.timer-preset:has-text("15m")').click();
+
+  /* Off the island, so it folds. \u26a0\ufe0f The whole point of the claim: the
+   * countdown has to be readable with the panel shut, which is how it spends
+   * almost all of its fifteen minutes. */
+  await page.mouse.move(10, 700);
+  await expect(page.locator("#island-expanded")).not.toBeVisible();
+  const pill = page.locator("#island-collapsed");
+  await expect(pill).toHaveAttribute("data-kind", "focus");
+  await expect(pill.locator(".pill-label")).toHaveText("Timer");
+  await expect(pill.locator(".pill-value")).toHaveText(/^\d?\d:\d\d$/);
 });
