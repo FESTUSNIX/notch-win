@@ -163,3 +163,28 @@ test("every settings page is inside the scroller, and scrolls", async ({ page })
   expect(room.over).toBeGreaterThan(50);
   expect(room.at).toBeGreaterThan(50);
 });
+
+test("the ring can be chosen, verbs and all, and is capped at eight", async ({page}) => {
+  await page.setViewportSize({width: 980, height: 820});
+  await page.goto("/task-editor.html");
+  await page.locator('[role=tab]', {hasText: "Island"}).click();
+
+  const rows = page.locator("#ring-stops .set-row");
+  // Every screen, plus the verbs.
+  await expect(rows).toHaveCount(16);
+  /* ⚠️ Verbs as well as screens, and they are what stops the ring being a
+   * navigation menu: every one of them is a keystroke that would otherwise
+   * want a global shortcut of its own, which is the problem the ring exists
+   * to end. */
+  await expect(rows.filter({hasText: "Write a note"})).toHaveCount(1);
+  await expect(rows.filter({hasText: "Add a task"})).toHaveCount(1);
+
+  const boxes = page.locator("#ring-stops input[type=checkbox]");
+  for (let i = 0; i < 8; i++) await boxes.nth(i).check();
+  /* ⚠️ A ninth cannot be ticked, and says so by being DISABLED rather than by
+   * accepting the tick and quietly dropping it: past eight a wedge is thinner
+   * than a hand is accurate, which is the whole advantage gone. */
+  await expect(boxes.nth(8)).toBeDisabled();
+  await boxes.nth(0).uncheck();
+  await expect(boxes.nth(8)).toBeEnabled();
+});

@@ -24,6 +24,15 @@ use crate::win;
 
 pub const LABEL: &str = "ring";
 
+/// How long the key has to be DOWN for the release to count as a pick.
+///
+/// ⚠️ Two hundred milliseconds, and the number is the whole feel of it. A
+/// tap opens the ring and leaves it up — which is what somebody who wants to
+/// read the labels is doing — and a hold-and-release is one gesture: press,
+/// flick the wrist, let go. Shorter than this and an ordinary press is
+/// mistaken for a flick; much longer and the gesture has a pause in it.
+pub const HOLD: std::time::Duration = std::time::Duration::from_millis(200);
+
 /// How wide the window is, in design pixels, before the display's scaling.
 /// ⚠️ Must be at least the ring's own diameter plus room for the labels that
 /// sit outside it, or the shape is clipped by its own window and looks like a
@@ -150,6 +159,20 @@ pub fn ring_close(app: AppHandle) {
     close(&app);
 }
 
+/// The key was let go after a hold: take whatever is aimed at.
+///
+/// ⚠️ Asked of the PAGE rather than worked out here. The pointer's position
+/// is knowable from Rust, but which wedge it is over depends on the ring's own
+/// geometry, the preferences and how many stops are showing — all of which
+/// live in the page. Two answers to that question would disagree the first
+/// time somebody changed what the ring holds.
+pub fn commit(app: &AppHandle) {
+    if !showing(app) {
+        return;
+    }
+    let _ = app.emit_to(LABEL, "ring:commit", ());
+}
+
 /// Picked one. The island opens on it, and the ring gets out of the way first.
 #[tauri::command]
 pub fn ring_pick(app: AppHandle, screen: String) {
@@ -160,7 +183,15 @@ pub fn ring_pick(app: AppHandle, screen: String) {
     if crate::config::load().chrome_hidden {
         crate::shortcuts::set_chrome_hidden(&app, false);
     }
-    let _ = app.emit_to("tasks", "island:go", screen);
+    /* ⚠️ A VERB goes to its own event. The island answers `island:go` by
+     * changing screens, and an action that arrived down the same pipe would
+     * have to be told apart by the shape of its name in the one place that is
+     * hardest to see — in a listener, at the far end of an IPC hop. */
+    if let Some(verb) = screen.strip_prefix("act:") {
+        let _ = app.emit_to("tasks", "island:do", verb.to_string());
+    } else {
+        let _ = app.emit_to("tasks", "island:go", screen);
+    }
 }
 
 #[cfg(test)]

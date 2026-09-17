@@ -117,16 +117,51 @@ test('every segment of a full ring is reachable, and owns its own share', () => 
 test('the ring holds eight at most, in the rail order, and always Home', () => {
   const all = ringStops(nowhere, SCREENS);
   assert.equal(all.length, MOST);
-  assert.equal(all[0].name, 'home');
+  assert.equal(all[0].id, 'home');
 
   // The saved order leads, and what it has not heard of keeps its own place.
   const mine = ringStops({ railOrder: ['notes', 'today'], railHidden: [] }, SCREENS);
-  assert.deepEqual(mine.slice(0, 2).map(s => s.name), ['notes', 'today']);
+  assert.deepEqual(mine.slice(0, 2).map(s => s.id), ['notes', 'today']);
 
   // Hidden screens are not offered...
   const fewer = ringStops({ railOrder: [], railHidden: ['today', 'media', 'agents'] }, SCREENS);
-  assert.ok(!fewer.some(s => s.name === 'today'));
+  assert.ok(!fewer.some(s => s.id === 'today'));
   // ...except Home, which cannot be hidden anywhere else either.
   const stubborn = ringStops({ railOrder: [], railHidden: ['home'] }, SCREENS);
-  assert.ok(stubborn.some(s => s.name === 'home'));
+  assert.ok(stubborn.some(s => s.id === 'home'));
+});
+
+test('a chosen ring wins outright, and is not filtered by the rail', () => {
+  /* ⚠️ Not filtered by `railHidden`: putting something on the ring IS the
+   * decision, and a screen taken OFF the rail is exactly the kind of thing
+   * somebody would then want here. */
+  const mine = ringStops(
+    { railOrder: [], railHidden: ['notes', 'system'], ringStops: ['notes', 'act:note', 'system'] },
+    SCREENS);
+  assert.deepEqual(mine.map(s => s.id), ['notes', 'act:note', 'system']);
+  // A verb carries its own label and glyph, like a screen does.
+  assert.equal(mine[1].label, 'Write a note');
+  assert.ok(mine[1].icon);
+});
+
+test('a chosen ring is still capped, and ignores what it does not know', () => {
+  const many = ringStops({ railOrder: [], railHidden: [], ringStops:
+    ['home', 'today', 'notes', 'shelf', 'agents', 'calendar', 'review', 'system', 'media'] },
+    SCREENS);
+  assert.equal(many.length, MOST, 'past eight a wedge is thinner than a hand is accurate');
+
+  /* ⚠️ A name from a version that had a screen this one does not is
+   * DROPPED, not drawn as an empty wedge — and it must not shift everything
+   * after it round the ring either, which is what aiming depends on. */
+  const stale = ringStops({ railOrder: [], railHidden: [], ringStops:
+    ['home', 'sideboard', 'act:task'] }, SCREENS);
+  assert.deepEqual(stale.map(s => s.id), ['home', 'act:task']);
+});
+
+test('an empty choice means the rail, not an empty ring', () => {
+  /* ⚠️ "Unset" and "deliberately empty" have to be different answers, and
+   * the second one is not offered: a preference nobody has touched must not
+   * leave the key opening a ring with nothing in it. */
+  assert.equal(ringStops({ railOrder: [], railHidden: [], ringStops: [] }, SCREENS).length, MOST);
+  assert.equal(ringStops({ railOrder: [], railHidden: [] }, SCREENS).length, MOST);
 });

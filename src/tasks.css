@@ -1916,6 +1916,18 @@ button:active:not(:disabled) { background:var(--tile-on); }
 .screen-row > div { flex:1; min-width:0; }
 .screen-row small { display:block; margin-top:2px; font-size:11px;
   color:rgba(255,255,255,.35); }
+/* ── The ring's list ────────────────────────────────── */
+/* ⚠️ `flex:1`, or the switch sits against the label instead of at the far
+   end of the row like every other one on the page. */
+.ring-pick { flex:1; display:flex; align-items:center; gap:10px; min-width:0; }
+.ring-pick b { display:block; }
+/* The note under the name, on its own line — inline it reads as part of it. */
+.ring-pick small { display:block; font-size:11px; color:#7c7c7c; }
+.ring-pick-mark { display:grid; place-items:center; width:26px; height:26px;
+  flex-shrink:0; border-radius:8px; color:#c4c4c4;
+  background-color:var(--tile); box-shadow:var(--hairline); }
+.ring-pick-mark svg { width:15px; height:15px; }
+
 .screen-grip { flex-shrink:0; width:18px; text-align:center; font-size:15px;
   color:rgba(255,255,255,.28); }
 .screen-row:hover .screen-grip { color:rgba(255,255,255,.55); }

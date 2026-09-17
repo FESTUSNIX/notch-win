@@ -13,7 +13,7 @@
  * quietly — they are for the first week, not for the hundredth time.
  */
 import { call, native, preview } from "./task-client";
-import { taskIcon } from "./task-icons";
+import { taskIcon, type TaskIcon } from "./task-icons";
 import { SCREENS } from "./screens";
 import {
   CAPTION, INNER, MIDDLE, OUTER, SEARCH, aiming, at, ringStops, sector, spanOf,
@@ -48,20 +48,20 @@ function draw() {
     const wedge = document.createElementNS(NS, "path");
     wedge.setAttribute("d", sector(span.from, span.to));
     wedge.setAttribute("class", "ring-wedge");
-    wedge.dataset.screen = screen.name;
-    const tint = prefs.railColours[screen.name];
+    wedge.dataset.screen = screen.id;
+    const tint = prefs.railColours[screen.id];
     if (tint) wedge.style.setProperty("--stop", tint);
     svg.append(wedge);
 
     const middle = (span.from + span.to) / 2;
     const mark = at(middle, (INNER + OUTER) / 2);
-    const glyph = taskIcon(screen.icon);
+    const glyph = taskIcon(screen.icon as TaskIcon);
     glyph.setAttribute("class", "ring-glyph");
     glyph.setAttribute("x", String(mark.x - 11));
     glyph.setAttribute("y", String(mark.y - 11));
     glyph.setAttribute("width", "22");
     glyph.setAttribute("height", "22");
-    glyph.dataset.screen = screen.name;
+    glyph.dataset.screen = screen.id;
     /* ⚠️ The glyph is a SIBLING of its wedge, not a child, so the custom
      * property has to be set on it too — it cannot inherit from a shape it is
      * merely drawn on top of. */
@@ -75,7 +75,7 @@ function draw() {
     caption.setAttribute("y", String(where.y));
     caption.setAttribute("text-anchor", "middle");
     caption.setAttribute("dominant-baseline", "middle");
-    caption.dataset.screen = screen.name;
+    caption.dataset.screen = screen.id;
     caption.textContent = screen.label;
     svg.append(caption);
   });
@@ -91,15 +91,18 @@ function draw() {
   heart.dataset.screen = SEARCH;
   svg.append(heart);
 
-  const word = document.createElementNS(NS, "text");
-  word.setAttribute("class", "ring-heart-say");
-  word.setAttribute("x", String(MIDDLE));
-  word.setAttribute("y", String(MIDDLE));
-  word.setAttribute("text-anchor", "middle");
-  word.setAttribute("dominant-baseline", "middle");
-  word.dataset.screen = SEARCH;
-  word.textContent = "Search";
-  svg.append(word);
+  /* ⚠️ A GLYPH, not the word "Search". Every wedge around it is an icon, so
+   * the one piece of text in the middle read as a label for the ring rather
+   * than as the thing you can aim at — and it is the one target nobody has to
+   * read anyway, being the only one that is not a direction. */
+  const mark = taskIcon("search");
+  mark.setAttribute("class", "ring-heart-mark");
+  mark.setAttribute("x", String(MIDDLE - 13));
+  mark.setAttribute("y", String(MIDDLE - 13));
+  mark.setAttribute("width", "26");
+  mark.setAttribute("height", "26");
+  mark.dataset.screen = SEARCH;
+  svg.append(mark);
 
   host.append(svg);
 }
@@ -110,7 +113,7 @@ function aimedAt(x: number, y: number): string | null {
   const found = aiming(x, y, stops.length);
   if (found === null) return null;
   if (found === "search") return SEARCH;
-  return stops[found]?.name ?? null;
+  return stops[found]?.id ?? null;
 }
 
 let aimed: string | null = null;
@@ -128,18 +131,21 @@ host.addEventListener("pointermove", event => {
   aim(aimedAt(event.clientX - box.left, event.clientY - box.top));
 });
 
+/** Take what is aimed at, or put the ring away. One path for a click and for
+ *  the key being let go, so the two can never mean different things. */
+function take(picked: string | null) {
+  /* ⚠️ Nothing aimed at CLOSES it. The window is a square holding a circle,
+   * so the corners are part of it — and a menu that ignores a press aimed at
+   * its own background is one you have to hunt for a way out of. The same is
+   * true of letting the key go while pointing at nothing: the gesture was
+   * abandoned, and abandoning it should cost nothing. */
+  if (!picked) { void call("ring_close").catch(() => {}); return; }
+  void call("ring_pick", { screen: picked }).catch(() => {});
+}
+
 host.addEventListener("click", event => {
   const box = host.getBoundingClientRect();
-  const picked = aimedAt(event.clientX - box.left, event.clientY - box.top);
-  /* ⚠️ A click on nothing CLOSES it. The window is a square holding a circle,
-   * so the corners are part of it — and a menu that ignores a click aimed at
-   * its own background is one you have to hunt for a way out of. */
-  if (!picked) { void call("ring_close").catch(() => {}); return; }
-  if (picked === SEARCH) {
-    void call("ring_pick", { screen: SEARCH }).catch(() => {});
-    return;
-  }
-  void call("ring_pick", { screen: picked }).catch(() => {});
+  take(aimedAt(event.clientX - box.left, event.clientY - box.top));
 });
 
 async function boot() {
@@ -156,6 +162,11 @@ async function boot() {
     aim(null);
   });
   await listen<Prefs>("notch:prefs", event => { prefs = event.payload; draw(); });
+  /* ⚠️ The key was HELD and let go: that is the pick. Press, flick the
+   * wrist, let go — one gesture, no click, and the hand never leaves the
+   * position it was already in. A tap leaves the ring up instead, which is
+   * what somebody reading the labels for the first week is doing. */
+  await listen("ring:commit", () => take(aimed));
 }
 
 if (preview) {

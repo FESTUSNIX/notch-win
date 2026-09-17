@@ -132,6 +132,12 @@ pub struct Prefs {
     /// at a stretch, which is the opposite of what a focus tool should do to
     /// somebody's attention.
     pub pomodoro_pill: String,
+    /// What the ring around the pointer holds, in order — screen names and
+    /// `act:` verbs mixed. ⚠️ EMPTY means "the rail's own screens", which is
+    /// what it was before it could be chosen: a preference nobody has touched
+    /// must not be an empty ring, so "unset" and "deliberately empty" have to
+    /// be different answers and the second one is not offered.
+    pub ring_stops: Vec<String>,
     /// Opening the island lands on whatever is actually happening — the call,
     /// the agent waiting, the meeting about to start — rather than on wherever
     /// you last were. ⚠️ The pill has already decided which that is; this
@@ -197,6 +203,7 @@ impl Default for Prefs {
             timer_sound: "Notification.Reminder".into(),
             timer_mode: "pomodoro".into(),
             pomodoro_pill: "bar".into(),
+            ring_stops: Vec::new(),
             follow_live: true,
             call_mode: true,
             call_mute_mic: true,
@@ -273,6 +280,10 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
             "time" => prefs.pomodoro_pill,
             _ => "bar".into(),
         },
+        /* ⚠️ Capped where the ring caps it. Past eight a wedge is thinner
+         * than a hand is accurate, and a list that is longer than the thing it
+         * describes is a setting that silently does nothing. */
+        ring_stops: prefs.ring_stops.into_iter().take(8).collect(),
         ..prefs
     };
     let snapshot = {

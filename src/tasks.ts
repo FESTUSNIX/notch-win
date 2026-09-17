@@ -216,6 +216,7 @@ interface Prefs {
   timerSound: string;
   timerMode: string;
   pomodoroPill: string;
+  ringStops: string[];
   followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
@@ -235,7 +236,7 @@ let prefs: Prefs = {
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
-  pomodoroPill: "bar", followLive: true,
+  pomodoroPill: "bar", ringStops: [], followLive: true,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -1876,6 +1877,47 @@ async function boot() {
      * changed behind a collapsed pill is a key that appears to do nothing.
      * `pinFor` rather than a pin, so it closes itself the way everything else
      * here does. */
+    /* A VERB from the ring. ⚠️ Separate from `island:go`, which changes
+     * screens: telling the two apart by the shape of a string, in a listener,
+     * at the far end of an IPC hop, is the hardest place in the app to see a
+     * mistake. Each verb decides for itself whether the island should open at
+     * all — shelving the clipboard deliberately does not, for the same reason
+     * its own shortcut does not. */
+    await listen<string>("island:do", event => {
+      const verb = event.payload;
+      if (verb === "task") {
+        show("today");
+        surface.show(true);
+        surface.pinFor(6000);
+        /* ⚠️ The caret, not just the screen. A "quick task" that lands you on
+         * a screen with the composer unfocused is two keystrokes short of what
+         * it promised — and the island takes no focus by default, so this is
+         * the one path that has to ask Windows for the keyboard. */
+        void today.capture();
+        return;
+      }
+      if (verb === "note") {
+        show("notes");
+        surface.show(true);
+        surface.pinFor(6000);
+        void notes.compose("");
+        return;
+      }
+      if (verb === "timer") {
+        if (!timer.state) timer.start();
+        render();
+        return;
+      }
+      if (verb === "clip") {
+        /* Deliberately does NOT open the island — the same bargain the shelf's
+         * own shortcut makes. Parking something should not cost you the window
+         * you were looking at; the pill says what landed. */
+        void call<string>("shelf_capture")
+          .then(what => say("Shelved", String(what)))
+          .catch(error => say("Nothing to shelve", String(error)));
+      }
+    });
+
     await listen<string>("island:go", event => {
       if (event.payload === "@search") { void summon(); return; }
       show(event.payload as ScreenName);

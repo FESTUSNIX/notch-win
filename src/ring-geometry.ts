@@ -32,10 +32,61 @@ export const MOST = 8;
 export interface RingPrefs {
   railOrder: string[];
   railHidden: string[];
+  /** What the ring holds, in order — screen names and `act:` ids mixed.
+   *
+   * ⚠️ Empty means "the rail's own screens", which is what it was before
+   * any of this: a preference nobody has touched must not be an empty ring,
+   * and "unset" and "deliberately empty" have to be different answers. */
+  ringStops?: string[];
 }
 
-/** Which screens the ring offers, in the rail's own order. */
-export function ringStops(prefs: RingPrefs, all: ScreenDef[]): ScreenDef[] {
+/** One thing the ring can offer — a screen to open, or a thing to DO.
+ *
+ * ⚠️ Actions are the reason the ring stops being a navigation menu. Every
+ * one of them is a keystroke that would otherwise want a global shortcut of
+ * its own, which is the exact problem the ring was built to end. */
+export interface RingStop {
+  /** A screen name, or `act:<verb>`. */
+  id: string;
+  icon: string;
+  label: string;
+}
+
+/** The verbs the ring can carry, in the order they are offered.
+ *
+ * ⚠️ A short list on purpose. The ring holds eight things and the screens
+ * are most of what anybody wants there; a verb earns its place only if it is
+ * something you do WITHOUT looking at a screen first. */
+export const RING_ACTS: RingStop[] = [
+  { id: "act:task", icon: "plus", label: "Add a task" },
+  { id: "act:note", icon: "note", label: "Write a note" },
+  { id: "act:clip", icon: "shelf", label: "Shelve clipboard" },
+  { id: "act:timer", icon: "timer", label: "Start a pomodoro" },
+];
+
+/** Everything that COULD be on the ring, screens first. For the settings list. */
+export function ringChoices(all: ScreenDef[]): RingStop[] {
+  const screens: RingStop[] = all.map(screen =>
+    ({ id: screen.name, icon: screen.icon, label: screen.label }));
+  return [...screens, ...RING_ACTS];
+}
+
+/** What the ring offers, in order.
+ *
+ * ⚠️ An explicit list wins outright, and is not filtered by `railHidden`:
+ * putting something on the ring IS the decision, and a screen taken off the
+ * rail is exactly the kind of thing somebody would then want here. Without a
+ * list it falls back to the rail's own screens, which is what it always was.
+ */
+export function ringStops(prefs: RingPrefs, all: ScreenDef[]): RingStop[] {
+  const every = ringChoices(all);
+  const chosen = prefs.ringStops ?? [];
+  if (chosen.length) {
+    return chosen
+      .map(id => every.find(one => one.id === id))
+      .filter((one): one is RingStop => !!one)
+      .slice(0, MOST);
+  }
   const rank = (name: string) => {
     const at = prefs.railOrder.indexOf(name);
     return at < 0 ? all.findIndex(s => s.name === name) + all.length : at;
@@ -44,7 +95,8 @@ export function ringStops(prefs: RingPrefs, all: ScreenDef[]): ScreenDef[] {
     // Home is never hidden, for the same reason it is never off the rail.
     .filter(screen => screen.name === "home" || !prefs.railHidden.includes(screen.name))
     .sort((a, b) => rank(a.name) - rank(b.name))
-    .slice(0, MOST);
+    .slice(0, MOST)
+    .map(screen => ({ id: screen.name, icon: screen.icon, label: screen.label }));
 }
 
 /** A point on the ring, `turn` in turns clockwise from straight up. */

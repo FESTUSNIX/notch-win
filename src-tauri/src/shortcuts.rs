@@ -100,6 +100,17 @@ impl Default for Shortcuts {
 #[derive(Default)]
 pub struct ShortcutState_(pub Mutex<Shortcuts>);
 
+/// When the ring's key went down, in milliseconds since the app started. Zero
+/// means "not down". ⚠️ An atomic rather than a `Mutex<Instant>`: this is
+/// read and written from the shortcut handler, which must not block.
+static RING_DOWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
 /// Put the chrome where the current state says it belongs.
 ///
 /// ⚠️ The windows are never `hide()`n any more, and that is the point. A hidden
@@ -328,13 +339,34 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(move |_app, shortcut, event| {
+                let current = handler.state::<ShortcutState_>().0.lock().unwrap().clone();
+                let pressed = shortcut.into_string();
+                /* ⚠️ The ring is the one shortcut that cares about the RELEASE.
+                 * Held and let go it is a single gesture — press, flick, let go
+                 * — and tapped it opens the ring and leaves it up for somebody
+                 * who wants to read the labels. Everything else here fires on
+                 * the press and ignores the release, without which every
+                 * toggle runs twice and is therefore a no-op. */
+                if matches(&pressed, &current.ring) {
+                    match event.state() {
+                        ShortcutState::Pressed => {
+                            RING_DOWN.store(now_ms(), Ordering::SeqCst);
+                            crate::ring::open(&handler);
+                        }
+                        ShortcutState::Released => {
+                            let held = now_ms().saturating_sub(RING_DOWN.swap(0, Ordering::SeqCst));
+                            if held >= crate::ring::HOLD.as_millis() as u64 {
+                                crate::ring::commit(&handler);
+                            }
+                        }
+                    }
+                    return;
+                }
                 // Fire on press. Without this guard both the press and the
                 // release run the action, so every toggle is a no-op.
                 if event.state() != ShortcutState::Pressed {
                     return;
                 }
-                let current = handler.state::<ShortcutState_>().0.lock().unwrap().clone();
-                let pressed = shortcut.into_string();
                 if matches(&pressed, &current.hide) {
                     let hidden = crate::config::load().chrome_hidden;
                     set_chrome_hidden(&handler, !hidden);
@@ -373,13 +405,6 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                             let _ = handler.emit_to("tasks", "island:shelved-failed", message);
                         }
                     }
-                } else if matches(&pressed, &current.ring) {
-                    /* ⚠️ Does NOT un-hide the chrome first, unlike the
-                     * palette. The ring opens at the pointer and is the whole
-                     * interaction — there is nothing to see at the edge of the
-                     * screen until something is picked, and `ring_pick` brings
-                     * the island back then. */
-                    crate::ring::open(&handler);
                 } else if matches(&pressed, &current.display) {
                     // Moving it while it is off screen would be a keypress with
                     // no visible result, so bring it back first.

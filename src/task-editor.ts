@@ -29,6 +29,7 @@ import { emptySnapshot } from "./task-model";
 import { element } from "./dom";
 import { SCREENS } from "./screens";
 import { taskIcon, type TaskIcon } from "./task-icons";
+import { ringChoices } from "./ring-geometry";
 import "./tasks.css";
 
 /* ── What the window is made of ──────────────────────────────────────── */
@@ -53,6 +54,7 @@ interface Prefs {
   timerSound: string;
   timerMode: string;
   pomodoroPill: string;
+  ringStops: string[];
   followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
@@ -205,6 +207,9 @@ const PANE_HTML: Record<PaneId, string> = {
     <p class="set-why">Drag to reorder. Switch one off and it leaves the rail — it is still reachable from the palette.</p>
     <div class="set-group" id="rail-screens">
     </div></div>
+    <div><p class="set-label">The ring</p><div class="set-group" id="ring-stops">
+    </div>
+    <p class="set-why">What the ring around the pointer holds, in this order. Hold the key and let go to pick without clicking; tap it to leave the ring up and read. ⚠️ Eight at most — past that a wedge is thinner than a hand is accurate, and aiming rather than reading is the whole advantage. Nothing chosen means the screens on your rail.</p></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
       ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
     </div></div>
@@ -370,7 +375,7 @@ let prefs: Prefs = {
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
-  pomodoroPill: "bar", followLive: true,
+  pomodoroPill: "bar", ringStops: [], followLive: true,
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -616,6 +621,61 @@ function accentNow(): string {
   return /^#[0-9a-f]{6}$/i.test(raw) ? raw : "#00ff88";
 }
 
+/** What the ring holds. ⚠️ A list of CHECKBOXES rather than a second
+ *  drag-to-reorder: the order here is the order of the list itself, which is
+ *  fixed and therefore learnable — and a ring whose wedges move about is one
+ *  where aiming stops working, which is the only reason it exists. */
+function paintRing() {
+  const host = get("ring-stops");
+  host.replaceChildren();
+  const chosen = prefs.ringStops;
+  for (const stop of ringChoices(SCREENS)) {
+    const row = document.createElement("div");
+    row.className = "set-row";
+
+    const mark = document.createElement("span");
+    mark.className = "ring-pick-mark";
+    mark.append(taskIcon(stop.icon as TaskIcon));
+
+    const text = document.createElement("div");
+    const name = document.createElement("b");
+    name.textContent = stop.label;
+    text.append(name);
+    if (stop.id.startsWith("act:")) {
+      const why = document.createElement("small");
+      why.textContent = "Does it there and then";
+      text.append(why);
+    }
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "switch";
+    box.checked = chosen.includes(stop.id);
+    /* ⚠️ A ninth cannot be ticked, and the box says so by being disabled
+     * rather than by accepting the tick and dropping it somewhere else. */
+    box.disabled = !box.checked && chosen.length >= 8;
+    box.setAttribute("aria-label", `${stop.label} on the ring`);
+    box.onchange = () => {
+      const want = box.checked;
+      const next = want
+        ? [...prefs.ringStops, stop.id]
+        : prefs.ringStops.filter(one => one !== stop.id);
+      /* Kept in the LIST's own order rather than in the order they were
+       * ticked: see the note above on why the wedges must not move. */
+      const order = ringChoices(SCREENS).map(one => one.id);
+      prefs.ringStops = next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      savePrefs();
+      paintRing();
+    };
+
+    const wrap = document.createElement("div");
+    wrap.className = "ring-pick";
+    wrap.append(mark, text);
+    row.append(wrap, box);
+    host.append(row);
+  }
+}
+
 function paintScreens() {
   const host = get("rail-screens");
   host.replaceChildren();
@@ -758,6 +818,7 @@ get("rail-screens").addEventListener("pointermove", event => {
   order.splice(to, 0, ...order.splice(from, 1));
   prefs.railOrder = order;
   paintScreens();
+  paintRing();
   // The rows were rebuilt, so the one being carried has to be marked again.
   get("rail-screens")
     .querySelector(`.screen-row[data-screen="${carrying}"]`)?.classList.add("is-lifting");
@@ -1150,6 +1211,7 @@ function paintPrefs() {
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   paintScreens();
+  paintRing();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
   get<HTMLInputElement>("use-everything").checked = prefs.useEverything;
   get<HTMLInputElement>("index-apps").checked = prefs.indexApps;
