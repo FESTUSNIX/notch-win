@@ -434,7 +434,11 @@ fn sessions(active_only: bool) -> Vec<(u32, IMMDevice, i32)> {
 }
 
 /// The full path of a process's executable, or empty if it will not say.
-fn exe_of(pid: u32) -> String {
+///
+/// ⚠️ Shared with `mixer.rs`, which names the rows of the volume mixer from
+/// it. The two walk the same session tree for opposite reasons — capture here,
+/// render there — and this is the one part they genuinely have in common.
+pub fn exe_of(pid: u32) -> String {
     use windows::core::PWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{

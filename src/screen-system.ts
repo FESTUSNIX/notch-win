@@ -32,6 +32,18 @@ export interface SystemState {
   bluetooth: BluetoothDevice[];
 }
 
+/** One app's slider, from `mixer.rs`. */
+export interface AppVolume {
+  pid: number;
+  name: string;
+  path: string;
+  /** 0..1 — the capsule wants 0..100, so it is scaled where it is drawn. */
+  volume: number;
+  muted: boolean;
+  /** Making a sound RIGHT NOW, rather than merely holding a session. */
+  active: boolean;
+}
+
 export interface Machine {
   /** Percentages, or -1 where the figure could not be taken. */
   cpu: number;
@@ -66,6 +78,8 @@ const LIST_MAX = 168;
 export class SystemScreen {
   state: SystemState = emptySystem();
   devices: AudioDevice[] = [];
+  /** One level per app. ⚠️ Read on open, never polled — see `load`. */
+  mixer: AppVolume[] = [];
   machine: Machine = { cpu: -1, memory: -1, diskUsed: -1, diskFree: 0, network: "", uptime: 0 };
   error = "";
   /** Which summary tile has its sheet open, if any. */
@@ -108,14 +122,18 @@ export class SystemScreen {
   /** Re-read the machine. Called when the screen is opened, not on a timer. */
   async load() {
     try {
-      const [state, devices, machine] = await Promise.all([
+      const [state, devices, machine, mixer] = await Promise.all([
         call<SystemState>("get_system"),
         call<AudioDevice[]>("get_audio_devices"),
         call<Machine>("get_machine"),
+        /* ⚠️ Read on OPEN, never polled. It is a COM walk of every session on
+         * the machine, and a mixer nobody is looking at should cost nothing. */
+        call<AppVolume[]>("get_mixer").catch(() => [] as AppVolume[]),
       ]);
       this.state = state;
       this.devices = devices;
       this.machine = machine;
+      this.mixer = mixer;
       this.error = "";
     } catch (error) {
       this.error = String(error);
@@ -204,6 +222,116 @@ export class SystemScreen {
    * be told they are sound and light, and a device list under a bluetooth mark
    * does not need the word "Bluetooth" over it. Every caption here cost a row
    * off a tile that was already short of them. */
+  /* ── The mixer ────────────────────────────────────
+   * One level per app, the way Windows' own does it — and the reason it is on
+   * this screen rather than the player's is that it is not about the track:
+   * turning a browser down while music keeps playing is a thing you do TO the
+   * machine. */
+  private mixerTile(): HTMLElement | null {
+    if (!this.mixer.length) return null;
+    const tile = this.tile("sys-mixer");
+    tile.append(element("h3", "tile-head", "App volume"));
+    for (const app of this.mixer) {
+      const row = element("div", `mix-row${app.muted ? " is-muted" : ""}`);
+      row.dataset.pid = String(app.pid);
+      const name = element("div", "mix-name");
+      name.append(element("span", "mix-word", app.name));
+      /* ⚠️ A dot for what is actually making a sound, not a label. An app
+       * can hold a session for hours after it went quiet — the list is most of
+       * the machine by the afternoon — and which of them you can hear right now
+       * is the whole reason anybody opens a mixer. */
+      if (app.active) name.append(element("i", "mix-live"));
+      const mute = element("button", `pip${app.muted ? " is-on" : ""}`);
+      (mute as HTMLButtonElement).type = "button";
+      mute.setAttribute("aria-pressed", String(app.muted));
+      mute.setAttribute("aria-label", `${app.muted ? "Unmute" : "Mute"} ${app.name}`);
+      mute.dataset.tip = app.muted ? "Unmute" : "Mute";
+      paintIcon(mute, app.muted ? "volumeOff" : "volume");
+      mute.onclick = () => this.muteApp(app);
+      row.append(name, this.mixRail(app), mute);
+      tile.append(row);
+    }
+    return tile;
+  }
+
+  /** A horizontal rail, not the capsule the master volume uses.
+   *
+   * ⚠️ The capsule is a TALL control — it is a column of glass with the
+   * figure printed in it, which is right for the one or two levels that own a
+   * tile of their own. In a list it is 130 pixels a row, and four apps made a
+   * mixer taller than the island. A row of them wants the same shape the
+   * player's scrubber has: long, thin, and the same height as its label. */
+  private mixRail(app: AppVolume): HTMLElement {
+    const rail = element("div", "mix-rail");
+    rail.setAttribute("role", "slider");
+    rail.setAttribute("tabindex", "0");
+    rail.setAttribute("aria-label", `${app.name} volume`);
+    rail.setAttribute("aria-valuemin", "0");
+    rail.setAttribute("aria-valuemax", "100");
+    rail.setAttribute("aria-valuenow", String(Math.round(app.volume * 100)));
+    const fill = element("i");
+    fill.style.width = `${Math.round(app.volume * 100)}%`;
+    rail.append(fill);
+
+    const at = (event: PointerEvent) => {
+      const box = rail.getBoundingClientRect();
+      return Math.round(((event.clientX - box.left) / box.width) * 100);
+    };
+    /* ⚠️ Captured, so the level keeps following a hand that has left the
+     * rail. A slider you have to stay inside is one you overshoot and then
+     * have to go back for. */
+    rail.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      rail.setPointerCapture(event.pointerId);
+      rail.classList.add("is-held");
+      this.setApp(app, at(event));
+    });
+    rail.addEventListener("pointermove", event => {
+      if (!rail.hasPointerCapture(event.pointerId)) return;
+      this.setApp(app, at(event));
+    });
+    for (const done of ["pointerup", "pointercancel"] as const) {
+      rail.addEventListener(done, event => {
+        rail.classList.remove("is-held");
+        if (rail.hasPointerCapture(event.pointerId)) rail.releasePointerCapture(event.pointerId);
+      });
+    }
+    rail.addEventListener("keydown", event => {
+      const step = event.key === "ArrowRight" || event.key === "ArrowUp" ? 5
+        : event.key === "ArrowLeft" || event.key === "ArrowDown" ? -5 : 0;
+      if (!step) return;
+      event.preventDefault();
+      this.setApp(app, Math.round(app.volume * 100) + step);
+    });
+    return rail;
+  }
+
+  /** ⚠️ Optimistic, then confirmed. The write is a round trip through COM
+   *  and the slider is under a finger: waiting for the answer to redraw makes
+   *  the handle lag the pointer, which reads as a control that is not working
+   *  rather than one that is merely slow. */
+  private setApp(app: AppVolume, level: number) {
+    const next = Math.max(0, Math.min(100, level)) / 100;
+    if (Math.abs(next - app.volume) < 0.005) return;
+    app.volume = next;
+    /* ⚠️ The FILL is written in place; the screen is not redrawn. A redraw
+     * mid-drag replaces the element the pointer is captured on, which drops
+     * the gesture with the button still down. Same rule as the dial. */
+    const fill = this.host.querySelector<HTMLElement>(
+      `.mix-row[data-pid="${app.pid}"] .mix-rail i`);
+    if (fill) fill.style.width = `${Math.round(next * 100)}%`;
+    else this.changed();
+    void call("set_app_volume", { pid: app.pid, volume: app.volume })
+      .catch(() => { this.error = `${app.name} is no longer playing anything.`; this.changed(); });
+  }
+
+  private muteApp(app: AppVolume) {
+    app.muted = !app.muted;
+    this.changed();
+    void call("set_app_mute", { pid: app.pid, muted: app.muted })
+      .catch(() => { this.error = `${app.name} is no longer playing anything.`; this.changed(); });
+  }
+
   private tile(cls = ""): HTMLElement {
     return element("section", `tile ${cls}`);
   }
@@ -413,6 +541,12 @@ export class SystemScreen {
     const pills = element("div", "sys-pills");
     pills.append(output, bluetooth);
     this.host.append(controls, pills, machine);
+    /* ⚠️ After the machine's own readings, not beside the master volume. The
+     * mixer is a LIST whose length is whatever happens to be open — two rows
+     * on a quiet afternoon and nine with a browser going — and a tile that
+     * changes height cannot sit in a row with ones that do not. */
+    const mixer = this.mixerTile();
+    if (mixer) this.host.append(mixer);
 
     /* ⚠️ The open list's height is set HERE, at the end of render, and not in a
      * `requestAnimationFrame` inside the pill. The island measures the screen's

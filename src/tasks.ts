@@ -158,6 +158,7 @@ app.innerHTML = `<div id="notch-shell">
              Both are buttons inside the DRAG REGION, which is why the drag
              handler below skips a press that landed on one. -->
         <div class="head-side">
+          <button type="button" class="head-chip" id="head-system" hidden></button>
           <button type="button" class="head-chip" id="head-timer" hidden></button>
           <button type="button" class="head-chip" id="head-bell" hidden></button>
         </div>
@@ -822,6 +823,7 @@ function paintHead() {
   const waiting = noticeSource.count;
   const key = [
     running ? `${running.phase}:${lead.seconds()}:${running.endsAt === null}` : "",
+    screen,
     // Both, so the chip repaints when the OTHER one starts or stops.
     !!timer.state, !!countdown.state,
     waiting,
@@ -858,6 +860,18 @@ function paintHead() {
     text.textContent = "";
     chip.setAttribute("aria-label", "Timer");
     chip.setAttribute("data-tip", "Timer and pomodoro");
+  }
+
+  /* ⚠️ Always there, like the timer's. System came off the rail — it is a
+   * place you visit for one thing and leave, which is not what a rail stop is
+   * for — and a screen with no way in is a screen nobody opens. */
+  const machine = get<HTMLButtonElement>("head-system");
+  machine.hidden = false;
+  if (!machine.dataset.icon) {
+    paintIcon(machine, "system");
+    machine.setAttribute("aria-label", "System");
+    machine.setAttribute("data-tip", "The machine, and the volume of each app");
+    machine.classList.add("is-idle");
   }
 
   const bell = get<HTMLButtonElement>("head-bell");
@@ -1613,6 +1627,13 @@ get("head-bell").addEventListener("click", () => show("notices"));
 /* ⚠️ Opens the face of whatever is COUNTING, not whichever you looked at
  * last. The two run side by side, so "open the timer screen" has an answer
  * that depends on what is happening rather than on a stored preference. */
+/* ⚠️ A DOOR, not a readout. The other two chips say a number — how long is
+ * left, how many are waiting — because they are counting something. This one
+ * is a glyph: the machine is not doing anything you need to be told about, it
+ * is somewhere you occasionally want to go, and a chip that reported the CPU
+ * would be a fourth thing competing for the one line that was empty. */
+get("head-system").addEventListener("click", () => show("system"));
+
 get("head-timer").addEventListener("click", () => {
   const want = timer.state ? "pomodoro" : countdown.state ? "timer" : null;
   if (want && prefs.timerMode !== want) { prefs.timerMode = want; savePrefs(); }

@@ -244,7 +244,7 @@ test("the clock is 24-hour by default, switches to 12, and pops only the digits 
 test("a player left paused hands the pill back to the clock", async ({page}) => {
   // nocal, not quiet: the demo meeting is 18 minutes out and a *paused* player
   // ranks below an imminent one, so it would win this contest legitimately.
-  await page.goto("/tasks.html?nocal");
+  await page.goto("/tasks.html?nocal&nofollow");
   await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", "media");
   await open(page);
   // The transport lives on Home now, which is the screen the island opens on.
@@ -263,7 +263,7 @@ test("a player left paused hands the pill back to the clock", async ({page}) => 
  * deletes what covered it. What survives is tested where it now lives — the
  * pill's claim and hand-back above, and the transport on Home below. */
 test("the player is on Home, and the transport there is the whole control", async ({page}) => {
-  await page.goto("/tasks.html");
+  await page.goto("/tasks.html?nofollow");
   await open(page);
   await expect(page.locator(".home-track-title")).toHaveText(/potion shop/);
   await expect(page.locator(".home-media")).toBeVisible();
@@ -663,7 +663,7 @@ test("the selection travels, and lands exactly where it is going", async ({page}
 });
 
 test("Home gathers the other three onto one row, and opens into them", async ({page}) => {
-  await page.goto("/tasks.html");
+  await page.goto("/tasks.html?nofollow");
   await open(page);
   // Media: the track and working transport, without leaving Home.
   await expect(page.locator(".home-track-title")).toHaveText(/potion shop/);
@@ -1078,11 +1078,22 @@ test("the accent is one variable, and nothing is still painted green", async ({p
      accent was settable from the settings window — so a purple accent bought a
      purple tab strip and left green hovers, a green today-cell on Home and a
      green focus ring. Auditing by eye is what missed them the first time. */
-  await page.evaluate(() => document.documentElement.style.setProperty("--accent", "#a78bfa"));
+  /* ⚠️ `!important`, in a sheet, rather than an inline write on the root.
+   * `applyPrefs` sets the accent inline on every render — so a test that wrote
+   * it the same way was in a race with the app, and any redraw between the
+   * write and the scan put the default green back. It passed for as long as
+   * nothing happened to redraw during it, which is not a property of the
+   * thing being tested. */
+  await page.addStyleTag({content: ":root { --accent: #a78bfa !important; }"});
 
   await expect.poll(() => today.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(before);
 
-  const green = await page.evaluate(() => {
+  /* ⚠️ POLLED, because colour is TRANSITIONED. Half the controls here animate
+   * `background-color` over 150ms, so a scan taken the instant the accent
+   * changes catches them part way between the old green and the new purple
+   * and reports the start of the journey as a hardcoded colour. The question
+   * is what the sheet settles on. */
+  const scan = () => page.evaluate(() => {
     const hits: string[] = [];
     for (const el of document.querySelectorAll("*")) {
       const style = getComputedStyle(el);
@@ -1094,7 +1105,7 @@ test("the accent is one variable, and nothing is still painted green", async ({p
     }
     return hits;
   });
-  expect(green).toEqual([]);
+  await expect.poll(scan, {timeout: 4000}).toEqual([]);
 
   /* And a hover is the same colour as the thing it lights up. `#22ff9a` was a
      hand-mixed lighter green that no longer had anything to do with the accent
@@ -1831,7 +1842,9 @@ test("every screen ends the same way, and a card that lights up goes somewhere",
   /* ⚠️ The gap under the last row must match the gap at the sides. It was the
    * screen's own padding PLUS a card's worth added by `measure()` — about 30px,
    * spent twice, which is what made the bottom look nothing like the sides. */
-  for (const tab of ["home", "agents", "shelf", "system", "review"]) {
+  /* ⚠️ No "system": it came off the rail and is reached from its chip in the
+   * header now. The screen itself is covered where that chip is tested. */
+  for (const tab of ["home", "agents", "shelf", "review"]) {
     await page.locator(`[data-tab="${tab}"]`).click();
     await expect.poll(() => page.evaluate(() => {
       const body = document.querySelector(".screen.active .screen-body") as HTMLElement | null;
@@ -1858,7 +1871,7 @@ test("every screen ends the same way, and a card that lights up goes somewhere",
 
 test("a screen opens at its own height, not already scrolled", async ({page}) => {
   await page.setViewportSize({width: 1060, height: 760});
-  await page.goto("/tasks.html");
+  await page.goto("/tasks.html?nofollow");
   await open(page);
   /* Through the palette. ⚠️ Not the control on the arc: that is bare
    * until it is reached for, and these tests are not about reaching for
@@ -1872,7 +1885,10 @@ test("a screen opens at its own height, not already scrolled", async ({page}) =>
    * with `.row + .row { margin-top }`, so a five-row list came out about thirty
    * pixels short and opened already scrolled. A list that arrives scrolled
    * reads as cut off rather than as long. */
-  for (const tab of ["home", "agents", "shelf", "calendar", "system", "review"]) {
+  /* ⚠️ No "system" in this walk any more: it came off the rail and is
+   * reached from its chip in the header. The screen itself is covered by the
+   * test that opens it that way. */
+  for (const tab of ["home", "agents", "shelf", "calendar", "review"]) {
     await page.locator(`[data-tab="${tab}"]`).click();
     await expect.poll(() => page.evaluate(() => {
       const body = document.querySelector(".screen.active .screen-body") as HTMLElement | null;
@@ -1958,17 +1974,21 @@ test("a wheel changes screens unless the thing under it can scroll", async ({pag
 });
 
 test("the System screen carries the machine's own controls", async ({page}) => {
-  await page.goto("/tasks.html?quiet");
+  await page.goto("/tasks.html?quiet&nofollow");
   await open(page);
   await goTo(page, "system");
 
   /* Volume and brightness are capsules, not range inputs — the whole shape is
    * the target. They keep role=slider and the arrow keys, so nothing is lost
    * by leaving the native control behind. */
-  const volume = page.getByLabel("Volume");
+  /* ⚠️ Scoped, and `getByLabel` is why: it matches on a SUBSTRING, so the
+   * mixer's rows — "Brave volume", "Spotify volume" — answer to it too. The
+   * master control is the one in the controls tile. */
+  const volume = page.locator(".sys-controls").getByLabel("Volume");
   await expect(volume).toHaveAttribute("role", "slider");
   await expect(volume).toHaveAttribute("aria-valuenow", "51");
-  await expect(page.getByLabel("Brightness")).toHaveAttribute("aria-valuenow", "14");
+  await expect(page.locator(".sys-controls").getByLabel("Brightness"))
+    .toHaveAttribute("aria-valuenow", "14");
   await volume.focus();
   await volume.press("ArrowUp");
   await expect(volume).toHaveAttribute("aria-valuenow", "56");
@@ -2164,4 +2184,48 @@ test("the lyrics panel costs the screen nothing while it is shut", async ({page}
   const said = () => page.locator(".media-time").first().textContent();
   const first = await said();
   await expect.poll(said, {timeout: 4000}).not.toBe(first);
+});
+
+test("System is a chip rather than a rail stop, and it carries the mixer", async ({page}) => {
+  await page.setViewportSize({width: 1200, height: 900});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+
+  /* ⚠️ Off the rail, like the notices and the timer. It is a place you visit
+   * for one thing and leave, which is not what a rail stop is for — and a
+   * screen with no way in is a screen nobody opens, so the chip is always
+   * there rather than only when the machine has something to say. */
+  await expect(page.locator('.rail-stop[data-tab="system"]')).toHaveCount(0);
+  const chip = page.locator("#head-system");
+  await expect(chip).toBeVisible();
+  await chip.click();
+  await expect(page.locator("#island-where")).toHaveText("System");
+
+  const rows = page.locator(".mix-row");
+  await expect(rows).toHaveCount(2);
+  /* ⚠️ A dot for what is making a sound RIGHT NOW. An app holds its session
+   * for hours after it went quiet, so by the afternoon the list is most of the
+   * machine — which of them you can hear is the whole reason anybody opens a
+   * mixer. */
+  await expect(page.locator(".mix-row .mix-live")).toHaveCount(1);
+
+  // Dragging the rail moves the level, and does not redraw the screen under
+  // the pointer: a redraw mid-drag replaces the element the press is captured
+  // on and the gesture is dropped with the button still down.
+  const rail = rows.first().locator(".mix-rail");
+  const box = (await rail.boundingBox())!;
+  const width = () => rail.locator("i").evaluate(el => Math.round(el.getBoundingClientRect().width));
+  const before = await width();
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2);
+  const during = await width();
+  expect(during).toBeGreaterThan(before);
+  await page.mouse.up();
+  expect(await width()).toBe(during);
+
+  // And muting one says so on its own row, not on the master control.
+  await rows.first().locator(".pip").click();
+  await expect(rows.first()).toHaveClass(/is-muted/);
+  await expect(page.locator(".sys-controls .pip").first()).not.toHaveClass(/is-on/);
 });

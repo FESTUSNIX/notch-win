@@ -13,7 +13,7 @@ import {
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
-  Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon,
+  Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon, ShuffleIcon,
 } from "@hugeicons/core-free-icons";
 
 /* An agent's OWN mark, hand-written rather than from the icon set — Hugeicons
@@ -85,7 +85,7 @@ const icons = {
   /* The lyrics panel. ⚠️ Not `text`, which is a FILE glyph with the letters
      TXT printed inside it — at sixteen pixels beside a speaker that reads as
      a document, not as words being sung. */
-  words: SubtitleIcon,
+  words: SubtitleIcon, shuffle: ShuffleIcon,
   // Whose agent it is. See CLAUDE_MARK.
   claude: CLAUDE_MARK,
 };

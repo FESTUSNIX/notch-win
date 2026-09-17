@@ -48,6 +48,11 @@ export const SCREENS: ScreenDef[] = [
   { name: "shelf", icon: "shelf", label: "Shelf" },
   { name: "notes", icon: "note", label: "Notes" },
   { name: "calendar", icon: "calendar", label: "Calendar" },
-  { name: "system", icon: "system", label: "System" },
+  /* ⚠️ Off the rail unless you put it there, like the notices and the
+   * timer. It is a place you visit when you want something from the machine
+   * — the volume of one app, a device, a reading — and the rail is for the
+   * screens you would sit on for thirty seconds. The chip in the header is
+   * how you reach it, and it is always there. */
+  { name: "system", icon: "system", label: "System", offRail: true },
   { name: "review", icon: "review", label: "Review" },
 ];

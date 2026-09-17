@@ -1306,8 +1306,14 @@ html[data-motion=never] .media-body { transition:none; }
    ⚠️ A FIXED height either side of the toggle, because `height: auto` cannot
    be transitioned — and the island is sized from its content, so the panel
    growing is the island growing. Same bargain the queue's column makes. */
-.media-lyrics { grid-column:1 / -1; height:0; overflow:hidden;
-  transition:height 460ms cubic-bezier(0.32, 1.22, 0.36, 1); }
+/* ⚠️ NO transition on the height, and that is the fix rather than a
+   compromise. The island is sized from its content and measures once per
+   render, so a panel easing itself shut over 460ms was measured at the START
+   of the ease — the island kept the open height and an empty band was left
+   under the transport. Snapping the panel lets the island's own depth spring
+   be the animation, and `overflow: clip` on the shape means the content is
+   revealed rather than appearing before the room for it does. */
+.media-lyrics { grid-column:1 / -1; height:0; overflow:hidden; }
 /* Spaced by a MARGIN rather than a row gap, so the measure can see it: the
    union of the children's boxes carries a top margin (it pushes the box down)
    and cannot carry a gap. */
@@ -3424,6 +3430,46 @@ html[data-motion=never].dragging-files #drop-veil { animation:none; }
 /* Paused reads as paused rather than as stopped — the digits stay, dimmed. */
 .head-chip.is-held { opacity:.55; }
 .head-count { min-width:13px; text-align:center; }
+
+/* ── The mixer ────────────────────────────────────────
+   One level per app, on the System screen — not the player's, because turning
+   a browser down while music keeps playing is a thing you do TO the machine
+   rather than to the track.
+   ⚠️ The name column is a fixed width. Sliders that start at different
+   places because one app is called "Brave" and another "Spotify" read as a
+   ragged list rather than as a set of controls. */
+/* ⚠️ Across the whole bento, not a column of it. The mixer is a LIST whose
+   length is whatever happens to be open — two rows on a quiet afternoon and
+   nine with a browser going — and a tile that changes height cannot share a
+   row with ones that do not. */
+.sys-mixer { grid-column:1 / -1; display:flex; flex-direction:column; gap:8px; }
+.mix-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto;
+  align-items:center; gap:10px; }
+.mix-name { display:flex; align-items:center; gap:6px; min-width:0; }
+.mix-word { font-size:12px; font-weight:560; color:#d2d2d2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* ⚠️ A dot for what is making a sound RIGHT NOW, not a label. An app holds
+   its session for hours after it went quiet — the list is most of the machine
+   by the afternoon — and which of them you can hear is the whole reason
+   anybody opens a mixer. */
+.mix-live { width:5px; height:5px; border-radius:50%; flex-shrink:0;
+  background:var(--accent); box-shadow:0 0 6px -1px var(--accent); }
+.mix-row.is-muted .mix-word { color:#7a7a7a; }
+/* Long, thin, and the same height as its label — the player's scrubber, not
+   the capsule, which is 130px of glass and right only for a level that owns a
+   tile of its own. */
+.mix-rail { position:relative; height:22px; display:flex; align-items:center;
+  cursor:pointer; touch-action:none; }
+.mix-rail::before { content:""; position:absolute; inset:9px 0; border-radius:2px;
+  background:rgba(255,255,255,.10); }
+.mix-rail i { position:relative; height:4px; border-radius:2px;
+  background:var(--accent); min-width:4px;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.mix-rail:hover i, .mix-rail.is-held i {
+  box-shadow:0 0 10px -2px var(--accent); }
+.mix-rail:focus-visible { outline:2px solid var(--accent); outline-offset:3px;
+  border-radius:4px; }
+.mix-row.is-muted .mix-rail i { background:#5e5e5e; box-shadow:none; }
 /* ⚠️ Idle it is a glyph and nothing else — the text node is empty, so the
    gap would otherwise hold a space that is not there. A door, not a readout. */
 .head-chip.is-idle { gap:0; padding:0 6px; color:#8a8a8a; }

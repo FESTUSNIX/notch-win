@@ -12,10 +12,10 @@
         would make it properly fast, and the plugin does report key release.
   - [ ] No actions on it, only screens — "add a task" and "shelve the
         clipboard" would both earn a wedge.
-- [ ] **The rail budget** (agreed, not yet applied): a screen earns a rail stop
-      only if you would sit on it for thirty seconds. Everything else is a
-      palette command or a Home section. System and Review are the two that
-      should come off the default rail.
+- [x] **The rail budget**: a screen earns a rail stop only if you would sit on
+      it for thirty seconds. **System is off it now**, with a chip in the
+      header beside the timer and the bell — it is a place you visit for one
+      thing and leave. Review is still there and is the remaining candidate.
 
 - ~~Quick note widget with history of all notes, search~~ — **done**. A Notes
   screen: a field that saves on Enter, the pile newest-first, and a search that
@@ -34,26 +34,16 @@
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
 
-- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Its own panel
-  under the player and the queue, opened from the button beside the output
-  picker and closed by default; the island grows for it. The whole file is in
-  the DOM and the window travels over it, fading and blurring out from the
-  line being sung — so it can be scrolled to read ahead, and a line change
-  reads as movement rather than as a caption being replaced. The change itself
-  is a timer aimed at the next line's own second, not a poll. ⚠️ LRCLIB's
-  `/api/get` is a fingerprint (artist + track + album + duration) and answers
-  404 on a near miss, which is the behaviour to want — nothing beats another
-  recording's words against this one's clock. No key, no account, cached by
-  the same fingerprint on both sides.
-  - [ ] Unsynced files are ignored. LRCLIB serves plain words too, and pacing
-        them by dividing the track's length by the line count is an invention
-        that is wrong from the second line on. A block of static text would be
-        honest and is not drawn yet.
-  - [ ] Nothing on the collapsed strip. A line of lyric is the most tempting
-        thing to put there and the one most likely to be read over somebody's
-        shoulder — the same argument that keeps a notification's words off it.
-
-- Feature (media): Add volume mixer. Control volume per app
+- ~~Feature (media): volume mixer, per app~~ — **done**, on the System screen:
+  a row per app with a rail and a mute, sorted by what is making a sound now.
+  ⚠️ `eRender` sessions, read on OPEN and never polled — it is a COM walk of
+  every session on the machine. A write goes to every session of that process,
+  because a browser opens one per renderer.
+  - [ ] No icons on the rows, only names. The path is carried for it; the
+        shell's icon extractor is the piece that is not wired up.
+  - [ ] Pid 0 — Windows' own system sounds — is left out: it has no process to
+        name and no icon, and a row that cannot say what it is is a slider
+        nobody dares move.
 
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
 
@@ -137,6 +127,25 @@ until the answer arrives as a `tool_result`.
   - [ ] It follows on EVERY open, so walking to Notes and reopening goes back
         to the call. That is the feature; if it grates, the escape is a grace
         period after a deliberate screen change rather than a new setting.
+
+- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Its own panel
+  under the player and the queue, opened from the button beside the output
+  picker and closed by default; the island grows for it. The whole file is in
+  the DOM and the window travels over it, fading and blurring out from the
+  line being sung — so it can be scrolled to read ahead, and a line change
+  reads as movement rather than as a caption being replaced. The change itself
+  is a timer aimed at the next line's own second, not a poll. ⚠️ LRCLIB's
+  `/api/get` is a fingerprint (artist + track + album + duration) and answers
+  404 on a near miss, which is the behaviour to want — nothing beats another
+  recording's words against this one's clock. No key, no account, cached by
+  the same fingerprint on both sides.
+  - [ ] Unsynced files are ignored. LRCLIB serves plain words too, and pacing
+        them by dividing the track's length by the line count is an invention
+        that is wrong from the second line on. A block of static text would be
+        honest and is not drawn yet.
+  - [ ] Nothing on the collapsed strip. A line of lyric is the most tempting
+        thing to put there and the one most likely to be read over somebody's
+        shoulder — the same argument that keeps a notification's words off it.
 
 ---
 

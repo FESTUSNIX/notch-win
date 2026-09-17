@@ -53,6 +53,12 @@ pub struct Media {
     /// Whether the player accepts a position change. Plenty do not, and the
     /// waveform must not offer to scrub something that will ignore it.
     pub can_seek: bool,
+    /// ⚠️ Three states, not two. A player that does not report shuffle at all
+    /// is not a player with shuffle OFF — a browser tab is the usual case — and
+    /// a control drawn from a missing answer is one that lies about what it
+    /// is about to do.
+    pub shuffle: Option<bool>,
+    pub can_shuffle: bool,
 }
 
 #[derive(Default)]
@@ -145,6 +151,15 @@ fn read(session: &Session, previous: &Media) -> Media {
         Err(_) => (String::new(), String::new(), String::new(), String::new()),
     };
 
+    let (shuffle, can_shuffle) = match &info {
+        Ok(i) => match i.IsShuffleActive().and_then(|r| r.Value()) {
+            Ok(on) => (Some(on), i.Controls().and_then(|c| c.IsShuffleEnabled()).unwrap_or(false)),
+            // Not reported at all: see `shuffle` on the struct.
+            Err(_) => (None, false),
+        },
+        Err(_) => (None, false),
+    };
+
     let (playing, can_next, can_previous, can_play_pause, can_seek) = match &info {
         Ok(i) => (
             matches!(i.PlaybackStatus(), Ok(PlaybackStatus::Playing)),
@@ -186,6 +201,8 @@ fn read(session: &Session, previous: &Media) -> Media {
         can_previous,
         can_play_pause,
         can_seek,
+        shuffle,
+        can_shuffle,
     }
 }
 
@@ -289,6 +306,18 @@ pub async fn media_command(action: String) -> Result<(), String> {
                 "playpause" => session.TryTogglePlayPauseAsync().and_then(block),
                 "next" => session.TrySkipNextAsync().and_then(block),
                 "previous" => session.TrySkipPreviousAsync().and_then(block),
+                /* ⚠️ Read back before it is flipped. There is no toggle in the
+                 * API, only a set, and assuming the state from what the island
+                 * last drew turns a stale reading into a control that does the
+                 * opposite of what it says. */
+                "shuffle" => {
+                    let on = session
+                        .GetPlaybackInfo()
+                        .and_then(|i| i.IsShuffleActive())
+                        .and_then(|r| r.Value())
+                        .unwrap_or(false);
+                    session.TryChangeShuffleActiveAsync(!on).and_then(block)
+                }
                 _ => return Err("Unknown media action.".into()),
             }
             .map_err(|_| "The player refused that.".to_string())?;

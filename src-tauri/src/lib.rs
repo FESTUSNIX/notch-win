@@ -7,6 +7,7 @@ mod config;
 mod credentials;
 mod drag;
 mod lyrics;
+mod mixer;
 mod apps;
 mod everything;
 mod fixtures;
@@ -555,6 +556,9 @@ pub fn run() {
             sessions::focus_session,
             weather::get_weather,
             lyrics::get_lyrics,
+            mixer::get_mixer,
+            mixer::set_app_volume,
+            mixer::set_app_mute,
             weather::set_weather_place,
             media::get_media,
             media::media_command,

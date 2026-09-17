@@ -3386,3 +3386,38 @@ The two halves were the same fault.
      has to stay readable while everything else falls away. The line just sung
      needs no such help: you have heard it, and two bright lines either side of
      the current one is three lines competing.
+511. ⚠️ **A panel that eases its own height shut is measured at the START of
+     the ease.** The island is sized from its content and measures once per
+     render, so the lyrics panel closing over 460ms left the island at the open
+     height with an empty band under the transport. The panel snaps; the
+     ISLAND's own depth spring is the animation, and `overflow: clip` means the
+     content is revealed rather than appearing before the room for it.
+512. ⚠️ **`.after()` on a node with no parent does nothing at all.** The
+     shuffle button was placed relative to a queue button that had not been
+     appended yet, so it simply was not there — no error, no warning. Append in
+     order instead of positioning against something that does not exist yet.
+513. ⚠️ **Shuffle has no toggle in the API, only a set** — so Rust reads the
+     state back before flipping it, and the island has to be optimistic about
+     the result or the control sits on the old answer until the next poll. A
+     button pressed that does not change for a second is one you press twice.
+514. ⚠️ **`eRender` and `eCapture` walk the same session tree for opposite
+     reasons.** `call.rs` wants ACTIVE capture sessions (one outlives the
+     recording that made it); the mixer wants every render session, because one
+     that has gone quiet still has a volume worth setting before the next sound
+     comes out of it. They share `exe_of` and nothing else. Pid 0 is the system
+     sounds session: no process, no name, no icon — a slider nobody dares move.
+515. ⚠️ **A write goes to EVERY session of that process.** A browser opens one
+     per renderer, so setting the first the enumerator returns leaves the tab
+     that is actually playing at full volume.
+516. ⚠️ **`getByLabel` matches on a SUBSTRING.** The mixer's rows are "Brave
+     volume" and "Spotify volume", so they answered to the master control's
+     `getByLabel("Volume")` and the strict-mode violation named three elements.
+517. ⚠️ **A colour scan must be POLLED, because colour is transitioned.** Half
+     these controls animate `background-color` over 150ms, so a scan taken the
+     instant the accent changes catches them part way between the old green and
+     the new purple — and reports the start of the journey as a hardcoded
+     colour. The question is what the sheet SETTLES on.
+518. ⚠️ **Writing the accent inline on the root is a race with the app**,
+     which does exactly that on every render from the preference. A test that
+     wants a different accent has to put it in a sheet with `!important`, or it
+     is testing whether anything happened to redraw in between.

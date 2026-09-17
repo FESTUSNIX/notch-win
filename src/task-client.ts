@@ -20,12 +20,17 @@ const agentsFixture = new URLSearchParams(location.search).has("agents");
 /* `nocal` pushes the demo agenda out of claiming range but leaves the player
  * alone — the two flags silence different competitors for the pill. */
 const nocal = quiet || new URLSearchParams(location.search).has("nocal");
+const demoMixer = [
+  { pid: 4396, name: "Brave", path: "C:/brave.exe", volume: 0.65, muted: false, active: true },
+  { pid: 15816, name: "Spotify", path: "C:/spotify.exe", volume: 1, muted: false, active: false },
+];
 let demoMedia = {
   active: !quiet, playing: !quiet,
   title: "I turned my potion shop into a chaotic factory!",
   artist: "Real Civil Engineer", album: "", source: "Brave",
   position: 263, duration: 1878, artwork: "",
   canNext: false, canPrevious: false, canPlayPause: true, canSeek: true,
+  shuffle: false, canShuffle: true,
 };
 /* `?call` puts the preview IN a call, and `?call=meet` in one whose app
    offers fewer controls — Meet has no way to hang up or share from the
@@ -189,6 +194,20 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "everything_running") return true as T;
   if (command === "reset_position" || command === "open_log" || command === "quit_app") return undefined as T;
   if (command === "get_media") return structuredClone(demoMedia) as T;
+  /* The mixer, staged. ⚠️ Two apps where one is making a sound and one is
+     merely holding a session, because telling those apart is the whole reason
+     the list has a dot. */
+  if (command === "get_mixer") return structuredClone(demoMixer) as T;
+  if (command === "set_app_volume") {
+    const row = demoMixer.find(one => one.pid === args.pid);
+    if (row) row.volume = Number(args.volume) || 0;
+    return undefined as T;
+  }
+  if (command === "set_app_mute") {
+    const row = demoMixer.find(one => one.pid === args.pid);
+    if (row) row.muted = !!args.muted;
+    return undefined as T;
+  }
   /* ⚠️ Staged, not fetched. The preview has no network and LRCLIB should not
      be asked what a fixture is listening to — and "what does a lyric look like
      against a wide, short panel" is the question the preview exists for. The
@@ -428,6 +447,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   }
   if (command === "media_command") {
     if (args.action === "playpause") demoMedia = {...demoMedia, playing: !demoMedia.playing};
+    if (args.action === "shuffle") demoMedia = {...demoMedia, shuffle: !demoMedia.shuffle};
     return undefined as T;
   }
   if (command === "open_task_editor") { window.open("/task-editor.html", "task-editor"); return undefined as T; }

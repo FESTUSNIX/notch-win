@@ -34,10 +34,16 @@ export interface Media {
   canPrevious: boolean;
   canPlayPause: boolean;
   canSeek: boolean;
+  /** ⚠️ Three states. A player that does not report shuffle at all is not a
+   *  player with shuffle off — a browser tab is the usual case — and a control
+   *  drawn from a missing answer lies about what it is about to do. */
+  shuffle?: boolean | null;
+  canShuffle?: boolean;
 }
 
 export const emptyMedia = (): Media => ({
   active: false, playing: false, title: "", artist: "", album: "", source: "",
+  shuffle: null, canShuffle: false,
   position: 0, duration: 0, artwork: "", canNext: false, canPrevious: false, canPlayPause: false,
   canSeek: false,
 });
@@ -80,7 +86,8 @@ export class MediaSource {
   private static shape(media: Media): string {
     return [media.active, media.playing, media.title, media.artist, media.album,
       media.source, Math.round(media.duration), media.artwork,
-      media.canSeek, media.canNext, media.canPrevious, media.canPlayPause].join("");
+      media.canSeek, media.canNext, media.canPrevious, media.canPlayPause,
+      media.shuffle, media.canShuffle].join("");
   }
 
   private receive(next: Media) {
@@ -123,9 +130,13 @@ export class MediaSource {
        * a focus session and to an imminent meeting. Paused stays on the list so
        * the pill can still offer the controls, but it claims almost nothing. */
       priority: this.media.playing ? 40 : 15,
-      /* ⚠️ Home, not a Media screen — there is no longer one. The player
-         lives on the Home row, which is where the pill opens into. */
-      screen: "home",
+      /* ⚠️ The PLAYER, not Home. It said Home on the reasoning that the
+         player lived on that row — but there is a media screen again, it is
+         on the rail whenever something is playing, and the strip that names
+         the track is the most direct way anybody will ever reach it. Opening
+         the island from a playing pill and landing on a list of other things
+         is the notch ignoring what it just said. */
+      screen: "media",
       kind: "media",
       label: this.media.title,
       value: this.media.artist || sourceName(this.media.source),
@@ -138,6 +149,14 @@ export class MediaSource {
   control(action: string) {
     this.error = "";
     void call("media_command", { action }).catch(e => { this.error = String(e); this.changed(); });
+    /* ⚠️ Optimistic here too. There is no toggle in the API — only a set —
+     * so Rust reads the state back before flipping it, and the island would
+     * otherwise sit on the old answer until the next poll: a control pressed
+     * that does not change for a second is one you press twice. */
+    if (action === "shuffle" && this.media.canShuffle) {
+      this.media = { ...this.media, shuffle: !this.media.shuffle };
+      this.changed();
+    }
     // Optimistic, and only for the one thing whose result is instantaneous.
     if (action === "playpause" && this.media.canPlayPause) {
       const playing = !this.media.playing;
@@ -432,8 +451,28 @@ export class MediaScreen {
       this.changed();
     };
 
-    transport.append(queueButton, keys, element("div", "media-side-pair"));
-    (transport.lastElementChild as HTMLElement).append(words, output);
+    /* ⚠️ Only when the player SAYS it has one. Shuffle is the control most
+     * often missing — a browser tab reports nothing at all — and a dead toggle
+     * that still looks pressable is worse than an empty space. */
+    const pair = element("div", "media-side-pair");
+    const before = element("div", "media-side-pair");
+    before.append(queueButton);
+    if (media.canShuffle || media.shuffle !== null && media.shuffle !== undefined) {
+      const shuffle = element("button", `media-side${media.shuffle ? " is-on" : ""}`);
+      (shuffle as HTMLButtonElement).type = "button";
+      (shuffle as HTMLButtonElement).disabled = !media.canShuffle;
+      shuffle.setAttribute("aria-label", "Shuffle");
+      shuffle.setAttribute("aria-pressed", String(!!media.shuffle));
+      shuffle.dataset.tip = media.shuffle ? "Shuffle is on" : "Shuffle";
+      paintIcon(shuffle, "shuffle");
+      shuffle.onclick = () => this.deps.source.control("shuffle");
+      /* ⚠️ Appended in ORDER, not placed relative to the queue button — which
+       * has no parent yet at this point, so `after` on it did nothing at all
+       * and the control simply was not there. */
+      before.append(shuffle);
+    }
+    transport.append(before, keys, pair);
+    pair.append(words, output);
     now.append(head, scrub, transport);
     if (this.devicesOpen) now.append(this.deviceMenu());
     this.host.append(now);
