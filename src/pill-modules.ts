@@ -93,12 +93,13 @@ type Module = (ctx: ModuleContext) => ModuleReading | null;
 /* ── The modules ──────────────────────────────────────────────────────────
  * Ordered by how loudly they can shout, not by how often they speak. */
 
-/** ⚠️ Only past 30 minutes out. Inside that the calendar screen claims the
- *  *whole* pill at priority 25/50, so a module covering the same window would
- *  never be seen — and on the rare frame it was, the pill would say the same
- *  thing in two places. This is the hand-off, not a duplicate. */
+/** ⚠️ Only past FIFTEEN minutes out, which is where the calendar's own claim
+ *  now stops. Inside that the claim owns the *whole* pill, so a module covering
+ *  the same window would never be seen — and on the rare frame it was, the pill
+ *  would say the same thing in two places. This is the hand-off, not a
+ *  duplicate, and the number on both sides has to be the same one. */
 const event: Module = ({ nextEvent }) => {
-  if (!nextEvent || nextEvent.minutes <= 30 || nextEvent.minutes > 180) return null;
+  if (!nextEvent || nextEvent.minutes <= 15 || nextEvent.minutes > 180) return null;
   const hours = Math.floor(nextEvent.minutes / 60);
   const minutes = Math.round(nextEvent.minutes % 60);
   return {

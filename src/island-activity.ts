@@ -55,6 +55,15 @@ export interface Activity {
   playing?: boolean;
   /** 0..1, drawn as a ring. */
   progress?: number;
+  /** A countdown, in its own slot at the far end of the strip.
+   *
+   * ⚠️ NOT part of `value`. It was the tail of that grey second line —
+   * ten and a half pixels, behind the phase and a middle dot — which made the
+   * one number anybody is looking for the smallest thing on the strip. It is
+   * a slot of its own so it can be sized like the thing it is. */
+  time?: string;
+  /** Paused, which dims the countdown rather than adding a word to it. */
+  held?: boolean;
   accent?: string;
   /** In a call: the microphone's own state, and the one or two controls the
    *  strip carries. ⚠️ Passed in rather than derived here — which controls
@@ -280,6 +289,8 @@ function build(host: HTMLElement, activity: Activity) {
   copy.append(element("span", "pill-label"), element("span", "pill-value"));
   host.append(lead, copy);
   if (activity.kind === "media") host.append(equaliser());
+  // A `t-digit-group`, so only the digits that changed re-enter. See setDigits.
+  if (activity.time !== undefined) host.append(element("div", "pill-time t-digit-group"));
   host.dataset.kind = activity.kind;
 }
 
@@ -294,6 +305,7 @@ function build(host: HTMLElement, activity: Activity) {
 export function renderResting(host: HTMLElement, resting: Resting) {
   if (host.dataset.kind !== "clock") buildClock(host);
   host.classList.add("is-clock");
+  host.classList.remove("is-held");
   setDigits(host.querySelector<HTMLElement>(".pill-clock")!, resting.time);
   setText(host.querySelector<HTMLElement>(".pill-date-day")!, resting.day);
   setText(host.querySelector<HTMLElement>(".pill-date-month")!, resting.month);
@@ -311,6 +323,7 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   host.classList.remove("is-clock");
 
   if (activity.kind === "call") {
+    host.classList.remove("is-held");
     if (host.dataset.kind !== "call") buildCall(host);
     const art = host.querySelector<HTMLImageElement>(".pill-art")!;
     const mark = host.querySelector<HTMLElement>(".pill-mark")!;
@@ -337,6 +350,11 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   const value = host.querySelector<HTMLElement>(".pill-value");
   if (label) setText(label, activity.label);
   if (value) setText(value, activity.value);
+  const time = host.querySelector<HTMLElement>(".pill-time");
+  /* Per digit rather than the whole number: the minutes must not flinch once
+   * a second because the seconds beside them moved. */
+  if (time) setDigits(time, activity.time ?? "");
+  host.classList.toggle("is-held", !!activity.held);
 
   // The icon is repainted every time, not only on a rebuild. Two claims can
   // share a `kind` and carry different icons — System and Calendar both raise

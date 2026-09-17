@@ -24,15 +24,48 @@ export const MOST = 120;
 /** Which minutes get a taller tick and a number under them. */
 export const STEP = 5;
 
-/** The minute under the marker after dragging `dx` from `startedAt`.
+/** How far past either end the ruler can be pulled, in minutes.
+ *
+ * ⚠️ The ends give rather than stopping dead, and the give is ASYMPTOTIC:
+ * however hard you pull, the strip never travels more than this past the last
+ * mark. A hard stop reads as the control having broken under the hand; an
+ * unbounded one leaves the ruler somewhere it has to be dragged back from.
+ */
+export const GIVE = 6;
+
+/** Where the ruler sits while a hand is on it — the exact, FRACTIONAL minute
+ *  under the marker after dragging `dx` from `startedAt`.
  *
  * ⚠️ Dragging LEFT winds the time UP. The ruler moves with the hand and the
  * numbers on it run left to right, so pulling the strip leftward brings the
  * bigger ones under the mark — the same direction sense as a physical dial,
  * and the opposite of what "drag right to increase" would suggest.
+ *
+ * ⚠️ Fractional ON PURPOSE. Rounding here is what made the drag feel like a
+ * ratchet: the strip stood still for seven pixels of hand movement and then
+ * jumped fifteen. The number that is read out rounds; the ruler follows the
+ * hand, and `clamp` puts it on a mark when the hand lets go.
  */
+export function free(startedAt: number, dx: number): number {
+  const raw = startedAt - dx / PER;
+  /* ⚠️ NaN before anything else: it survives every comparison below and
+   * reaches CSS as `translateX(NaNpx)`, which paints nothing and says
+   * nothing. Same trap as `clamp`. */
+  if (Number.isNaN(raw)) return LEAST;
+  if (raw < LEAST) return LEAST - stretch(LEAST - raw);
+  if (raw > MOST) return MOST + stretch(raw - MOST);
+  return raw;
+}
+
+/** `over` minutes of pull, in minutes of actual travel. Half of `GIVE` at the
+ *  point where you have asked for `GIVE`, and never the whole of it. */
+function stretch(over: number): number {
+  return GIVE * (1 - 1 / (1 + over / GIVE));
+}
+
+/** The minute the ruler lands on when the hand lets go. */
 export function wound(startedAt: number, dx: number): number {
-  return clamp(Math.round(startedAt - dx / PER));
+  return clamp(free(startedAt, dx));
 }
 
 export function clamp(minutes: number): number {
@@ -71,13 +104,12 @@ export function ticks(): Tick[] {
   return out;
 }
 
-/** How far from the marker a tick is, as a fraction of `reach`.
+/* There is no `away` here any more, and its absence is the point.
  *
- * Used to fade and blur the ruler toward its ends — the depth-of-field that
- * says "this is a strip passing under a mark" rather than "this is a row of
- * lines". 0 is under the marker, 1 is `reach` pixels away or further.
+ * ⚠️ The ruler's fade used to be computed per tick and written as an
+ * opacity and a blur onto all 242 children on every frame of a drag. It cost
+ * the drag its smoothness, and because the fade was measured in pixels from
+ * the marker it also held the ruler inside a 210px window in the middle of a
+ * 700px panel — a short ruler floating in a wide screen. It is a `mask-image`
+ * on the dial now: the same picture, no work per frame, and full width.
  */
-export function away(tick: Tick, minutes: number, reach: number): number {
-  if (reach <= 0) return 0;
-  return Math.min(1, Math.abs(tick.at - minutes * PER) / reach);
-}

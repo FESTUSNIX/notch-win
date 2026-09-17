@@ -17,6 +17,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
+import { IslandBubble, type BubbleReading } from "./island-bubble";
 import { IslandRail, type RailPrefs, type RailStop } from "./island-rail";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
@@ -111,18 +112,35 @@ export class IslandSurface {
     (offset, settled) => this.carried(offset, settled),
   );
   private onChoose?: (name: string, live: boolean) => void;
+  /* The countdown: a plain timer as a circle parked beside the notch, instead
+   * of a claim that takes the whole strip. Another sibling of the island, for
+   * the clip-path reason the arcs give above. */
+  private bubble = new IslandBubble(
+    () => this.onCountdownOpen?.(),
+    () => this.onCountdownToggle?.(),
+  );
+  private onCountdownOpen?: () => void;
+  private onCountdownToggle?: () => void;
   /** The palette is up. ⚠️ The arcs and the rail are SIBLINGS of the island,
    *  so the class that hides the panel behind the palette cannot reach them —
    *  they would go on hanging off a shape that is now a search bar, offering
    *  the actions and the screens of whatever was underneath. */
   private searching = false;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
+  /** Chrome that is CLICKABLE but does not open the island by being pointed
+   *  at. ⚠️ One list would not do: everything reported here is what the
+   *  window is interactive over AND what counts as hovering the notch, and
+   *  the countdown beside it has to be the first without being the second —
+   *  it is a control you are meant to press, and a panel opening over it as
+   *  you reach for it is the trap the pill's own buttons are stuck in. */
+  private passive: { x: number; y: number; width: number; height: number }[] = [];
 
   constructor(private onFold?: (open: boolean) => void) {
     // ⚠️ On the SHELL, beside the island rather than inside it.
     this.tools.mount(this.shell);
     this.global.mount(this.shell);
     this.rail.mount(this.shell);
+    this.bubble.mount(this.shell);
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
     document.documentElement.style.setProperty("--row-height", `${cpx(FRAME.taskRowHeight)}px`);
     window.addEventListener("resize", () => this.measure());
@@ -136,7 +154,12 @@ export class IslandSurface {
 
   async boot() {
     if (native) {
-      await listen<{ hover: boolean }>("tasks:hover", e => this.hover(e.payload.hover));
+      /* ⚠️ The payload's x/y are the whole reason this is answerable. The
+       * hover itself is one boolean over every reported rect, so without the
+       * point there is no way to tell "the pointer is on the notch" from "the
+       * pointer is on the circle parked beside it". */
+      await listen<{ hover: boolean; x: number; y: number }>("tasks:hover", e =>
+        this.hover(e.payload.hover && !this.onlyPassive(e.payload.x, e.payload.y)));
       await listen<{ edge: Edge }>("tasks:placement", e => { void this.place(e.payload.edge); });
       await listen("island:toggle", () => this.toggle());
       await listen<boolean>("chrome:hidden", e => this.setHidden(e.payload));
@@ -675,6 +698,28 @@ export class IslandSurface {
     this.tools.paint(frame);
     this.global.paint(frame);
     this.rail.paint(frame);
+    /* ⚠️ `gone`, not the arcs' `open`. The bubble belongs to the COLLAPSED
+     * pill, so it goes when the island is away or a search has taken its
+     * place — and it is the fold, not a flag, that takes it off screen as the
+     * panel opens, so the pill and the bubble leave together. */
+    this.bubble.paint({
+      x, y, width: g.width, height: g.height,
+      edge: this.edge,
+      fold: Math.max(0, this.fold.value),
+      gone: this.hidden || this.searching,
+    });
+  }
+
+  /** What the countdown beside the notch says, or null for no countdown. */
+  setCountdown(reading: BubbleReading | null) {
+    this.bubble.setReading(reading);
+    this.paint();
+  }
+
+  /** Told when it is pressed: the ring opens the screen, the middle pauses. */
+  onCountdown(open: () => void, toggle: () => void) {
+    this.onCountdownOpen = open;
+    this.onCountdownToggle = toggle;
   }
 
   /** Which screens the rail offers, and which one is showing. */
@@ -752,6 +797,7 @@ export class IslandSurface {
   private report() {
     if (this.hidden && !this.peeking) {
       this.masks = [this.revealStrip()];
+      this.passive = [];
       const origin = box(this.shell);
       if (native) {
         void call("set_interactive_rects", {
@@ -779,11 +825,27 @@ export class IslandSurface {
       if (!arc.hidden) this.masks.push(box(arc.element));
     }
     if (!this.rail.hidden) this.masks.push(box(this.rail.element));
+    // ⚠️ PASSIVE, for the reason written beside that field: clickable, and
+    // not a thing you open the island by pointing at.
+    this.passive = this.bubble.hidden ? [] : [box(this.bubble.element)];
     const origin = box(this.shell);
     if (native) {
       void call("set_interactive_rects", {
-        rects: this.masks.map(m => ({ ...m, x: m.x - origin.x, y: m.y - origin.y })),
+        rects: [...this.masks, ...this.passive]
+          .map(m => ({ ...m, x: m.x - origin.x, y: m.y - origin.y })),
       }).catch(() => {});
     }
+  }
+
+  /** Is the pointer on passive chrome and nothing else? */
+  private onlyPassive(x: number, y: number): boolean {
+    if (!this.passive.length) return false;
+    // The report subtracts the shell's own offset; put it back to compare.
+    const origin = box(this.shell);
+    const px = x + origin.x;
+    const py = y + origin.y;
+    const on = (r: { x: number; y: number; width: number; height: number }) =>
+      px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height;
+    return this.passive.some(on) && !this.masks.some(on);
   }
 }

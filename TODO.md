@@ -23,7 +23,16 @@
 - ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen.
   - **Timer**: a ruler of minutes you drag under a fixed mark, which glides on
     to read what is LEFT once it starts — setting it and watching it are one
-    picture. Wheel works too.
+    picture. Wheel works too. The strip follows the hand between the marks and
+    eases onto one when you let go, the ends give rather than stopping dead,
+    and the mark under the arrow lights white. Full width: the fade is a mask
+    on the dial, not an opacity written onto 242 ticks every frame.
+  - **Collapsed**: a plain timer is a circle parked beside the notch — the
+    ring is what is left, the middle is the minutes, and under the pointer it
+    becomes pause/resume. Pressing the ring opens the screen. ⚠️ It is
+    reported as a PASSIVE rect: clickable, and not a thing you open the island
+    by pointing at. A pomodoro still takes the strip, with the countdown as
+    the biggest thing on it.
   - **Pomodoro**: an optional session name as a big borderless heading (it is
     what the collapsed pill then says, because "Focus" you already knew), the
     whole four-round cycle drawn as a track sized by real minutes, and Start /
@@ -39,6 +48,14 @@
   - [ ] The dial is timer-only, deliberately: a pomodoro's lengths are a
         setting you choose once, and under a drag they become a thing to fiddle
         with.
+  - [ ] No momentum on the dial. A flick that carries on is right for a list
+        and wrong for a value you are aiming at — the release would routinely
+        land ten minutes past the one you stopped on.
+  - [ ] The bubble's middle is the only pause, so the ring around it is the
+        only way to open the screen. That annulus is about seven pixels wide.
+  - [ ] Nothing counts down beside the notch on a vertical edge unless the
+        island has room below it; it is placed there, untested on a real
+        side-mounted display.
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than
@@ -78,7 +95,18 @@
 - Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
 
 - Fix: when dragging the screen rail (over the limit) the content seems to animate from a wrong direction (the target screen content)
-- Fix: Upcoming event shouldn't be stuck on the island. Right now it is being display constantly (30 minutes before the event) and it is not possible to dismiss it
+- ~~Fix: Upcoming event stuck on the island~~ — **done**, and it was three
+  faults wearing one coat:
+  - It never let go. `nextEvent` keeps an event until it ENDS, and the claim
+    only asked "more than thirty minutes away?", so once the meeting began the
+    countdown went NEGATIVE and it held the strip for the whole meeting.
+  - It could not be answered. Every other thing that asks for attention can be
+    quietened — a module muted, an agent snoozed — but the strip is not
+    clickable, because hovering it opens the panel. There is a palette command
+    now, and it exists only while that event is claiming.
+  - Thirty minutes was too long to hold the WHOLE strip. Fifteen now, and from
+    fifteen to three hours the pill's own module covers it, which takes its
+    turn in a rotation instead of owning the slot.
 
 ---
 

@@ -69,12 +69,25 @@ let demoDevices = [
   {id:"steam1", name:"Speakers (Steam Streaming Speakers)", isDefault:false, isBluetooth:false},
   {id:"steam2", name:"Speakers (Steam Streaming Microphone)", isDefault:false, isBluetooth:false},
 ];
+/* `?event=soon` puts one eight minutes out, `?event=now` one that started ten
+   minutes ago. ⚠️ Both are worth staging: the claim is supposed to hold the
+   strip for the first and to have LET GO of the second, and for a while it did
+   neither — it counted down past zero and sat there through the meeting. */
+const eventFlag = new URLSearchParams(location.search).get("event");
+const eventStart = eventFlag === "soon" ? 8 / 60 : eventFlag === "now" ? -10 / 60 : (nocal ? 3 : 0.3);
+/* ⚠️ The unflagged case keeps the ORIGINAL end, not `start + 1`. Making it
+   exactly an hour long turned the panel's duration from "42min" into "1h",
+   which is a fixture change dressed up as a rendering bug three files away. */
+const eventEnd = eventFlag === "now" ? 20 / 60
+  : eventFlag === "soon" ? eventStart + 0.7
+  : (nocal ? 4 : 1);
+
 const demoCalendar = {
   connected: true,
   updatedAt: new Date().toISOString(),
   error: null,
   events: [
-    { id: "a", title: "Design review", start: hoursFromNow(nocal ? 3 : 0.3), end: hoursFromNow(nocal ? 4 : 1),
+    { id: "a", title: "Design review", start: hoursFromNow(eventStart), end: hoursFromNow(eventEnd),
       allDay: false, location: "", meetingUrl: "https://meet.google.com/demo",
       calendar: "Work", color: "#5ac8fa", response: "accepted" },
     { id: "b", title: "Lunch with Ada", start: hoursFromNow(4), end: hoursFromNow(5),

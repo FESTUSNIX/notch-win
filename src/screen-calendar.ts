@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
+import { isQuiet } from "./snooze";
 import { isoWeek, localDay, weekStart } from "./task-model";
 import { still } from "./motion-pref";
 import type { Activity } from "./island-activity";
@@ -168,14 +169,34 @@ export class CalendarScreen {
     this.changed();
   }
 
+  /** How long before it starts this is worth the whole strip. ⚠️ Fifteen,
+   *  not thirty: the strip has ONE slot and a claim holds it outright, so
+   *  thirty minutes of "Design review in 24m" is half an hour of a notch that
+   *  can say nothing else. From fifteen to three hours out the pill's own
+   *  `event` MODULE covers it, and that one takes its turn in a rotation
+   *  instead of owning the strip. */
+  static readonly IMMINENT = 15;
+
   activity(): Activity | null {
     const next = nextEvent(this.feed.events);
     if (!next) return null;
     const now = new Date();
     const minutes = (startOf(next).getTime() - now.getTime()) / 60000;
-    // Only claim the pill when it is imminent. A meeting at four o'clock is
-    // not news at nine, and it would sit on top of the day's progress all day.
-    if (minutes > 30) return null;
+
+    /* ⚠️ Gone once it has STARTED. `nextEvent` keeps an event until it ENDS
+     * — correctly, because the calendar screen still wants to show the one you
+     * are in — so this claimed all the way through the meeting, counting
+     * DOWN past zero. A reminder for something that began twenty minutes ago
+     * is not a reminder, and if it is a real meeting the call detector is
+     * already saying so at a priority this could never reach. */
+    if (minutes < 0) return null;
+    if (minutes > CalendarScreen.IMMINENT) return null;
+    /* ⚠️ And gone when you have said so. Until this there was no way at all
+     * to dismiss it: the strip is not clickable while hovering opens the
+     * panel, so the one thing on the island that could not be answered was
+     * the one thing with a deadline. */
+    if (isQuiet(`event:${next.id}`)) return null;
+
     return {
       /* Five minutes out it outranks everything — it is the only claim with a
        * deadline attached. Before that it sits under a focus session and under
@@ -188,6 +209,15 @@ export class CalendarScreen {
       value: countdown(now, startOf(next)),
       accent: next.color || undefined,
     };
+  }
+
+  /** The event that is claiming the strip, if one is — so the palette can
+   *  offer to quieten exactly that one. */
+  claiming(): CalEvent | null {
+    const next = nextEvent(this.feed.events);
+    if (!next) return null;
+    const minutes = (startOf(next).getTime() - Date.now()) / 60000;
+    return minutes >= 0 && minutes <= CalendarScreen.IMMINENT ? next : null;
   }
 
   /** The event whose panel is open, by id. */

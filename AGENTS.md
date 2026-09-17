@@ -3097,3 +3097,99 @@ The two halves were the same fault.
      earlier patch in the same session had inserted `cycle` above them rather
      than below. `tsc` caught it instantly — but only because they were
      exported and used; a private helper would have gone silently.
+458. ⚠️ **`nextEvent` keeps an event until it ENDS, which is right for the
+     screen and wrong for the strip.** The pill's claim only checked "more than
+     thirty minutes away?", so once the meeting began the countdown went
+     NEGATIVE and the claim held for its whole duration. A reminder for
+     something that started twenty minutes ago is not a reminder.
+459. ⚠️ **Everything that asks for attention needs a way to say "not now" —
+     including the one with a deadline.** A module can be muted and an agent
+     snoozed; the meeting could not be answered at all, because the strip is
+     not clickable while hovering it opens the panel. The palette is the way
+     in: a command that exists only while that event is claiming.
+460. ⚠️ **A claim holds the whole strip; a module takes its turn.** Thirty
+     minutes of "Design review in 24m" is half an hour of a notch that can say
+     nothing else. The claim's window and the module's hand-off are the same
+     number in two files and have to move together.
+461. ⚠️ **Centred is the lazy layout and it looks it.** Everything stacked down
+     the middle of a 700px panel leaves two wide margins of nothing and makes
+     every element look small. Controls on one side, the number on the other,
+     and the number gets to be sixty pixels.
+462. ⚠️ **A row of identical labelled buttons says all of them matter
+     equally**, which is never true. Pause is pressed twenty times a session,
+     stop once, the lengths on a Tuesday — 54px accent, 40px grey, 32px ghost,
+     icons only, labels in the tooltip.
+463. ⚠️ **A progress BAR reads as a download.** The pomodoro cycle as eight
+     bars looked like something installing; as dots where the running one
+     stretches into a filling capsule it reads as a place in a sequence, which
+     is what it is. And the running dot needs a ring of its own colour as well
+     as the fill: a minute into twenty-five the fill is 4% of 56px, so on the
+     fill alone the thing HAPPENING looked exactly like the things that had not
+     started.
+464. ⚠️ **A dial needs a detent, and a PC has no haptics to borrow.** The sound
+     is the feedback: eighteen milliseconds of square wave at 3% gain per mark,
+     brighter on the fives. Synthesised rather than a file — a WAV would be a
+     bigger asset than the code, and a file has to be decoded before the first
+     one plays, which is the moment it must not be late.
+465. ⚠️ **An `AudioContext` built at import is born suspended and stays
+     silent.** It needs a gesture, so create it on the first tick — a drag IS
+     the gesture, so by then the browser is willing.
+466. ⚠️ **Number pop-in is for a number that changes once a second**, not for
+     one under a finger. Replaying the per-digit animation on every frame of a
+     drag is a column of digits fighting the hand moving them: plain text while
+     dragging, `setDigits` while running.
+467. ⚠️ **A drag that ROUNDS is a ratchet, not a dial.** The ruler moved only
+     when the whole minute under the mark changed, so it stood still for seven
+     pixels of hand and then jumped fifteen. The strip follows the pointer
+     continuously and only the NUMBER rounds; the release eases it onto the
+     mark over 260ms, which is the part that says the dial caught rather than
+     twitched.
+468. ⚠️ **Ends that stop dead read as the control breaking under the hand.**
+     They give instead, asymptotically — six minutes of travel however hard you
+     pull — so the gesture can never leave the ruler somewhere it has to be
+     dragged back from. `free()` in dial.ts, with the same NaN guard `clamp`
+     has, because a NaN offset paints nothing and reports nothing.
+469. ⚠️ **A per-element fade is a per-frame cost AND a shorter ruler.** The
+     dial wrote an opacity and a blur onto all 242 of its children on every
+     frame of the drag, which is what the drag felt like; and because the fade
+     was measured in pixels from the MARKER rather than from the edges, it kept
+     the ruler inside a 210px window in the middle of a 700px panel. A
+     `mask-image` on the dial is free and reaches both edges.
+470. ⚠️ **One click per mark is a buzz, not a detent.** A quick drag crosses
+     a mark every two or three milliseconds. `click.ts` keeps a 45ms floor and
+     simply drops the ticks in between — catching up afterwards would be a
+     burst of clicks arriving after the hand has stopped. A BUTTON passes 0:
+     a press is deliberate and must not be swallowed because a drag ended
+     forty milliseconds ago.
+471. ⚠️ **A sliding tab pill cannot be `calc(50%)` unless the labels are the
+     same length.** "Timer" and "Pomodoro" are not, so the pill overhung one
+     word and left the other sticking out from under it. Measured off the tab
+     — and placed at the PREVIOUS tab first with the transition off, because
+     changing mode rebuilds the screen and the pill is a new element with
+     nothing to animate from.
+472. ⚠️ **`offsetWidth` is 0 on a screen that has not been shown**, so a
+     measured control keeps its stylesheet fallback for as long as the panel
+     stays open. A `ResizeObserver` on the tabs, not a rAF retry: a screen you
+     never open never gets a size, and the retry would run for the life of the
+     window.
+473. ⚠️ **Two `boundingBox()` calls are two different moments.** The panel
+     grows from its centre for a few frames after it opens, so a pill measured
+     in one round trip and its tab in the next read as seven pixels adrift — a
+     misalignment that was entirely the measurement. Both rects in one
+     `evaluate`. Same family as the 789-vs-511 card in 4xx.
+474. ⚠️ **A plain timer does not deserve the whole strip.** Twenty minutes of
+     "Timer · 12:04" costs the date, the clock and the module slot, to say a
+     number you asked for yourself and can see the end of. It is a circle
+     parked beside the notch now; a POMODORO still claims the strip, because
+     it has a name and a phase, which are what you look down to be reminded of.
+475. ⚠️ **The countdown was the smallest thing on the strip.** It was the
+     tail of the grey 10.5px second line, behind the phase and a middle dot —
+     so the one number anybody looks down for read as metadata about the title
+     above it. Its own slot, 21px, tabular; the name and the phase qualify IT.
+476. ⚠️ **Every reported rect is BOTH "the window is clickable here" and
+     "the pointer is on the notch".** Reporting the countdown bubble as one
+     mask therefore opened the island the moment you reached for it — the
+     exact trap the pill's own buttons are stuck in, arriving on a control
+     built to escape it. Two lists: `masks` open the island, `passive` only
+     make the window clickable. The `tasks:hover` payload has carried the
+     pointer's x/y all along, which is what makes the two answerable apart.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEAST, MOST, PER, STEP, away, clamp, offsetFor, ticks, wound } from '../src/dial.ts';
+import { GIVE, LEAST, MOST, PER, STEP, clamp, free, offsetFor, ticks, wound } from '../src/dial.ts';
 
 test('dragging left winds the time up', () => {
   /* ⚠️ The ruler moves with the hand and its numbers run left to right, so
@@ -47,16 +47,34 @@ test('every minute has a tick and every fifth carries its number', () => {
   assert.equal(all.filter(one => one.major).length, MOST / STEP + 1);
 });
 
-test('the ruler fades with distance from the mark', () => {
-  const all = ticks();
-  const reach = 120;
-  // Under the marker: sharp.
-  assert.equal(away(all[15], 15, reach), 0);
-  // Half the reach away: half faded.
-  assert.equal(away(all[15 + 4], 15, reach), (4 * PER) / reach);
-  /* ⚠️ Clamped at 1 rather than growing. It drives an opacity and a blur, and
-   * a value past 1 is a negative opacity — which paints nothing at all and
-   * looks exactly like the ruler failing to render. */
-  assert.equal(away(all[MOST], 0, reach), 1);
-  assert.equal(away(all[0], 0, 0), 0, 'no reach, no fade, no divide by zero');
+test('the ruler follows the hand between the marks', () => {
+  /* ⚠️ FRACTIONAL, and this is the whole feel of the control. `wound` rounds
+   * because it decides what the timer is SET to; `free` is where the strip is
+   * drawn while a hand is on it, and rounding there made the ruler stand still
+   * for seven pixels and then jump fifteen. */
+  assert.equal(free(15, -PER / 2), 15.5);
+  assert.equal(free(15, PER / 4), 14.75);
+  assert.equal(free(15, 0), 15);
+  // And it still reads the same direction as `wound`.
+  assert.ok(free(15, -PER) > 15, 'left winds up');
+});
+
+test('the ends give rather than stopping dead', () => {
+  /* ⚠️ Asymptotic. A hard stop reads as the control breaking under the
+   * hand; an unbounded overshoot leaves the ruler somewhere that has to be
+   * dragged back from. Neither end can travel a whole `GIVE`. */
+  const under = free(LEAST, PER * 40);
+  assert.ok(under < LEAST, 'it does move past the end');
+  assert.ok(under > LEAST - GIVE, 'but never the whole give');
+  assert.ok(free(LEAST, PER * 4000) > LEAST - GIVE, 'however hard you pull');
+
+  const over = free(MOST, -PER * 40);
+  assert.ok(over > MOST && over < MOST + GIVE);
+
+  // Half the give at the point you have asked for a whole one.
+  assert.equal(free(MOST, -PER * GIVE), MOST + GIVE / 2);
+
+  // And nonsense is still the floor, never NaN into a transform.
+  assert.equal(free(NaN, 0), LEAST);
+  assert.equal(free(15, NaN), LEAST);
 });

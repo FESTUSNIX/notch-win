@@ -173,6 +173,21 @@ h1 { margin:0; }
 .pill-label.muted { color:#6a6a6a; font-weight:400; }
 .pill-value { font-size:10.5px; color:#7d7d7d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   font-variant-numeric:tabular-nums; }
+/* ── A countdown, at the far end of the strip ────────────────
+   ⚠️ Its own slot, and BIG. The time used to be the tail of the grey second
+   line — 10.5px, behind the phase and a middle dot — so the one number
+   anybody looks down for was the smallest thing on the strip and read as
+   metadata about the title above it. It is the headline here; the phase and
+   the name are what qualify IT. */
+.pill-time { flex-shrink:0; margin-left:2px; font-size:21px; font-weight:640;
+  letter-spacing:-.7px; line-height:1; color:#f4f4f4;
+  font-variant-numeric:tabular-nums;
+  transition:color var(--duration-quick) var(--ease-smooth-out); }
+/* Paused DIMS the number rather than printing the word beside it — a strip
+   with room for one line does not spend four characters saying so. */
+#island-collapsed.is-held .pill-time { color:#8a8a8a; }
+/* A side island is ~35px across; the copy is already hidden there. */
+[data-edge=left] .pill-time, [data-edge=right] .pill-time { display:none; }
 /* Only animates while something is genuinely playing; a frozen equaliser
    would say "playing" about a paused track. */
 /* ── The equaliser, and what it becomes ─────────────────────────────
@@ -251,6 +266,71 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
    the same red down the lead is what says "muted" from across the room. */
 #island-collapsed.is-muted .pill-lead { color:#ff9c8c; }
 #island-collapsed.is-muted .pill-art { box-shadow:0 0 0 1.5px rgba(255,90,70,.55); }
+
+/* ── The countdown, beside the notch ───────────────────────
+   A plain timer is a circle parked at the end of the notch rather than a
+   claim that takes the strip — see island-bubble.ts for why. As tall as the
+   notch, so it reads as part of the same object.
+
+   ⚠️ Reachable in HOVER mode, unlike `.pill-eq` and `.pill-act`. Those are
+   on the pill, and with hover opening a pointer reaching one has already
+   turned the pill into a panel; this is outside the island, so nothing opens
+   on the way to it and it needs no `html[data-open=click]` gate. */
+.island-bubble { position:absolute; border-radius:50%; background:#000; }
+.bub-open { position:absolute; inset:0; display:grid; place-items:center;
+  padding:0; border-radius:50%; background:none; cursor:pointer; }
+.bub-ring { position:absolute; inset:0; width:100%; height:100%; }
+.bub-ring .trk { fill:none; stroke:#272727; stroke-width:3; }
+.bub-ring .arc { fill:none; stroke:var(--accent); stroke-width:3;
+  stroke-linecap:round; transform:rotate(-90deg); transform-origin:center;
+  transition:stroke-dashoffset 1s linear; }
+.island-bubble.is-held .bub-ring .arc { stroke:#7a7a7a; }
+/* What is LEFT, in whole minutes — there is room for two characters. */
+.bub-mid { font-size:13.5px; font-weight:650; color:#ededed; line-height:1;
+  font-variant-numeric:tabular-nums;
+  transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
+/* ⚠️ The last minute is TINTED, because the middle then holds seconds:
+   "45" on a ring that is nearly round would otherwise read as 45 minutes. */
+.island-bubble.is-final .bub-mid { color:var(--accent); }
+/* The control, under the pointer. transitions.dev's icon swap — scale .25 to
+   1, blur 4px to 0 — the same values the equaliser's mark uses.
+   ⚠️ SMALLER than the circle on purpose: the ring around it is what opens
+   the screen, and a centre button filling the whole face would mean every
+   press paused instead. */
+.bub-act { position:absolute; left:50%; top:50%; width:21px; height:21px;
+  translate:-50% -50%; display:grid; place-items:center; padding:0;
+  border-radius:50%; color:#0b0b0b; background:var(--accent);
+  opacity:0; scale:.25; filter:blur(4px); pointer-events:none;
+  transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
+    filter var(--duration-fast) cubic-bezier(0.2, 0, 0, 1); }
+.bub-act svg { width:12px; height:12px; }
+.island-bubble:hover .bub-mid,
+.island-bubble:focus-within .bub-mid { opacity:0; scale:.5; filter:blur(3px); }
+.island-bubble:hover .bub-act,
+.island-bubble:focus-within .bub-act {
+  opacity:1; scale:1; filter:blur(0); pointer-events:auto; cursor:pointer; }
+.bub-act:hover { background:color-mix(in srgb, var(--accent) 88%, #fff); }
+/* ⚠️ Qualified, or it never fires: the rule that reveals this button is
+   `.island-bubble:hover .bub-act`, three classes deep, and a bare
+   `.bub-act:active` at two loses the scale to it — a press with no press. */
+.island-bubble:hover .bub-act:active { scale:.86; transition-duration:90ms; }
+.island-bubble:hover .bub-ring .trk { stroke:#333; }
+/* ⚠️ Declared, not inherited. `button:hover` paints `--tile-hi` on every
+   button in the app at (0,1,1), which beats this element's own background and
+   would put a grey disc behind the ring — a thing that happened to look right
+   and would change the day that rule did. */
+.island-bubble .bub-open:hover { background:rgba(255,255,255,.055); }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .bub-mid,
+  html:not([data-motion=always]) .bub-act,
+  html:not([data-motion=always]) .bub-ring .arc { transition:none; }
+}
+html[data-motion=never] .bub-mid,
+html[data-motion=never] .bub-act,
+html[data-motion=never] .bub-ring .arc { transition:none; }
 
 /* ── Expanded ─────────────────────────────────────────────
    One thin strip of chrome, not two: the tabs sit at the top-left and the
@@ -3209,132 +3289,230 @@ html[data-motion=never] .notice-row { transition:none; animation:none; }
 .island-where { flex:1; min-width:0; }
 
 /* ── The timer, and the pomodoro ───────────────────────────
-   Two faces on one screen, because a timer is a number you choose and a
-   pomodoro is a shape you move along — and neither wants the other's controls.
+   ⚠️ NOT centred. The first version stacked everything down the middle of a
+   700px panel, which left two wide margins of nothing and made every element
+   look small. The controls take one side and the number the other, so the
+   number can be the biggest thing on the screen. */
+.timer-body { display:flex; flex-direction:column; gap:14px; }
 
-   ⚠️ BOLD. Everything on this screen is either the one number you came to
-   read or a control you came to press, so nothing here is a caption: the clock
-   is 58px, the buttons are 40 tall and carry words, and the smallest type on
-   the screen is 11.5px. An earlier version lost its own controls at 10px grey
-   on grey. */
-.timer-body { display:flex; flex-direction:column; align-items:center; gap:16px; }
+.tm-top { display:flex; align-items:center; justify-content:space-between; }
 
-/* The two faces. A segmented switch, not tabs: these are modes of one thing. */
-.tm-modes { display:flex; gap:2px; padding:3px; border-radius:11px;
-  background:rgba(255,255,255,.05); box-shadow:inset 0 0 0 1px var(--hair); }
-.tm-mode { height:26px; padding:0 14px; border-radius:8px; background:none;
-  font-size:12px; font-weight:600; color:#8a8a8a; }
-.tm-mode:hover { color:#d8d8d8; background:rgba(255,255,255,.06); }
-.tm-mode.is-on { color:#0b0b0b; background:var(--accent);
-  background-image:var(--sheen); box-shadow:var(--gloss); }
+/* The two faces. transitions.dev's sliding tabs — the pill TRAVELS between
+   them rather than one lighting up as the other goes out.
+   ⚠️ The pill is a QUIET raised surface, NOT a slab of accent. Which face
+   you are on is not the important thing on this screen: the accent belongs to
+   the number you are reading and the one button you came to press, and a
+   switch shouting as loudly as both of them reads as the thing to deal with
+   first.
+   ⚠️ Its width and offset are MEASURED — see `slide()`. "Timer" and
+   "Pomodoro" are not the same length, so the `calc(50%)` below overhung one
+   word and left the other sticking out from under it. It is only the fallback
+   for a control that has never been laid out. */
+.tm-modes { position:relative; display:flex; padding:3px; border-radius:11px;
+  background:rgba(255,255,255,.045); box-shadow:inset 0 0 0 1px var(--hair); }
+.tm-modes-pill { position:absolute; top:3px; left:3px; width:calc(50% - 3px);
+  height:calc(100% - 6px); border-radius:8px;
+  background-color:rgba(255,255,255,.085); background-image:var(--sheen);
+  box-shadow:var(--hairline), 0 1px 3px rgba(0,0,0,.45);
+  transition:translate var(--duration-fast) var(--ease-smooth-out),
+    width var(--duration-fast) var(--ease-smooth-out); }
+.tm-modes[data-at="1"] .tm-modes-pill { translate:100% 0; }
+.tm-mode { position:relative; z-index:1; height:26px; padding:0 13px; background:none;
+  border-radius:8px; font-size:12px; font-weight:600; color:#7c7c7c;
+  white-space:nowrap;
+  transition:color var(--duration-fast) var(--ease-smooth-out); }
+.tm-mode:hover { color:#c4c4c4; background:none; }
+.tm-mode.is-on { color:#f2f2f2; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .tm-modes-pill { transition:none; }
+}
+html[data-motion=never] .tm-modes-pill { transition:none; }
 
-.tm-face { display:flex; flex-direction:column; align-items:center; gap:4px; }
+/* ── The row the faces are built around ─────────────────────── */
+.tm-row { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.tm-acts { display:flex; align-items:center; gap:10px; }
+.tm-right { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+
 /* ⚠️ Tabular and BIG. This is the one number on the screen and it changes
    every second; proportional digits make it breathe in and out, and anything
-   under about 50px stops being the thing you look at from across a desk. */
-.tm-clock { font-size:58px; font-weight:650; letter-spacing:-2px; line-height:1;
+   under about 50px stops being the thing you read from across a desk. */
+.tm-clock { font-size:60px; font-weight:680; letter-spacing:-2.5px; line-height:1;
   font-variant-numeric:tabular-nums; color:var(--accent); }
-.tm-say { font-size:12.5px; color:#9a9a9a; }
+.tm-say { font-size:12.5px; font-weight:500; color:#9a9a9a; }
+
+/* ── The controls ───────────────────────────────────
+   ⚠️ Icon only, and three sizes. A row of four identical labelled buttons
+   says all four matter equally, which is never true: pause is the one you
+   press twenty times, stop is the one you press once, and the lengths are a
+   thing you touch on a Tuesday. The label is the tooltip. */
+.tm-btn { display:grid; place-items:center; width:40px; height:40px; padding:0;
+  border-radius:50%; color:#d4d4d4;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-1);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-bounce); }
+.tm-btn svg { width:17px; height:17px; }
+.tm-btn:hover { color:#fff; background-color:var(--tile-hi);
+  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
+/* ⚠️ Down FAST and back with a bounce — the two halves of a press are not
+   the same gesture. 90ms of ease-out going down reads as the surface taking
+   the weight; the overshoot coming back is what makes it satisfying. */
+.tm-btn:active { scale:.86; transition-duration:90ms;
+  transition-timing-function:var(--ease-smooth-out); }
+
+/* The one you came to press. */
+.tm-btn.is-lead { width:54px; height:54px; color:#0b0b0b;
+  background-color:var(--accent);
+  box-shadow:var(--gloss), var(--lift-2),
+    0 0 26px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.tm-btn.is-lead svg { width:23px; height:23px; }
+.tm-btn.is-lead:hover { color:#0b0b0b;
+  background-color:color-mix(in srgb, var(--accent) 88%, #fff); }
+/* And the one you touch on a Tuesday. */
+.tm-btn.is-ghost { width:32px; height:32px; color:#7c7c7c;
+  background:none; box-shadow:none; }
+.tm-btn.is-ghost svg { width:15px; height:15px; }
+.tm-btn.is-ghost:hover { color:#fff; background-color:var(--tile-hi);
+  box-shadow:var(--hairline); }
+.tm-btn.is-ghost.is-on { color:var(--accent); background-color:var(--tile-hi);
+  box-shadow:var(--hairline); }
 
 /* ── The dial ───────────────────────────────────────
-   A ruler of minutes that slides under a mark that does not move. ⚠️ The MARK
-   is fixed and the strip moves: a pointer that has to land on a moving target
-   is a pointer that has to chase one. */
-.tm-dial { position:relative; width:100%; height:62px; overflow:hidden;
-  cursor:grab; touch-action:none; }
+   A ruler of minutes that slides under a mark that does not move: numbers
+   above it, the arrow below it. ⚠️ The MARK is fixed and the strip moves: a
+   pointer that has to land on a moving target is a pointer that has to chase
+   one.
+   ⚠️ FULL WIDTH, and the fade is a MASK. The ruler used to fade out 210px
+   either side of the mark by writing an opacity and a blur onto every one of
+   its 242 children on every frame of the drag. That cost the drag the very
+   smoothness it was meant to have, and because the fade was measured from the
+   marker rather than from the edges it left a short ruler floating in the
+   middle of a wide panel. A mask costs nothing per frame and reaches both
+   edges, which is the whole width the gesture already had. */
+.tm-dial { position:relative; width:100%; height:66px; overflow:hidden;
+  cursor:grab; touch-action:none;
+  -webkit-mask-image:linear-gradient(90deg, transparent 0, rgba(0,0,0,.3) 8%,
+    #000 33%, #000 67%, rgba(0,0,0,.3) 92%, transparent 100%);
+  mask-image:linear-gradient(90deg, transparent 0, rgba(0,0,0,.3) 8%,
+    #000 33%, #000 67%, rgba(0,0,0,.3) 92%, transparent 100%); }
 .tm-dial.is-winding { cursor:grabbing; }
-/* Locked while it runs — the strip then reads what is LEFT rather than taking
-   a drag, so setting it and watching it are one picture. */
 .tm-dial.is-locked { cursor:default; }
 .tm-strip { position:absolute; left:50%; top:0; height:100%; will-change:translate; }
-/* ⚠️ No transition while a finger is on it, and a gentle one while it runs:
-   the strip has to sit under the pointer rather than chase it, and glide when
-   it is moving itself. */
+/* ⚠️ No transition while a finger is on it — the strip has to sit under the
+   pointer rather than chase it — and a linear glide while it runs itself. */
 .tm-dial.is-locked .tm-strip { transition:translate 1s linear; }
-.tm-strip i { position:absolute; top:14px; width:2px; height:14px; border-radius:1px;
-  background:#8a8a8a; translate:-1px 0; }
-.tm-strip i.is-major { top:8px; height:26px; background:#e4e4e4; }
-.tm-tick-say { position:absolute; top:38px; font-size:11.5px; font-weight:600;
-  color:#9a9a9a; font-variant-numeric:tabular-nums; translate:-50% 0; }
-/* The mark. ⚠️ Accent, and the only accent on the strip, so "where am I"
-   needs no reading at all. */
-.tm-marker { position:absolute; left:50%; top:4px; width:3px; height:34px;
-  border-radius:2px; background:var(--accent); translate:-50% 0;
-  box-shadow:0 0 12px -2px var(--accent); }
-.tm-marker::after { content:""; position:absolute; left:50%; top:34px;
-  border:5px solid transparent; border-top-color:var(--accent); translate:-50% 0; }
+/* The release. ⚠️ This is the whole feel of the control: the hand lets go up
+   to half a minute off a mark, and easing the strip home is what says the
+   dial CAUGHT. Landing it in one frame reads as the ruler twitching. Keep in
+   step with `SETTLE` in screen-timer.ts. */
+.tm-strip.is-settling { transition:translate 260ms var(--ease-smooth-out); }
+.tm-strip i { position:absolute; top:22px; width:2px; height:11px; border-radius:1px;
+  background:#5c5c5c; translate:-1px 0;
+  transition:height var(--duration-quick) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
+.tm-strip i.is-major { height:20px; background:#cfcfcf; }
+/* The one under the arrow: white, and taller than anything else on the strip.
+   ⚠️ The ruler has to say which mark it is ON, not only roughly where it is
+   — an arrow under a row of identical ticks still has to be read. */
+.tm-strip i.is-at { top:19px; height:26px; width:3px; background:#fff;
+  translate:-1.5px 0; box-shadow:0 0 10px -1px rgba(255,255,255,.5); }
+/* Numbers ABOVE the ticks, the way the thing this is modelled on has them. */
+.tm-tick-say { position:absolute; top:0; font-size:12px; font-weight:650;
+  color:#b4b4b4; font-variant-numeric:tabular-nums; translate:-50% 0; }
+/* The mark. ⚠️ An arrow UNDER the ruler pointing up at the tick it names —
+   not a bar drawn through the ticks, which is one more tall line among a
+   hundred tall lines. Accent, and the only accent on the dial. */
+.tm-marker { position:absolute; left:50%; top:49px; width:0; height:0;
+  border-style:solid; border-width:0 6px 8px; border-color:transparent;
+  border-bottom-color:var(--accent); translate:-50% 0;
+  filter:drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 70%, transparent)); }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .tm-strip,
+  html:not([data-motion=always]) .tm-strip i { transition:none; }
+}
+html[data-motion=never] .tm-strip,
+html[data-motion=never] .tm-strip i { transition:none; }
 
-/* ── The session track ────────────────────────────────
-   Where you are in the cycle, as a PLACE rather than a number to remember.
-   ⚠️ Each segment is sized by its own minutes, so a five-minute break is
-   visibly a fifth of a focus — equal segments would say the cycle is eight
-   equal things, which is the one thing it is not. */
-.tm-track { display:flex; align-items:center; gap:4px; width:100%; height:16px; }
-/* ⚠️ Tall enough to READ. At 10px the whole cycle was a hairline that looked
-   like a progress bar somebody had left in, and the difference between a focus
-   and a break — the one thing the track is for — was four pixels of height. */
-.tm-seg { position:relative; height:100%; border-radius:6px; overflow:hidden;
-  background:rgba(255,255,255,.09); box-shadow:inset 0 0 0 1px var(--hair);
-  transition:background-color var(--duration-fast) var(--ease-smooth-out); }
-.tm-seg.is-rest, .tm-seg.is-long { height:9px; }
-.tm-seg.is-done { background:color-mix(in srgb, var(--accent) 55%, #1a1a1a); }
-.tm-seg.is-now { background:rgba(255,255,255,.10);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
-.tm-seg.is-now i { display:block; height:100%; border-radius:6px;
+/* ── The session track ───────────────────────────────
+   ⚠️ Dots, not bars. As bars it looked like a download in progress; dots are
+   the idiom for "which of a short sequence am I on", and the one you are on
+   EARNS its width — it stretches into a capsule and fills. A focus round is a
+   bigger dot than its break, which puts the shape of the method in one look. */
+.tm-track { display:flex; align-items:center; gap:7px; height:14px; }
+.tm-dot { position:relative; width:12px; height:12px; border-radius:7px;
+  overflow:hidden; background:rgba(255,255,255,.13);
+  transition:width var(--duration-slow) var(--ease-smooth-out),
+    background-color var(--duration-fast) var(--ease-smooth-out); }
+.tm-dot.is-rest, .tm-dot.is-long { width:7px; height:7px; border-radius:4px; }
+.tm-dot.is-done { background:color-mix(in srgb, var(--accent) 62%, #151515); }
+/* The one that is happening: wide enough to hold a fill you can read. */
+/* ⚠️ The running one carries a ring of its own colour as well as the fill.
+   A minute into a twenty-five-minute round the fill is 4%% of 56px, so on the
+   fill alone the segment that is HAPPENING looked exactly like the ones that
+   have not started — the one thing the track exists to distinguish. */
+.tm-dot.is-now { width:56px;
+  background:color-mix(in srgb, var(--accent) 14%, rgba(255,255,255,.10));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.tm-dot.is-rest.is-now, .tm-dot.is-long.is-now { width:34px; }
+.tm-dot.is-now i { display:block; height:100%; border-radius:7px;
+  /* A floor, so a round that has just begun still shows a head of colour. */
+  min-width:7px;
   background:var(--accent);
+  box-shadow:0 0 12px -3px var(--accent);
   transition:width 1s linear; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .tm-dot { transition:none; }
+}
+html[data-motion=never] .tm-dot { transition:none; }
 
 /* ── What you are working on ────────────────────────────
    ⚠️ NO box and no background. It is optional and usually empty, and an
    empty bordered input is a hole in the middle of the screen; as a big quiet
    line it reads as a heading you are invited to write. */
-.tm-name { width:100%; padding:0; border:0; background:none; text-align:center;
-  font-family:inherit; font-size:19px; font-weight:600; letter-spacing:-.4px;
-  color:#f0f0f0; }
-.tm-name::placeholder { color:#5a5a5a; font-weight:500; }
+.tm-name { width:100%; padding:0; border:0; background:none; text-align:left;
+  font-family:inherit; font-size:21px; font-weight:650; letter-spacing:-.5px;
+  color:#f4f4f4; }
+.tm-name::placeholder { color:#555; font-weight:600;
+  transition:color var(--duration-quick) var(--ease-smooth-out); }
 .tm-name:focus { outline:none; }
-/* Only while it is being used: a rule under an empty field is furniture. */
+.tm-name:hover::placeholder { color:#6f6f6f; }
 .tm-name:focus::placeholder { color:#7c7c7c; }
-.tm-name:hover::placeholder { color:#6a6a6a; }
-
-/* ── The controls ─────────────────────────────────── */
-.tm-acts { display:flex; align-items:center; gap:9px; flex-wrap:wrap;
-  justify-content:center; }
-.tm-key { display:flex; align-items:center; gap:8px; height:40px; padding:0 17px;
-  border-radius:12px; font-size:12.5px; font-weight:600; color:#e0e0e0;
-  background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.tm-key svg { width:17px; height:17px; }
-.tm-key:hover { color:#fff; background-color:var(--tile-hi);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-2); }
-.tm-key:active { scale:.96; transition-duration:90ms; }
-/* The one you came to press. */
-.tm-key.is-lead { color:#0b0b0b; background-color:var(--accent);
-  box-shadow:var(--gloss), var(--lift-1); }
-.tm-key.is-lead:hover { color:#0b0b0b;
-  background-color:color-mix(in srgb, var(--accent) 88%, #fff); }
-.tm-key.is-on { color:#fff; background-color:var(--tile-hi);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── The lengths, behind a button ─────────────────────────
    ⚠️ These write the SAME preference the settings window writes. One stored
-   value with two controls is not the thing the one-settings-window rule
-   forbids; two places that each remember their own answer is. */
-.tm-drawer { display:flex; flex-direction:column; gap:7px; width:100%;
-  padding:12px 14px; border-radius:14px;
+   value with two controls is not what the one-settings-window rule forbids;
+   two places that each remember their own answer is. */
+.tm-drawer { display:flex; gap:10px; padding:11px 13px; border-radius:14px;
   background:rgba(255,255,255,.04); box-shadow:inset 0 0 0 1px var(--hair);
   animation:tm-drawer-in var(--duration-fast) var(--ease-smooth-out); }
 @keyframes tm-drawer-in {
-  from { opacity:0; transform:translateY(-6px); }
-  to { opacity:1; transform:none; }
+  from { opacity:0; transform:translateY(-8px); filter:blur(2px); }
+  to { opacity:1; transform:none; filter:blur(0); }
 }
-.tm-tune { display:flex; align-items:center; gap:10px; }
-.tm-tune-say { flex:1; font-size:12.5px; color:#c4c4c4; }
-.tm-tune-value { min-width:42px; text-align:center; font-size:13px; font-weight:650;
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion=always]) .tm-drawer { animation:none; }
+}
+html[data-motion=never] .tm-drawer { animation:none; }
+/* Three across rather than three down: the panel is wide and a stack of three
+   rows is another column of nothing either side of it. */
+.tm-tune { flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; }
+.tm-tune-say { font-size:11.5px; color:#8a8a8a; }
+/* ⚠️ The number and its two steppers are ONE group with a ground of their
+   own. Spread across the column, the plus of one length sat beside the minus
+   of the next and neither read as belonging to anything. */
+.tm-tune-row { display:flex; align-items:center; gap:4px; padding:3px;
+  border-radius:11px; background:rgba(255,255,255,.05);
+  box-shadow:inset 0 0 0 1px var(--hair); }
+.tm-tune-value { min-width:46px; text-align:center; font-size:15px; font-weight:680;
   font-variant-numeric:tabular-nums; color:#f0f0f0; }
-.tm-step { display:grid; place-items:center; width:28px; height:28px; padding:0;
-  border-radius:9px; font-size:16px; font-weight:600; color:#c4c4c4;
-  background-color:var(--tile); box-shadow:var(--hairline); }
+.tm-step { display:grid; place-items:center; width:26px; height:26px; padding:0;
+  border-radius:8px; font-size:15px; font-weight:600; color:#b4b4b4;
+  background-color:var(--tile); box-shadow:var(--hairline);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-bounce); }
 .tm-step:hover { color:#fff; background-color:var(--tile-hi); }
-.tm-step:active { scale:.9; transition-duration:90ms; }
-.tm-note { margin:2px 0 0; font-size:11.5px; color:#6a6a6a; text-align:center; }
+.tm-step:active { scale:.86; transition-duration:90ms; }
+.tm-note { margin:0; align-self:center; font-size:11px; color:#6a6a6a; }

@@ -33,6 +33,7 @@ import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
 import { TimerScreen } from "./screen-timer";
 import { DEFAULT_LENGTHS, Timer, phaseName, spokenEnd } from "./timer";
+import { setClicks } from "./click";
 import { timerText } from "./focus-timer";
 import { NotesScreen } from "./screen-notes";
 import { CalendarScreen } from "./screen-calendar";
@@ -634,6 +635,13 @@ function noticeClaim(): Activity | null {
 function timerClaim(): Activity | null {
   const state = timer.state;
   if (!state) return null;
+  /* ⚠️ A PLAIN timer does not claim the strip at all — it is a circle
+   * parked beside the notch instead. See island-bubble.ts: twenty minutes of
+   * "Timer · 12:04" costs the date, the clock and the module slot, to say a
+   * number you asked for yourself. A pomodoro keeps the strip because it has
+   * a name and a phase, which are things you look down to be reminded of. */
+  if (state.phase === "plain") return null;
+  const held = state.endsAt === null;
   return {
     priority: 42,
     screen: "timer",
@@ -643,10 +651,38 @@ function timerClaim(): Activity | null {
      * started it; "Ship the call screen" is the thing you look down at the
      * strip to be reminded of. The phase is the fallback, not the headline. */
     label: state.name || phaseName(state),
-    value: (state.name ? `${phaseName(state)} · ` : "")
-      + timerText(timer.seconds()) + (state.endsAt === null ? " paused" : ""),
+    value: [state.name ? phaseName(state) : "", held ? "paused" : ""]
+      .filter(Boolean).join(" · "),
+    /* ⚠️ Its own slot, and BIG. The countdown used to be the tail of the
+     * grey second line — ten and a half pixels, after the phase and a middle
+     * dot — which is the one number on the strip you are actually looking
+     * for, printed smaller than anything else on it. */
+    time: timerText(timer.seconds()),
+    held,
     progress: timer.through(),
   };
+}
+
+/** The plain timer, as a circle beside the notch.
+ *
+ * ⚠️ Whole minutes, because there is room for two characters. The seconds
+ * are shown in the last minute only, and TINTED there — "45" on a ring that
+ * is nearly round would otherwise read as forty-five minutes. */
+function paintBubble() {
+  const state = timer.state;
+  if (!state || state.phase !== "plain") {
+    surface.setCountdown(null);
+    return;
+  }
+  const seconds = timer.seconds();
+  const final = seconds < 60;
+  surface.setCountdown({
+    through: timer.through(),
+    text: final ? String(seconds) : String(Math.ceil(seconds / 60)),
+    final,
+    held: state.endsAt === null,
+    label: `Timer — ${timerText(seconds)} left`,
+  });
 }
 
 function claims(): (Activity | null)[] {
@@ -779,6 +815,7 @@ function paintHead() {
  *  slots otherwise. Split because at rest the pill is not one claim with its
  *  parts blank — it is three independent things sharing a strip. */
 function paintPill(live = claims()) {
+  paintBubble();
   const best = pick(live);
   if (best && best.priority > 0) {
     /* ⚠️ A call keeps the clock, so the shell hands it over — it owns the
@@ -1100,6 +1137,27 @@ palette.add(() => agentsScreen.sessions.map(session => ({
   ],
 })));
 
+/* Quieten the meeting that is sitting on the strip.
+ *
+ * ⚠️ The one claim on the island that could not be answered. Everything else
+ * that asks for attention has a way to say "not now" — a module can be muted,
+ * an agent snoozed — and the thing with an actual deadline had none, because
+ * the strip is not clickable while hovering it opens the panel. Three hours
+ * covers this meeting and no more: the NEXT one still gets to speak up. */
+palette.add(() => {
+  const soon = calendar.claiming();
+  if (!soon) return [];
+  const key = `event:${soon.id}`;
+  return [snooze.isQuiet(key)
+    ? { id: `event:wake:${soon.id}`, title: `Remind me about ${soon.title} again`,
+        keywords: "unmute wake event meeting", icon: "calendar" as TaskIcon,
+        run: () => { void snooze.wake(key); } }
+    : { id: `event:hush:${soon.id}`, title: `Dismiss ${soon.title}`,
+        note: "Off the strip until the next one", keywords: "snooze quiet event meeting",
+        icon: "snooze" as TaskIcon,
+        run: () => { void snooze.hush(key, 180); } }];
+});
+
 palette.add(() => today.upNext(20).map(task => ({
   id: `task:${task.projectId}:${task.id}`,
   title: task.title || "Untitled task",
@@ -1367,6 +1425,10 @@ function savePrefs() {
 }
 
 function applyPrefs(next: Prefs) {
+  /* ⚠️ One switch for every noise this app makes. "None" has to mean none —
+   * a dial that goes on ticking after you asked for silence is the setting not
+   * working, whatever it says on the row it came from. */
+  setClicks(!!next.timerSound);
   prefs = next;
   document.documentElement.style.setProperty("--accent", next.accent);
   setMotion(next.motion);
@@ -1451,6 +1513,24 @@ get("head-bell").addEventListener("click", () => show("notices"));
  * and which you get depends on a state you may not have looked at. Pause, stop
  * and the presets are on the screen, where they have room to be labelled. */
 get("head-timer").addEventListener("click", () => show("timer"));
+
+/* The countdown beside the notch. ⚠️ The ring OPENS the island as well as
+ * switching to the screen, the way a ring pick does and for the same reason:
+ * a screen changed behind a collapsed pill is a control that appears to do
+ * nothing. `pinFor` rather than a pin, so it closes itself like everything
+ * else here. The middle is the pause, and it must not open anything. */
+surface.onCountdown(
+  () => {
+    show("timer");
+    surface.show(true);
+    surface.pinFor(4000);
+  },
+  () => {
+    timer.toggle();
+    paintBubble();
+    paintHead();
+  },
+);
 
 /* The call's own controls, in click mode. ⚠️ Capturing, and the press must
  * not reach the pill underneath — muting must not also open the island, which
