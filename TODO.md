@@ -8,10 +8,17 @@
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than
   reading.
-  - [ ] Tap-to-open only. Hold-the-key-and-release-to-pick is the gesture that
-        would make it properly fast, and the plugin does report key release.
-  - [ ] No actions on it, only screens — "add a task" and "shelve the
-        clipboard" would both earn a wedge.
+  - [x] **Hold and let go to pick.** Press, flick the wrist, let go — one
+        gesture, no click. A tap still opens it and leaves it up, which is what
+        somebody reading the labels is doing. 200ms is the line.
+  - [x] **Verbs as well as screens**, and they are what stops it being a
+        navigation menu: add a task, write a note (both with the caret where it
+        belongs), shelve the clipboard, start a pomodoro. Chosen in
+        `Settings → Island → The ring`, eight at most.
+  - [ ] The chosen list is ordered by the settings list rather than dragged. A
+        ring whose wedges move about is one where aiming stops working, so the
+        order has to come from somewhere fixed — but "somewhere fixed" is
+        currently "the order this list happens to be written in".
 - [x] **The rail budget**: a screen earns a rail stop only if you would sit on
       it for thirty seconds. **System is off it now**, with a chip in the
       header beside the timer and the bell — it is a place you visit for one
@@ -46,7 +53,20 @@
         name and no icon, and a row that cannot say what it is is a slider
         nobody dares move.
 
-- Improve (today): Overhaul the Today screen. Fix the flashy category tabs, remove category from the heading and improve readibility of the list. Propose and implement features that make the Today (tasks) screen more useful and productive. We need features that will make the user want to complete the tasks.
+- ~~Improve (today): overhaul the Today screen~~ — **done**. The chips are
+  raised rather than washed in their list's colour (the dot carries it); the
+  heading no longer names the list the rail below is already wearing lit; the
+  overdue chip is text and a hairline rather than a filled amber pill.
+  - **One thing to do next**: the first row that can actually be ticked wears
+    an accent edge. A list is a set of things you could do; a queue is one
+    thing you are about to do.
+  - **What you have finished**, beside what is left. A day that only counts
+    down can only get worse.
+  - **The day emptying** sweeps the rail once — the reward for finishing is
+    that the list is empty, which is a quiet thing.
+  - [ ] No streak, and it is the obvious next one: "three days clear" is the
+        strongest thing this screen could say and it needs history the app
+        does not keep yet. The Review screen is where that would come from.
 
 ---
 

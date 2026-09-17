@@ -3454,3 +3454,48 @@ The two halves were the same fault.
      going, not where it is.** The island grows over a spring, so a wheel aimed
      at a panel that had just been opened landed on whatever was there instead
      — and the test failed only under a full run, which is the tell.
+525. ⚠️ **The global-shortcut handler ignores the RELEASE, and the ring needs
+     it.** Every other shortcut fires on the press and returns on the release,
+     without which each toggle runs twice and is therefore a no-op — so the
+     ring's branch has to come BEFORE that guard rather than live among the
+     others. Held and let go is one gesture; tapped it leaves the ring up.
+526. ⚠️ **Which wedge is aimed at is the PAGE's question.** The pointer is
+     knowable from Rust, but the answer depends on the ring's geometry, the
+     preferences and how many stops are showing — all of which live in the
+     page. Two answers to that would disagree the first time somebody changed
+     what the ring holds, so the release asks rather than works it out.
+527. ⚠️ **A verb needs its own event.** `island:go` changes screens; an action
+     arriving down the same pipe would have to be told apart by the shape of
+     its name in a listener at the far end of an IPC hop, which is the hardest
+     place in the app to see a mistake.
+528. ⚠️ **"Unset" and "deliberately empty" have to be different answers.** An
+     empty ring list means "the rail's screens", which is what it always was —
+     a preference nobody has touched must not leave the key opening a ring with
+     nothing in it. A ninth stop is therefore refused by DISABLING the box
+     rather than by accepting the tick and dropping it.
+529. ⚠️ **One piece of text among icons reads as a label, not a target.** The
+     ring's middle said "Search" while every wedge around it was a glyph — and
+     it is the one target nobody has to read anyway, being the only one that is
+     not a direction.
+530. ⚠️ **A selected state made of COLOUR competes with the content.** The
+     list chips washed the chosen one in its own list's colour, which put the
+     most saturated thing on the screen at the top of a panel whose whole job
+     is the quiet list underneath. Being lit is a SURFACE; the dot already
+     carries the colour, and the dot is enough.
+531. ⚠️ **The same fact twice costs the line that carries the others.** The
+     heading named the list three millimetres above the chip rail that had
+     chosen it and was wearing it lit — on a line that also has to hold the
+     date and what is left.
+532. ⚠️ **A day that only counts DOWN can only get worse.** "Four left" and
+     "two done" on the same line are the same day described twice, and only one
+     of them makes anybody want to tick the next thing. Absent at zero, because
+     "0 done" is the discouraging way to say "not started".
+533. ⚠️ **A list is a set of things you could do; a queue is one thing you are
+     about to do.** The difference is a mark on one row — and it has to be the
+     first row that can actually be TICKED, in the order they are drawn: a
+     parent with children cannot be completed here, so pointing at one points
+     at a disabled circle. Two marks would be two opinions about what to do now.
+534. ⚠️ **The moment belongs to the DAY, not to the button.** A task can be
+     finished from the phone or by a sync, so "the day just emptied" is fired
+     from the render that made it true rather than from the tick that caused
+     it — and held, so a redraw does not replay it at somebody trying to read.
