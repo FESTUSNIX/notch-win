@@ -532,9 +532,15 @@ test("the day can be scoped to one TickTick list, and says which", async ({page}
   await expect(chips.nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(rows).toHaveCount(mine);
 
-  // The header sits directly above the rows it counts, so it follows the
-  // filter — and names the list, or "2 left" over two rows of six reads as a bug.
-  await expect(page.locator("#day-list")).toHaveText(first);
+  /* The header counts what it sits above, so it follows the filter. ⚠️ It no
+   * longer NAMES the list: the chip rail three millimetres below is the
+   * control that chose it and wears it lit, and saying it twice spent the one
+   * line that carries the date and what is left on the fact people read last. */
+  await expect(page.locator("#day-list")).toHaveCount(0);
+  /* ⚠️ And what is left is counted on the FILTER, not on the day: it sits
+   * directly above these rows. The number is not the chip's, which counts
+   * visible root rows — this one counts open tasks, children included. */
+  await expect(page.locator("#day-left")).not.toHaveText("");
 
   // A new task files into the list you are looking at, not into whichever one
   // happens to be first — otherwise it lands somewhere the rail hides.
@@ -551,7 +557,7 @@ test("the day can be scoped to one TickTick list, and says which", async ({page}
 
   await page.locator("#day-lists .list-chip").first().click();
   await expect(day(page).locator("#task-list-content > .slot")).toHaveCount(before);
-  await expect(page.locator("#day-list")).toHaveText("");
+  await expect(page.locator("#day-list")).toHaveCount(0);
 });
 
 test("long titles stay inside the island", async ({page}) => {
@@ -2319,4 +2325,29 @@ test("a hand on the lyrics offers the way back to the song", async ({page}) => {
   await expect(page.locator(".media-words.is-reading")).toHaveCount(0);
   await expect.poll(() => back.evaluate(el => getComputedStyle(el).opacity),
     {timeout: 4000}).toBe("0");
+});
+
+test("the day points at one thing to do next, and counts what is behind you", async ({page}) => {
+  await page.setViewportSize({width: 1200, height: 900});
+  await page.goto("/tasks.html?nofollow");
+  await open(page);
+  await page.keyboard.press("Control+k");
+  await page.locator(".palette-field").fill("Keep the island open");
+  await page.keyboard.press("Enter");
+  await goTo(page, "today");
+
+  /* ⚠️ Exactly ONE. A list is a set of things you could do; a queue is one
+   * thing you are about to do, and the difference is a mark on one row — two
+   * marks would be two opinions about what to do now. */
+  await expect(page.locator(".day-row.is-next")).toHaveCount(1);
+  /* ⚠️ And it is a row that can actually be TICKED. A parent with children
+   * cannot be completed here, so pointing at one is pointing at a circle that
+   * is disabled. */
+  await expect(page.locator(".day-row.is-next .check input")).not.toBeDisabled();
+
+  /* ⚠️ What you have FINISHED, beside what is left. A day that only counts
+   * down can only get worse; the same line saying both is the one that makes
+   * anybody want to tick the next thing. */
+  await expect(page.locator("#day-won")).toHaveText(/\d+ done/);
+  await expect(page.locator("#day-left")).toHaveText(/left|all done|nothing/);
 });

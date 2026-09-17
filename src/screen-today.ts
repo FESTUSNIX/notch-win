@@ -33,7 +33,7 @@ function writeList(id: string) {
 
 const HTML = `
   <div class="day-head">
-    <div class="day-meta"><span id="day-date"></span><span id="day-list"></span><span id="day-left"></span></div>
+    <div class="day-meta"><span id="day-date"></span><span id="day-left"></span><span id="day-won" class="day-won"></span></div>
     <div class="day-switch" id="day-switch" role="tablist" aria-label="Which tasks" hidden><button type="button" id="day-open" role="tab" aria-selected="true">Open</button><button type="button" id="day-done-tab" role="tab" aria-selected="false"></button></div>
   </div>
   <div class="day-rail"><i id="day-rail-fill"></i></div>
@@ -50,6 +50,8 @@ export class TodayScreen {
   private view: TaskView = "day";
   private busy = false;
   private actionError = "";
+  /** Whether the day was already clear last time it was drawn. See `celebrate`. */
+  private won = false;
   private day = localDay();
 
   /* ── Optimistic state ───────────────────────────────────────────────────
@@ -245,6 +247,20 @@ export class TodayScreen {
     };
   }
 
+  /** The day just emptied.
+   *
+   * ⚠️ Once, and briefly. The reward for finishing is that the list is
+   * empty, which is a quiet thing — this is the moment that says so out loud,
+   * and a moment that replayed on every redraw would be a screen celebrating
+   * at you while you tried to read it. */
+  private celebrate() {
+    const rail = this.get("day-rail-fill");
+    rail.classList.remove("is-won");
+    // The reflow is what lets it play again on a later day. See AGENTS.
+    void rail.offsetWidth;
+    rail.classList.add("is-won");
+  }
+
   /** Put the caret in the composer from anywhere — the capture shortcut. */
   /** Put the caret in the composer from anywhere.
    *
@@ -315,13 +331,28 @@ export class TodayScreen {
     this.get("day-rail-fill").style.width = `${percent}%`;
     // The shell has no title bar any more, so the day says the date itself.
     this.get("day-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-    this.get("day-list").textContent = this.listId
-      ? shown.projects.find(project => project.id === this.listId)?.name ?? ""
-      : "";
+    /* ⚠️ The list is NOT named here any more. The chip rail underneath is
+     * the control that chose it and wears it lit; saying it again three
+     * millimetres above is the same fact twice, and it was the fact people
+     * read last — the date and what is left are what the line is for. */
     this.get("day-left").textContent = !reliable ? ""
       : today.total === 0 ? "nothing scheduled"
       : today.done === today.total ? "all done"
       : `${today.total - today.done} left`;
+    /* ⚠️ What you have FINISHED, beside what is left. A day that only counts
+     * down is a day that can only get worse: at four left and two done the
+     * same screen says both "you have six things" and "you have done a third
+     * of them", and only one of those makes anybody want to tick the next
+     * one. It is absent at zero rather than reading "0 done", which is the
+     * discouraging way to say "you have not started". */
+    this.get("day-won").textContent = reliable && today.done ? `${today.done} done` : "";
+    /* The day just emptied. ⚠️ Fired from the RENDER that made it true rather
+     * than from the tick that caused it: a task can finish from the phone, or
+     * from a sync, and the moment belongs to the day rather than to the
+     * button. `won` holds it so a redraw does not replay it. */
+    const cleared = reliable && today.total > 0 && today.done === today.total;
+    if (cleared && !this.won) this.celebrate();
+    this.won = cleared;
 
     this.status.textContent = this.actionError || shown.error || (shown.connected && !shown.updatedAt ? "Loading TickTick…" :
       shown.updatedAt && !shown.historyComplete ? "Completion history is partial. Daily progress is unavailable." : "");

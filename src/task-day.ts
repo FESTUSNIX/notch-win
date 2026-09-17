@@ -21,6 +21,8 @@ import {
 const NS = "http://www.w3.org/2000/svg";
 
 export interface DayOptions {
+  /** The key of the row to mark as the one to do next. See `nextUp`. */
+  next?: string | null;
   view: TaskView;
   focus?: (task:Task)=>void;
   focused?: string;
@@ -127,6 +129,30 @@ function titleField(value: string, o: DayOptions, commit: (name: string) => void
   return field;
 }
 
+/** The one thing to do next: the first row, in the order they are DRAWN,
+ *  that can actually be ticked.
+ *
+ * ⚠️ In draw order and not by any ranking of its own. A list already sorted
+ * by what is most overdue is a queue; marking a different task as "next" than
+ * the one at the top would be two opinions on the same screen, and the reader
+ * would have to work out which to trust. It is the first tickable line, which
+ * is also the one the eye lands on — the marker only says out loud what the
+ * order was already saying quietly.
+ *
+ * ⚠️ A parent with children is skipped. It cannot be completed here (bulk
+ * completion needs provider semantics this app has not verified), so pointing
+ * at it is pointing at a circle that is disabled.
+ */
+export function nextUp(nodes: TaskNode[]): string | null {
+  for (const node of nodes) {
+    const children = node.children.filter(one => visibleNode(one, false));
+    if (!nodeDone(node) && !children.length && node.selected) return taskId(node.task);
+    const inside = nextUp(children);
+    if (inside) return inside;
+  }
+  return null;
+}
+
 function drawRow(node: TaskNode, snapshot: TaskSnapshot, o: DayOptions, depth: number): HTMLElement {
   const task = node.task;
   const key = taskId(task);
@@ -150,7 +176,14 @@ function drawRow(node: TaskNode, snapshot: TaskSnapshot, o: DayOptions, depth: n
   // A row plus its children as two tracks would only collapse the first.
   const inner = element("div", "slot-inner");
   slot.append(inner);
-  const row = element("div", `day-row${done ? " is-done" : ""}${depth ? " nested" : ""}`);
+  /* ⚠️ The NEXT one is marked, not merely first. A list is a set of things
+   * you could do; a queue is one thing you are about to do, and the whole
+   * difference between the two is a mark on one row. It is the cheapest thing
+   * on this screen that makes it answer "what now" instead of "what is
+   * outstanding". */
+  const next = !done && key === o.next;
+  const row = element("div", `day-row${done ? " is-done" : ""}${depth ? " nested" : ""}`
+    + (next ? " is-next" : ""));
 
   // A parent is finished by finishing its children; completing it in bulk needs
   // provider semantics this app has not verified.
@@ -201,6 +234,15 @@ function drawRow(node: TaskNode, snapshot: TaskSnapshot, o: DayOptions, depth: n
     const chip = element("span", "day-chip", late > 99 ? "99+d" : `${late}d`);
     chip.dataset.tip = `${late} ${late === 1 ? "day" : "days"} overdue`;
     row.append(chip);
+  }
+  /* ⚠️ A word, and only on the one row. An icon here would be a fourth
+   * glyph in a line that already has a circle, a focus target and sometimes an
+   * overdue chip; the word is read once and then never again, because after
+   * that the eye knows the mark by its shape. */
+  if (next) {
+    const flag = element("span", "day-next", "Next");
+    flag.dataset.tip = "The first thing you can tick";
+    row.append(flag);
   }
   inner.append(row);
 
@@ -275,6 +317,8 @@ export function renderDay(content: HTMLElement, doneTarget: HTMLElement, snapsho
    * tasks while the Done half is on screen is a chip that leads somewhere else
    * than it says. */
   const lists = listTally(o.showing === "done" ? everyFinished : live);
+  // One thing to do next, in the order the rows are drawn. See `nextUp`.
+  o.next = o.showing === "done" ? null : nextUp(inList(live, o.list));
   const finished = inList(everyFinished, o.list);
 
   /* ⚠️ The two halves are exclusive. The switch says which one you asked
