@@ -270,8 +270,13 @@ function landOn() {
   if (!prefs.followLive) return;
   const best = pick(claims());
   if (!best || best.steers === false || best.priority < LANDS) return;
-  if (best.screen === screen) return;
-  show(best.screen);
+  if (best.screen !== screen) show(best.screen);
+  /* ⚠️ The agent claim opens the SESSION, not the screen. You looked down,
+   * saw that something was running and opened it — the thing you came for is
+   * that session, and the overview with it somewhere in it is one tap behind
+   * the arrow. Walking to the same screen from the rail is the other intent
+   * entirely, which is why `show` clears it and this sets it AFTER. */
+  if (best.screen === "agents") agentsScreen.openFromPill();
 }
 
 const surface = new IslandSurface(open => {
@@ -473,6 +478,12 @@ function show(name: ScreenName, live = false) {
   // Volume, brightness and the device lists are read when the screen is
   // opened — see screen-system.ts on why none of it is polled.
   if (name === "system") void system.load();
+  /* ⚠️ Walking to the Agents screen means the OVERVIEW, every time. The
+   * detail is what the strip expands into; arriving here from the rail, the
+   * palette or a keyboard step and finding one session filling the screen
+   * because the pill happened to be showing it an hour ago is a screen that
+   * remembers something you never asked it to. */
+  if (name === "agents") agentsScreen.showList();
   if (name === "review") void review.load().then(() => render());
   /* The direction the selection travelled, so the new screen arrives from the
    * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens

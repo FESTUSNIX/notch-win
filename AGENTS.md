@@ -3612,3 +3612,35 @@ The two halves were the same fault.
      the biggest number in a list about *which model costs what* against a
      name nobody can act on. Dropped from that cut, and still counted in the
      total — the two are different questions.
+557. ⚠️ **A logo drawn from memory is wrong where being nearly right is worth
+     nothing.** A mark is recognised before it is read, so a burst with eight
+     even spokes is a compass rose rather than Claude — and nobody reports it,
+     they just stop trusting the row. Both real marks were already on this
+     machine, in the vendors' own VS Code extensions
+     (`anthropic.claude-code/resources/claude-logo.svg`,
+     `openai.chatgpt/resources/blossom-black.svg`). Look before drawing.
+558. ⚠️ **The running session's details are the wrong thing to put on the
+     screen that lists the sessions.** It is one row's worth of subject taking
+     half the panel, and it pushed the other sessions and the whole usage
+     block below the fold. It belongs where you asked for it: the strip said
+     something was running, and expanding the strip opens THAT, with the
+     overview one arrow behind it.
+559. ⚠️ **A row per session spends the width and charges for it in height.**
+     A session's facts are short — a name, a model, one figure — so a row each
+     leaves two thirds of the panel empty and adds a line every time you open
+     a terminal. Five sessions was a screen you had to scroll to reach the
+     usage. Cards in a grid: the same facts in a column, four across.
+560. ⚠️ **The same two numbers, abbreviated, four pixels apart, read as four
+     numbers.** "512k READ / 9k WRITTEN" with "512k +9k" under it is one fact
+     printed twice in two formats, and the second copy is the one nobody can
+     name. The compact pair earns its place on a CARD, where there is no room
+     for the words; on the detail there is nothing to trade against.
+561. ⚠️ **A count in a test is a measurement of the fixture.** `rail.spec`
+     asked for nine stops and the rail has eight — three screens are off the
+     rail unless you put them there, and the call's stop exists only during a
+     call. It had been wrong since before this pass and only showed up when
+     the whole suite was run, because nothing else runs that file.
+562. ⚠️ **Two writers of one piece of navigation state have to be ordered.**
+     Walking to the Agents screen clears the open session; the strip opening
+     it sets one. Both fire on the same tick when the island opens onto that
+     screen — set first, and `show` wipes it before the frame is drawn.

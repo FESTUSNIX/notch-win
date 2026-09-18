@@ -713,8 +713,8 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await page.goto("/tasks.html?agents&nocal");
   /* The pill: the WAITING one, over the two that are working. Something
    * working needs nothing from you — but it is the only thing happening on
-   * the machine, so it claims the strip when nothing is waiting, which the
-   * next test covers. ⚠️ Not under `?quiet` — that fixture has no sessions
+   * the machine, so it claims the strip when nothing is waiting, which a
+   * later test covers. ⚠️ Not under `?quiet` — that fixture has no sessions
    * at all, on purpose, so the resting-clock tests are not competing with an
    * agent for the same strip. */
   await expect(page.locator(".pill-label")).toHaveText("akcesfonia");
@@ -725,71 +725,71 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await open(page);
   await goTo(page, "agents");
 
-  /* ── One stage, not a stack of cards ────────────────────
-   * Three of the four sessions are live and they get ONE card between them,
-   * paged. Four cards of the same shape is what this screen used to be, and
-   * the one that was actually running was the hardest thing on it to find. */
-  const stage = page.locator(".agent-live");
-  await expect(stage).toHaveCount(1);
-  await expect(stage).toHaveClass(/is-waiting/);
-  await expect(stage.locator(".agent-live-name")).toHaveText("akcesfonia");
-  await expect(stage.locator(".agent-live-state")).toHaveText("Waiting");
-  // Whose agent it is, and which model — neither was anywhere on this screen.
-  await expect(stage.locator(".agent-agent")).toHaveText("Claude");
-  await expect(stage.locator(".agent-model")).toHaveText("Opus 5");
-  await expect(stage.locator(".agent-branch")).toHaveText("master");
-  /* And what it last SAID, which on a waiting session is the whole reason you
-   * are looking at it. */
-  await expect(stage.locator(".agent-bubble-say"))
-    .toHaveText("Which of the two folders should it write into?");
+  /* ── A card each, in a grid ───────────────────────────────────────────
+   * ⚠️ Cards in a COLUMN layout, not rows. A session's facts are short — a
+   * name, a model, one figure — and a row each left two thirds of the width
+   * empty while making the screen a line taller per session. */
+  const cards = page.locator(".agent-card");
+  await expect(cards).toHaveCount(4);
+  // Ordered by who wants you, not by name, by agent, or by when they started.
+  await expect(cards.nth(0)).toHaveClass(/is-waiting/);
+  await expect(cards.nth(1)).toHaveClass(/is-working/);
+  await expect(cards.nth(2)).toHaveClass(/is-working/);
+  await expect(cards.nth(3)).toHaveClass(/is-idle/);
 
-  // One dot per live session, and the waiting one leads.
-  const dots = page.locator(".agent-dot");
-  await expect(dots).toHaveCount(3);
-  await expect(dots.nth(0)).toHaveClass(/is-on/);
+  await expect(cards.nth(0).locator(".agent-card-name")).toHaveText("akcesfonia");
+  await expect(cards.nth(0).locator(".agent-model")).toHaveText("Opus 5");
+  await expect(cards.nth(0).locator(".agent-branch")).toHaveText("master");
+  // Every card wears its own agent's mark.
+  await expect(page.locator(".agent-card-mark svg")).toHaveCount(4);
 
-  /* The dormant one is a LINE, not a card: it is a name, a number and no
-   * news, and given a card it competes with the one thing that has news. */
-  const rows = page.locator(".agent-row");
-  await expect(rows).toHaveCount(1);
-  await expect(rows.nth(0)).toHaveClass(/is-idle/);
-  await expect(rows.nth(0).locator(".agent-project")).toHaveText("esono");
+  /* ⚠️ No stage on this screen at all. The running session's details are what
+   * the strip expands into; repeated here they pushed everything else — the
+   * other sessions, the usage — below the fold of a screen whose job is the
+   * overview. */
+  await expect(page.locator(".agent-detail")).toHaveCount(0);
 
-  // Going there is the useful thing to do with "akcesfonia is waiting".
-  const go = stage.locator(".agent-live-head");
+  /* A card opens the DETAIL rather than raising a window: on a tile this
+   * small the whole thing is the target, and a tile that throws you into
+   * another application is one you learn not to touch. */
+  await cards.nth(0).click();
+  const detail = page.locator(".agent-detail");
+  await expect(detail).toHaveCount(1);
+  await expect(detail.locator(".agent-detail-name")).toHaveText("akcesfonia");
+  await expect(page.locator(".agent-card")).toHaveCount(0);
+
+  // Going there is the second, deliberate step, and it is labelled.
+  const go = detail.locator(".agent-detail-head");
   await expect(go).toHaveAttribute("aria-label", /Go to akcesfonia, waiting for you/);
   await go.click();
   await expect(page.locator(".screen-error")).toHaveCount(0);
 
+  // And back is back to the overview, not to another screen.
+  await detail.locator(".agent-back").click();
+  await expect(page.locator(".agent-card")).toHaveCount(4);
+
   /* Snoozing is offered on the waiting session and NOT on the quiet one:
    * muting something that is already saying nothing is a control that does
    * nothing but make you wonder later what you switched off. */
-  await expect(stage.locator(".agent-snooze")).toHaveCount(1);
-  await expect(rows.nth(0).locator(".agent-snooze")).toHaveCount(0);
-
-  // A snoozed session hands the pill back and says so where it can be undone.
-  await stage.locator(".agent-snooze").click();
-  await expect(page.locator(".agent-live.is-quiet")).toHaveCount(1);
+  await cards.nth(0).click();
+  await expect(detail.locator(".agent-snooze")).toHaveCount(1);
+  await detail.locator(".agent-snooze").click();
+  await expect(page.locator(".agent-detail.is-quiet")).toHaveCount(1);
   /* The pill goes to whatever it would otherwise show. ⚠️ Which is now the
    * OTHER agent — two of them are working — rather than the player: snoozing
    * one session does not snooze the rest of the machine. */
   await expect(page.locator(".pill-label")).toHaveText("2 agents working");
-  /* ⚠️ The count leads and a project follows, rather than one project
-   * standing in for both. The strip has room for one fact and "which of them"
-   * is not answerable in it — but "how many" is, and it is the one that makes
-   * you open the island. */
   await expect(page.locator(".pill-value")).toHaveText("codenotch-win");
   /* ⚠️ Said out loud, with a way back. The failure mode of a mute button is
      forgetting you pressed it and wondering for a week why the app went quiet.
-     The popover that used to carry the line is gone; the palette command
-     carries the count now, and the settings window's Pill pane says it too. */
+     The palette command carries the count, and the settings window says it. */
   await page.keyboard.press("Control+k");
   await page.locator(".palette-field").fill("snoozed");
   const back = page.locator(".palette-row").first();
   await expect(back.locator(".palette-title")).toHaveText("Bring back what is snoozed");
   await expect(back.locator(".palette-note")).toHaveText("1 quiet");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".agent-live.is-quiet")).toHaveCount(0);
+  await expect(page.locator(".agent-detail.is-quiet")).toHaveCount(0);
   await page.screenshot({path: "test-results/island-agents.png"});
 });
 
@@ -874,18 +874,22 @@ test("what the agents cost is cut three ways, and the week says whether today is
   /* ── By agent, which is the cut this panel never had ───────────
    * "Where" was answered and "on what" never was, and the second one is the
    * half that costs money. */
+  /* ⚠️ Two columns, and the week leads. Stacked, the same four blocks ran the
+   * panel off the bottom of the island and every heading had to be found by
+   * scrolling past the one above it. */
   const cuts = page.locator(".use-cut");
-  await expect(cuts.nth(0)).toHaveText("By agent");
+  await expect(cuts.nth(0)).toHaveText("This week");
+  await expect(cuts.nth(1)).toHaveText("By agent");
   const agents = page.locator(".use-list").nth(0).locator(".use-row");
   await expect(agents.nth(0).locator(".use-who")).toHaveText("Claude");
   await expect(agents.nth(0).locator(".use-model")).toHaveText("Opus 5");
   await expect(agents.nth(1).locator(".use-who")).toHaveText("Codex");
   await expect(agents.nth(1).locator(".use-model")).toHaveText("GPT-6 Astra");
-  // Each row wears the agent's own mark, the same one the stage above does.
+  // Each row wears the agent's own mark, the same one the cards do.
   await expect(agents.nth(0).locator(".use-mark svg")).toHaveCount(1);
 
   // And the projects, biggest spender first, whatever order the runs arrived in.
-  await expect(cuts.nth(1)).toHaveText("By project");
+  await expect(cuts.nth(2)).toHaveText("By project");
   const projects = page.locator(".use-list").nth(1).locator(".use-name");
   await expect(projects.nth(0)).toHaveText("codenotch-win");
   await expect(projects.nth(1)).toHaveText("akcesfonia");
@@ -909,24 +913,23 @@ test("a working session says what it is doing, and which agent is doing it", asy
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
   await goTo(page, "agents");
+  await page.locator(".agent-card").nth(1).click();
 
-  // Page past the waiting one to the session that is working.
-  await page.locator(".agent-dot").nth(1).click();
-  const stage = page.locator(".agent-live");
-  await expect(stage).toHaveClass(/is-working/);
-  await expect(stage.locator(".agent-live-name")).toHaveText("codenotch-win");
+  const detail = page.locator(".agent-detail");
+  await expect(detail).toHaveClass(/is-working/);
+  await expect(detail.locator(".agent-detail-name")).toHaveText("codenotch-win");
 
   /* ⚠️ "Thinking" is not a fourth state — it is working with no tool out,
    * and it is the one thing a long turn can say for itself. Under a badge
    * reading "Working", two minutes of reasoning looks exactly like two
    * minutes of having hung. */
-  await expect(stage.locator(".agent-live-state")).toHaveText("Thinking");
+  await expect(detail.locator(".agent-live-state")).toHaveText("Thinking");
 
   /* ⚠️ What an agent is doing is a LIST, not a sentence. One phrase says
    * "running cargo test" and nothing about the four calls before it — which
    * is most of what somebody glancing at this wants, because it is the
    * difference between stuck and working through. */
-  const steps = stage.locator(".agent-step");
+  const steps = detail.locator(".agent-step");
   await expect(steps).toHaveCount(4);
   await expect(steps.nth(0)).toHaveText("reading nz_2.png");
   await expect(steps.nth(3)).toHaveText("running grep -n");
@@ -935,18 +938,36 @@ test("a working session says what it is doing, and which agent is doing it", asy
    * result that finishes it are two records minutes apart, joined only by
    * their id — lose that and every step reads as started and none as
    * finished, which is an agent that never gets anywhere. */
-  await expect(stage.locator(".agent-step.is-now")).toHaveCount(1);
+  await expect(detail.locator(".agent-step.is-now")).toHaveCount(1);
   await expect(steps.nth(3)).toHaveClass(/is-now/);
-  await expect(stage.locator(".agent-step.is-done")).toHaveCount(3);
+  await expect(detail.locator(".agent-step.is-done")).toHaveCount(3);
 
-  /* The bar is the OUTPUT share, not the total: the total is the figures
-   * beside it, and how much of a session was the model talking back is what
-   * tells a long read apart from a long write. */
-  const share = await stage.locator(".agent-spend-rail i").evaluate(
-    el => (el as HTMLElement).style.width);
-  expect(parseFloat(share)).toBeGreaterThan(0);
-  expect(parseFloat(share)).toBeLessThan(100);
+  /* The figures, with their units under them — and each of them ONCE. The
+   * same two numbers abbreviated again four pixels lower read as two more
+   * facts rather than as the same ones. */
+  const facts = detail.locator(".agent-fact");
+  await expect(facts.nth(0)).toContainText("512k");
+  await expect(facts.nth(0)).toContainText("read");
+  await expect(facts.nth(1)).toContainText("written");
+  await expect(detail.locator(".agent-spend")).toHaveCount(0);
   await page.screenshot({path: "test-results/island-agents-steps.png"});
+});
+
+test("the strip expands into the session, and the rail into the overview", async ({page}) => {
+  /* ⚠️ The whole point of the two layouts. You looked down, saw that
+   * something was running and opened it: the thing you came for is that
+   * session. Walking to the same screen from the rail is the other intent
+   * entirely — which of them are there — and it must not land you inside one
+   * session because the pill happened to be showing it. */
+  await page.goto("/tasks.html?agents&nocal");
+  await open(page);
+  await expect(page.locator(".agent-detail")).toHaveCount(1);
+  await expect(page.locator(".agent-detail-name")).toHaveText("akcesfonia");
+
+  await goTo(page, "today");
+  await goTo(page, "agents");
+  await expect(page.locator(".agent-detail")).toHaveCount(0);
+  await expect(page.locator(".agent-card")).toHaveCount(4);
 });
 
 test("the other agent is read, and says so with its own mark", async ({page}) => {
@@ -957,23 +978,27 @@ test("the other agent is read, and says so with its own mark", async ({page}) =>
   /* ⚠️ Codex was invisible here for as long as this screen existed — not
    * because the screen was wrong about it, but because the watcher only ever
    * read `~/.claude`. Both agents now, told apart by their own marks. */
-  await page.locator(".agent-dot").nth(2).click();
-  const stage = page.locator(".agent-live");
-  await expect(stage.locator(".agent-live-name")).toHaveText("esono-price-watch");
-  await expect(stage.locator(".agent-agent")).toHaveText("Codex");
-  await expect(stage.locator(".agent-model")).toHaveText("GPT-6 Astra");
-  await expect(stage.locator(".agent-live-mark svg")).toHaveCount(1);
+  const codex = page.locator(".agent-card").filter({hasText: "esono-price-watch"});
+  await expect(codex).toHaveCount(1);
+  await expect(codex.locator(".agent-model")).toHaveText("GPT-6 Astra");
+  await codex.click();
+
+  const detail = page.locator(".agent-detail");
+  await expect(detail.locator(".agent-agent")).toHaveText("Codex");
+  await expect(detail.locator(".agent-detail-mark svg")).toHaveCount(1);
 
   /* ⚠️ And it is reachable, with no pid to reach it by: every Codex thread
    * runs inside one process that owns no window, so the row hands the project
    * name over instead and the window is found by its title. */
-  await stage.locator(".agent-live-head").click();
+  await detail.locator(".agent-detail-head").click();
   await expect(page.locator(".screen-error")).toHaveCount(0);
 
-  // The pager is the only way to the sessions the stage is not showing.
-  await expect(page.locator(".agent-dot.is-on")).toHaveCount(1);
-  await page.locator(".agent-dot").nth(0).click();
-  await expect(stage.locator(".agent-live-name")).toHaveText("akcesfonia");
+  /* The pager covers the LIVE sessions, so the two that are working and the
+   * one that is waiting can be read one after another without going back. */
+  const dots = page.locator(".agent-dot");
+  await expect(dots).toHaveCount(3);
+  await dots.nth(0).click();
+  await expect(detail.locator(".agent-detail-name")).toHaveText("akcesfonia");
 });
 
 test("click mode: leaving does not close it, and the pill carries a control", async ({page}) => {

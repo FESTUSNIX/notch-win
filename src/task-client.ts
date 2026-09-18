@@ -406,8 +406,11 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      say:"The feed parser was dropping every entry without a guid.",
      limits:{window:12, week:41, plan:"plus"},
      folder:"C:/Users/matko/CODE/_tests/esono-price-watch"},
+    /* ⚠️ A session with NO model, on purpose: one picked up mid-run never
+       saw a record that named one, and the card has to say something sensible
+       rather than an empty gap where every other card has a word. */
     {id:"s3", project:"esono", branch:"feat/pdp", pid:4244, state:"idle",
-     forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
+     provider:"claude", forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
   ]) as T;
   if (command === "focus_session") return true as T;
   /* ⚠️ Held for the page's lifetime, like the stars. Enough of them to put

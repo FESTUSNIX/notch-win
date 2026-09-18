@@ -31,7 +31,7 @@ import { short } from "./spend";
 import {
   all, byAgent, byDay, byProject, spent, type Bucket, type Slice,
 } from "./usage";
-import { held, tokens } from "./media-format";
+import { held, spoken, tokens } from "./media-format";
 import { modelName } from "./model-name";
 import { hush, isQuiet, wake } from "./snooze";
 import type { Activity } from "./island-activity";
@@ -157,6 +157,12 @@ export class AgentsScreen {
    * reading would change under you with nothing having been clicked.
    */
   private staged = "";
+  /** Whether the screen is showing one session rather than the overview.
+   *
+   * ⚠️ Not "is there a live session" — it is a place you navigated to, and it
+   * has to survive a tick that changes what is live. The overview is what the
+   * rail opens; the detail is what the strip opens. */
+  private detailed = false;
   error = "";
 
   constructor(private host: HTMLElement, private changed: () => void) {}
@@ -301,10 +307,14 @@ export class AgentsScreen {
    * ⚠️ The bar is the OUTPUT share, not the total: the total is the figures
    * beside it, and how much of a session was the model talking back is what
    * tells a long read apart from a long write. */
-  private spent(session: SessionView): HTMLElement {
+  private spent(session: SessionView, figures = true): HTMLElement {
     const whole = session.input + session.output;
     const wrap = element("div", "agent-spend");
-    wrap.append(
+    /* ⚠️ Without the figures where they are already printed above. On the
+     * detail the same two numbers sit in the facts row with their units under
+     * them; repeating them four pixels below, abbreviated and unlabelled, is
+     * the same fact twice in two formats — which reads as two facts. */
+    if (figures) wrap.append(
       element("span", "agent-spend-in", short(session.input)),
       element("span", "agent-spend-out", `+${short(session.output)}`),
     );
@@ -327,8 +337,11 @@ export class AgentsScreen {
     const steps = (session.steps ?? []).slice(-most);
     if (!steps.length) return null;
     const list = element("div", "agent-steps");
+    let index = 0;
     for (const step of steps) {
       const line = element("div", `agent-step${step.done ? " is-done" : " is-now"}`);
+      // The stagger reads its own position. See `.agent-step` in tasks.css.
+      line.style.setProperty("--i", String(index++));
       const tick = element("span", "agent-tick");
       paintIcon(tick, step.done ? "check" : "play");
       line.append(tick, element("span", "agent-step-say", step.say));
@@ -337,78 +350,130 @@ export class AgentsScreen {
     return list;
   }
 
-  /* ── The stage ─────────────────────────────────────────────────────────
+  /* ── The detail ──────────────────────────────────────
    *
-   * One live session, at the size the news deserves. Everything on it is a
-   * fact the watcher read out of a transcript; none of it is a label for a
-   * state that something else on the card already says.
+   * One session, at the size the news deserves — and NOT on the overview.
+   * This is what the collapsed strip expands into: you looked down, saw that
+   * something was running, and opened it to see what. Everything else the
+   * screen knows is one tap away behind the arrow.
+   *
+   * ⚠️ Room, deliberately. Every reading here is one somebody is leaning in
+   * to read — a checklist, a sentence, a pair of figures — and the version of
+   * this that was tucked into the overview had them at 10 and 11 pixels with
+   * four-pixel gaps, which is a density that suits a list of things you are
+   * scanning past, not the one thing you stopped on.
    */
-  private stage(session: SessionView): HTMLElement {
+  private detail(session: SessionView): HTMLElement {
     const quiet = isQuiet(`agent:${session.id}`);
-    const card = element("div", `agent-live is-${session.state}${quiet ? " is-quiet" : ""}`);
+    const card = element("div", `agent-detail is-${session.state}${quiet ? " is-quiet" : ""}`);
 
-    const head = element("button", "agent-live-head");
+    /* The way back to the overview. ⚠️ Inside the screen rather than in the
+     * island's own header: the header's arrow means "the screen you came
+     * from", and you did not come from a screen — you came from the strip. */
+    const back = element("button", "agent-back");
+    (back as HTMLButtonElement).type = "button";
+    back.setAttribute("aria-label", "All sessions");
+    back.dataset.tip = "All sessions";
+    paintIcon(back, "back");
+    back.onclick = () => { this.showList(); };
+    card.append(back);
+
+    const bell = this.bell(session, quiet);
+    if (bell) card.append(bell);
+
+    const head = element("button", "agent-detail-head");
     (head as HTMLButtonElement).type = "button";
     head.setAttribute("aria-label", `Go to ${session.project}, ${WORDS[session.state]}`);
     head.onclick = () => { void this.focus(session); };
 
-    const mark = element("span", "agent-live-mark");
+    const mark = element("span", "agent-detail-mark");
     paintIcon(mark, markFor(session.provider));
     head.append(mark);
 
-    const who = element("div", "agent-live-who");
-    const line = element("div", "agent-live-line");
-    line.append(element("span", "agent-live-name", session.project));
-    /* The state as its own word in its own colour — the way the picture of a
-     * working agent has it, and the reason the name beside it can stay plain
-     * white and be the thing that is read first. */
+    const who = element("div", "agent-detail-who");
+    const line = element("div", "agent-detail-line");
+    line.append(element("span", "agent-detail-name", session.project));
     const state = element("span", "agent-live-state");
     state.append(element("i", "agent-pip"), element("span", "", liveWord(session)));
     line.append(state);
     who.append(line);
 
-    /* ── The second line is the FACTS, and they were the missing half ──
-     * Whose agent it is and which model is answering were nowhere on this
-     * screen, through a year in which it became normal to have several
-     * sessions open on three different models. */
-    const meta = element("div", "agent-live-meta");
+    /* Whose agent, and which model. ⚠️ The separators are pseudo-elements
+     * — a middot in the markup belongs to the model's own text, where a test,
+     * a screen reader and a copy all find it. */
+    const meta = element("div", "agent-detail-meta");
     meta.append(element("span", "agent-agent", agentName(session.provider)));
     if (session.model) meta.append(element("span", "agent-model", modelName(session.model)));
     if (session.branch) meta.append(element("span", "agent-branch", session.branch));
-    const clock = element("span", "agent-for", held(session.forSecs));
-    this.clocks.set(session.id, clock);
-    meta.append(clock);
     who.append(meta);
     head.append(who);
     card.append(head);
 
-    const bell = this.bell(session, quiet);
-    if (bell) card.append(bell);
-
-    /* ── The body: what it did, and what it said about it ──────────────── */
-    const body = element("div", "agent-live-body");
-    const steps = this.steps(session, 4);
-    if (steps) body.append(steps);
+    /* ── What it did, and what it said about it ──────────────────
+     * Two columns, because they are two different kinds of thing: a list of
+     * actions, and one sentence of prose. Stacked, the sentence reads as one
+     * more step. */
+    const body = element("div", "agent-detail-body");
+    /* ⚠️ Six here against four on a card. A run makes hundreds of calls and
+     * the question is "is it moving", which four lines answer — but this is
+     * the screen somebody opened ON PURPOSE, and the next question after "is
+     * it moving" is "what has it been doing", which needs a few more. */
+    const steps = this.steps(session, 6);
+    if (steps) {
+      const panel = element("div", "agent-panel");
+      panel.append(element("h4", "agent-panel-title", "Doing"), steps);
+      body.append(panel);
+    }
     /* ⚠️ The sentence is kept when the turn ends, unlike the checklist. A
      * status that has stopped being true is a lie; the last thing an agent
      * said is still the last thing it said — and on a waiting session it is
      * the whole reason you are looking at it. */
     const said = session.thinking || session.say;
     if (said) {
+      const panel = element("div", "agent-panel");
+      panel.append(element("h4", "agent-panel-title",
+        session.thinking ? "Thinking about" : "Last said"));
       const bubble = element("div", `agent-bubble${session.thinking ? " is-thought" : ""}`);
       bubble.append(element("p", "agent-bubble-say", said));
-      body.append(bubble);
+      panel.append(bubble);
+      body.append(panel);
     }
     if (body.childElementCount) card.append(body);
 
-    card.append(this.spent(session));
+    /* ── The figures, spelled out ──────────────────────────────
+     * ⚠️ With their units, not as a row of bare numbers. "5.6M / 18k" is two
+     * facts run together in the hope that whoever reads it remembers which way
+     * round they go; on the overview that trade is worth it for the width, and
+     * here there is no width problem to trade against. */
+    const facts = element("div", "agent-facts");
+    const fact = (what: string, value: string) => {
+      const box = element("div", "agent-fact");
+      box.append(element("span", "agent-fact-value", value),
+        element("span", "agent-fact-what", what));
+      return box;
+    };
+    facts.append(fact("read", short(session.input)), fact("written", short(session.output)));
+    const clock = element("span", "agent-fact-value", held(session.forSecs));
+    this.clocks.set(session.id, clock);
+    const held_ = element("div", "agent-fact");
+    held_.append(clock, element("span", "agent-fact-what",
+      session.state === "waiting" ? "waiting" : session.state === "working" ? "running" : "quiet"));
+    facts.append(held_);
+    if (session.lastRunSecs) {
+      facts.append(fact("last run", spoken(session.lastRunSecs)));
+    }
+    card.append(facts);
+    /* ⚠️ No bar down here. The output share is worth a shape on a CARD,
+     * where the figures are abbreviated to four characters and unlabelled —
+     * but the facts above already say "512k read, 9k written" in words, and a
+     * lone green sliver under them is a control nobody can name. */
     return card;
   }
 
-  /** The dots under the stage, one per live session.
+  /** The dots under the detail, one per live session.
    *
    * ⚠️ Real buttons, not decoration. They are the only way to reach the
-   * session the stage is not showing, and a row of divs would be invisible to
+   * session the detail is not showing, and a row of divs would be invisible to
    * a keyboard — on a screen whose whole purpose is getting somewhere. */
   private dots(live: SessionView[], shown: SessionView): HTMLElement {
     const rail = element("div", "agent-dots");
@@ -429,33 +494,60 @@ export class AgentsScreen {
     return rail;
   }
 
-  /** A dormant session: one line, and nothing it does not have to say. */
-  private row(session: SessionView): HTMLElement {
+  /* ── The overview ────────────────────────────────────
+   *
+   * A card per session, in a grid. ⚠️ A COLUMN inside each card and a row of
+   * cards across: a session's facts are short — a name, a model, a figure —
+   * and laid out as a row each they left two thirds of the width empty while
+   * making the screen one line taller per session. Five sessions was a screen
+   * you had to scroll to see the usage under.
+   */
+  private card(session: SessionView): HTMLElement {
     const quiet = isQuiet(`agent:${session.id}`);
-    const row = element("div", `agent-row is-${session.state}${quiet ? " is-quiet" : ""}`);
-    const go = element("button", "agent-go");
-    (go as HTMLButtonElement).type = "button";
-    go.setAttribute("aria-label", `Go to ${session.project}, ${WORDS[session.state]}`);
-    go.onclick = () => { void this.focus(session); };
+    const card = element("button", `agent-card is-${session.state}${quiet ? " is-quiet" : ""}`);
+    (card as HTMLButtonElement).type = "button";
+    card.setAttribute("aria-label", `${session.project}, ${WORDS[session.state]}`);
+    /* ⚠️ Opens the DETAIL, it does not raise the window. On a card this
+     * small the click target is the whole tile, and a tile that throws you into
+     * another application is one you learn not to touch. Going there is a
+     * deliberate second step, on the detail, where it is labelled. */
+    card.onclick = () => {
+      this.staged = session.id;
+      this.detailed = true;
+      this.changed();
+    };
 
-    const mark = element("span", "agent-mark");
+    const top = element("div", "agent-card-top");
+    const mark = element("span", "agent-card-mark");
     paintIcon(mark, markFor(session.provider));
+    const state = element("span", "agent-card-state");
+    state.append(element("i", "agent-pip"), element("span", "", liveWord(session)));
+    top.append(mark, state);
+    card.append(top);
 
-    const copy = element("div", "agent-copy");
-    copy.append(element("span", "agent-project", session.project));
-    const meta = element("div", "agent-meta");
-    if (session.model) meta.append(element("span", "agent-model", modelName(session.model)));
-    const clock = element("span", "agent-for", held(session.forSecs));
-    this.clocks.set(session.id, clock);
-    meta.append(element("span", "agent-since", "quiet for"), clock);
-    copy.append(meta);
+    card.append(element("div", "agent-card-name", session.project));
+    const meta = element("div", "agent-card-meta");
+    meta.append(element("span", "agent-model", modelName(session.model) || agentName(session.provider)));
+    if (session.branch) meta.append(element("span", "agent-branch", session.branch));
+    card.append(meta);
 
-    go.append(mark, copy,
-      element("span", "agent-quiet-spend", short(session.input + session.output)));
-    row.append(go);
-    const bell = this.bell(session, quiet);
-    if (bell) row.append(bell);
-    return row;
+    /* The one live fact a card has room for: what it is doing, or how long it
+     * has been quiet. ⚠️ One line, clipped — the phrase is the tail of a
+     * shell command often enough that wrapping it would make every card the
+     * height of the longest command anybody has run today. */
+    const line = element("div", "agent-card-doing");
+    if (session.doing) line.textContent = session.doing;
+    else if (session.thinking) line.textContent = session.thinking;
+    else {
+      line.classList.add("is-quiet");
+      const clock = element("span", "agent-for", held(session.forSecs));
+      this.clocks.set(session.id, clock);
+      line.append(element("span", "agent-since",
+        session.state === "waiting" ? "waiting" : "quiet"), clock);
+    }
+    card.append(line);
+    card.append(this.spent(session));
+    return card;
   }
 
   /* ── What it all cost ─────────────────────────────────
@@ -464,11 +556,10 @@ export class AgentsScreen {
    * ate it. That is the question you actually have when you look at that ring,
    * and this app is the only thing already counting tokens per run.
    *
-   * ⚠️ Three cuts of one number, not three numbers. The day's total is the
-   * heading; the week says whether today is normal; the agent rows say which
-   * of them is spending it and on which model. A panel that showed only the
-   * projects answered "where" and never "on what", which is the half that
-   * costs money.
+   * ⚠️ Three cuts of one number, in TWO COLUMNS. Stacked, the same four
+   * blocks ran the panel off the bottom of the island and every heading had to
+   * be found by scrolling past the one above it; side by side, the shape of
+   * the week and the list of who spent it are one glance.
    */
 
   /** One breakdown: a name, a bar, a figure. */
@@ -506,7 +597,13 @@ export class AgentsScreen {
       /* A floor here too, and for a different reason: an empty day has to be
        * visibly a day rather than a gap in the row. */
       bar.style.height = `${Math.max(spent(day) ? 8 : 3, (spent(day) / most) * 100)}%`;
-      column.append(bar);
+      /* ⚠️ The bar sits in a TRACK of its own. A bar alone on a dark ground
+       * has no ceiling — nothing says what a full day would look like — so a
+       * fifth of a day and two thirds of one read as the same smudge. */
+      const track = element("div", "use-day-track");
+      track.append(bar);
+      column.append(track);
+      column.append(element("span", "use-day-name", weekday(day.key).slice(0, 2)));
       column.dataset.tip = `${weekday(day.key)} · ${short(spent(day))}`
         + (day.runs ? ` · ${day.runs} run${day.runs === 1 ? "" : "s"}` : "");
       chart.append(column);
@@ -526,7 +623,8 @@ export class AgentsScreen {
     const row = element("div", "use-plan");
     const name = element("span", "use-plan-name");
     paintIcon(name, markFor(live.provider));
-    name.append(element("span", "", plan ? `${agentName(live.provider)} ${plan}` : agentName(live.provider)));
+    name.append(element("span", "", plan
+      ? `${agentName(live.provider)} ${plan}` : agentName(live.provider)));
     row.append(name);
     for (const [label, used] of [["5h", short5], ["week", week]] as const) {
       if (used == null) continue;
@@ -548,9 +646,6 @@ export class AgentsScreen {
     if (!this.usage.length) return null;
     const days = byDay(this.usage, today(), WINDOW);
     const mine = this.usage.filter(bucket => bucket.day === today());
-    /* ⚠️ The heading counts TODAY and the chart counts the week. A panel
-     * where the big number and the chart mean different spans is one nobody
-     * can read twice the same way, so the heading says which it is. */
     const agents = byAgent(mine);
     const projects = byProject(mine);
     const whole = all(agents);
@@ -559,18 +654,26 @@ export class AgentsScreen {
     const head = element("div", "spend-head");
     head.append(
       element("h3", "spend-title", "Usage"),
+      /* ⚠️ The heading counts TODAY and the chart counts the week. A panel
+       * where the big number and the chart mean different spans is one nobody
+       * reads the same way twice, so the heading says which it is. */
       element("span", "spend-total", whole.runs
         ? `${short(spent(whole))} today · ${whole.runs} run${whole.runs === 1 ? "" : "s"}`
         : "nothing today"),
     );
-    block.append(head, this.week(days));
+    block.append(head);
 
+    const grid = element("div", "use-grid");
+    const left = element("div", "use-col");
+    left.append(element("h4", "use-cut", "This week"), this.week(days));
     const plan = this.plan();
-    if (plan) block.append(plan);
+    if (plan) left.append(plan);
+    grid.append(left);
 
+    const right = element("div", "use-col");
     if (agents.length) {
-      block.append(element("h4", "use-cut", "By agent"));
-      block.append(this.bars(agents, whole, row => {
+      right.append(element("h4", "use-cut", "By agent"));
+      right.append(this.bars(agents, whole, row => {
         /* The agent's own mark and the model it spent most on — the two facts
          * this panel never carried, on a screen whose whole subject is which
          * agent is doing what. */
@@ -583,11 +686,37 @@ export class AgentsScreen {
       }));
     }
     if (projects.length > 1) {
-      block.append(element("h4", "use-cut", "By project"));
-      block.append(this.bars(projects, whole,
+      right.append(element("h4", "use-cut", "By project"));
+      right.append(this.bars(projects, whole,
         row => element("span", "use-name", row.key)));
     }
+    if (right.childElementCount) grid.append(right);
+    block.append(grid);
     return block;
+  }
+
+  /** Open the session the strip is showing.
+   *
+   * ⚠️ Called when the island opens ON its own — see `landOn`. You looked
+   * down, saw that something was running and opened it: the thing you came for
+   * is that session, not a list with it somewhere in it. Walking to the screen
+   * from the rail is the other intent entirely, and clears this. */
+  openFromPill() {
+    const first = this.sessions.filter(one => !isQuiet(`agent:${one.id}`))
+      .find(one => one.state === "waiting")
+      ?? this.sessions.filter(one => !isQuiet(`agent:${one.id}`))
+        .find(one => one.state === "working");
+    if (!first) return;
+    this.staged = first.id;
+    this.detailed = true;
+    this.changed();
+  }
+
+  /** Back to the overview. */
+  showList() {
+    if (!this.detailed) return;
+    this.detailed = false;
+    this.changed();
   }
 
   render() {
@@ -598,29 +727,30 @@ export class AgentsScreen {
       return;
     }
 
-    const live = this.live();
-    if (live.length) {
-      /* ⚠️ Falls back to the first rather than holding an id that is no longer
-       * live. The staged session can finish while you are reading it, and a
-       * stage that then renders nothing is a screen gone blank on the exact
-       * tick something happened. */
-      const shown = live.find(one => one.id === this.staged) ?? live[0];
-      this.staged = shown.id;
-      this.host.append(this.stage(shown));
-      // One live session needs no pager: a single dot is furniture.
-      if (live.length > 1) this.host.append(this.dots(live, shown));
+    /* ── One session, in detail ────────────────────────────
+     * ⚠️ Falls back to the overview rather than holding an id that is gone.
+     * The session being read can finish and be dropped while it is on screen,
+     * and a detail view of nothing is a screen that has gone blank on the
+     * exact tick something happened. */
+    const shown = this.detailed
+      ? this.sessions.find(one => one.id === this.staged)
+      : undefined;
+    if (shown) {
+      this.host.append(this.detail(shown));
+      /* The pager covers the LIVE ones. A dormant session is reachable from
+       * the overview and nobody pages through six of them. */
+      const live = this.live();
+      if (live.length > 1 && live.some(one => one.id === shown.id)) {
+        this.host.append(this.dots(live, shown));
+      }
+      if (this.error) this.host.append(element("p", "screen-error", this.error));
+      return;
     }
+    this.detailed = false;
 
-    const rest = this.sessions.filter(one => one.state === "idle");
-    if (rest.length) {
-      const quiet = element("div", "agent-quiet");
-      /* A heading only where there is something above to tell these apart
-       * from. On a screen of nothing but dormant sessions, "Quiet" over the
-       * only list there is says nothing at all. */
-      if (live.length) quiet.append(element("h3", "agent-quiet-title", "Quiet"));
-      for (const session of rest) quiet.append(this.row(session));
-      this.host.append(quiet);
-    }
+    const grid = element("div", "agent-grid");
+    for (const session of this.sessions) grid.append(this.card(session));
+    this.host.append(grid);
 
     const usage = this.usageBlock();
     if (usage) this.host.append(usage);

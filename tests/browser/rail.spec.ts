@@ -53,7 +53,12 @@ test("the rail centres where you are and blurs the rest away", async ({page}) =>
    * one made every slot as wide as a word, which put a rail of five over two
    * hundred pixels long with the screens marooned at either end. */
   await expect(page.locator("#island-where")).toHaveText("Home");
-  await expect(page.locator(".rail-stop")).toHaveCount(9);
+  /* ⚠️ EIGHT, not nine. Three screens are off the rail unless you put them
+   * there — the notices, the timer and the system — and the call's stop only
+   * exists while there is a call, which this fixture has no reason to stage.
+   * The number here said nine for as long as it took somebody to run the file
+   * alone; a count that drifts is a test measuring the fixture. */
+  await expect(page.locator(".rail-stop")).toHaveCount(8);
 
   /* The further from the middle, the less of it there is. ⚠️ Measured as a
    * monotonic fall, not against fixed numbers: the ramp is a judgement and will
@@ -530,7 +535,7 @@ test("laid out flat, every screen is sharp and one press away", async ({page}) =
     dim: stops.filter(s => Number(getComputedStyle(s).opacity) < 0.99).length,
     blurred: stops.filter(s => getComputedStyle(s).filter !== "none").length,
   }));
-  expect(all.count).toBe(9);
+  expect(all.count).toBe(8);
   expect(all.dim).toBe(0);
   expect(all.blurred).toBe(0);
 

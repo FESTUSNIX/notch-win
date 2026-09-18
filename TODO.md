@@ -105,6 +105,15 @@
   - [ ] Cost in money is not computed. It needs a price per model per
         provider, which is a table that goes stale silently — the worst kind
         of number to put on a screen that is otherwise all measurements.
+  - [x] **The real marks**, from each vendor's own VS Code extension rather
+        than drawn by hand. The first Claude one was a compass rose.
+  - [x] **Two layouts, two intents.** The strip expands into the SESSION —
+        one at reading size, with room — and the rail opens the OVERVIEW: a
+        card per session in a grid, so five sessions is four across rather
+        than five rows deep.
+  - [ ] The overview is not orderable or filterable. With a dozen sessions
+        the grid is the right shape but "only the ones that want me" would
+        be better than reading twelve cards.
 
 ---
 
