@@ -111,6 +111,107 @@ fn now_ms() -> u64 {
     START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
 }
 
+/* ── Watching a key go up, ourselves ────────────────────────────────────
+ *
+ * ⚠️ **The plugin's `Released` does not arrive on this machine.** The ring is
+ * the one shortcut built around letting go — press, flick the wrist, release —
+ * and the event that was supposed to carry that never came, so the gesture had
+ * never once worked. Worse, the guard against auto-repeat leaned on `Released`
+ * to clear its flag: without it the flag stayed set for ever and the ring
+ * stopped opening at all after the first time.
+ *
+ * So the release is detected here, by asking Windows. `GetAsyncKeyState` is
+ * how `drag.rs` already watches a mouse button, and it needs no hook, no
+ * message loop and no cooperation from the plugin.
+ */
+
+/// The virtual-key codes a shortcut string is made of.
+///
+/// ⚠️ Every part of it, modifiers included. The gesture is over when ANY of
+/// them comes up — letting go of Ctrl is letting go, whatever the letter is
+/// still doing — and watching only the letter would leave the ring up for
+/// anybody who releases the modifier first, which is most people.
+fn keys_of(shortcut: &str) -> Vec<i32> {
+    let mut out = Vec::new();
+    /* ⚠️ On `+` only. A hyphen is a KEY — `Ctrl+-` is a real shortcut — and
+     * splitting on it would leave two empty parts and watch nothing. */
+    for part in shortcut.split('+') {
+        let key = part.trim().to_ascii_lowercase();
+        match key.as_str() {
+            "ctrl" | "control" | "commandorcontrol" | "cmdorctrl" => out.push(0x11), // VK_CONTROL
+            "alt" | "option" | "altgr" => out.push(0x12),                            // VK_MENU
+            "shift" => out.push(0x10),                                               // VK_SHIFT
+            /* ⚠️ The left Windows key only. `VK_LWIN` and `VK_RWIN` are
+             * separate keys with separate states, and a machine has one of
+             * each — watching both would end the gesture the moment either is
+             * up, which is always. */
+            "super" | "meta" | "win" | "cmd" | "command" => out.push(0x5B),
+            other => {
+                let name = other.strip_prefix("key").or_else(|| other.strip_prefix("digit"))
+                    .unwrap_or(other);
+                let mut chars = name.chars();
+                match (chars.next(), chars.next()) {
+                    (Some(one @ 'a'..='z'), None) => out.push(one.to_ascii_uppercase() as i32),
+                    (Some(one @ '0'..='9'), None) => out.push(one as i32),
+                    (Some('f'), Some(_)) => {
+                        if let Ok(number) = name[1..].parse::<u8>() {
+                            if (1..=24).contains(&number) {
+                                out.push(0x6F + number as i32); // VK_F1 is 0x70
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Is every one of them still held?
+fn all_down(keys: &[i32]) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    !keys.is_empty()
+        && keys
+            .iter()
+            .all(|key| unsafe { (GetAsyncKeyState(*key) as u16 & 0x8000) != 0 })
+}
+
+/// Wait for the ring's key to come up, and commit if it was HELD.
+///
+/// ⚠️ One thread per opening, and it ends with the gesture. 16ms is a frame:
+/// a poll slower than that is a pick that lands visibly late, and one faster
+/// is spending a core on a key nobody is pressing.
+fn watch_release(app: AppHandle, shortcut: String) {
+    let keys = keys_of(&shortcut);
+    if keys.is_empty() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let since = now_ms();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            /* The ring went away by other means — picked with the mouse, or
+             * dismissed. Nothing to wait for. */
+            if !crate::ring::showing(&app) {
+                RING_DOWN.store(0, Ordering::SeqCst);
+                return;
+            }
+            if all_down(&keys) {
+                continue;
+            }
+            /* ⚠️ `swap`, so whoever gets here first owns the release. The
+             * plugin's own `Released` may yet arrive on some machine, and two
+             * commits for one gesture would pick twice. */
+            let down = RING_DOWN.swap(0, Ordering::SeqCst);
+            if down != 0 && now_ms().saturating_sub(since) >= crate::ring::HOLD.as_millis() as u64 {
+                crate::ring::commit(&app);
+            }
+            return;
+        }
+    });
+}
+
 /// Put the chrome where the current state says it belongs.
 ///
 /// ⚠️ The windows are never `hide()`n any more, and that is the point. A hidden
@@ -355,21 +456,39 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                              * — the same key again puts the ring away — so
                              * holding the key past the keyboard's repeat delay
                              * closed the ring and then flickered it open and
-                             * shut thirty times a second. Which is to say:
-                             * hold-and-let-go, the gesture this branch exists
-                             * for, could not work at all, and the longer you
-                             * held it the more certainly it did not.
+                             * shut thirty times a second.
                              *
-                             * A repeat is a press with the key already down. */
-                            if RING_DOWN.load(Ordering::SeqCst) != 0 {
+                             * ⚠️ But the flag saying "still down" is only
+                             * meaningful while the ring is UP. Trusting it on
+                             * its own cost the feature entirely: the release
+                             * that was supposed to clear it never arrives here
+                             * (see `watch_release`), so after the first ring of
+                             * the session every press was read as a repeat and
+                             * the key did nothing at all, for ever. */
+                            if RING_DOWN.load(Ordering::SeqCst) != 0
+                                && crate::ring::showing(&handler)
+                            {
                                 return;
                             }
                             RING_DOWN.store(now_ms().max(1), Ordering::SeqCst);
                             crate::ring::open(&handler);
+                            /* Only while it is actually up: `open` toggles, so
+                             * this press may have been the one that closed it. */
+                            if crate::ring::showing(&handler) {
+                                watch_release(handler.clone(), current.ring.clone());
+                            } else {
+                                RING_DOWN.store(0, Ordering::SeqCst);
+                            }
                         }
                         ShortcutState::Released => {
-                            let held = now_ms().saturating_sub(RING_DOWN.swap(0, Ordering::SeqCst));
-                            if held >= crate::ring::HOLD.as_millis() as u64 {
+                            /* ⚠️ Kept, and it may never fire: on this machine
+                             * the plugin does not report a release at all, which
+                             * is why `watch_release` exists. `swap` is what makes
+                             * the two safe together — whoever arrives first takes
+                             * the gesture, and a second one finds a zero. */
+                            let down = RING_DOWN.swap(0, Ordering::SeqCst);
+                            let held = now_ms().saturating_sub(down);
+                            if down != 0 && held >= crate::ring::HOLD.as_millis() as u64 {
                                 crate::ring::commit(&handler);
                             }
                         }
@@ -465,6 +584,27 @@ fn matches(pressed: &str, configured: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shortcut_is_every_key_it_is_made_of() {
+        /* ⚠️ The modifiers count. Letting go of Ctrl is letting go, whatever
+         * the letter is still doing — and watching only the letter leaves the
+         * ring up for anybody who releases the modifier first. */
+        assert_eq!(keys_of("Ctrl+Alt+R"), vec![0x11, 0x12, 0x52]);
+        assert_eq!(keys_of("ctrl+shift+F5"), vec![0x11, 0x10, 0x74]);
+        assert_eq!(keys_of("Super+KeyK"), vec![0x5B, 0x4B]);
+        assert_eq!(keys_of("Alt+Digit3"), vec![0x12, 0x33]);
+    }
+
+    #[test]
+    fn a_shortcut_nothing_can_be_made_of_is_not_watched() {
+        /* ⚠️ Empty means "do not poll", not "poll nothing" — `all_down` on an
+         * empty list would be vacuously true, which is a thread spinning for
+         * ever on a key that is not down. */
+        assert!(keys_of("").is_empty());
+        assert!(keys_of("Ctrl+Space").len() == 1, "the unknown part is dropped");
+        assert!(!all_down(&[]), "an empty list is not held");
+    }
 
     /// ⚠️ The check that stops a shortcut quietly removing a letter from the
     /// keyboard. `Ctrl+Alt` IS `AltGr` on Windows, and the Polish layout maps

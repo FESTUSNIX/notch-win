@@ -338,7 +338,11 @@ export class AgentsScreen {
     fill.style.width = whole ? `${(session.output / whole) * 100}%` : "0%";
     rail.append(fill);
     wrap.append(rail);
-    wrap.title = `${tokens(session.input)} read, ${tokens(session.output)} written`;
+    /* ⚠️ `data-tip`, never `title`. A leftover `title` is not a harmless
+     * duplicate: Windows draws its own tooltip a second later, in its own
+     * colours, over this app's — so the control ends up with two labels that
+     * disagree about when to appear. There is a test for it. */
+    wrap.dataset.tip = `${tokens(session.input)} read, ${tokens(session.output)} written`;
     return wrap;
   }
 

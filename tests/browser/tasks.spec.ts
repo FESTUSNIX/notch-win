@@ -445,7 +445,7 @@ test("finishing the last task clears the day", async ({page}) => {
   await page.screenshot({path: "test-results/island-clear.png"});
 });
 
-test("settings: one window, seven pages, and nothing that can show a token", async ({page}) => {
+test("settings: one window, eight pages, and nothing that can show a token", async ({page}) => {
   await page.setViewportSize({width: 900, height: 640});
   await page.goto("/task-editor.html");
 
@@ -455,7 +455,11 @@ test("settings: one window, seven pages, and nothing that can show a token", asy
   await expect(page.locator("#task-form")).toHaveCount(0);
   await expect(page.locator("#editor-list")).toHaveCount(0);
 
-  await expect(page.getByRole("tab")).toHaveCount(7);
+  /* ⚠️ EIGHT now. The pomodoro's lengths moved out of the Island pane into
+   * one of their own: they were filed under the island because that is where
+   * the countdown is drawn, which is how that pane became fifty switches while
+   * the others were nearly empty. */
+  await expect(page.getByRole("tab")).toHaveCount(8);
   await expect(page.getByRole("tab", {name: "General"})).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", {name: "General"})).toBeVisible();
   await page.screenshot({path: "test-results/settings-general.png"});

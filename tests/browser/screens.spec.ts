@@ -169,22 +169,26 @@ test("the ring can be chosen, verbs and all, and is capped at eight", async ({pa
   await page.goto("/task-editor.html");
   await page.locator('[role=tab]', {hasText: "Island"}).click();
 
-  const rows = page.locator("#ring-stops .set-row");
-  // Every screen, plus the verbs.
-  await expect(rows).toHaveCount(16);
+  /* ⚠️ CHIPS, not sixteen rows with a switch each. The list is the ring's
+   * whole vocabulary — every screen and every verb — and as a column it was
+   * two thirds of this pane: identical controls where the only thing that
+   * varies is a word. */
+  const chips = page.locator(".ring-chip");
+  await expect(chips).toHaveCount(16);
   /* ⚠️ Verbs as well as screens, and they are what stops the ring being a
    * navigation menu: every one of them is a keystroke that would otherwise
    * want a global shortcut of its own, which is the problem the ring exists
    * to end. */
-  await expect(rows.filter({hasText: "Write a note"})).toHaveCount(1);
-  await expect(rows.filter({hasText: "Add a task"})).toHaveCount(1);
+  await expect(chips.filter({hasText: "Write a note"})).toHaveCount(1);
+  await expect(chips.filter({hasText: "Add a task"})).toHaveCount(1);
 
-  const boxes = page.locator("#ring-stops input[type=checkbox]");
-  for (let i = 0; i < 8; i++) await boxes.nth(i).check();
-  /* ⚠️ A ninth cannot be ticked, and says so by being DISABLED rather than by
-   * accepting the tick and quietly dropping it: past eight a wedge is thinner
-   * than a hand is accurate, which is the whole advantage gone. */
-  await expect(boxes.nth(8)).toBeDisabled();
-  await boxes.nth(0).uncheck();
-  await expect(boxes.nth(8)).toBeEnabled();
+  for (let index = 0; index < 8; index++) await chips.nth(index).click();
+  await expect(page.locator(".ring-chip.is-on")).toHaveCount(8);
+  /* ⚠️ A ninth cannot be lit, and the chip goes flat rather than accepting a
+   * press and dropping it: past eight a wedge is thinner than a hand is
+   * accurate, which is the whole advantage gone. */
+  await expect(chips.nth(8)).toBeDisabled();
+  await chips.nth(0).click();
+  await expect(chips.nth(8)).toBeEnabled();
+  await expect(page.locator(".ring-chip.is-on")).toHaveCount(7);
 });

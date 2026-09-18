@@ -3742,3 +3742,32 @@ The two halves were the same fault.
      locales.** `en-GB` says "Sept", `en-US` says "Sep", and the row is a
      character wider on one machine than another for no reason anybody can
      see. A twelve-entry table, where the string has to be stable.
+581. ⚠️ **The plugin's `Released` never arrives on this machine**, which is
+     why hold-and-let-go had never once worked — and why the guard against
+     auto-repeat, which cleared its flag on that event, locked the ring out
+     completely: after the first opening of the session every press was read as
+     a repeat and the key did nothing at all, for ever. Two lessons, one bug.
+     A flag that says "still held" is only meaningful while the thing it
+     guards is UP, and a release worth acting on is one you watch for yourself
+     — `GetAsyncKeyState`, the way `drag.rs` already watches a mouse button.
+582. ⚠️ **Watching only the main key misses the usual way people let go.**
+     Ctrl+Alt+R ends when Ctrl comes up, whatever R is still doing. Every key
+     of the shortcut is polled, and the first one released ends the gesture.
+583. ⚠️ **A description under every row is a wall nobody reads.** Forty rows
+     each explaining themselves is forty sentences competing with the forty
+     controls they are about — and the two that genuinely needed saying (a
+     token leaves the machine; a service matches a string character for
+     character) were lost among the thirty-eight that did not.
+584. ⚠️ **Sections grouped by what implements them, not by what somebody came
+     to change.** The pomodoro's lengths and the call's controls were under
+     "Island" because the island is where they are drawn — which made that pane
+     fifty switches long while the pane beside it held four.
+585. ⚠️ **Sixteen rows with one switch each is a column, not a list.** The
+     ring's whole vocabulary was two thirds of its pane, every row identical
+     but for a word. The same sixteen choices are four lines of chips, and
+     which eight are lit is visible without being read.
+586. ⚠️ **A stale route in a test is a test that stopped running.** `tips.spec`
+     walked to the System screen by its rail stop, which came off the rail
+     months ago — so it timed out before reaching the assertion it exists for,
+     and the native `title` it was meant to catch had been sitting on the
+     Agents screen the whole time.

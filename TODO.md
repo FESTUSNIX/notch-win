@@ -61,6 +61,20 @@
   - [ ] The ticks come from the ring's own page, which a global shortcut does
         not activate — they may stay silent until the first mouse pick of
         the session. See AGENTS 574.
+  - [x] **The release is watched here now**, with `GetAsyncKeyState`: the
+        plugin's own `Released` never arrives on this machine, which is why
+        the gesture had never worked — and why the auto-repeat guard locked
+        the ring out of opening at all. See AGENTS 581.
+
+- ~~Settings: too many words, too many switches in one pane~~ — **done**. The
+  descriptions under every row are gone except where the consequence is
+  invisible; the section headings are sentence case rather than tracked
+  uppercase; the pomodoro has a pane of its own and the call and the
+  notifications moved to The pill; the ring's sixteen rows are four lines of
+  chips.
+  - [ ] The screens list is still twelve rows, because it is a drag-to-reorder
+        list and that is the shape that makes order obvious. It is the longest
+        thing left in the pane.
 - [x] **The rail budget**: a screen earns a rail stop only if you would sit on
       it for thirty seconds. **System is off it now**, with a chip in the
       header beside the timer and the bell — it is a place you visit for one

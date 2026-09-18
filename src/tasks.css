@@ -1953,8 +1953,15 @@ button:active:not(:disabled) { background:var(--tile-on); }
    Label above, card below. ⚠️ The label is OUTSIDE the card: a heading inside
    a list of rows reads as one more row, which is the thing that made the old
    editor window a wall of same-weight text. */
-.set-label { font-size:11px; font-weight:600; color:#8a8a8a; letter-spacing:.03em;
-  text-transform:uppercase; margin:0 0 8px 4px; }
+/* ⚠️ Sentence case, and no tracking. Eleven pixels of uppercase at .03em
+   over every group turned a window of settings into a window of shouting —
+   an eyebrow is a label for a form field, not a heading. The SIZE is what says
+   "this is the section"; the case was doing nothing but slowing it down. */
+.set-label { font-size:13.5px; font-weight:600; color:#e2e2e2; letter-spacing:-.01em;
+  margin:0 0 9px 4px; }
+/* A heading inside a group, for the two halves of one list. */
+.set-sub { margin:14px 4px 7px; font-size:11.5px; font-weight:500; color:#8a8a8a; }
+.set-sub:first-child { margin-top:0; }
 .set-group { border-radius:var(--r-tile); overflow:hidden;
   background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
@@ -1975,6 +1982,31 @@ button:active:not(:disabled) { background:var(--tile-on); }
 .screen-row > div { flex:1; min-width:0; }
 .screen-row small { display:block; margin-top:2px; font-size:11px;
   color:rgba(255,255,255,.35); }
+/* ── The ring's vocabulary, as chips ─────────────────────────────────────
+   ⚠️ Sixteen rows with a switch each was two thirds of this pane: a column of
+   identical controls where the only thing that varies is a word. The same
+   sixteen choices are four lines of chips, and which eight are lit can be seen
+   without being read. */
+.ring-chips { display:flex; flex-wrap:wrap; gap:7px; }
+.ring-chip { display:inline-flex; align-items:center; gap:7px; padding:7px 12px 7px 9px;
+  border-radius:999px; font-size:12.5px; font-weight:500; color:#b4b4b4;
+  background-color:var(--tile); background-image:var(--sheen);
+  box-shadow:var(--hairline), var(--gloss);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out); }
+.ring-chip svg { width:15px; height:15px; opacity:.75; }
+.ring-chip:hover { background-color:var(--tile-hi); color:#e8e8e8; }
+.ring-chip:active { scale:.97; transition-duration:90ms; }
+/* Chosen: lit as a SURFACE, the way a selected chip is on the Today screen —
+   not a wash of colour over the word. */
+.ring-chip.is-on { color:#fff; background-color:var(--tile-on);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), var(--gloss); }
+.ring-chip.is-on svg { opacity:1; color:var(--accent); }
+/* Full: a ninth cannot be lit, and the chip goes flat rather than refusing a
+   press it has already taken. */
+.ring-chip.is-full { opacity:.38; }
+
 /* ── The ring's list ────────────────────────────────── */
 /* ⚠️ `flex:1`, or the switch sits against the label instead of at the far
    end of the row like every other one on the page. */

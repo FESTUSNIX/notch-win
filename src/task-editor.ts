@@ -83,7 +83,8 @@ const PANES = [
   { id: "general", icon: "settings", label: "General", sub: "Startup, displays and what Codenotch is reading." },
   { id: "appearance", icon: "sun", label: "Appearance", sub: "The one colour everything is tinted by, and how numbers are written." },
   { id: "island", icon: "home", label: "Island", sub: "Where the panel lives and what it takes to open it." },
-  { id: "pill", icon: "clock", label: "The pill", sub: "What the resting strip is allowed to say beside the time." },
+  { id: "pill", icon: "clock", label: "The pill", sub: "What the strip says, and what it does during a call." },
+  { id: "timer", icon: "timer", label: "Timer", sub: "How long a pomodoro runs, and what it plays when it ends." },
   { id: "search", icon: "search", label: "Search", sub: "What the command palette is allowed to look through." },
   { id: "keys", icon: "keyboard", label: "Shortcuts", sub: "Global, so they work while another app has focus." },
   { id: "accounts", icon: "link", label: "Connections", sub: "TickTick, Google Calendar, Spotify and the forecast." },
@@ -146,124 +147,135 @@ const seg = (name: string, options: [string, string][], label: string) =>
 
 const check = (id: string) => `<input type="checkbox" class="switch" id="${id}">`;
 
+/* ── The panes ───────────────────────────────────────────────────────────
+ *
+ * ⚠️ **A description under every row is a wall nobody reads.** Forty rows each
+ * explaining themselves is forty sentences competing with the forty controls
+ * they are about — and the ones that actually needed saying were lost among
+ * them. A note is kept only where the control cannot say it: where the
+ * consequence is invisible (a token leaves the machine, a service matches a
+ * string character for character) or where nothing on screen implies it.
+ *
+ * ⚠️ And the sections are grouped by what somebody came to change, not by
+ * which file implements it. The pomodoro's lengths and the call's controls
+ * were both under "Island" because the island is where they are drawn, which
+ * made that pane a list of fifty switches and the other panes nearly empty.
+ */
 const PANE_HTML: Record<PaneId, string> = {
   general: `
     <div><p class="set-label">Startup</p><div class="set-group">
-      ${row("Start with Windows", "Launches Codenotch when you sign in.", check("autostart"))}
-      ${row("Tell me when a run finishes", "A notification when an agent stops needing you.", check("notify-runs"))}
+      ${row("Start with Windows", "", check("autostart"))}
+      ${row("Tell me when a run finishes", "", check("notify-runs"))}
     </div></div>
     <div id="displays-group" hidden><p class="set-label">Displays</p><div class="set-group">
       ${row("Island", "", `<select id="display-tasks"></select>`)}
       ${row("Usage notch", "", `<select id="display-notch"></select>`)}
     </div></div>
-    <div><p class="set-label">Position</p><div class="set-group">
-      ${row("Reset position", "Both notches back to the middle of their edge. Drag either one along its edge to move it.", `<button type="button" class="set-btn" id="reset-position">Reset</button>`)}
+    <div><p class="set-label">Tasks</p><div class="set-group">
+      ${row("Tasks showing", "", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
     </div></div>
     <div><p class="set-label">Codenotch</p><div class="set-group">
       ${row("Reading", "", `<span class="set-value" id="providers" style="min-width:0;text-align:right">…</span>`)}
-      ${row("Log", "Everything the app has said to itself today.", `<button type="button" class="set-btn" id="open-log">Open log</button>`)}
-      ${row("Quit", "Takes the notches down until you launch it again.", `<button type="button" class="set-btn is-danger" id="quit">Quit Codenotch</button>`)}
+      ${row("Position", "Drag either notch along its edge to move it.", `<button type="button" class="set-btn" id="reset-position">Reset</button>`)}
+      ${row("Log", "", `<button type="button" class="set-btn" id="open-log">Open log</button>`)}
+      ${row("Quit", "", `<button type="button" class="set-btn is-danger" id="quit">Quit Codenotch</button>`)}
     </div></div>`,
 
   appearance: `
-    <div><p class="set-label">Colour</p><div class="set-group">
-      ${row("Accent", "Every lit edge, every selected tab and the focus ring take this one colour.",
+    <div><p class="set-label">Accent</p><div class="set-group">
+      ${row("Colour", "",
         `<div class="swatches" id="swatches">${ACCENTS.map(c => `<button type="button" class="swatch" data-accent="${c}" style="background:${c};color:${c}" aria-label="${c}" aria-pressed="false"></button>`).join("")}<input type="color" id="accent-custom" aria-label="Any other colour"></div>`, "stack")}
     </div></div>
-    <div><p class="set-label">Clock &amp; units</p><div class="set-group">
+    <div><p class="set-label">Clock and units</p><div class="set-group">
       ${row("Clock", "", seg("clock", [["24", "24 h"], ["12", "12 h"]], "Clock format"))}
-      ${row("Week starts on", "Home's week strip and the Calendar's grid.", seg("week", [["mon", "Monday"], ["sun", "Sunday"]], "First day of the week"))}
+      ${row("Week starts on", "", seg("week", [["mon", "Monday"], ["sun", "Sunday"]], "First day of the week"))}
       ${row("Temperature", "", seg("units", [["c", "°C"], ["f", "°F"]], "Temperature units"))}
-    </div></div>
-    <div><p class="set-label">Motion</p><div class="set-group">
-      ${row("Animations", "“System” follows the Windows setting for reduced motion.", seg("motion", [["system", "System"], ["always", "Always"], ["never", "Never"]], "Animation"))}
+      ${row("Animations", "", seg("motion", [["system", "System"], ["always", "Always"], ["never", "Never"]], "Animation"))}
     </div></div>`,
 
   island: `
     <div><p class="set-label">Where it lives</p><div class="set-group">
-      ${row("Screen edge", "Which edge the island is welded to.", seg("edge", [["top", "Top"], ["bottom", "Bottom"], ["left", "Left"], ["right", "Right"]], "Screen edge"))}
-      ${row("Show the island", "Off, only the usage notch remains.", check("notch-visible"))}
-    </div></div>
-    <div><p class="set-label">Opening</p><div class="set-group">
-      ${row("Open on what is happening", "A call, an agent waiting, a meeting about to start or a running countdown — the island opens on that screen rather than where you last were.", check("follow-live"))}
-      ${row("Open on hover", "Off, it takes a click — or the shortcut.", check("open-on-hover"))}
-      ${row("Stays open for", "How long the panel waits after the pointer leaves.",
-        `<input type="range" id="fold-delay" min="120" max="2000" step="20"><span class="set-value" id="fold-delay-value"></span>`)}
-    </div></div>
-    <div><p class="set-label">Size</p><div class="set-group">
-      ${row("Panel width", "How wide the open panel is along its edge.",
+      ${row("Screen edge", "", seg("edge", [["top", "Top"], ["bottom", "Bottom"], ["left", "Left"], ["right", "Right"]], "Screen edge"))}
+      ${row("Show the island", "", check("notch-visible"))}
+      ${row("Panel width", "",
         `<input type="range" id="panel-width" min="0" max="1100" step="20"><span class="set-value" id="panel-width-value"></span>`)}
     </div></div>
-    <div><p class="set-label">Screens</p><div class="set-group">
-      ${row("Screens on the rail", "How many show at once. The rest blur away either side.",
+    <div><p class="set-label">Opening</p><div class="set-group">
+      ${row("Open on hover", "", check("open-on-hover"))}
+      ${row("Open on what is happening", "A call, an agent waiting, a meeting about to start.", check("follow-live"))}
+      ${row("Stays open for", "",
+        `<input type="range" id="fold-delay" min="120" max="2000" step="20"><span class="set-value" id="fold-delay-value"></span>`)}
+    </div></div>
+    <div><p class="set-label">The rail</p><div class="set-group">
+      ${row("Screens on the rail", "",
         `<input type="range" id="rail-visible" min="3" max="7" step="1"><span class="set-value" id="rail-visible-value"></span>`)}
-      ${row("Always show them", "Off, the rail is a bare shape until you reach for it — like the two arcs.", check("rail-always"))}
-      ${row("Drag strength", "How far you drag for one screen. Higher is heavier.",
-        `<input type="range" id="rail-grip" min="50" max="300" step="10"><span class="set-value" id="rail-grip-value"></span>`)}
-      ${row("Kept sharp", "How many either side of the middle stay unblurred.",
+      ${row("Kept sharp", "",
         `<input type="range" id="rail-sharp" min="0" max="3" step="1"><span class="set-value" id="rail-sharp-value"></span>`)}
-      ${row("Show them all", "Every screen laid out and clickable, instead of one in the middle to drag between.", check("rail-flat"))}
-    </div>
-    <p class="set-label">Which screens, and in what order</p>
-    <p class="set-why">Drag to reorder. Switch one off and it leaves the rail — it is still reachable from the palette.</p>
+      ${row("Drag strength", "",
+        `<input type="range" id="rail-grip" min="50" max="300" step="10"><span class="set-value" id="rail-grip-value"></span>`)}
+      ${row("Always show them", "", check("rail-always"))}
+      ${row("Show them all", "Every screen at once, instead of one to drag between.", check("rail-flat"))}
+    </div></div>
+    <div><p class="set-label">Screens</p>
+    <p class="set-why">Drag to reorder. Switched off, a screen leaves the rail and stays in the palette.</p>
     <div class="set-group" id="rail-screens">
     </div></div>
     <div><p class="set-label">The ring</p>
+    <p class="set-why">Hold the key and let go to pick; tap it to leave the ring up. Eight at most — nothing chosen means the screens on your rail.</p>
     <div class="set-group">
-      ${row("Frosted", "The ring lets the window underneath through. Off, it is a solid disc — easier to read over a busy background.", check("ring-glass"))}
+      ${row("Frosted", "", check("ring-glass"))}
     </div>
-    <div class="set-group" id="ring-stops">
-    </div>
-    <p class="set-why">What the ring around the pointer holds, in this order. Hold the key and let go to pick without clicking; tap it to leave the ring up and read. ⚠️ Eight at most — past that a wedge is thinner than a hand is accurate, and aiming rather than reading is the whole advantage. Nothing chosen means the screens on your rail.</p></div>
-    <div><p class="set-label">Tasks</p><div class="set-group">
-      ${row("Tasks showing", "What Today counts, and what the pill counts down.", seg("view", [["day", "Today"], ["all", "All lists"]], "Task view"))}
-    </div></div>
+    <div id="ring-stops"></div></div>`,
+
+  pill: `
+    <div><p class="set-label">What it may say</p><div class="set-group" id="modules"></div></div>
+    <div><p class="set-label">When it speaks up</p><div class="set-group" id="thresholds"></div>
+      <p class="set-note">A disk that lives above 95% is a fact about the machine, not news.</p></div>
     <div><p class="set-label">In a call</p><div class="set-group">
-      ${row("Watch for calls", "The pill becomes the call while one is running \u2014 Zoom, Teams, Meet, WhatsApp, Discord, Slack.", check("call-mode"))}
-      ${row("Mute the microphone too", "As well as pressing the app\u2019s own mute. Off, the mute is only as reliable as that shortcut.", check("call-mute-mic"))}
-      ${row("Go to the call", "A call starting puts the island on its screen, so opening it shows the call.", check("call-open"))}
+      ${row("Watch for calls", "Zoom, Teams, Meet, WhatsApp, Discord, Slack.", check("call-mode"))}
+      ${row("Mute the microphone too", "", check("call-mute-mic"))}
+      ${row("Go to the call", "", check("call-open"))}
     </div>
-    <p class="set-why">Detection is the microphone: an app recording you is in a call, which is the same thing Windows draws its own microphone glyph for. Controls are the app\u2019s own keyboard shortcuts, so the call window comes forward for an instant when you press one.</p></div>
+    <p class="set-note">Controls are the app’s own shortcuts, so its window comes forward for an instant when you press one.</p></div>
     <div><p class="set-label">Notifications</p><div class="set-group">
-      ${row("Mirror the notification centre", "The header shows how many are waiting, and the Notices screen shows them.", check("notice-mode"))}
+      ${row("Mirror the notification centre", "", check("notice-mode"))}
     </div>
-    <p class="set-why">Codenotch shows what is already in Windows\u2019 own centre and keeps no copy of its own \u2014 dismissing one here dismisses it there.</p></div>
+    <p class="set-note">Dismissing one here dismisses it in Windows too — Codenotch keeps no copy.</p></div>
+    <div><p class="set-label">Snoozed</p><div class="set-group">
+      ${row("Quietened", "", `<button type="button" class="set-btn" id="unsnooze">Bring back</button>`)}
+    </div><p class="set-note" id="snoozed-note"></p></div>`,
+
+  timer: `
     <div><p class="set-label">Pomodoro</p><div class="set-group">
-      ${row("Focus", "How long one pomodoro runs.",
+      ${row("Focus", "",
         `<input type="range" id="pom-work" min="5" max="90" step="5"><span class="set-value" id="pom-work-value"></span>`)}
-      ${row("Break", "The short one, after each pomodoro.",
+      ${row("Break", "",
         `<input type="range" id="pom-break" min="1" max="30" step="1"><span class="set-value" id="pom-break-value"></span>`)}
       ${row("Long break", "After every fourth one.",
         `<input type="range" id="pom-long" min="5" max="60" step="5"><span class="set-value" id="pom-long-value"></span>`)}
-      ${row("On the notch", "A running pomodoro as a quiet line along the bottom, or as the countdown itself.",
+    </div></div>
+    <div><p class="set-label">While it runs</p><div class="set-group">
+      ${row("On the notch", "",
         seg("pompill", [["bar", "A line"], ["time", "The time"]], "Pomodoro on the pill"))}
-      ${row("Sound", "What a finished countdown plays. Windows\u2019 own sounds \u2014 nothing is shipped.",
+      ${row("Sound", "",
         seg("sound", [["", "None"], ["Notification.Default", "Chime"],
           ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]],
           "Timer sound"))}
     </div>
-    <p class="set-why">A finished pomodoro starts its own break; a finished break waits for you. The lengths are on the Timer screen too \u2014 the same number, reachable from either. Wind the dial there for a plain countdown, or type \u201ctimer 12\u201d in the palette.</p></div>`,
-
-  pill: `
-    <div><p class="set-label">What it may say</p><div class="set-group" id="modules"></div>
-      <p class="set-note">The strip at rest is three slots — the date, the clock and one of these. Everything switched off leaves the third slot empty.</p></div>
-    <div><p class="set-label">When it speaks up</p><div class="set-group" id="thresholds"></div>
-      <p class="set-note">A disk that lives above 95% is a fact about the machine, not news. Raise the number until the pill only tells you things you did not know.</p></div>
-    <div><p class="set-label">Snoozed</p><div class="set-group">
-      ${row("Quietened", "Things you told to be quiet from the island.", `<button type="button" class="set-btn" id="unsnooze">Bring back</button>`)}
-    </div><p class="set-note" id="snoozed-note"></p></div>`,
+    <p class="set-note">Windows’ own sounds — nothing is shipped. A finished pomodoro starts its break; a finished break waits for you.</p></div>`,
 
   search: `
     <div><p class="set-label">Files</p><div class="set-group">
-      ${row("Use Everything", "voidtools Everything answers file searches instantly. Off, the palette never asks it.", check("use-everything"))}
+      ${row("Use Everything", "", check("use-everything"))}
     </div><p class="set-note" id="everything-note"></p></div>
     <div><p class="set-label">Applications</p><div class="set-group">
-      ${row("Index the Start Menu", "Off, the palette cannot launch applications — and start-up is about a second and a half quicker.", check("index-apps"))}
-    </div></div>`,
+      ${row("Index the Start Menu", "", check("index-apps"))}
+    </div>
+    <p class="set-note">Off, the palette cannot launch applications — and start-up is a second and a half quicker.</p></div>`,
 
   keys: `
     <div><p class="set-label">Global shortcuts</p><div class="set-group" id="keys"></div>
-      <p class="set-note">Click a shortcut, then press the combination. Esc cancels. Windows refuses a combination another app already owns, and says so here.</p>
+      <p class="set-note">Click one, then press the combination. Esc cancels. Windows refuses what another app already owns.</p>
       <p class="set-note is-warn" id="altgr-note" hidden></p></div>
     <div><div class="set-group">
       ${row("Back to the defaults", "", `<button type="button" class="set-btn" id="keys-default">Restore defaults</button>`)}
@@ -272,23 +284,23 @@ const PANE_HTML: Record<PaneId, string> = {
   accounts: `
     <div><p class="set-label">TickTick</p><div class="set-group">
       ${row("Account", "", `<span class="set-value" id="ticktick-state" style="min-width:0;text-align:right">…</span>`)}
-      ${row("API token", "In TickTick on the web: Settings → Account → API Token. Saved in Windows Credential Manager on this PC and never read back.",
+      ${row("API token", "Settings → Account → API Token on the web. Kept in Windows Credential Manager and never read back.",
         `<input id="token" type="password" autocomplete="off" spellcheck="false" maxlength="2500" placeholder="Paste your token"><button type="button" class="set-btn is-accent" id="ticktick-connect">Connect</button><button type="button" class="set-btn" id="ticktick-disconnect">Disconnect</button>`, "stack")}
     </div></div>
     <div><p class="set-label">Google Calendar</p><div class="set-group">
       ${row("Calendar", "", `<span class="set-value" id="google-state" style="min-width:0;text-align:right">…</span>`)}
-      ${row("OAuth client", "In Google Cloud Console create a client of type <strong>Desktop app</strong> and enable the Calendar API. Connecting opens your normal browser — Codenotch never sees your password and asks only to read.",
+      ${row("OAuth client", "A <strong>Desktop app</strong> client with the Calendar API on. Connecting opens your browser; Codenotch asks only to read.",
         `<input id="google-id" autocomplete="off" spellcheck="false" maxlength="400" placeholder="…apps.googleusercontent.com"><input id="google-secret" type="password" autocomplete="off" maxlength="400" placeholder="Client secret"><button type="button" class="set-btn is-accent" id="google-connect">Connect</button><button type="button" class="set-btn" id="google-disconnect">Disconnect</button>`, "stack")}
     </div></div>
     <div><p class="set-label">Spotify</p><div class="set-group">
       ${row("Queue", "", `<span class="set-value" id="spotify-state" style="min-width:0;text-align:right">…</span>`)}
-      ${row("Client ID", "Only for “Playing Next”. Everything else the player shows comes from Windows itself, so this is optional. Create an app at developer.spotify.com, and add the redirect URI below to it <strong>exactly</strong>.",
+      ${row("Client ID", "Only for “Playing next” — everything else comes from Windows.",
         `<input id="spotify-id" autocomplete="off" spellcheck="false" maxlength="200" placeholder="32 hex characters"><button type="button" class="set-btn is-accent" id="spotify-connect">Connect</button><button type="button" class="set-btn" id="spotify-disconnect">Disconnect</button>`, "stack")}
-      ${row("Redirect URI", "Paste this into the app’s settings. Spotify matches it character for character, port included.",
+      ${row("Redirect URI", "Spotify matches this character for character, port included.",
         `<code class="set-code" id="spotify-redirect">…</code><button type="button" class="set-btn" id="spotify-copy">Copy</button>`)}
     </div></div>
     <div><p class="set-label">Weather</p><div class="set-group">
-      ${row("Place", "Left empty, nothing is ever requested. This is the one thing here that reaches the network without an account.",
+      ${row("Place", "Left empty, nothing is ever requested.",
         `<input id="weather-place" autocomplete="off" spellcheck="false" maxlength="120" placeholder="Kraków"><button type="button" class="set-btn is-accent" id="weather-set">Use this place</button><button type="button" class="set-btn" id="weather-clear">Turn off</button>`, "stack")}
       ${row("Now", "", `<span class="set-value" id="weather-state" style="min-width:0;text-align:right">…</span>`)}
     </div></div>`,
@@ -627,59 +639,63 @@ function accentNow(): string {
   return /^#[0-9a-f]{6}$/i.test(raw) ? raw : "#00ff88";
 }
 
-/** What the ring holds. ⚠️ A list of CHECKBOXES rather than a second
- *  drag-to-reorder: the order here is the order of the list itself, which is
- *  fixed and therefore learnable — and a ring whose wedges move about is one
- *  where aiming stops working, which is the only reason it exists. */
+/** What the ring holds.
+ *
+ * ⚠️ CHIPS, not sixteen rows with a switch each. The list is the whole
+ * vocabulary of the ring — every screen and every verb — and as a column it
+ * was two thirds of this pane: a wall of identical switches where the only
+ * thing that varies is a word. As chips the same sixteen choices are four
+ * lines, and which eight are lit can be read without reading anything.
+ *
+ * ⚠️ The ORDER is the list's own, not the order they were chosen. A ring
+ * whose wedges move about is one where aiming stops working, which is the only
+ * reason it exists.
+ */
 function paintRing() {
   const host = get("ring-stops");
   host.replaceChildren();
   const chosen = prefs.ringStops;
-  for (const stop of ringChoices(SCREENS)) {
-    const row = document.createElement("div");
-    row.className = "set-row";
+  const all = ringChoices(SCREENS);
 
-    const mark = document.createElement("span");
-    mark.className = "ring-pick-mark";
-    mark.append(taskIcon(stop.icon as TaskIcon));
-
-    const text = document.createElement("div");
-    const name = document.createElement("b");
-    name.textContent = stop.label;
-    text.append(name);
-    if (stop.id.startsWith("act:")) {
-      const why = document.createElement("small");
-      why.textContent = "Does it there and then";
-      text.append(why);
+  const make = (stops: typeof all, title: string) => {
+    if (!stops.length) return;
+    const label = document.createElement("p");
+    label.className = "set-sub";
+    label.textContent = title;
+    const grid = document.createElement("div");
+    grid.className = "ring-chips";
+    for (const stop of stops) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      const on = chosen.includes(stop.id);
+      /* ⚠️ A ninth cannot be lit, and the chip says so by going flat rather
+       * than by accepting the press and dropping it somewhere else. */
+      const full = !on && chosen.length >= 8;
+      chip.className = `ring-chip${on ? " is-on" : ""}${full ? " is-full" : ""}`;
+      chip.disabled = full;
+      chip.setAttribute("aria-pressed", String(on));
+      chip.append(taskIcon(stop.icon as TaskIcon));
+      const name = document.createElement("span");
+      name.textContent = stop.label;
+      chip.append(name);
+      chip.onclick = () => {
+        const next = on
+          ? prefs.ringStops.filter(one => one !== stop.id)
+          : [...prefs.ringStops, stop.id];
+        const order = all.map(one => one.id);
+        prefs.ringStops = next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        savePrefs();
+        paintRing();
+      };
+      grid.append(chip);
     }
+    host.append(label, grid);
+  };
 
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.className = "switch";
-    box.checked = chosen.includes(stop.id);
-    /* ⚠️ A ninth cannot be ticked, and the box says so by being disabled
-     * rather than by accepting the tick and dropping it somewhere else. */
-    box.disabled = !box.checked && chosen.length >= 8;
-    box.setAttribute("aria-label", `${stop.label} on the ring`);
-    box.onchange = () => {
-      const want = box.checked;
-      const next = want
-        ? [...prefs.ringStops, stop.id]
-        : prefs.ringStops.filter(one => one !== stop.id);
-      /* Kept in the LIST's own order rather than in the order they were
-       * ticked: see the note above on why the wedges must not move. */
-      const order = ringChoices(SCREENS).map(one => one.id);
-      prefs.ringStops = next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      savePrefs();
-      paintRing();
-    };
-
-    const wrap = document.createElement("div");
-    wrap.className = "ring-pick";
-    wrap.append(mark, text);
-    row.append(wrap, box);
-    host.append(row);
-  }
+  make(all.filter(stop => !stop.id.startsWith("act:")), "Screens");
+  /* The verbs are what stop the ring being a navigation menu: each one is a
+   * keystroke that would otherwise want a global shortcut of its own. */
+  make(all.filter(stop => stop.id.startsWith("act:")), "Does it there and then");
 }
 
 function paintScreens() {

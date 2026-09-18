@@ -71,8 +71,13 @@ test("nothing is left to the operating system to draw", async ({page}) => {
   /* ⚠️ A leftover `title` is not a harmless duplicate: the OS draws its own
    * tooltip a second later, in its own colours, over ours — so the control ends
    * up with two labels that disagree about when to appear. */
-  for (const screen of ["home", "shelf", "notes", "system"]) {
-    await page.locator(`.rail-stop[data-tab="${screen}"]`).click();
+  /* ⚠️ The SYSTEM screen is reached from its chip in the header, not from
+   * the rail — it came off the rail, and this walk kept clicking a stop that
+   * does not exist. A stale route in a test is a test that stops running
+   * without ever saying so. */
+  for (const screen of ["home", "shelf", "notes", "agents", "system"]) {
+    if (screen === "system") await page.locator("#head-system").click();
+    else await page.locator(`.rail-stop[data-tab="${screen}"]`).click();
     await expect(page.locator(`.screen[data-screen="${screen}"]`)).toBeVisible();
     const left = await page.evaluate(() =>
       [...document.querySelectorAll("[title]")].map(el => el.getAttribute("title")));
