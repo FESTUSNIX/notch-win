@@ -80,9 +80,19 @@
   - [ ] Nothing is kept once a session ends, so there is no "this run took
         18 minutes and 40 calls" — the transcript has it and the app reads
         only the tail. That is the same history the Today streak wants.
-  - [ ] The steps are Claude's transcript format only. A second provider would
-        need its own reader, which is why `markFor` falls back to the generic
-        mark rather than to Claude's.
+  - [x] **Codex is read too**, out of `~/.codex/sessions` — a second reader,
+        because the two formats share nothing. Codex states what Claude's has
+        to infer: when a turn starts and ends, which model answered, the
+        session's running total, and what is left of the plan.
+  - [x] **Whose agent, and which model**, on the card and on the strip.
+  - [x] **A stage for the live ones**, paged with dots, and one quiet line
+        each for the dormant. Four identical cards was the complaint.
+  - [ ] Codex sessions cannot be reached by pid — they have none — so the
+        window is found by its title. It picks the wrong window if two
+        editors have the same folder open.
+  - [ ] A permission prompt is still not a state. Codex has
+        `tools.request_permissions` in an exec call, which is close, but an
+        exec that is merely slow looks identical from outside.
 
 ---
 

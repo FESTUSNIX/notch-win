@@ -39,6 +39,21 @@ pub struct Run {
     pub input: u64,
     #[serde(default)]
     pub output: u64,
+    /// Which agent ran it — `claude`, `codex`.
+    ///
+    /// ⚠️ Defaulted to Claude rather than to empty, because every run written
+    /// before this field existed was one: an empty provider would put two
+    /// weeks of real history into an "unknown" bucket on a screen whose whole
+    /// job is to compare the two.
+    #[serde(default = "was_claude")]
+    pub provider: String,
+    /// The model, where the transcript named one — `claude-opus-5`.
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+fn was_claude() -> String {
+    "claude".to_string()
 }
 
 #[derive(Default)]
@@ -64,18 +79,20 @@ pub fn load(app: &AppHandle) {
 }
 
 /// File one finished run.
-pub fn record(app: &AppHandle, project: &str, seconds: u64, waiting: bool, input: u64, output: u64) {
+pub fn record(app: &AppHandle, run: &crate::sessions::Finished) {
     let snapshot = {
         let state = app.state::<Store>();
         let Ok(mut runs) = state.0.lock() else { return };
         runs.push(Run {
             day: today(),
-            project: project.to_string(),
-            seconds,
+            project: run.project.clone(),
+            seconds: run.seconds,
             ended_ms: chrono::Utc::now().timestamp_millis(),
-            waiting,
-            input,
-            output,
+            waiting: run.waiting,
+            input: run.input,
+            output: run.output,
+            provider: run.provider.clone(),
+            model: run.model.clone(),
         });
         let floor = cutoff();
         runs.retain(|run| run.day >= floor);

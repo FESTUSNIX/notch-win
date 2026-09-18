@@ -1224,11 +1224,11 @@ palette.add(() => agentsScreen.sessions.map(session => ({
   keywords: `agent claude session ${session.branch ?? ""}`,
   icon: "agent",
   hint: "Agents",
-  run: () => call("focus_session", { pid: session.pid }),
+  run: () => call("focus_session", { pid: session.pid, hint: session.project }),
   more: () => [
     { id: `agent:raise:${session.id}`, title: "Raise the terminal",
       keywords: "focus window show", icon: "open",
-      run: () => call("focus_session", { pid: session.pid }) },
+      run: () => call("focus_session", { pid: session.pid, hint: session.project }) },
     { id: `agent:path:${session.id}`, title: "Copy the project name",
       keywords: "clipboard folder cd", icon: "copy",
       run: () => call("copy_text", { text: session.project }) },
@@ -1456,7 +1456,7 @@ palette.add(() => workspaces.all().map(([folder, workspace]) => ({
       .map(session => ({
         id: `ws:raise:${folder}`, title: "Raise its terminal",
         keywords: "session claude agent focus", icon: "agent" as TaskIcon,
-        run: () => call("focus_session", { pid: session.pid }),
+        run: () => call("focus_session", { pid: session.pid, hint: session.project }),
       })),
     { id: `ws:copy:${folder}`, title: "Copy the folder path", keywords: "clipboard",
       icon: "copy" as TaskIcon, run: () => call("copy_text", { text: folder }) },

@@ -3524,3 +3524,61 @@ The two halves were the same fault.
      — how long it had been that way. The sentence stays in the `aria-label`,
      because a badge is legible at a glance only by sitting beside a name;
      read aloud in order it is a lone word.
+540. ⚠️ **`opening_offset` is the END of the file.** It is where the watcher
+     starts *following* from, not where it starts reading — the Claude reader
+     subtracts a tail from it and the name does not say so. Handed straight to
+     `read_from`, it reads zero bytes, which is not an error: the session
+     simply knows nothing about itself until it happens to write again.
+541. ⚠️ **One `read` returns what the filesystem felt like handing over**, and
+     Codex's first record is its entire system prompt — tens of kilobytes. A
+     fixed 8KB buffer got half of line one, which is not JSON, which parses as
+     nothing: every Codex session came out named "Codex" with no project and
+     nothing to raise. `take(n).read_to_end` and a buffer sized for the real
+     record, not for a plausible one.
+542. ⚠️ **Codex's question tool does not block.** `request_user_input_async`
+     returns `{"accepted":true}` within milliseconds and the agent carries on
+     working — so the call cannot mean "waiting for you", and the ONLY moment
+     that can is the turn ending with a question still outstanding. Treated
+     like Claude's `AskUserQuestion` it would pulse amber through the rest of
+     a run that was going perfectly well.
+543. ⚠️ **A running total is not a delta.** Codex restates the session's whole
+     cost on every `token_count`, several times a minute; added the way
+     Claude's per-answer figures are added, a ten-minute session reports tens
+     of millions of tokens and every number downstream — the day's spend, the
+     project bars, the pill — is wrong in a way that still looks plausible.
+544. ⚠️ **The precise liveness probe is the one that can break the thing it
+     is watching.** Whether Codex still holds a thread lock is answerable
+     exactly — an exclusive open fails while it is held, measured — but the
+     probe must deny sharing for as long as it holds the file, and a poll
+     running every 900ms for ever eventually lands on the instant Codex opens
+     that very lock. Existence plus a freshness window is less precise and
+     cannot be the reason a session fails to start.
+545. ⚠️ **A path inside a patch is escaped for JavaScript**, so its separators
+     arrive doubled and cutting the line at the first backslash cuts
+     `C:\Users\…` after the drive letter. The line ends at a literal
+     backslash-n — two characters — not at a newline.
+546. ⚠️ **The digest that decides whether to wake the WebViews has to name
+     everything that is DRAWN.** It knew about the state and the token
+     figures, which was true while those were all a card showed; a card that
+     now carries a checklist and a sentence froze on what it was doing a
+     minute ago, because tokens do not move on the poll a tool call returns.
+547. ⚠️ **A pid is not always the way back to a session.** Every Codex thread
+     runs inside one `codex.exe` that owns no window — a session started from
+     an editor is a panel in it. `raise_process` on that pid succeeds at
+     nothing, silently; the fallback is the window title, because the editor
+     puts the project folder in it and that is the same string the row is
+     labelled with.
+548. ⚠️ **The pill's far slot is sized for a COUNTDOWN.** It is the one number
+     a glance is looking for, so it is the biggest thing on the strip — and a
+     token total given that weight shouts a figure nobody is waiting on. Same
+     place, its own class, a third of the voice.
+549. ⚠️ **A separator written into the markup belongs to the element it sits
+     in.** A middot between the model and the branch put `· Opus 5` into the
+     model's own text, where a test, a screen reader and a copy all find it.
+     `::before` on the following sibling instead.
+550. ⚠️ **A default fixture that gains a live agent changes what the PILL
+     shows in every other test.** A working session claims the strip over a
+     playing track, correctly — and three media tests then measured the agent
+     claim and read it as a media bug. The fix is a flag that empties the
+     sessions and nothing else: `?quiet` would also stop the music, which is
+     the very thing those tests are about.

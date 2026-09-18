@@ -72,6 +72,8 @@ pub struct Finished {
     /// always the former, and it is what the notification says.
     pub waiting: bool,
     pub provider: String,
+    /// Which model ran it, so a day's spend can be broken down by one.
+    pub model: Option<String>,
     /// The working directory's last component — "akcesfonia", not a path. With
     /// two or three sessions open, which one finished is the whole message.
     pub project: String,
@@ -142,14 +144,51 @@ fn transcript_for(session_id: &str) -> Option<PathBuf> {
     None
 }
 
-struct Session {
-    session_id: String,
-    pid: u32,
-    /// Where the session was started, so a finish can name it.
-    cwd: Option<String>,
+/// Which agent a session belongs to.
+///
+/// ⚠️ This is a *reader* choice, not a label. The two write nothing alike —
+/// see `codex.rs` — so everything from finding the file to deciding whether a
+/// turn ended forks here, and the provider string the island draws is
+/// downstream of the fork rather than beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Claude,
+    Codex,
 }
 
-fn live_sessions() -> Vec<Session> {
+impl Kind {
+    fn provider(self) -> &'static str {
+        match self {
+            Kind::Claude => "claude",
+            Kind::Codex => "codex",
+        }
+    }
+
+    /// What to call a session whose working directory nothing recorded.
+    fn unnamed(self) -> &'static str {
+        match self {
+            Kind::Claude => "Claude Code",
+            Kind::Codex => "Codex",
+        }
+    }
+}
+
+/// A session found on disk, whoever wrote it.
+struct Found {
+    session_id: String,
+    kind: Kind,
+    /// The file to tail. Resolved at discovery, because the two agents keep
+    /// theirs in completely different places.
+    transcript: PathBuf,
+    /// Where the session was started, so a finish can name it.
+    cwd: Option<String>,
+    /// ⚠️ `None` for Codex, which runs every thread inside ONE process — so
+    /// there is no window of its own to raise and `focus_session` falls back
+    /// to finding one by name. See `focus_session`.
+    pid: Option<u32>,
+}
+
+fn claude_sessions() -> Vec<Found> {
     let Some(dir) = claude_home().map(|home| home.join("sessions")) else {
         return Vec::new();
     };
@@ -188,10 +227,35 @@ fn live_sessions() -> Vec<Session> {
         if !is_alive(pid, proc_start) {
             continue;
         }
-        out.push(Session {
+        let Some(transcript) = transcript_for(session_id) else {
+            continue;
+        };
+        out.push(Found {
             session_id: session_id.to_string(),
-            pid,
+            kind: Kind::Claude,
+            transcript,
+            pid: Some(pid),
             cwd,
+        });
+    }
+    out
+}
+
+/// Both agents, in one list.
+///
+/// ⚠️ Claude first, and then sorted by state later — not because Claude
+/// matters more, but because the order here is only a tie-break and the one
+/// that decides what you see is `views.sort_by_key` at the end of `tick`.
+fn live_sessions() -> Vec<Found> {
+    let mut out = claude_sessions();
+    for live in crate::codex::live_sessions() {
+        let meta = crate::codex::meta_of(&live.rollout);
+        out.push(Found {
+            session_id: live.session_id,
+            kind: Kind::Codex,
+            transcript: live.rollout,
+            cwd: meta.cwd,
+            pid: None,
         });
     }
     out
@@ -223,15 +287,16 @@ pub fn spoken(seconds: u64) -> String {
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
     pub id: String,
-    /// Which agent this is — `claude`, and one day something else.
+    /// Which agent this is — `claude` or `codex`.
     ///
-    /// ⚠️ Constant today, and carried anyway. The watcher reads one
-    /// directory, so every session it finds is Claude's; the island draws the
-    /// agent's own mark rather than a generic robot, and the alternative to
-    /// this field is the WEB layer assuming what the watcher happens to read.
-    /// The day a second provider is watched, that assumption is a wrong logo
-    /// on the strip with nothing in the code to notice it.
+    /// ⚠️ It was carried while it was still constant, for exactly this day:
+    /// the island draws the agent's own mark, and the alternative to the field
+    /// was the WEB layer assuming what the watcher happens to read. That
+    /// assumption would now be a wrong logo on half the rows.
     pub provider: String,
+    /// Which model is answering, as the provider names it — `claude-opus-5`,
+    /// `gpt-6-astra`. `None` until a record says.
+    pub model: Option<String>,
     /// The working directory's last component — "akcesfonia", not a path.
     pub project: String,
     /// Whatever branch the transcript last recorded, where it recorded one.
@@ -265,9 +330,21 @@ pub struct SessionView {
     /// — which is most of what somebody glancing at the screen wants to know,
     /// because it is the difference between stuck and working through.
     pub steps: Vec<crate::transcript::Step>,
+    /// The last thing it said, in prose.
+    ///
+    /// ⚠️ NOT cleared when the turn ends, unlike `doing`. A status that has
+    /// stopped being true is a lie; a sentence that has stopped being written
+    /// is just the last thing that was said, and it is the line worth reading
+    /// when a session has gone quiet.
+    pub say: Option<String>,
+    /// What it is reasoning about, where the agent reports that at all.
+    pub thinking: Option<String>,
+    /// How much of the plan is gone, where the agent says. Codex only today.
+    pub limits: Option<crate::transcript::Limits>,
 }
 
 struct Tracked {
+    kind: Kind,
     transcript: PathBuf,
     /// How far into the transcript this watcher has read.
     offset: u64,
@@ -288,8 +365,17 @@ struct Tracked {
     /// few hundred bytes at a time, so a list rebuilt per chunk would be a
     /// list of things that were started.
     steps: Vec<crate::transcript::Step>,
+    say: Option<String>,
+    thinking: Option<String>,
+    model: Option<String>,
+    limits: Option<crate::transcript::Limits>,
+    /// Whether a question is outstanding. ⚠️ Held here rather than in the
+    /// reader because Codex's question tool returns immediately and the turn
+    /// it belongs to can end several polls later — see `codex::scan`.
+    asked: bool,
     project: String,
     branch: Option<String>,
+    folder: Option<String>,
     pid: u32,
 }
 
@@ -323,14 +409,16 @@ impl Watcher {
 
         for session in &sessions {
             if !self.tracked.contains_key(&session.session_id) {
-                let Some(path) = transcript_for(&session.session_id) else {
-                    continue;
+                let path = session.transcript.clone();
+                let opening = match session.kind {
+                    Kind::Claude => crate::transcript::opening_scan(&path),
+                    Kind::Codex => crate::codex::opening_scan(&path),
                 };
-                let opening = crate::transcript::opening_scan(&path);
                 let turn = opening.turn.unwrap_or(crate::transcript::Turn::Unknown);
                 self.tracked.insert(
                     session.session_id.clone(),
                     Tracked {
+                        kind: session.kind,
                         offset: crate::transcript::opening_offset(&path),
                         transcript: path,
                         turn,
@@ -358,21 +446,32 @@ impl Watcher {
                         // no start to measure from; the next run gets one.
                         started: None,
                         last_run: Duration::ZERO,
-                        usage: Default::default(),
+                        /* ⚠️ A total where the agent reports one. Claude's
+                         * figure is what this app has watched it spend; Codex
+                         * states the session's own running total, so a session
+                         * picked up mid-afternoon arrives with its real cost
+                         * rather than with zero. */
+                        usage: opening.total.unwrap_or_default(),
+                        say: opening.say,
+                        thinking: opening.thinking,
+                        model: opening.model,
+                        limits: opening.limits,
+                        asked: opening.asked,
                         project: session
                             .cwd
                             .as_deref()
                             .map(project_of)
-                            .unwrap_or_else(|| "Claude Code".to_string()),
+                            .unwrap_or_else(|| session.kind.unnamed().to_string()),
                         branch: opening.branch,
-                        pid: session.pid,
+                        folder: session.cwd.clone(),
+                        pid: session.pid.unwrap_or(0),
                     },
                 );
             }
             let Some(entry) = self.tracked.get_mut(&session.session_id) else {
                 continue;
             };
-            entry.pid = session.pid;
+            entry.pid = session.pid.unwrap_or(0);
 
             // Only the bytes appended since last time. The transcripts on this
             // machine reach 49 MB; re-reading one every 900ms is not an option.
@@ -381,11 +480,47 @@ impl Watcher {
             {
                 entry.offset = offset;
                 if !chunk.is_empty() {
-                    let scanned = crate::transcript::scan(&chunk);
+                    let scanned = match entry.kind {
+                        Kind::Claude => crate::transcript::scan(&chunk),
+                        Kind::Codex => crate::codex::scan(&chunk, entry.asked),
+                    };
+                    entry.asked = scanned.asked;
                     if let Some(turn) = scanned.turn {
                         entry.turn = turn;
                     }
-                    entry.usage.add(scanned.usage);
+                    /* ⚠️ Set, or added, but never both. See `Scan::total`: one
+                     * agent reports what an answer cost and the other reports
+                     * what the session has cost, and adding up the second kind
+                     * counts the whole session again every few seconds. */
+                    match scanned.total {
+                        Some(total) => entry.usage = total,
+                        None => entry.usage.add(scanned.usage),
+                    }
+                    if scanned.model.is_some() {
+                        entry.model = scanned.model;
+                    }
+                    if scanned.limits.is_some() {
+                        entry.limits = scanned.limits;
+                    }
+                    /* ⚠️ Kept when the chunk says nothing, unlike `doing`. The
+                     * sentence an agent ended on is still true an hour later;
+                     * "editing palette.ts" is not. */
+                    if scanned.say.is_some() {
+                        entry.say = scanned.say;
+                    }
+                    /* ⚠️ Replaced only when the chunk had something to say
+                     * about it — a new thought, a tool going out, or the turn
+                     * ending. Blanked on every quiet poll instead, a session
+                     * that thinks for two minutes flickers between the thought
+                     * and nothing at 900ms, which is the same bug `doing` has
+                     * the guard below for. */
+                    if scanned.thinking.is_some()
+                        || scanned.doing.is_some()
+                        || matches!(scanned.turn, Some(crate::transcript::Turn::Waiting)
+                            | Some(crate::transcript::Turn::Done))
+                    {
+                        entry.thinking = scanned.thinking;
+                    }
                     if scanned.branch.is_some() {
                         entry.branch = scanned.branch;
                     }
@@ -438,7 +573,8 @@ impl Watcher {
                     entry.last_run = ran;
                     entry.started = None;
                     finished.push(Finished {
-                        provider: "claude".to_string(),
+                        provider: entry.kind.provider().to_string(),
+                        model: entry.model.clone(),
                         project: entry.project.clone(),
                         input: entry.usage.input.saturating_sub(entry.usage_at_start.input),
                         output: entry.usage.output.saturating_sub(entry.usage_at_start.output),
@@ -461,7 +597,8 @@ impl Watcher {
 
             views.push(SessionView {
                 id: session.session_id.clone(),
-                provider: "claude".to_string(),
+                provider: entry.kind.provider().to_string(),
+                model: entry.model.clone(),
                 project: entry.project.clone(),
                 branch: entry.branch.clone(),
                 pid: entry.pid,
@@ -473,11 +610,18 @@ impl Watcher {
                 /* ⚠️ Gated on the state, not just on the phrase. The transcript
                  * goes quiet the moment a tool call is answered, so the last
                  * one seen outlives the run that made it. */
-                folder: session.cwd.clone(),
+                folder: entry.folder.clone(),
                 doing: (entry.state == Activity::Working)
                     .then(|| entry.doing.as_ref().map(|d| d.say()))
                     .flatten(),
                 steps: entry.steps.clone(),
+                say: entry.say.clone(),
+                // Thinking is a live state: gated on the run, exactly as the
+                // phrase above is.
+                thinking: (entry.state == Activity::Working)
+                    .then(|| entry.thinking.clone())
+                    .flatten(),
+                limits: entry.limits.clone(),
             });
         }
 
@@ -496,7 +640,7 @@ impl Watcher {
 /// ⚠️ Waiting outranks working. With one session thinking and another blocked
 /// on you, the one that needs you is the news — the other will carry on by
 /// itself.
-fn overall(views: &[SessionView]) -> Activity {
+fn overall(views: &[&SessionView]) -> Activity {
     if views.iter().any(|v| v.state == Activity::Waiting) {
         Activity::Waiting
     } else if views.iter().any(|v| v.state == Activity::Working) {
@@ -504,6 +648,48 @@ fn overall(views: &[SessionView]) -> Activity {
     } else {
         Activity::Idle
     }
+}
+
+/// The agent's name as a person says it.
+pub fn named(provider: &str) -> &str {
+    match provider {
+        "codex" => "Codex",
+        _ => "Claude Code",
+    }
+}
+
+/// Everything about a session that is actually DRAWN, for deciding whether to
+/// wake the WebViews.
+///
+/// ⚠️ `for_secs` is deliberately absent — it climbs every tick, and comparing
+/// the views wholesale emitted an event 65 times a minute for ever. Everything
+/// else that appears on a card has to be here, though: the steps and the
+/// sentence change while the token figures stand still, so a digest of the
+/// numbers alone would leave a working card frozen on what it was doing a
+/// minute ago.
+fn shown(views: &[SessionView]) -> Vec<String> {
+    views
+        .iter()
+        .map(|view| {
+            let steps: String = view
+                .steps
+                .iter()
+                .map(|step| format!("{}{}", step.id, step.done as u8))
+                .collect();
+            format!(
+                "{}|{:?}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{steps}",
+                view.id,
+                view.state,
+                view.input,
+                view.output,
+                view.branch,
+                view.model,
+                view.doing,
+                view.thinking,
+                view.say,
+            )
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -522,21 +708,44 @@ pub fn get_sessions(state: tauri::State<Sessions>) -> Vec<SessionView> {
     state.0.lock().map(|held| held.clone()).unwrap_or_default()
 }
 
-/// Bring the terminal a session is running in to the front.
+/// Bring the window a session is living in to the front.
 ///
 /// Returns false when there is nothing to raise, which is a real outcome
 /// rather than an error: a session started from a detached process, or one
 /// whose terminal has since been closed, owns no window.
+///
+/// ⚠️ **A pid is not always the answer, and for Codex it never is.** Every
+/// Codex thread runs inside one `codex.exe` that owns no window of its own —
+/// the session is a panel in whatever editor opened it. So the fallback is the
+/// window TITLE: an editor puts the folder in it, which is the same string the
+/// row is labelled with. It is a guess, and it is the only one available.
 #[tauri::command]
-pub fn focus_session(pid: u32) -> bool {
-    crate::win::raise_process(pid)
+pub fn focus_session(pid: u32, hint: Option<String>) -> bool {
+    if pid != 0 && crate::win::raise_process(pid) {
+        return true;
+    }
+    let Some(hint) = hint.filter(|hint| hint.len() >= 3) else {
+        return false;
+    };
+    let wanted = hint.to_lowercase();
+    for (window, _) in crate::win::visible_windows() {
+        let title = crate::win::title_of(window).to_lowercase();
+        /* ⚠️ The title has to CONTAIN the folder, not equal it: editors write
+         * "file.ts - akcesfonia - Visual Studio Code". And the app's own
+         * windows are skipped by the length test above rather than by name —
+         * they are never titled after one of your projects. */
+        if title.contains(&wanted) && crate::win::force_foreground(window) {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn spawn(app: AppHandle) {
     crate::notify::register();
     crate::guard::spawn("agent watcher", move || {
         let mut watcher = Watcher::default();
-        let mut last: Option<(Activity, u32)> = None;
+        let mut last: Vec<(String, Activity, u32)> = Vec::new();
         let mut last_views: Vec<SessionView> = Vec::new();
 
         loop {
@@ -555,19 +764,39 @@ pub fn spawn(app: AppHandle) {
                             run.project,
                             if run.waiting { "needs you" } else { "stopped" }
                         ),
-                        &format!("Claude Code ran for {}.", spoken(run.seconds)),
+                        &format!("{} ran for {}.", named(&run.provider), spoken(run.seconds)),
                     );
                 }
                 // The notch keeps its own indicator up until it is looked at.
                 // A toast is gone in five seconds, and the whole point of this
                 // is the run you were not watching.
                 // Kept, so the Review screen can look backwards at all.
-                crate::runlog::record(&app, &run.project, run.seconds, run.waiting, run.input, run.output);
+                crate::runlog::record(&app, run);
                 let _ = app.emit("notch:finished", run.clone());
             }
 
-            let state = overall(&views);
-            let running = views.iter().filter(|v| v.state == Activity::Working).count() as u32;
+            /* One answer PER AGENT. The notch keys its map on the provider, so
+             * two agents working at once are two arcs rather than one that
+             * cannot say whose. ⚠️ An agent with no session at all contributes
+             * no entry — an idle row for something that is not installed is a
+             * fact about this app rather than about the machine. */
+            let payload: Vec<ProviderActivity> = [Kind::Claude, Kind::Codex]
+                .into_iter()
+                .filter_map(|kind| {
+                    let mine: Vec<&SessionView> = views
+                        .iter()
+                        .filter(|view| view.provider == kind.provider())
+                        .collect();
+                    (!mine.is_empty()).then(|| ProviderActivity {
+                        provider: kind.provider().to_string(),
+                        state: overall(&mine),
+                        running: mine
+                            .iter()
+                            .filter(|view| view.state == Activity::Working)
+                            .count() as u32,
+                    })
+                })
+                .collect();
 
             if let Ok(mut held) = app.state::<Sessions>().0.lock() {
                 *held = views.clone();
@@ -577,14 +806,8 @@ pub fn spawn(app: AppHandle) {
              * event 65 times a minute for ever and wake both WebViews for
              * nothing. The elapsed figures are recomputed in the web layer from
              * the state it already has. */
-            let drawn: Vec<_> = views
-                .iter()
-                .map(|v| (v.id.clone(), v.state, v.input, v.output, v.branch.clone()))
-                .collect();
-            let previous: Vec<_> = last_views
-                .iter()
-                .map(|v| (v.id.clone(), v.state, v.input, v.output, v.branch.clone()))
-                .collect();
+            let drawn = shown(&views);
+            let previous = shown(&last_views);
             if drawn != previous {
                 last_views = views.clone();
                 let _ = app.emit("notch:sessions", views);
@@ -592,16 +815,15 @@ pub fn spawn(app: AppHandle) {
 
             // Only on change: this runs every 900ms forever, and an event per
             // tick would wake the WebView for nothing.
-            if last != Some((state, running)) {
-                last = Some((state, running));
+            let now: Vec<_> = payload
+                .iter()
+                .map(|one| (one.provider.clone(), one.state, one.running))
+                .collect();
+            if last != now {
+                last = now;
                 if cfg!(debug_assertions) {
-                    println!("[notch] claude activity: {state:?} ({running} working)");
+                    println!("[notch] agents: {payload:?}");
                 }
-                let payload = vec![ProviderActivity {
-                    provider: "claude".to_string(),
-                    state,
-                    running,
-                }];
                 if let Ok(mut held) = app.state::<Latest>().0.lock() {
                     *held = payload.clone();
                 }
@@ -646,11 +868,14 @@ mod live {
         let (views, _) = watcher.tick();
         for view in &views {
             println!(
-                "{:<9?} {:<18} pid {:<7} branch {}",
+                "{:<7} {:<9?} {:<18} pid {:<7} model {:<14} steps {} | {}",
+                view.provider,
                 view.state,
                 view.project,
                 view.pid,
-                view.branch.clone().unwrap_or_else(|| "-".into()),
+                view.model.clone().unwrap_or_else(|| "-".into()),
+                view.steps.len(),
+                view.say.clone().unwrap_or_else(|| "-".into()).chars().take(40).collect::<String>(),
             );
         }
         println!("{} live session(s)", views.len());

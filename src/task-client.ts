@@ -17,6 +17,14 @@ const quiet = new URLSearchParams(location.search).has("quiet");
  * ambient and a blocked agent is a request — so having one in the default
  * fixture quietly took the pill away from every media test. */
 const agentsFixture = new URLSearchParams(location.search).has("agents");
+/* `?noagents` empties the session list and nothing else.
+ *
+ * ⚠️ `?quiet` would do it too, and would also stop the music and clear the
+ * calendar — which is exactly wrong for the tests that need this, because
+ * they are about what the PLAYER does with the strip. A session that is
+ * working claims the pill at 46, over media at 40, so the default fixture's
+ * one working session was quietly outranking the thing under test. */
+const noAgents = new URLSearchParams(location.search).has("noagents");
 /* `nocal` pushes the demo agenda out of claiming range but leaves the player
  * alone — the two flags silence different competitors for the pill. */
 const nocal = quiet || new URLSearchParams(location.search).has("nocal");
@@ -362,26 +370,42 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     summary:"Partly cloudy", icon:"wxPartly", readAtMs: Date.now()} as T;
   if (command === "set_weather_place") return null as T;
   if (command === "get_activity") return [{provider:"claude",
-    state: quiet ? "idle" : agentsFixture ? "waiting" : "working",
-    running: quiet ? 0 : 1}] as T;
+    state: quiet || noAgents ? "idle" : agentsFixture ? "waiting" : "working",
+    running: quiet || noAgents ? 0 : 1}] as T;
   /* Three sessions in the three states, so the preview shows the ordering:
      whoever wants you first.
      ⚠️ None of them under `?quiet`. A waiting session CLAIMS the pill at
      priority 55, and `quiet` means the preview is in its resting state — with
      sessions here every test that checks the clock would instead find an
      agent, which is exactly what happened when this stub was first written. */
-  if (command === "get_sessions") return (quiet ? [] : !agentsFixture ? [
+  if (command === "get_sessions") return (quiet || noAgents ? [] : !agentsFixture ? [
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
      forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib",
-     provider:"claude", steps:[{id:"a",say:"reading nz_2.png",done:true},{id:"b",say:"reading nz_3.png",done:true},{id:"c",say:"running vid",done:true},{id:"d",say:"running grep -n",done:false}],
+     provider:"claude", model:"claude-opus-5", steps:[{id:"a",say:"reading nz_2.png",done:true},{id:"b",say:"reading nz_3.png",done:true},{id:"c",say:"running vid",done:true},{id:"d",say:"running grep -n",done:false}],
+     thinking:"Fire ignites at frame ~112", say:"Processing both sequences and fixing the glows to blue.",
      folder:"C:/Users/matko/CODE/_personal/codenotch-win"},
   ] : [
     {id:"s1", project:"akcesfonia", branch:"master", pid:4242, state:"waiting",
-     provider:"claude", forSecs:214, input:1_284_000, output:38_200, lastRunSecs:252},
+     provider:"claude", model:"claude-opus-5", forSecs:214, input:1_284_000, output:38_200,
+     lastRunSecs:252, say:"Which of the two folders should it write into?"},
     {id:"s2", project:"codenotch-win", branch:"master", pid:4243, state:"working",
      forSecs:31, input:512_000, output:9_100, lastRunSecs:96, doing:"running cargo test --lib",
-     provider:"claude", steps:[{id:"a",say:"reading nz_2.png",done:true},{id:"b",say:"reading nz_3.png",done:true},{id:"c",say:"running vid",done:true},{id:"d",say:"running grep -n",done:false}],
+     provider:"claude", model:"claude-opus-5", steps:[{id:"a",say:"reading nz_2.png",done:true},{id:"b",say:"reading nz_3.png",done:true},{id:"c",say:"running vid",done:true},{id:"d",say:"running grep -n",done:false}],
+     thinking:"Fire ignites at frame ~112", say:"Processing both sequences and fixing the glows to blue.",
      folder:"C:/Users/matko/CODE/_personal/codenotch-win"},
+    /* ⚠️ A CODEX row, and not as a fourth copy of the same shape. The two
+       agents report different things — Codex knows what is left of the plan
+       and Claude does not — so a fixture of three Claude sessions would have
+       proved nothing about the half of the screen that only ever has one of
+       them. This one is working, so both live states are on screen at once. */
+    {id:"s4", project:"esono-price-watch", branch:"main", pid:0, state:"working",
+     provider:"codex", model:"gpt-6-astra", forSecs:74, input:214_000, output:6_400,
+     lastRunSecs:181, doing:"running npm run build",
+     steps:[{id:"e",say:"reading feed.ts",done:true},{id:"f",say:"editing parse.ts",done:true},
+            {id:"g",say:"running npm run build",done:false}],
+     say:"The feed parser was dropping every entry without a guid.",
+     limits:{window:12, week:41, plan:"plus"},
+     folder:"C:/Users/matko/CODE/_tests/esono-price-watch"},
     {id:"s3", project:"esono", branch:"feat/pdp", pid:4244, state:"idle",
      forSecs:9_400, input:22_000, output:800, lastRunSecs:0},
   ]) as T;

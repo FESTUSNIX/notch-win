@@ -3,6 +3,7 @@ mod audio;
 mod autostart;
 mod calendar;
 mod call;
+mod codex;
 mod config;
 mod credentials;
 mod drag;

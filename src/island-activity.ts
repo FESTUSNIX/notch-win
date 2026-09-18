@@ -71,6 +71,13 @@ export interface Activity {
    * one number anybody is looking for the smallest thing on the strip. It is
    * a slot of its own so it can be sized like the thing it is. */
   time?: string;
+  /** A running total, in the same far slot a countdown would use.
+   *
+   * ⚠️ NOT `time`, though it lands beside it. That slot is sized for a
+   * countdown — the one number a glance is looking for — and a token figure
+   * given the same weight is the biggest thing on the strip, shouting a
+   * number nobody is waiting on. Same place, a third of the voice. */
+  count?: string;
   /** Paused, which dims the countdown rather than adding a word to it. */
   held?: boolean;
   /** Which half of a pomodoro this is, so the strip can be COLOURED by it.
@@ -332,6 +339,8 @@ function build(host: HTMLElement, activity: Activity) {
     host.append(bar);
   } else if (activity.time !== undefined) {
     host.append(clock);
+  } else if (activity.count !== undefined) {
+    host.append(element("div", "pill-count t-digit-group"));
   }
   host.dataset.kind = activity.kind;
 }
@@ -408,6 +417,8 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   /* Per digit rather than the whole number: the minutes must not flinch once
    * a second because the seconds beside them moved. */
   if (time) setDigits(time, activity.time ?? "");
+  const count = host.querySelector<HTMLElement>(".pill-count");
+  if (count) setDigits(count, activity.count ?? "");
   host.classList.toggle("is-held", !!activity.held);
   /* The fluid line. ⚠️ A width in per cent with a one-second linear
    * transition, so it CREEPS rather than stepping once a second — a bar that

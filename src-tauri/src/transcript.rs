@@ -115,7 +115,7 @@ const SEP: char = '\\';
 /// ⚠️ Truncated hard. A `Bash` input is routinely a 400-character pipeline with
 /// a heredoc in it; the pill has room for about twenty characters and the
 /// agents row for forty.
-fn gist(command: &str) -> String {
+pub fn gist(command: &str) -> String {
     let head = command.trim().lines().next().unwrap_or("").trim();
     let mut out = String::new();
     for word in head.split_whitespace() {
@@ -335,6 +335,50 @@ pub fn usage_of(line: &str) -> Option<Usage> {
     (input > 0 || output > 0).then_some(Usage { input, output })
 }
 
+/// The model an assistant record was answered by.
+pub fn model_of(line: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true) {
+        return None;
+    }
+    if value.get("type").and_then(|v| v.as_str())? != "assistant" {
+        return None;
+    }
+    value
+        .get("message")?
+        .get("model")?
+        .as_str()
+        // ⚠️ `<synthetic>` is what Claude Code writes for a record it made
+        // up itself — an interrupt, an error. Printed, it is the one place in
+        // the app that shows angle brackets to somebody.
+        .filter(|model| !model.is_empty() && !model.starts_with('<'))
+        .map(str::to_string)
+}
+
+/// The prose an assistant record ends with, which is the agent talking to you.
+///
+/// ⚠️ Only the LAST text block, and only where the record has one. A
+/// record mid-flight is a tool call and says nothing; taking the first block
+/// instead would print the preamble it wrote before going to work, which is a
+/// sentence about what it was about to do half an hour ago.
+pub fn said(line: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true) {
+        return None;
+    }
+    if value.get("type").and_then(|v| v.as_str())? != "assistant" {
+        return None;
+    }
+    let content = value.get("message")?.get("content")?.as_array()?;
+    let text = content
+        .iter()
+        .filter(|block| block.get("type").and_then(|v| v.as_str()) == Some("text"))
+        .filter_map(|block| block.get("text").and_then(|v| v.as_str()))
+        .next_back()?
+        .trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
 /// The branch a record was written on, where Claude Code recorded one.
 pub fn branch_of(line: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
@@ -369,6 +413,52 @@ pub struct Scan {
     /// of a run that finished are what the agent did last time, and a screen
     /// still showing them while the agent waits for you says it is busy.
     pub cleared: bool,
+    /// Which model is answering — `claude-opus-5`, `gpt-6-astra`.
+    ///
+    /// ⚠️ Read per chunk rather than once, because it CHANGES: a session
+    /// swaps model mid-conversation, and the figure beside a session is about
+    /// what it is spending now.
+    pub model: Option<String>,
+    /// The last thing the agent said, in prose.
+    ///
+    /// ⚠️ The steps say what it did; this says what it thinks it did, which
+    /// is the one line of a session worth reading from across the room. Kept
+    /// through the quiet after a turn on purpose — unlike `doing`, a sentence
+    /// that has stopped being written is still true.
+    pub say: Option<String>,
+    /// What it is reasoning about, where the agent reports that at all.
+    ///
+    /// ⚠️ Distinct from `doing`: no tool is out, so there is nothing to
+    /// name. Without it a turn spent thinking looks like one that has stalled.
+    pub thinking: Option<String>,
+    /// A session TOTAL, for an agent that reports one.
+    ///
+    /// ⚠️ The alternative to `usage`, never an addition to it. Claude Code
+    /// writes what each answer cost and the watcher adds them up; Codex
+    /// restates the running total every few seconds, and adding those up
+    /// counts the whole session again on every poll.
+    pub total: Option<Usage>,
+    /// Whether a question is outstanding — carried in and out, see
+    /// `codex::scan`. Claude's reader never sets it: there, a question is
+    /// visible in the shape of the record itself.
+    pub asked: bool,
+    /// How much of the plan's window has gone, where the agent says.
+    pub limits: Option<Limits>,
+}
+
+/// What an agent says is left of the plan it is on.
+///
+/// ⚠️ Percentages, not tokens, because that is what the provider reports
+/// and the two are not convertible: the window is measured against a limit the
+/// app is not told.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Limits {
+    /// The short window — five hours on Codex today.
+    pub window: Option<f64>,
+    /// The long one, a week.
+    pub week: Option<f64>,
+    /// `plus`, `pro`, … as the provider names it.
+    pub plan: Option<String>,
 }
 
 /// Walk a chunk of transcript, newest fact winning.
@@ -399,6 +489,12 @@ pub fn scan(chunk: &str) -> Scan {
         }
         if let Some(branch) = branch_of(line) {
             out.branch = Some(branch);
+        }
+        if let Some(model) = model_of(line) {
+            out.model = Some(model);
+        }
+        if let Some(said) = said(line) {
+            out.say = Some(said);
         }
     }
     out

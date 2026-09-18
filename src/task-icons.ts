@@ -13,6 +13,7 @@ import {
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
   KeyboardIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
+  ChatGptIcon,
   Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon, ShuffleIcon,
 } from "@hugeicons/core-free-icons";
 
@@ -88,6 +89,11 @@ const icons = {
   words: SubtitleIcon, shuffle: ShuffleIcon,
   // Whose agent it is. See CLAUDE_MARK.
   claude: CLAUDE_MARK,
+  /* ⚠️ Codex's mark comes from the icon SET, where Claude's had to be
+     drawn: Hugeicons ships the OpenAI knot as `chat-gpt` and ships nothing for
+     Anthropic. Same stroke weight, same `currentColor`, so the two sit beside
+     each other as one family rather than as two logos. */
+  codex: ChatGptIcon,
 };
 export type TaskIcon = keyof typeof icons;
 
