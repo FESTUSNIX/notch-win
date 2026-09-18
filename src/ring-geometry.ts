@@ -24,6 +24,26 @@ export const OUTER = 132;
  * word. What the margin is FOR now is the hand: a flick that overshoots the
  * edge should still take the wedge it was plainly aimed at. */
 export const REACH = OUTER + 21;
+/** Where to draw the ring, given where the pointer landed inside the window.
+ *
+ * @param value the pointer's offset inside the window, in PHYSICAL pixels.
+ * @param ratio `devicePixelRatio`.
+ *
+ * ⚠️ The offset is the difference of two SCREEN coordinates, so it is in
+ * physical pixels, and everything drawn here is in CSS ones. They are the same
+ * number only at 100% scaling: at 150% the ring came out a hundred pixels down
+ * and to the right of the pointer it is supposed to surround.
+ *
+ * ⚠️ Clamped, so an offset that is wrong for any reason at all cannot push
+ * the ring out of its own window. Slightly off centre is a cosmetic fault;
+ * off the edge is a menu that is invisible when pressed.
+ */
+export function nudge(value: number, ratio: number): number {
+  const limit = MIDDLE - OUTER;
+  const wanted = value / (ratio || 1) - MIDDLE;
+  return Math.max(-limit, Math.min(limit, wanted));
+}
+
 /** What the middle of the ring means. */
 export const SEARCH = "@search";
 

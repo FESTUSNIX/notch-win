@@ -24,7 +24,7 @@ import { taskIcon, type TaskIcon } from "./task-icons";
 import { setClicks, tick } from "./click";
 import { SCREENS } from "./screens";
 import {
-  INNER, MIDDLE, OUTER, SEARCH, aiming, at, ringStops, sector, spanOf,
+  INNER, MIDDLE, OUTER, SEARCH, aiming, at, nudge, ringStops, sector, spanOf,
 } from "./ring-geometry";
 import { listen } from "@tauri-apps/api/event";
 import "./ring.css";
@@ -154,6 +154,39 @@ function draw() {
   host.append(say);
 }
 
+/** Put the ring around the pointer, wherever in the window it landed.
+ *
+ * ⚠️ The payload is in PHYSICAL pixels — it is the difference of two screen
+ * coordinates — and everything in this page is in CSS pixels. They are the
+ * same number only at 100% scaling: at 150% the ring was drawn a hundred
+ * pixels down and to the right of where the pointer actually was, which on a
+ * window with no room to spare is a ring half outside its own window.
+ *
+ * ⚠️ And clamped, so a payload that is wrong for any reason at all cannot
+ * push the ring out of the window it is drawn in. Slightly off centre is a
+ * cosmetic fault; off the edge is a feature that does nothing when pressed.
+ */
+function place([x, y]: [number, number]) {
+  const ratio = window.devicePixelRatio || 1;
+  host.style.setProperty("--nudge-x", `${nudge(x, ratio)}px`);
+  host.style.setProperty("--nudge-y", `${nudge(y, ratio)}px`);
+  /* ⚠️ Every opening is a fresh one. This window is hidden rather than
+   * destroyed, so anything left on it from the last gesture is still there. */
+  host.classList.remove("is-taken", "is-pressing");
+  aim(null);
+}
+
+/* The window came back. ⚠️ The page's OWN signal that it is on screen
+ * again, which is the one thing here that cannot be lost in an event: a
+ * hidden WebView2 is throttled, and `ring:at` is emitted at the window while
+ * it is still hidden. If that event is ever late or dropped, this is what
+ * still leaves the ring visible and pointing at nothing. */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  host.classList.remove("is-taken", "is-pressing");
+  aim(null);
+});
+
 /** What the pointer is aiming at, as a screen name. */
 function aimedAt(x: number, y: number): string | null {
   const stops = ringStops(prefs, SCREENS);
@@ -229,6 +262,14 @@ function take(picked: string | null) {
    * going quiet at the one moment it was answering. */
   tick(0.62, 0);
   host.classList.add("is-taken");
+  /* ⚠️ And taken OFF again on a timer, because the class carries an
+   * animation that fills forwards — the ring is left at zero opacity by
+   * design, so that the window can be hidden underneath it without a flicker.
+   * Left on, that is a ring which opens invisible for ever afterwards, and
+   * the only thing that was clearing it was an event from the other side of
+   * an IPC hop arriving at a window that was hidden at the time. A state that
+   * has to be cleared from elsewhere is a state that eventually is not. */
+  window.setTimeout(() => host.classList.remove("is-taken"), 260);
   void call("ring_pick", { screen: picked }).catch(() => {});
 }
 
@@ -245,16 +286,7 @@ async function boot() {
   /* Where the pointer is inside this window. ⚠️ Not assumed to be the middle:
    * the window is clamped to the monitor, so near an edge the pointer is
    * somewhere else entirely and the ring has to be drawn around IT. */
-  await listen<[number, number]>("ring:at", event => {
-    const [x, y] = event.payload;
-    host.style.setProperty("--nudge-x", `${x - MIDDLE}px`);
-    host.style.setProperty("--nudge-y", `${y - MIDDLE}px`);
-    /* ⚠️ Every opening is a fresh one. The class survives in a window that is
-     * hidden rather than destroyed, so without this the second ring of the
-     * session arrives already mid-exit. */
-    host.classList.remove("is-taken", "is-pressing");
-    aim(null);
-  });
+  await listen<[number, number]>("ring:at", event => place(event.payload));
   await listen<Prefs>("notch:prefs", event => {
     prefs = event.payload;
     setClicks(prefs.timerSound !== "");

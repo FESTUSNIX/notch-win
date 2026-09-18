@@ -108,3 +108,30 @@ test("nothing is loud until it is aimed at", async ({ page }) => {
     all => all.map(one => getComputedStyle(one).fill));
   expect(new Set(after).size).toBe(2);
 });
+
+test("the ring comes back after a pick, and cannot be left invisible", async ({ page }) => {
+  await page.goto("/ring.html");
+  const host = page.locator("#ring-host");
+  await aim(page, 3, 8);
+  await page.mouse.down();
+  await page.mouse.up();
+
+  /* ⚠️ The exit animation FILLS FORWARDS — the ring is deliberately left at
+   * zero opacity so the window can be hidden underneath it without a flicker
+   * — and this window is hidden rather than destroyed. Left on, that class is
+   * a ring which opens invisible for ever afterwards, which is exactly what
+   * happened: the only thing clearing it was an event from the other side of
+   * an IPC hop, arriving at a window that was hidden at the time. */
+  await expect(host).toHaveClass(/is-taken/);
+  await expect(host).not.toHaveClass(/is-taken/, { timeout: 2000 });
+  await expect.poll(() => host.evaluate(el => Number(getComputedStyle(el).opacity)))
+    .toBeGreaterThan(0.99);
+
+  /* And the page's own signal that the window is back, which is the one thing
+   * here that cannot be lost in an event. */
+  await page.evaluate(() => {
+    document.getElementById("ring-host")!.classList.add("is-taken");
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(host).not.toHaveClass(/is-taken/);
+});

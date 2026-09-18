@@ -3771,3 +3771,19 @@ The two halves were the same fault.
      months ago — so it timed out before reaching the assertion it exists for,
      and the native `title` it was meant to catch had been sitting on the
      Agents screen the whole time.
+587. ⚠️ **An exit animation that fills forwards is a state, and a window that
+     is hidden rather than destroyed keeps it.** The ring is deliberately left
+     at zero opacity when something is picked, so the window can be hidden
+     underneath it without a flicker — and the only thing clearing that was an
+     event from the other side of an IPC hop, delivered to a window that was
+     hidden at the time. So the ring opened invisible from then on: the key
+     worked, the wedges were there, and nothing was drawn. Anything that has
+     to be cleared from somewhere else eventually is not; it comes off on a
+     timer of its own, and again when the page sees itself become visible.
+588. ⚠️ **A pointer offset between two screen coordinates is in PHYSICAL
+     pixels**, and a page draws in CSS ones. They are the same number at 100%
+     scaling and nowhere else: at 150% the ring was drawn a hundred pixels
+     down and to the right of the pointer it is meant to surround, which on a
+     window with no room to spare is a ring half outside its own window. And
+     the result is clamped, because being slightly off centre is cosmetic
+     while being off the edge is a menu that does nothing when pressed.

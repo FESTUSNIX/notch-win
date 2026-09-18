@@ -98,9 +98,18 @@ pub fn open(app: &AppHandle) {
 
     /* Where the pointer is INSIDE the window, so the page can put the ring
      * around it rather than around the window's middle — they differ whenever
-     * the clamp above moved it. */
-    let _ = window.emit_to(LABEL, "ring:at", (x - left, y - top));
+     * the clamp above moved it.
+     *
+     * ⚠️ Sent TWICE, before and after the window is up. A hidden WebView2 is
+     * throttled by Windows, so an event delivered to it while it is still
+     * hidden can be handled late — and this one carries the reset that takes
+     * the ring out of the state the last pick left it in. Before, so the first
+     * frame is already right; after, so it is right even if that one was
+     * missed. The page does the same work either way. */
+    let at = (x - left, y - top);
+    let _ = window.emit_to(LABEL, "ring:at", at);
     let _ = window.show();
+    let _ = window.emit_to(LABEL, "ring:at", at);
     // See `win::harden`: show() goes through tao and drops the ex-styles.
     win::harden(&window);
 }

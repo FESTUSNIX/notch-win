@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  REACH, INNER, MIDDLE, MOST, OUTER, aiming, at, ringStops, sector, spanOf,
+  REACH, INNER, MIDDLE, MOST, OUTER, aiming, at, nudge, ringStops, sector, spanOf,
 } from '../src/ring-geometry.ts';
 import { SCREENS } from '../src/screens.ts';
 
@@ -164,4 +164,23 @@ test('an empty choice means the rail, not an empty ring', () => {
    * leave the key opening a ring with nothing in it. */
   assert.equal(ringStops({ railOrder: [], railHidden: [], ringStops: [] }, SCREENS).length, MOST);
   assert.equal(ringStops({ railOrder: [], railHidden: [] }, SCREENS).length, MOST);
+});
+
+test("the ring is drawn around the pointer, in the page's own pixels", () => {
+  /* Dead centre of the window at 100%: no nudge at all. */
+  assert.equal(nudge(MIDDLE, 1), 0);
+  /* ⚠️ The offset arrives in PHYSICAL pixels — it is the difference of two
+   * screen coordinates — and the page draws in CSS ones. At 150% the middle
+   * of a 420-wide window is 315 physical, and taking that as CSS put the ring
+   * a hundred pixels down and right of the pointer it surrounds. */
+  assert.equal(nudge(315, 1.5), 0);
+  assert.equal(nudge(262.5, 1.25), 0);
+  /* Clamped to the room the ring has: an offset that is wrong for any reason
+   * cannot push it out of its own window, because off the edge is a menu that
+   * is invisible when pressed. */
+  const limit = MIDDLE - OUTER;
+  assert.equal(nudge(9999, 1), limit);
+  assert.equal(nudge(-9999, 1), -limit);
+  // A missing ratio is 1, never a division by zero.
+  assert.equal(nudge(MIDDLE, 0), 0);
 });
