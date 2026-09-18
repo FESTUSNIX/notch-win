@@ -407,7 +407,7 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
    countdown looks like when it has stopped. The seconds are the smaller and
    quieter of the two: they are what says it is running, not what you read. */
 .bub-mid { display:flex; flex-direction:column; align-items:center;
-  font-weight:650; color:#ededed; line-height:1;
+  font-weight:550; color:#ededed; line-height:1;
   font-variant-numeric:tabular-nums; letter-spacing:-.2px;
   transition:opacity var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
     scale var(--duration-fast) cubic-bezier(0.2, 0, 0, 1),
@@ -415,9 +415,12 @@ html[data-open=click] .pill-act:active { scale:.9; transition-duration:90ms; }
 /* ⚠️ The same weight and the same white. They were 11px bold over 9px grey
    — two different things stacked — when they are one reading split across two
    lines, and the grey row read as a subtitle about the row above it. */
-.bub-min, .bub-sec { font-size:10.5px; font-style:normal; font-weight:650;
+/* ⚠️ 10px at 550, not 10.5 at 650. Two rows at the heavier weight filled
+   the circle edge to edge — the descender room of the second row landing on
+   the ring — and a countdown pressed against its own frame reads as
+   overflowing whether or not a pixel actually crosses it. */
+.bub-min, .bub-sec { font-size:10px; font-style:normal; font-weight:550;
   color:#ededed; }
-.bub-sec { margin-top:1px; }
 /* ⚠️ The last minute is TINTED, because the middle then holds seconds:
    "45" on a ring that is nearly round would otherwise read as 45 minutes. */
 .island-bubble.is-final .bub-mid { color:var(--accent); }

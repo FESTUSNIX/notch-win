@@ -21,14 +21,14 @@ test("the ring is every screen at a direction, with the palette in the middle", 
   await page.goto("/ring.html");
   await expect(page.locator(".ring-wedge")).toHaveCount(8);
   // ⚠️ Eight at most: past that a segment is thinner than the hand is accurate.
-  await expect(page.locator(".ring-heart-say")).toHaveText("Search");
+  await expect(page.locator(".ring-heart-mark")).toHaveCount(1);
   // Straight up is Home, which is what a hand finds without looking.
   await expect(page.locator('.ring-wedge[data-screen="home"]')).toHaveCount(1);
   await aim(page, 0, 8);
   await expect(lit(page)).toHaveAttribute("data-screen", "home");
 });
 
-test("aiming follows the ANGLE, including over the labels", async ({ page }) => {
+test("aiming follows the ANGLE, and keeps going past the edge", async ({ page }) => {
   await page.goto("/ring.html");
   const names = await page.locator(".ring-wedge").evaluateAll(
     all => all.map(one => (one as HTMLElement).dataset.screen));
@@ -38,11 +38,44 @@ test("aiming follows the ANGLE, including over the labels", async ({ page }) => 
     await expect(lit(page)).toHaveAttribute("data-screen", names[index]!);
   }
 
-  /* ⚠️ Out where the LABEL is drawn, which is on top of its own wedge. Hit
-   * testing the element under the pointer would report the text and light
-   * nothing — a menu that goes dead where its own labels are. */
+  /* ⚠️ Past the ring's own edge, where a flick overshoots. Aiming is an
+   * ANGLE and the margin outside the wedge belongs to it — hit testing the
+   * element under the pointer would report the window and light nothing, which
+   * is a menu that goes dead exactly where a fast hand lands. */
   await aim(page, 2, names.length, 152);
   await expect(lit(page)).toHaveAttribute("data-screen", names[2]!);
+});
+
+test("one label, under the ring, saying whatever is aimed at", async ({ page }) => {
+  await page.goto("/ring.html");
+  const caption = page.locator(".ring-caption");
+  /* ⚠️ ONE. Eight captions around a circle collide the moment a label is
+   * longer than a word — "Start a pomodoro" ran back over its own wedges and
+   * into the middle — and a smaller font is not the fix: a radial menu earns
+   * its speed by being AIMED at, so the words are for the first week and
+   * belong where they can be as long as they like. */
+  await expect(caption).toHaveCount(1);
+
+  // Nothing aimed at, nothing said.
+  await page.mouse.move(6, 6);
+  await expect(caption).not.toHaveClass(/is-on/);
+
+  await aim(page, 0, 8);
+  await expect(caption).toHaveClass(/is-on/);
+  await expect(caption).toHaveText("Home");
+
+  // And it sits BELOW the ring, clear of every wedge.
+  const [box, ring] = await page.evaluate(() => [".ring-caption", ".ring"]
+    .map(one => {
+      const r = document.querySelector(one)!.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+    }));
+  expect(box.top).toBeGreaterThan(210 + 132);
+  expect(box.bottom).toBeLessThanOrEqual(ring.bottom);
+
+  // The middle is the one target that is not a direction, and it says so.
+  await page.mouse.move(210, 210);
+  await expect(caption).toHaveText("Search everything");
 });
 
 test("the middle lights the search, and the corners light nothing", async ({ page }) => {

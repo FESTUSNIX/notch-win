@@ -19,6 +19,15 @@
         ring whose wedges move about is one where aiming stops working, so the
         order has to come from somewhere fixed — but "somewhere fixed" is
         currently "the order this list happens to be written in".
+  - [x] **Hold and let go actually works.** Windows repeats a held key and
+        every repeat was another press, so holding it toggled the ring shut.
+  - [x] **One label, under the ring**, instead of eight around it — long
+        names ran over their own wedges. Frosted by default, with a solid
+        style for a busy background, a tick per wedge crossed and a lower one
+        on the pick.
+  - [ ] The ticks come from the ring's own page, which a global shortcut does
+        not activate — they may stay silent until the first mouse pick of
+        the session. See AGENTS 574.
 - [x] **The rail budget**: a screen earns a rail stop only if you would sit on
       it for thirty seconds. **System is off it now**, with a chip in the
       header beside the timer and the bell — it is a place you visit for one
@@ -67,63 +76,6 @@
   - [ ] No streak, and it is the obvious next one: "three days clear" is the
         strongest thing this screen could say and it needs history the app
         does not keep yet. The Review screen is where that would come from.
-
-- ~~Improve (agents): more statistics, and states worth looking at~~ — **done**.
-  A card was a glyph for its state, a name and two grey numbers, repeated three
-  times down the screen.
-  - **Whose agent it is**, as the mark: Claude's burst rather than a fourth
-    drawing of the state. The state moved to a badge beside the name.
-  - **What it has been doing**, as a checklist — the last four tool calls,
-    ticked as their results come back, the one in flight lit. What an agent is
-    doing is a list, not a sentence.
-  - **What it cost**, as a shape: a bar of the output share beside the figures.
-  - [ ] Nothing is kept once a session ends, so there is no "this run took
-        18 minutes and 40 calls" — the transcript has it and the app reads
-        only the tail. That is the same history the Today streak wants.
-  - [x] **Codex is read too**, out of `~/.codex/sessions` — a second reader,
-        because the two formats share nothing. Codex states what Claude's has
-        to infer: when a turn starts and ends, which model answered, the
-        session's running total, and what is left of the plan.
-  - [x] **Whose agent, and which model**, on the card and on the strip.
-  - [x] **A stage for the live ones**, paged with dots, and one quiet line
-        each for the dormant. Four identical cards was the complaint.
-  - [ ] Codex sessions cannot be reached by pid — they have none — so the
-        window is found by its title. It picks the wrong window if two
-        editors have the same folder open.
-  - [ ] A permission prompt is still not a state. Codex has
-        `tools.request_permissions` in an exec call, which is close, but an
-        exec that is merely slow looks identical from outside.
-  - [x] **The usage is kept.** `usage.json` — one bucket per day per agent
-        per model per project, four months of them, seeded once from the runs
-        so the chart is not empty for a fortnight. The panel cuts today three
-        ways (agent, model, project), draws the week behind it, and shows
-        what is left of the plan where the agent reports it.
-  - [ ] Only Codex reports a plan limit, so Claude's half of that row is
-        blank. Anthropic's own usage endpoint is behind the token this app
-        deliberately never hands to a WebView, so it would have to be read
-        in Rust and reported like everything else here.
-  - [ ] Cost in money is not computed. It needs a price per model per
-        provider, which is a table that goes stale silently — the worst kind
-        of number to put on a screen that is otherwise all measurements.
-  - [x] **The real marks**, from each vendor's own VS Code extension rather
-        than drawn by hand. The first Claude one was a compass rose.
-  - [x] **Two layouts, two intents.** The strip expands into the SESSION —
-        one at reading size, with room — and the rail opens the OVERVIEW: a
-        card per session in a grid, so five sessions is four across rather
-        than five rows deep.
-  - [ ] The overview is not orderable or filterable. With a dozen sessions
-        the grid is the right shape but "only the ones that want me" would
-        be better than reading twelve cards.
-  - [x] **Each agent in its own colour**, on the mark only — the state keeps
-        the pip, the word and the wash.
-  - [x] **The week is a chart**, a line over an area, with the points over
-        their own days.
-  - [x] **Bigger type, no eyebrows.** Uppercase at .08em tracking was doing
-        the work of six different headings.
-  - [ ] The usage panel is within a few pixels of the island's height budget
-        on a 760px screen. Anything added to it has to come out of something
-        else until the island can scroll a screen without it reading as cut
-        off.
 
 ---
 
@@ -224,6 +176,63 @@ until the answer arrives as a `tool_result`.
   - [ ] Nothing on the collapsed strip. A line of lyric is the most tempting
         thing to put there and the one most likely to be read over somebody's
         shoulder — the same argument that keeps a notification's words off it.
+
+- ~~Improve (agents): more statistics, and states worth looking at~~ — **done**.
+  A card was a glyph for its state, a name and two grey numbers, repeated three
+  times down the screen.
+  - **Whose agent it is**, as the mark: Claude's burst rather than a fourth
+    drawing of the state. The state moved to a badge beside the name.
+  - **What it has been doing**, as a checklist — the last four tool calls,
+    ticked as their results come back, the one in flight lit. What an agent is
+    doing is a list, not a sentence.
+  - **What it cost**, as a shape: a bar of the output share beside the figures.
+  - [ ] Nothing is kept once a session ends, so there is no "this run took
+        18 minutes and 40 calls" — the transcript has it and the app reads
+        only the tail. That is the same history the Today streak wants.
+  - [x] **Codex is read too**, out of `~/.codex/sessions` — a second reader,
+        because the two formats share nothing. Codex states what Claude's has
+        to infer: when a turn starts and ends, which model answered, the
+        session's running total, and what is left of the plan.
+  - [x] **Whose agent, and which model**, on the card and on the strip.
+  - [x] **A stage for the live ones**, paged with dots, and one quiet line
+        each for the dormant. Four identical cards was the complaint.
+  - [ ] Codex sessions cannot be reached by pid — they have none — so the
+        window is found by its title. It picks the wrong window if two
+        editors have the same folder open.
+  - [ ] A permission prompt is still not a state. Codex has
+        `tools.request_permissions` in an exec call, which is close, but an
+        exec that is merely slow looks identical from outside.
+  - [x] **The usage is kept.** `usage.json` — one bucket per day per agent
+        per model per project, four months of them, seeded once from the runs
+        so the chart is not empty for a fortnight. The panel cuts today three
+        ways (agent, model, project), draws the week behind it, and shows
+        what is left of the plan where the agent reports it.
+  - [ ] Only Codex reports a plan limit, so Claude's half of that row is
+        blank. Anthropic's own usage endpoint is behind the token this app
+        deliberately never hands to a WebView, so it would have to be read
+        in Rust and reported like everything else here.
+  - [ ] Cost in money is not computed. It needs a price per model per
+        provider, which is a table that goes stale silently — the worst kind
+        of number to put on a screen that is otherwise all measurements.
+  - [x] **The real marks**, from each vendor's own VS Code extension rather
+        than drawn by hand. The first Claude one was a compass rose.
+  - [x] **Two layouts, two intents.** The strip expands into the SESSION —
+        one at reading size, with room — and the rail opens the OVERVIEW: a
+        card per session in a grid, so five sessions is four across rather
+        than five rows deep.
+  - [ ] The overview is not orderable or filterable. With a dozen sessions
+        the grid is the right shape but "only the ones that want me" would
+        be better than reading twelve cards.
+  - [x] **Each agent in its own colour**, on the mark only — the state keeps
+        the pip, the word and the wash.
+  - [x] **The week is a chart**, a line over an area, with the points over
+        their own days.
+  - [x] **Bigger type, no eyebrows.** Uppercase at .08em tracking was doing
+        the work of six different headings.
+  - [ ] The usage panel is within a few pixels of the island's height budget
+        on a 760px screen. Anything added to it has to come out of something
+        else until the island can scroll a screen without it reading as cut
+        off.
 
 ---
 

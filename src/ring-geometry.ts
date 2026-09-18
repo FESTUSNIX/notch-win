@@ -16,8 +16,14 @@ import type { ScreenDef } from "./screens";
 export const MIDDLE = 210;
 export const INNER = 62;
 export const OUTER = 132;
-/** Where the labels sit, just outside the ring. */
-export const CAPTION = OUTER + 21;
+/** How far past the ring an aim still counts.
+ *
+ * ⚠️ This used to be where the labels were drawn, and it kept the name for
+ * a while after they went — there is now ONE label, under the ring, because
+ * eight captions on a circle collide the moment one of them is longer than a
+ * word. What the margin is FOR now is the hand: a flick that overshoots the
+ * edge should still take the wedge it was plainly aimed at. */
+export const REACH = OUTER + 21;
 /** What the middle of the ring means. */
 export const SEARCH = "@search";
 
@@ -142,7 +148,7 @@ export function aiming(x: number, y: number, count: number): number | null | "se
   const dy = y - MIDDLE;
   const distance = Math.hypot(dx, dy);
   if (distance < INNER - 8) return "search";
-  if (distance > CAPTION + 16) return null;
+  if (distance > REACH + 16) return null;
   if (count < 1) return null;
   const per = 1 / count;
   // Back to turns, with the same quarter-turn offset the drawing uses.

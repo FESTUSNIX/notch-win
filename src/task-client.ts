@@ -171,7 +171,7 @@ let demoPrefs: Record<string, unknown> = {
      the countdown itself — and there is no other way to reach the other one
      from a test: it is a segmented control in a window this page cannot open. */
   pomodoroPill: new URLSearchParams(location.search).has("pomtime") ? "time" : "bar",
-  ringStops: [],
+  ringStops: [], ringGlass: true,
   followLive: !new URLSearchParams(location.search).has("nofollow"),
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };

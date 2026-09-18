@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CAPTION, INNER, MIDDLE, MOST, OUTER, aiming, at, ringStops, sector, spanOf,
+  REACH, INNER, MIDDLE, MOST, OUTER, aiming, at, ringStops, sector, spanOf,
 } from '../src/ring-geometry.ts';
 import { SCREENS } from '../src/screens.ts';
 
@@ -49,7 +49,7 @@ test('straight up is the top of the screen, and the turn goes clockwise', () => 
 test('aiming reads the angle, so the labels are not dead ground', () => {
   const count = 8;
   // Straight up, out where the LABEL is drawn — still segment 0.
-  assert.equal(aiming(MIDDLE, MIDDLE - CAPTION, count), 0);
+  assert.equal(aiming(MIDDLE, MIDDLE - REACH, count), 0);
   // Over the glyph of segment 0.
   assert.equal(aiming(MIDDLE, MIDDLE - (INNER + OUTER) / 2, count), 0);
   // Clockwise one segment.
@@ -68,7 +68,7 @@ test('the middle is the search, and beyond the labels is nothing', () => {
    * circle, so its corners are part of it — and a click there means "put this
    * away", not "I meant the screen closest to my mistake". */
   assert.equal(aiming(0, 0, 8), null);
-  assert.equal(aiming(MIDDLE, MIDDLE - (CAPTION + 40), 8), null);
+  assert.equal(aiming(MIDDLE, MIDDLE - (REACH + 40), 8), null);
   assert.equal(aiming(MIDDLE, MIDDLE - OUTER, 0), null, 'no segments, nothing to aim at');
 });
 

@@ -350,7 +350,21 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                 if matches(&pressed, &current.ring) {
                     match event.state() {
                         ShortcutState::Pressed => {
-                            RING_DOWN.store(now_ms(), Ordering::SeqCst);
+                            /* ⚠️ **Windows repeats a held key**, and every repeat
+                             * arrives here as another Pressed. `open` toggles
+                             * — the same key again puts the ring away — so
+                             * holding the key past the keyboard's repeat delay
+                             * closed the ring and then flickered it open and
+                             * shut thirty times a second. Which is to say:
+                             * hold-and-let-go, the gesture this branch exists
+                             * for, could not work at all, and the longer you
+                             * held it the more certainly it did not.
+                             *
+                             * A repeat is a press with the key already down. */
+                            if RING_DOWN.load(Ordering::SeqCst) != 0 {
+                                return;
+                            }
+                            RING_DOWN.store(now_ms().max(1), Ordering::SeqCst);
                             crate::ring::open(&handler);
                         }
                         ShortcutState::Released => {

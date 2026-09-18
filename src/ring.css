@@ -6,8 +6,10 @@
  */
 :root {
   --accent: #00ff88;
-  --ring-ink: #e8e8e8;
-  --ring-quiet: #8a8a8a;
+  --ring-ink: #ededed;
+  --ring-quiet: #9a9a9a;
+  /* The same curve the island uses everywhere. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html, body {
@@ -29,23 +31,64 @@ html, body {
   translate: var(--nudge-x, 0) var(--nudge-y, 0);
 }
 
+/* ── Frosted, by default ───────────────────────────────────────────────
+   ⚠️ An HTML element, not a filter on the SVG: `backdrop-filter` samples what
+   is painted BEHIND the element, and an SVG shape is not a backdrop root — the
+   blur would sample this page, which is transparent, and come out as nothing.
+
+   ⚠️ And it is a plain disc rather than a donut with the middle punched out.
+   The middle is a target too, and glass with a hole in it reads as a washer. */
+.ring-glass {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  backdrop-filter: blur(26px) saturate(1.5);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5);
+  background: rgba(14, 14, 14, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 18px 44px rgba(0, 0, 0, 0.5);
+  animation: ring-in 160ms var(--ease);
+}
+/* Solid: the same disc, opaque, for a background busy enough that blur is
+   noise rather than depth. */
+#ring-host[data-style="solid"] .ring-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(13, 13, 13, 0.97);
+}
+
 .ring {
+  position: relative;
   width: 100%;
   height: 100%;
   display: block;
   /* The whole shape arrives at once, quickly. ⚠️ A staged entrance would be
      charming the first time and in the way of every press after it. */
-  animation: ring-in 140ms cubic-bezier(0.22, 1, 0.36, 1);
-  /* ⚠️ A shadow, because this floats over somebody else's window and
-     nothing else separates it from one. On a dark editor a flat dark ring is
-     a smudge. */
-  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.55));
+  animation: ring-in 160ms var(--ease);
 }
 @keyframes ring-in {
-  from { opacity: 0; scale: 0.92; }
+  from { opacity: 0; scale: 0.94; }
   to { opacity: 1; scale: 1; }
 }
-@media (prefers-reduced-motion: reduce) { .ring { animation: none; } }
+/* Picked: the whole thing leaves as one, quickly, so the screen it opened is
+   what the eye lands on rather than a menu dissolving over it. */
+#ring-host.is-taken { animation: ring-out 130ms var(--ease) forwards; }
+@keyframes ring-out {
+  to { opacity: 0; scale: 1.04; }
+}
+/* Pressed: the ring gives, very slightly. The same 0.985 every button in the
+   island uses — a press you can feel, not a press you can see. */
+#ring-host.is-pressing .ring,
+#ring-host.is-pressing .ring-glass { scale: 0.985; }
+#ring-host.is-pressing { transition: none; }
+.ring, .ring-glass { transition: scale 90ms var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ring, .ring-glass, #ring-host.is-taken { animation: none; }
+}
 
 /* ⚠️ DARK at rest, every one of them, and the screen's colour only as a
    hint on the glyph — exactly the rule the rail arrived at the hard way. The
@@ -55,46 +98,45 @@ html, body {
    at is the only one that gets to be coloured. */
 .ring-wedge {
   --stop: var(--accent);
-  fill: rgba(17, 17, 17, 0.94);
-  stroke: rgba(255, 255, 255, 0.06);
+  fill: rgba(20, 20, 20, 0.5);
+  stroke: rgba(255, 255, 255, 0.07);
   stroke-width: 1;
-  transition: fill 120ms cubic-bezier(0.22, 1, 0.36, 1),
-    stroke 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    fill 140ms var(--ease),
+    stroke 140ms var(--ease),
+    scale 180ms var(--ease);
 }
+#ring-host[data-style="solid"] .ring-wedge { fill: rgba(18, 18, 18, 0.9); }
 .ring-wedge.is-at {
-  fill: color-mix(in srgb, var(--stop) 22%, #141414);
-  stroke: color-mix(in srgb, var(--stop) 40%, transparent);
+  fill: color-mix(in srgb, var(--stop) 26%, rgba(20, 20, 20, 0.62));
+  stroke: color-mix(in srgb, var(--stop) 45%, transparent);
+  /* Coming forward: see `SWELL` in ring.ts. */
+  scale: var(--swell, 1.035);
 }
 
 /* The same tint the rail's off-centre stops wear: enough to tell two screens
    apart at a glance, not enough to make a ring of eight into bunting. */
-.ring-glyph { color: color-mix(in srgb, var(--stop, var(--accent)) 30%, #8f8f8f);
-  pointer-events: none; transition: color 120ms cubic-bezier(0.22, 1, 0.36, 1); }
-.ring-glyph.is-at { color: #fff; }
-
-.ring-say {
-  fill: var(--ring-quiet);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: -0.1px;
+.ring-glyph {
+  color: color-mix(in srgb, var(--stop, var(--accent)) 30%, #9a9a9a);
   pointer-events: none;
-  /* ⚠️ The labels are for the first week, not the hundredth press: a radial
-     menu is fast because the target is a direction. Legible, never loud. */
-  opacity: 0.75;
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.75);
-  stroke-width: 3px;
-  transition: fill 120ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms;
+  transition: color 140ms var(--ease), scale 180ms var(--ease);
 }
-.ring-say.is-at { fill: #fff; opacity: 1; }
+/* ⚠️ The scale is about the GLYPH's own middle, which is set in user units in
+   `draw()` — an SVG child scales about the origin of the whole coordinate
+   system otherwise, so a glyph that grows also travels. */
+.ring-glyph.is-at { color: #fff; scale: 1.12; }
 
 .ring-heart {
-  fill: rgba(16, 16, 16, 0.92);
-  stroke: rgba(255, 255, 255, 0.09);
+  fill: rgba(16, 16, 16, 0.52);
+  stroke: rgba(255, 255, 255, 0.1);
   stroke-width: 1;
-  transition: fill 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: fill 140ms var(--ease), stroke 140ms var(--ease);
 }
-.ring-heart.is-at { fill: color-mix(in srgb, var(--accent) 22%, #141414); }
+#ring-host[data-style="solid"] .ring-heart { fill: rgba(16, 16, 16, 0.94); }
+.ring-heart.is-at {
+  fill: color-mix(in srgb, var(--accent) 24%, rgba(16, 16, 16, 0.6));
+  stroke: color-mix(in srgb, var(--accent) 42%, transparent);
+}
 /* ⚠️ A GLYPH in the middle, not the word "Search". Every wedge around it is
    an icon, so one piece of text in the centre read as a label for the ring
    rather than as a target — and it is the one thing here nobody has to read
@@ -102,6 +144,53 @@ html, body {
 .ring-heart-mark {
   color: var(--ring-quiet);
   pointer-events: none;
-  transition: color var(--duration-fast, 250ms) ease, scale var(--duration-fast, 250ms) ease;
+  transition: color 140ms var(--ease), scale 180ms var(--ease);
 }
-.ring-heart-mark.is-at { color: #fff; scale: 1.08; }
+.ring-heart-mark.is-at { color: #fff; scale: 1.1; }
+
+/* ── The one label ─────────────────────────────────────────────────────
+   ⚠️ ONE, under the ring, rather than eight around it. Eight captions on a
+   circle collide the moment a label is longer than a word — "Start a pomodoro"
+   ran back over its own wedges and into the middle — and a smaller font is not
+   the fix: a radial menu earns its speed by being aimed at, so the words are
+   for the first week and belong where they can be as long as they like. */
+.ring-caption {
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+  max-width: 300px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ring-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  background: rgba(16, 16, 16, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.96;
+  transition: opacity 140ms var(--ease), scale 140ms var(--ease);
+}
+.ring-caption.is-on { opacity: 1; scale: 1; }
+#ring-host[data-style="solid"] .ring-caption {
+  background: rgba(16, 16, 16, 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The words swap in place: out blurred and down, in blurred and up. */
+.ring-caption span {
+  display: block;
+  transition: opacity 90ms ease, translate 90ms ease, filter 90ms ease;
+}
+.ring-caption span.is-exit { opacity: 0; translate: 0 4px; filter: blur(2px); }
+.ring-caption span.is-enter { opacity: 0; translate: 0 -4px; filter: blur(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .ring-caption, .ring-caption span { transition: none; }
+}

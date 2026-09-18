@@ -55,6 +55,7 @@ interface Prefs {
   timerMode: string;
   pomodoroPill: string;
   ringStops: string[];
+  ringGlass: boolean;
   followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
@@ -207,7 +208,11 @@ const PANE_HTML: Record<PaneId, string> = {
     <p class="set-why">Drag to reorder. Switch one off and it leaves the rail — it is still reachable from the palette.</p>
     <div class="set-group" id="rail-screens">
     </div></div>
-    <div><p class="set-label">The ring</p><div class="set-group" id="ring-stops">
+    <div><p class="set-label">The ring</p>
+    <div class="set-group">
+      ${row("Frosted", "The ring lets the window underneath through. Off, it is a solid disc — easier to read over a busy background.", check("ring-glass"))}
+    </div>
+    <div class="set-group" id="ring-stops">
     </div>
     <p class="set-why">What the ring around the pointer holds, in this order. Hold the key and let go to pick without clicking; tap it to leave the ring up and read. ⚠️ Eight at most — past that a wedge is thinner than a hand is accurate, and aiming rather than reading is the whole advantage. Nothing chosen means the screens on your rail.</p></div>
     <div><p class="set-label">Tasks</p><div class="set-group">
@@ -375,7 +380,7 @@ let prefs: Prefs = {
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
-  pomodoroPill: "bar", ringStops: [], followLive: true,
+  pomodoroPill: "bar", ringStops: [], ringGlass: true, followLive: true,
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -577,6 +582,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
 for (const [id, key] of [
   ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
   ["notice-mode", "noticeMode"], ["follow-live", "followLive"],
+  ["ring-glass", "ringGlass"],
 ] as const) {
   get<HTMLInputElement>(id).onchange = event => {
     prefs[key] = (event.target as HTMLInputElement).checked;
@@ -1210,6 +1216,7 @@ function paintPrefs() {
   get<HTMLInputElement>("call-mute-mic").checked = prefs.callMuteMic;
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   get<HTMLInputElement>("follow-live").checked = prefs.followLive;
+  get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
   paintScreens();
   paintRing();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;

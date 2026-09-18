@@ -3685,3 +3685,31 @@ The two halves were the same fault.
      cut off rather than as long. Measured at the size the test uses (760px
      tall, 427px of body) rather than eyeballed at whatever the window
      happened to be.
+570. ⚠️ **Windows repeats a held key, and every repeat is another `Pressed`.**
+     The ring's key toggles on press — the same key again puts it away — so
+     holding it past the keyboard's repeat delay closed the ring and then
+     flickered it open and shut thirty times a second. Which means
+     hold-and-let-go, the gesture the whole branch exists for, could not work
+     at all, and the longer it was held the more certainly it did not. A
+     repeat is a press with the key already down; the guard is one `if`.
+571. ⚠️ **A `scale` on an SVG child is about the origin of the COORDINATE
+     SYSTEM**, not about the element. The search glyph in the middle of the
+     ring grew by 8% on hover and travelled a tenth of the window towards the
+     corner with it — "the icon animates weirdly" — because its origin was the
+     ring's top-left. `transform-origin` in user units, per element.
+572. ⚠️ **Eight captions around a circle collide the moment one of them is
+     longer than a word.** "Start a pomodoro" ran back over its own wedges and
+     into the middle. A smaller font is not the fix: a radial menu earns its
+     speed by being AIMED at, so there is now one label, under the ring, where
+     it can be as long as it likes.
+573. ⚠️ **`backdrop-filter` on an SVG shape blurs nothing.** An SVG element is
+     not a backdrop root, so the filter samples the page behind it — which for
+     a transparent overlay window is nothing at all, and the result is a shape
+     that looks exactly as if the property had been ignored. The frosted disc
+     is an HTML element behind the drawing.
+574. ⚠️ **An `AudioContext` in a window nothing has ever clicked may never
+     leave `suspended`.** The ring is opened by a global shortcut, which is not
+     user activation for its page, so its ticks can be silent until the first
+     time somebody picks with the mouse — after which the document stays
+     activated for the life of the window. Worth knowing before concluding the
+     sound is broken.

@@ -138,6 +138,13 @@ pub struct Prefs {
     /// must not be an empty ring, so "unset" and "deliberately empty" have to
     /// be different answers and the second one is not offered.
     pub ring_stops: Vec<String>,
+    /// Whether the ring is frosted glass rather than a solid disc.
+    ///
+    /// ⚠️ On by default. The ring floats over whatever you were working in,
+    /// and a solid dark disc there is a hole punched in the window underneath;
+    /// frosted, it reads as something laid ON the work — which is what it is.
+    /// Solid stays available for a busy background, where blur is noise.
+    pub ring_glass: bool,
     /// Opening the island lands on whatever is actually happening — the call,
     /// the agent waiting, the meeting about to start — rather than on wherever
     /// you last were. ⚠️ The pill has already decided which that is; this
@@ -204,6 +211,7 @@ impl Default for Prefs {
             timer_mode: "pomodoro".into(),
             pomodoro_pill: "bar".into(),
             ring_stops: Vec::new(),
+            ring_glass: true,
             follow_live: true,
             call_mode: true,
             call_mute_mic: true,
