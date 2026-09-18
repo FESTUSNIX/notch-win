@@ -93,6 +93,18 @@
   - [ ] A permission prompt is still not a state. Codex has
         `tools.request_permissions` in an exec call, which is close, but an
         exec that is merely slow looks identical from outside.
+  - [x] **The usage is kept.** `usage.json` — one bucket per day per agent
+        per model per project, four months of them, seeded once from the runs
+        so the chart is not empty for a fortnight. The panel cuts today three
+        ways (agent, model, project), draws the week behind it, and shows
+        what is left of the plan where the agent reports it.
+  - [ ] Only Codex reports a plan limit, so Claude's half of that row is
+        blank. Anthropic's own usage endpoint is behind the token this app
+        deliberately never hands to a WebView, so it would have to be read
+        in Rust and reported like everything else here.
+  - [ ] Cost in money is not computed. It needs a price per model per
+        provider, which is a table that goes stale silently — the worst kind
+        of number to put on a screen that is otherwise all measurements.
 
 ---
 

@@ -3582,3 +3582,33 @@ The two halves were the same fault.
      claim and read it as a media bug. The fix is a flag that empties the
      sessions and nothing else: `?quiet` would also stop the music, which is
      the very thing those tests are about.
+551. ⚠️ **A chart built from the days that HAVE data has no gaps in it.** A
+     week with three days off then draws as three days of work in a row — the
+     exact opposite of what it is claiming, and it looks entirely normal. The
+     days are generated from the calendar and the buckets are looked up
+     against them, never the other way round.
+552. ⚠️ **`toISOString().slice(0, 10)` is not today.** It is the UTC day, and
+     east of Greenwich that is yesterday for the first hours of every morning
+     — so the chart's last column stops being today exactly when somebody is
+     most likely to be looking at it. The buckets are filed by LOCAL day, so
+     the reader has to ask for one.
+553. ⚠️ **Counting days back in local time is wrong twice a year.** The day
+     the clocks go back has 25 hours in it, so subtracting 24 hours from a
+     local midnight lands on the same calendar day twice and the week grows a
+     duplicate column. The strings are local days; only the arithmetic is UTC.
+554. ⚠️ **Rolled-up history cannot be derived from a log that expires.** The
+     runs are dropped after a fortnight, so rebuilding the daily buckets from
+     them would silently change what every earlier month totalled — numbers
+     that still render and are wrong about precisely the period the rollup
+     exists to remember. Derived ONCE, when the file does not exist yet, and
+     added to from then on.
+555. ⚠️ **A bar drawn on a dark ground with no track has no ceiling.** Seven
+     loose bars are seven smudges: nothing says what full height would be, so
+     a fifth of a day and two thirds of one read as the same nothing. And the
+     bar has to be well clear of the track it sits in — 14% white on a 4%
+     track is the same grey twice.
+556. ⚠️ **An empty bucket is not a row.** A session this app began watching
+     mid-run reports no model, and gathering those under one blank row puts
+     the biggest number in a list about *which model costs what* against a
+     name nobody can act on. Dropped from that cut, and still counted in the
+     total — the two are different questions.

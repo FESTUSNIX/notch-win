@@ -25,6 +25,7 @@ mod notify;
 mod spotify;
 mod ring;
 mod runlog;
+mod usage;
 mod shelf;
 mod thumbs;
 mod snooze;
@@ -479,6 +480,7 @@ pub fn run() {
         .manage(workspaces::Store::default())
         .manage(shelf::Store::default())
         .manage(runlog::Store::default())
+        .manage(usage::Store::default())
         .manage(Latest::default())
         .manage(History(Mutex::new(remembered)))
         .manage(Wake::default())
@@ -522,6 +524,7 @@ pub fn run() {
             task_window::task_window_diagnostics,
             task_window::set_clock_format,
             runlog::get_runs,
+            usage::get_usage,
             shelf::get_shelf,
             shelf::shelf_add_paths,
             shelf::shelf_add_text,
@@ -716,6 +719,7 @@ pub fn run() {
             workspaces::load(app.handle());
             shelf::load(app.handle());
             runlog::load(app.handle());
+            usage::load(app.handle());
             sessions::spawn(app.handle().clone());
             drag::watch_displays(app.handle().clone());
             weather::spawn(app.handle().clone());

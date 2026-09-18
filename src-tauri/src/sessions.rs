@@ -772,6 +772,12 @@ pub fn spawn(app: AppHandle) {
                 // is the run you were not watching.
                 // Kept, so the Review screen can look backwards at all.
                 crate::runlog::record(&app, run);
+                /* And the same run, folded into its day. ⚠️ Both, not one:
+                 * the runs are what "what happened at four o'clock" is made
+                 * of and they are dropped after a fortnight; the buckets are
+                 * what "is this month worse than last" is made of and they
+                 * cannot be rebuilt from runs that no longer exist. */
+                crate::usage::record(&app, run);
                 let _ = app.emit("notch:finished", run.clone());
             }
 

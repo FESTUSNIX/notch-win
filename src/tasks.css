@@ -3354,18 +3354,83 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .spend-title { margin:0; font-size:10px; font-weight:600; letter-spacing:.08em;
   text-transform:uppercase; color:rgba(255,255,255,.42); }
 .spend-total { font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
-.spend-row { display:flex; align-items:center; gap:10px; padding:3px 0; }
-.spend-project { font-size:11.5px; min-width:86px; max-width:110px; flex-shrink:0;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.spend-rail { flex:1; height:5px; border-radius:999px; background:rgba(0,0,0,.3);
+/* ── The week ─────────────────────────────────────────
+   Seven columns, so today has something to be bigger or smaller THAN. One
+   number cannot say whether a day was heavy; the same number with six days
+   behind it can, and that is the whole reason this is here. */
+.use-week { display:flex; align-items:flex-end; gap:4px; height:40px;
+  margin:2px 0 11px; }
+/* ⚠️ Each column has a TRACK. Bars alone on a dark ground read as a row of
+   loose pills — there is no baseline and no ceiling, so a short day and an
+   empty one look like the same nothing. The track is what makes a bar a
+   fraction of something. */
+.use-day { flex:1; display:flex; align-items:flex-end; height:100%;
+  border-radius:4px; padding:0; background:rgba(255,255,255,.04);
   box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; }
-/* ⚠️ The accent, not a per-project colour. Five hues down one column would
-   be a legend to learn for an ordering the bar lengths already give. */
-.spend-rail i { display:block; height:100%; border-radius:999px;
+/* ⚠️ Well clear of the track it sits in. At 14% white on a 4% track the bar
+   and the box behind it were the same grey, so a 20% day and a 60% day looked
+   like two empty boxes with a smudge in them. */
+.use-day i { display:block; width:100%; border-radius:3px;
+  background:rgba(255,255,255,.34);
+  transition:height var(--duration-slow) var(--ease-smooth-out); }
+.use-day:hover i { background:rgba(255,255,255,.5); }
+/* ⚠️ Today is the ACCENT, not merely brighter. Six grey columns and one
+   slightly-less-grey column is a difference you have to look for, on the one
+   column the eye came here to find. */
+.use-day.is-today i { background:linear-gradient(180deg,
+  var(--accent), color-mix(in srgb, var(--accent) 55%, transparent)); }
+
+/* ── A cut of the day ────────────────────────────────── */
+.use-cut { margin:9px 0 5px; font-size:9.5px; font-weight:600; letter-spacing:.07em;
+  text-transform:uppercase; color:rgba(255,255,255,.28); }
+.use-list { display:flex; flex-direction:column; gap:3px; }
+.use-row { display:flex; align-items:center; gap:9px; }
+.use-name { display:flex; align-items:center; gap:6px; min-width:96px; max-width:132px;
+  flex-shrink:0; font-size:11.5px; color:#c4c4c4; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.use-mark { display:grid; place-items:center; width:15px; height:15px; flex-shrink:0;
+  color:#8e8e8e; }
+/* ⚠️ 13px: `paintIcon` draws at 20, which beside 11.5px text is a picture
+   with a caption rather than a name with a mark. */
+.use-mark svg { width:13px; height:13px; }
+.use-who { flex-shrink:0; }
+/* The model is the quiet half of the name, not a second column: which model
+   only means anything attached to whose agent it was. */
+.use-model { color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.use-rail { flex:1; height:5px; border-radius:999px; background:rgba(0,0,0,.3);
+  box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; min-width:24px; }
+/* ⚠️ The accent, not a colour per agent. Two brands' worth of paint on one
+   panel is a legend to learn for an ordering the bar lengths already give —
+   and the marks beside them already say which is which. */
+.use-rail i { display:block; height:100%; border-radius:999px;
   background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
   transition:width var(--duration-slow) var(--ease-smooth-out); }
-.spend-tokens { font-size:11px; color:var(--dim); min-width:42px; text-align:right;
+.use-tokens { font-size:11px; color:var(--dim); min-width:42px; text-align:right;
   font-variant-numeric:tabular-nums; flex-shrink:0; }
+
+/* ── What is left of the plan ─────────────────────────────
+   Only one agent reports this, and only while a session is live. It is the
+   one figure here that is not about what you SPENT but about what you have
+   got left, so it sits above the breakdowns rather than among them. */
+.use-plan { display:flex; align-items:center; gap:10px; padding:7px 9px; margin-bottom:4px;
+  border-radius:9px; background:rgba(255,255,255,.035);
+  box-shadow:inset 0 0 0 1px var(--hair); }
+.use-plan-name { display:flex; align-items:center; gap:6px; flex-shrink:0;
+  font-size:11px; color:#b4b4b4; text-transform:capitalize; }
+.use-plan-name svg { width:13px; height:13px; }
+.use-plan-slot { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+.use-plan-label { font-size:9.5px; color:#5f5f5f; flex-shrink:0; }
+.use-meter { flex:1; height:4px; border-radius:999px; background:rgba(0,0,0,.35);
+  box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; min-width:20px; }
+.use-meter i { display:block; height:100%; border-radius:999px;
+  background:color-mix(in srgb, var(--accent) 70%, #fff 0%);
+  transition:width var(--duration-slow) var(--ease-smooth-out); }
+/* Nearly out is the one state worth a colour of its own: it is the only
+   reading here that changes what you would do next. */
+.use-meter.is-high i { background:var(--warn); }
+.use-plan-used { font-size:10px; color:#8e8e8e; font-variant-numeric:tabular-nums;
+  min-width:26px; text-align:right; flex-shrink:0; }
+
 .snooze-clear { padding:0 3px; font-size:inherit; color:var(--accent); background:transparent; }
 .snooze-clear:hover { background:transparent; text-decoration:underline; }
 

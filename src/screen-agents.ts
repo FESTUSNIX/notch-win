@@ -27,8 +27,10 @@ import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
-import { byProject, share, short, sum, total } from "./spend";
-import type { Run } from "./screen-review";
+import { short } from "./spend";
+import {
+  all, byAgent, byDay, byProject, spent, type Bucket, type Slice,
+} from "./usage";
 import { held, tokens } from "./media-format";
 import { modelName } from "./model-name";
 import { hush, isQuiet, wake } from "./snooze";
@@ -117,13 +119,36 @@ function liveWord(session: SessionView): string {
   return BADGE[session.state];
 }
 
+/** How many days the panel reads. A week: long enough to see a rhythm, short
+ *  enough that every column is wide enough to aim at. */
+const WINDOW = 7;
+
+/** Today, as `usage.rs` files it — the LOCAL day, never UTC.
+ *
+ * ⚠️ `toISOString().slice(0, 10)` is the obvious one line and it is wrong
+ * every evening: at 01:00 in Warsaw it says yesterday, so the chart's last
+ * column stops being today for the busiest hours of the night. */
+function today(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+/** `Wed`, for a column's tip. */
+function weekday(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date).toLocaleDateString(undefined, { weekday: "short" });
+}
+
 export class AgentsScreen {
   readonly name = "agents" as const;
   sessions: SessionView[] = [];
   /** Ticks with the shell so "waiting 40s" climbs without a re-render. */
   private clocks = new Map<string, HTMLElement>();
-  /** Today's finished runs, for the spend block. */
-  private runs: Run[] = [];
+  /** A fortnight of what the agents have cost, one bucket per day per model
+   *  per project. See `usage.rs` — the runs themselves are kept separately
+   *  and for a shorter time, because they answer a different question. */
+  private usage: Bucket[] = [];
   /** Which live session the stage is showing.
    *
    * ⚠️ The session's ID, not its index. The list is re-sorted by state on
@@ -139,10 +164,10 @@ export class AgentsScreen {
   async boot() {
     try {
       this.sessions = await call<SessionView[]>("get_sessions");
-      /* ⚠️ Read here rather than polled. Runs only land when one ends, and the
-       * watcher already pushes an event then — see `boot` — so a timer would
+      /* ⚠️ Read here rather than polled. A bucket only changes when a run
+       * ends, and the watcher already pushes an event then — so a timer would
        * be re-reading a file to find it unchanged. */
-      this.runs = await call<Run[]>("get_runs", { day: "" });
+      this.usage = await call<Bucket[]>("get_usage", { days: WINDOW });
     } catch { /* the watcher has not reported yet */ }
     if (native) {
       await listen<SessionView[]>("notch:sessions", event => {
@@ -433,43 +458,134 @@ export class AgentsScreen {
     return row;
   }
 
-  /** What today cost, and which project spent it.
+  /* ── What it all cost ─────────────────────────────────
    *
-   * ⚠️ The usage notch says the window is going; nothing said what was eating
-   * it. That is the question you actually have when you look at the ring, and
-   * this app is the only thing on the machine already counting tokens per run
-   * per project.
+   * The usage notch says the window is going; nothing on the machine said what
+   * ate it. That is the question you actually have when you look at that ring,
+   * and this app is the only thing already counting tokens per run.
    *
-   * ⚠️ Returns null on a day with no spend rather than an empty panel. A
-   * heading over nothing is the hole this codebase keeps filling in.
+   * ⚠️ Three cuts of one number, not three numbers. The day's total is the
+   * heading; the week says whether today is normal; the agent rows say which
+   * of them is spending it and on which model. A panel that showed only the
+   * projects answered "where" and never "on what", which is the half that
+   * costs money.
    */
-  private spendBlock(): HTMLElement | null {
-    const rows = byProject(this.runs);
-    if (!rows.length) return null;
-    const whole = sum(rows);
+
+  /** One breakdown: a name, a bar, a figure. */
+  private bars(rows: Slice[], whole: Slice, name: (row: Slice) => HTMLElement): HTMLElement {
+    const list = element("div", "use-list");
+    for (const row of rows.slice(0, 4)) {
+      const line = element("div", "use-row");
+      line.append(name(row));
+      const rail = element("div", "use-rail");
+      const fill = element("i");
+      /* ⚠️ A floor, not the raw share. A row at 2% draws a bar you cannot
+       * see, which reads as "nothing" rather than as "a little" — and the
+       * number beside it then looks like it belongs to the row above. */
+      const part = spent(whole) ? spent(row) / spent(whole) : 0;
+      fill.style.width = `${Math.max(4, part * 100)}%`;
+      rail.append(fill);
+      line.append(rail, element("span", "use-tokens", short(spent(row))));
+      line.dataset.tip = `${short(row.input)} in, ${short(row.output)} out, `
+        + `${row.runs} run${row.runs === 1 ? "" : "s"}`;
+      list.append(line);
+    }
+    return list;
+  }
+
+  /** The week, as columns. ⚠️ Every day, including the empty ones — a chart
+   *  built from the days that HAVE data draws three days off as three days of
+   *  work in a row, which is the opposite of what it is claiming. */
+  private week(days: Slice[]): HTMLElement {
+    const most = Math.max(...days.map(spent), 1);
+    const chart = element("div", "use-week");
+    for (const day of days) {
+      const column = element("div", "use-day");
+      if (day.key === today()) column.classList.add("is-today");
+      const bar = element("i");
+      /* A floor here too, and for a different reason: an empty day has to be
+       * visibly a day rather than a gap in the row. */
+      bar.style.height = `${Math.max(spent(day) ? 8 : 3, (spent(day) / most) * 100)}%`;
+      column.append(bar);
+      column.dataset.tip = `${weekday(day.key)} · ${short(spent(day))}`
+        + (day.runs ? ` · ${day.runs} run${day.runs === 1 ? "" : "s"}` : "");
+      chart.append(column);
+    }
+    return chart;
+  }
+
+  /** What is left of the plan, where an agent says.
+   *
+   * ⚠️ Only Codex reports this, and only while a session is live — it
+   * arrives on the transcript, not from an API. Absent is the normal case and
+   * draws nothing rather than a row of dashes. */
+  private plan(): HTMLElement | null {
+    const live = this.sessions.find(one => one.limits?.week != null || one.limits?.window != null);
+    if (!live?.limits) return null;
+    const { window: short5, week, plan } = live.limits;
+    const row = element("div", "use-plan");
+    const name = element("span", "use-plan-name");
+    paintIcon(name, markFor(live.provider));
+    name.append(element("span", "", plan ? `${agentName(live.provider)} ${plan}` : agentName(live.provider)));
+    row.append(name);
+    for (const [label, used] of [["5h", short5], ["week", week]] as const) {
+      if (used == null) continue;
+      const meter = element("div", "use-meter");
+      const fill = element("i");
+      fill.style.width = `${Math.max(2, Math.min(100, used))}%`;
+      if (used >= 80) meter.classList.add("is-high");
+      meter.append(fill);
+      const slot = element("div", "use-plan-slot");
+      slot.append(element("span", "use-plan-label", label), meter,
+        element("span", "use-plan-used", `${Math.round(used)}%`));
+      slot.dataset.tip = `${Math.round(used)}% of the ${label === "5h" ? "five-hour" : "weekly"} limit`;
+      row.append(slot);
+    }
+    return row;
+  }
+
+  private usageBlock(): HTMLElement | null {
+    if (!this.usage.length) return null;
+    const days = byDay(this.usage, today(), WINDOW);
+    const mine = this.usage.filter(bucket => bucket.day === today());
+    /* ⚠️ The heading counts TODAY and the chart counts the week. A panel
+     * where the big number and the chart mean different spans is one nobody
+     * can read twice the same way, so the heading says which it is. */
+    const agents = byAgent(mine);
+    const projects = byProject(mine);
+    const whole = all(agents);
 
     const block = element("section", "spend");
     const head = element("div", "spend-head");
     head.append(
-      element("h3", "spend-title", "Spent today"),
-      element("span", "spend-total", `${short(total(whole))} tokens · ${whole.runs} runs`),
+      element("h3", "spend-title", "Usage"),
+      element("span", "spend-total", whole.runs
+        ? `${short(spent(whole))} today · ${whole.runs} run${whole.runs === 1 ? "" : "s"}`
+        : "nothing today"),
     );
-    block.append(head);
+    block.append(head, this.week(days));
 
-    for (const row of rows.slice(0, 5)) {
-      const line = element("div", "spend-row");
-      line.append(element("span", "spend-project", row.project));
-      const rail = element("div", "spend-rail");
-      const fill = element("i");
-      /* ⚠️ A floor, not the raw share. A project at 2% draws a bar you cannot
-       * see, which reads as "nothing" rather than as "a little" — and the
-       * number beside it then looks like it belongs to the row above. */
-      fill.style.width = `${Math.max(4, share(row, whole) * 100)}%`;
-      rail.append(fill);
-      line.append(rail, element("span", "spend-tokens", short(total(row))));
-      line.dataset.tip = `${row.project}: ${short(row.input)} in, ${short(row.output)} out, `
-        + `${row.runs} run${row.runs === 1 ? "" : "s"}`;
-      block.append(line);
+    const plan = this.plan();
+    if (plan) block.append(plan);
+
+    if (agents.length) {
+      block.append(element("h4", "use-cut", "By agent"));
+      block.append(this.bars(agents, whole, row => {
+        /* The agent's own mark and the model it spent most on — the two facts
+         * this panel never carried, on a screen whose whole subject is which
+         * agent is doing what. */
+        const name = element("span", "use-name");
+        const mark = element("span", "use-mark");
+        paintIcon(mark, markFor(row.key));
+        name.append(mark, element("span", "use-who", agentName(row.key)));
+        if (row.top) name.append(element("span", "use-model", modelName(row.top)));
+        return name;
+      }));
+    }
+    if (projects.length > 1) {
+      block.append(element("h4", "use-cut", "By project"));
+      block.append(this.bars(projects, whole,
+        row => element("span", "use-name", row.key)));
     }
     return block;
   }
@@ -506,8 +622,8 @@ export class AgentsScreen {
       this.host.append(quiet);
     }
 
-    const spend = this.spendBlock();
-    if (spend) this.host.append(spend);
+    const usage = this.usageBlock();
+    if (usage) this.host.append(usage);
     if (this.error) this.host.append(element("p", "screen-error", this.error));
   }
 }

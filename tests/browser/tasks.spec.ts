@@ -843,33 +843,65 @@ test("a workspace is made from a row that is already on screen", async ({page}) 
   await page.screenshot({path: "test-results/island-workspace.png"});
 });
 
-test("today's spend is broken down by project", async ({page}) => {
+test("what the agents cost is cut three ways, and the week says whether today is normal", async ({page}) => {
   await page.goto("/tasks.html?agents&nocal");
   await open(page);
   await goTo(page, "agents");
 
-  /* ⚠️ The usage notch says the window is going; nothing on the machine said
-   * what was eating it. That is the question you actually have when you look at
-   * that ring, and this app is the only thing already counting tokens per run
-   * per project. */
-  await expect(page.locator(".spend-title")).toHaveText("Spent today");
-  const projects = page.locator(".spend-project");
-  // Biggest spender first, whatever order the runs arrived in.
+  /* ⚠️ The usage notch says the window is going; nothing on the machine
+   * said what was eating it. That is the question you actually have when you
+   * look at that ring, and this app is the only thing already counting tokens
+   * per run — per agent, per model and per project. */
+  await expect(page.locator(".spend-title")).toHaveText("Usage");
+  await expect(page.locator(".spend-total")).toContainText("today");
+
+  /* ── The week ────────────────────────────────────
+   * Seven columns, so today has something to be bigger or smaller THAN — and
+   * every day, including the ones nothing ran on. Built from the days that
+   * have data, a week with three days off draws as three days of work in a
+   * row, which is the opposite of what it claims. */
+  const days = page.locator(".use-day");
+  await expect(days).toHaveCount(7);
+  await expect(days.nth(6)).toHaveClass(/is-today/);
+  await expect(page.locator(".use-day.is-today")).toHaveCount(1);
+  /* ⚠️ A bar whose height is NaN% renders at FULL height, so a broken share
+   * makes the emptiest day look like the busiest. */
+  const heights = await page.locator(".use-day i").evaluateAll(bars =>
+    bars.map(bar => (bar as HTMLElement).style.height));
+  expect(heights).toHaveLength(7);
+  expect(heights.every(height => /^[\d.]+%$/.test(height))).toBe(true);
+
+  /* ── By agent, which is the cut this panel never had ───────────
+   * "Where" was answered and "on what" never was, and the second one is the
+   * half that costs money. */
+  const cuts = page.locator(".use-cut");
+  await expect(cuts.nth(0)).toHaveText("By agent");
+  const agents = page.locator(".use-list").nth(0).locator(".use-row");
+  await expect(agents.nth(0).locator(".use-who")).toHaveText("Claude");
+  await expect(agents.nth(0).locator(".use-model")).toHaveText("Opus 5");
+  await expect(agents.nth(1).locator(".use-who")).toHaveText("Codex");
+  await expect(agents.nth(1).locator(".use-model")).toHaveText("GPT-6 Astra");
+  // Each row wears the agent's own mark, the same one the stage above does.
+  await expect(agents.nth(0).locator(".use-mark svg")).toHaveCount(1);
+
+  // And the projects, biggest spender first, whatever order the runs arrived in.
+  await expect(cuts.nth(1)).toHaveText("By project");
+  const projects = page.locator(".use-list").nth(1).locator(".use-name");
   await expect(projects.nth(0)).toHaveText("codenotch-win");
   await expect(projects.nth(1)).toHaveText("akcesfonia");
 
-  /* ⚠️ A project that spent NOTHING is dropped rather than listed as zero.
-   * Runs recorded before the count existed carry neither field, and a fortnight
-   * of those — named, ordered, every one reading 0 — looks like the feature is
-   * broken rather than like the history predates it. */
-  await expect(projects.filter({hasText: "esono"})).toHaveCount(0);
-
-  await expect(page.locator(".spend-total")).toContainText("tokens");
-  // ⚠️ A bar whose width is NaN% renders at FULL width, so a broken share makes
-  // the emptiest day look like the busiest.
-  const widths = await page.locator(".spend-rail i").evaluateAll(bars =>
+  const widths = await page.locator(".use-rail i").evaluateAll(bars =>
     bars.map(bar => (bar as HTMLElement).style.width));
   expect(widths.every(width => /^[\d.]+%$/.test(width))).toBe(true);
+
+  /* ── What is left of the plan ─────────────────────────
+   * ⚠️ One agent reports this and the other does not, so it is drawn from
+   * whichever live session has it rather than from a row per agent: a "0% of
+   * unknown" line for Claude would be an invention. */
+  await expect(page.locator(".use-plan-name")).toContainText("Codex plus");
+  await expect(page.locator(".use-plan-slot")).toHaveCount(2);
+  await expect(page.locator(".use-plan-used").nth(0)).toHaveText("12%");
+  await expect(page.locator(".use-plan-used").nth(1)).toHaveText("41%");
   await page.screenshot({path: "test-results/island-spend.png"});
 });
 

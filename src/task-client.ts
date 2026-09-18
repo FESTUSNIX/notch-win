@@ -466,6 +466,37 @@ export async function call<T = void>(command: string, args: Record<string, unkno
        after a project that reads `0`. */
     {day:"", project:"esono", seconds:40, endedMs:Date.now()-9_000_000, waiting:false},
   ]) as T;
+  /* A week of buckets, the shape `usage.rs` keeps them in: one per day per
+     model per project. ⚠️ Written against a moving `today` rather than fixed
+     dates — a fixture with September in it draws a chart of seven empty
+     columns the moment the month turns, and the panel then looks broken
+     rather than unfed. */
+  if (command === "get_usage") return (quiet ? [] : (() => {
+    const day = (back: number) => {
+      const at = new Date();
+      at.setDate(at.getDate() - back);
+      const month = String(at.getMonth() + 1).padStart(2, "0");
+      return `${at.getFullYear()}-${month}-${String(at.getDate()).padStart(2, "0")}`;
+    };
+    return [
+      {day: day(6), provider: "claude", model: "claude-opus-5", project: "akcesfonia",
+       input: 1_900_000, output: 44_000, runs: 9, seconds: 2_400},
+      {day: day(5), provider: "claude", model: "claude-opus-5", project: "esono",
+       input: 640_000, output: 12_000, runs: 4, seconds: 900},
+      {day: day(3), provider: "codex", model: "gpt-6-astra", project: "esono-price-watch",
+       input: 2_100_000, output: 51_000, runs: 7, seconds: 3_100},
+      {day: day(2), provider: "claude", model: "claude-opus-5", project: "codenotch-win",
+       input: 3_400_000, output: 88_000, runs: 14, seconds: 6_200},
+      {day: day(0), provider: "claude", model: "claude-opus-5", project: "codenotch-win",
+       input: 2_960_000, output: 74_500, runs: 11, seconds: 4_800},
+      {day: day(0), provider: "claude", model: "claude-haiku-4-5", project: "codenotch-win",
+       input: 180_000, output: 3_200, runs: 3, seconds: 240},
+      {day: day(0), provider: "claude", model: "claude-opus-5", project: "akcesfonia",
+       input: 1_284_000, output: 38_200, runs: 6, seconds: 1_900},
+      {day: day(0), provider: "codex", model: "gpt-6-astra", project: "esono-price-watch",
+       input: 820_000, output: 19_400, runs: 4, seconds: 1_100},
+    ];
+  })()) as T;
   if (command === "get_audio_devices") return structuredClone(demoDevices) as T;
   if (command === "set_audio_device") {
     demoDevices = demoDevices.map(d => ({...d, isDefault: d.id === args.id}));
