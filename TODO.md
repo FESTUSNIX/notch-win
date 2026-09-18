@@ -114,6 +114,16 @@
   - [ ] The overview is not orderable or filterable. With a dozen sessions
         the grid is the right shape but "only the ones that want me" would
         be better than reading twelve cards.
+  - [x] **Each agent in its own colour**, on the mark only — the state keeps
+        the pip, the word and the wash.
+  - [x] **The week is a chart**, a line over an area, with the points over
+        their own days.
+  - [x] **Bigger type, no eyebrows.** Uppercase at .08em tracking was doing
+        the work of six different headings.
+  - [ ] The usage panel is within a few pixels of the island's height budget
+        on a 760px screen. Anything added to it has to come out of something
+        else until the island can scroll a screen without it reading as cut
+        off.
 
 ---
 

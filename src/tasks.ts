@@ -777,7 +777,18 @@ function paintBack() {
    * asked first, and the answer was always yes: the stop appears while you
    * stand on it, so the arrow never showed on either screen that needed it. */
   const sent = sentTo(screen);
-  back.hidden = !sent;
+  /* The other thing an arrow can mean here: a screen showing ONE of its own
+   * things rather than all of them. ⚠️ The same arrow, beside the same
+   * name, rather than one inside the panel — two arrows four millimetres
+   * apart are two answers to the question "how do I get out of this". */
+  const inside = screen === "agents" && agentsScreen.isDetailed();
+  back.hidden = !sent && !inside;
+  if (inside) {
+    back.setAttribute("aria-label", "All sessions");
+    back.setAttribute("data-tip", "All sessions");
+    if (!back.dataset.icon) paintIcon(back, "back");
+    return;
+  }
   if (!sent) return;
   const label = TABS.find(tab => tab.name === cameFrom)?.label ?? "Home";
   back.setAttribute("aria-label", `Back to ${label}`);
@@ -785,7 +796,14 @@ function paintBack() {
   if (!back.dataset.icon) paintIcon(back, "back");
 }
 
-get("island-back").addEventListener("click", () => show(cameFrom));
+get("island-back").addEventListener("click", () => {
+  // Inside a session, back is the list it came from. See `paintBack`.
+  if (screen === "agents" && agentsScreen.isDetailed()) {
+    agentsScreen.showList();
+    return;
+  }
+  show(cameFrom);
+});
 
 /* ── The header's right-hand end ─────────────────────────────────
  * Two chips that are true on every screen, so they can live on the one line
@@ -945,6 +963,12 @@ function render() {
   calendar.render();
   system.render();
   agentsScreen.render();
+  /* ⚠️ After the agents screen, on every render. Its arrow means two
+   * different things — "the screen you came from" and "all the sessions" —
+   * and the second one is decided by state that changes without the screen
+   * changing, so painting it only on a screen switch left it stale exactly
+   * when it mattered: opening a session put you inside one with no way out. */
+  paintBack();
   shelf.render();
   notes.render();
   review.render();

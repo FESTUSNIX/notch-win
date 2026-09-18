@@ -3644,3 +3644,44 @@ The two halves were the same fault.
      Walking to the Agents screen clears the open session; the strip opening
      it sets one. Both fire on the same tick when the island opens onto that
      screen — set first, and `show` wipes it before the frame is drawn.
+563. ⚠️ **An eyebrow is a label for a form field, not a heading.** Ten pixels
+     of uppercase at .08em tracking is the hardest text on a panel to read,
+     and it had ended up on every title of every block — which is not a
+     hierarchy, it is the same shout at six different things. Sentence case,
+     and a size difference between the section and its rows.
+564. ⚠️ **Whose agent it is and what it is doing are two facts, and they need
+     two channels.** The mark was painted in the state's colour, so the one
+     thing that never changes was drawn in the one colour that changes every
+     few seconds. The mark takes the agent's own colour — the terracotta out
+     of Anthropic's own SVG, the white OpenAI ships its mark in — and the
+     state keeps the pip, the word and the card's wash.
+565. ⚠️ **A sparkline spread from edge to edge is a seventh of a week out of
+     step with the labels under it.** Monday's trough sits over Tuesday, and
+     nothing about the picture looks wrong. The points belong over the MIDDLE
+     of each day's own column, with the line running flat out to either edge
+     so the chart still fills its box.
+566. ⚠️ **`preserveAspectRatio="none"` stretches the stroke with the
+     geometry.** A line drawn in a 100×40 space and stretched to 380 pixels
+     comes out visibly thinner along its flat stretches than up its steep
+     ones. `vector-effect: non-scaling-stroke` is the fix; a circle in that
+     space cannot be fixed at all, which is why the dot on today is an HTML
+     element placed over the chart.
+567. ⚠️ **A card inside a card says "there is more of this screen outside
+     me".** The island panel is already a rounded, shadowed card on the
+     desktop; a second one four pixels inside it, holding the whole screen, is
+     an edge that promises something beyond itself. Flat on the panel, with
+     the one raised thing being the quoted message — the only part that is
+     somebody else's words.
+568. ⚠️ **Two back arrows are two answers to "how do I get out of this".**
+     The island's own arrow sits beside the screen's name and every screen has
+     already taught you to look there; a second one inside the panel is four
+     millimetres away and means the same thing. The header's arrow learned the
+     second meaning instead — and has to be repainted on every RENDER, not
+     only on a screen change, because what it means now depends on state that
+     moves without the screen moving.
+569. ⚠️ **A panel that grew by twenty pixels opens the screen already
+     scrolled.** The island caps its height, so every block added to a screen
+     is spent from the same budget — and a screen that opens scrolled reads as
+     cut off rather than as long. Measured at the size the test uses (760px
+     tall, 427px of body) rather than eyeballed at whatever the window
+     happened to be.

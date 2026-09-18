@@ -764,9 +764,18 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await go.click();
   await expect(page.locator(".screen-error")).toHaveCount(0);
 
-  // And back is back to the overview, not to another screen.
-  await detail.locator(".agent-back").click();
+  /* And back is back to the overview — from the ISLAND'S arrow, beside the
+   * screen's name. ⚠️ Not a second arrow inside the panel: two of them four
+   * millimetres apart are two answers to "how do I get out of this", and the
+   * one in the header is where every other screen has already taught you to
+   * look. */
+  const arrow = page.locator("#island-back");
+  await expect(arrow).toBeVisible();
+  await expect(arrow).toHaveAttribute("aria-label", "All sessions");
+  await arrow.click();
   await expect(page.locator(".agent-card")).toHaveCount(4);
+  // And with nothing open it goes back to meaning nothing.
+  await expect(arrow).toBeHidden();
 
   /* Snoozing is offered on the waiting session and NOT on the quiet one:
    * muting something that is already saying nothing is a control that does
@@ -864,12 +873,23 @@ test("what the agents cost is cut three ways, and the week says whether today is
   await expect(days).toHaveCount(7);
   await expect(days.nth(6)).toHaveClass(/is-today/);
   await expect(page.locator(".use-day.is-today")).toHaveCount(1);
-  /* ⚠️ A bar whose height is NaN% renders at FULL height, so a broken share
-   * makes the emptiest day look like the busiest. */
-  const heights = await page.locator(".use-day i").evaluateAll(bars =>
-    bars.map(bar => (bar as HTMLElement).style.height));
-  expect(heights).toHaveLength(7);
-  expect(heights.every(height => /^[\d.]+%$/.test(height))).toBe(true);
+
+  /* ⚠️ A path with a NaN in it draws NOTHING — no error, no warning, an
+   * empty box where the chart was — which is the one failure mode of drawing
+   * arithmetic into an attribute. */
+  const line = await page.locator(".use-chart-line").getAttribute("d");
+  expect(line).toBeTruthy();
+  expect(line).not.toMatch(/NaN|Infinity|undefined/);
+  // One curve per day, plus the flat runs out to either edge.
+  expect((line!.match(/C/g) ?? [])).toHaveLength(6);
+
+  /* Today's dot sits over today's label. ⚠️ Spread from edge to edge the
+   * curve is a seventh of a week out of step with the names underneath it,
+   * and nothing about the picture looks wrong. */
+  const left = await page.locator(".use-chart-dot").evaluate(
+    dot => (dot as HTMLElement).style.left);
+  expect(parseFloat(left)).toBeGreaterThan(85);
+  expect(parseFloat(left)).toBeLessThan(100);
 
   /* ── By agent, which is the cut this panel never had ───────────
    * "Where" was answered and "on what" never was, and the second one is the

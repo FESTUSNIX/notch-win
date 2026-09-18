@@ -25,6 +25,7 @@
  */
 import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
+import { svgEl } from "./svg";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { call, native } from "./task-client";
 import { short } from "./spend";
@@ -82,6 +83,20 @@ export function markFor(provider?: string): TaskIcon {
   if (provider === "claude") return "claude";
   if (provider === "codex") return "codex";
   return "agent";
+}
+
+/** An agent's mark, in a plinth, tagged with whose it is.
+ *
+ * ⚠️ The data attribute is what lets the stylesheet paint it in the
+ * agent's OWN colour — Anthropic's terracotta, OpenAI's white — while the
+ * state keeps the pip, the word and the card's wash. Two facts, two channels:
+ * whose agent this is never changes, and what it is doing changes every few
+ * seconds, so putting both in the same colour loses whichever moved last. */
+function mark(where: string, session: { provider?: string }): HTMLElement {
+  const box = element("span", where);
+  box.dataset.agent = session.provider ?? "";
+  paintIcon(box, markFor(session.provider));
+  return box;
 }
 
 /** The agent's name, as a person says it. */
@@ -367,17 +382,10 @@ export class AgentsScreen {
     const quiet = isQuiet(`agent:${session.id}`);
     const card = element("div", `agent-detail is-${session.state}${quiet ? " is-quiet" : ""}`);
 
-    /* The way back to the overview. ⚠️ Inside the screen rather than in the
-     * island's own header: the header's arrow means "the screen you came
-     * from", and you did not come from a screen — you came from the strip. */
-    const back = element("button", "agent-back");
-    (back as HTMLButtonElement).type = "button";
-    back.setAttribute("aria-label", "All sessions");
-    back.dataset.tip = "All sessions";
-    paintIcon(back, "back");
-    back.onclick = () => { this.showList(); };
-    card.append(back);
-
+    /* ⚠️ The way back is the ISLAND'S arrow, beside the screen's name — see
+     * `paintBack`. A second arrow inside the panel is a second answer to the
+     * same question, four millimetres from the first, and the one in the
+     * header is where every other screen has already taught you to look. */
     const bell = this.bell(session, quiet);
     if (bell) card.append(bell);
 
@@ -386,9 +394,7 @@ export class AgentsScreen {
     head.setAttribute("aria-label", `Go to ${session.project}, ${WORDS[session.state]}`);
     head.onclick = () => { void this.focus(session); };
 
-    const mark = element("span", "agent-detail-mark");
-    paintIcon(mark, markFor(session.provider));
-    head.append(mark);
+    head.append(mark("agent-detail-mark", session));
 
     const who = element("div", "agent-detail-who");
     const line = element("div", "agent-detail-line");
@@ -418,7 +424,10 @@ export class AgentsScreen {
      * the question is "is it moving", which four lines answer — but this is
      * the screen somebody opened ON PURPOSE, and the next question after "is
      * it moving" is "what has it been doing", which needs a few more. */
-    const steps = this.steps(session, 6);
+    /* ⚠️ FOUR, not six. The question a checklist answers is "is it moving",
+     * and four lines answer it as well as forty — six turned the panel into a
+     * transcript, which is the thing you open the terminal for. */
+    const steps = this.steps(session, 4);
     if (steps) {
       const panel = element("div", "agent-panel");
       panel.append(element("h4", "agent-panel-title", "Doing"), steps);
@@ -518,11 +527,9 @@ export class AgentsScreen {
     };
 
     const top = element("div", "agent-card-top");
-    const mark = element("span", "agent-card-mark");
-    paintIcon(mark, markFor(session.provider));
     const state = element("span", "agent-card-state");
     state.append(element("i", "agent-pip"), element("span", "", liveWord(session)));
-    top.append(mark, state);
+    top.append(mark("agent-card-mark", session), state);
     card.append(top);
 
     card.append(element("div", "agent-card-name", session.project));
@@ -546,7 +553,11 @@ export class AgentsScreen {
         session.state === "waiting" ? "waiting" : "quiet"), clock);
     }
     card.append(line);
-    card.append(this.spent(session));
+    /* ⚠️ Only where something HAS been spent. A session this app picked up
+     * a minute ago reads "0 +0" against an empty rail, which is three pieces
+     * of furniture saying nothing — on the card whose whole job is the few
+     * things that are worth saying. */
+    if (session.input || session.output) card.append(this.spent(session));
     return card;
   }
 
@@ -584,30 +595,91 @@ export class AgentsScreen {
     return list;
   }
 
-  /** The week, as columns. ⚠️ Every day, including the empty ones — a chart
-   *  built from the days that HAVE data draws three days off as three days of
-   *  work in a row, which is the opposite of what it is claiming. */
+  /** The week, as a chart.
+   *
+   * ⚠️ A LINE over an area, not seven bars in boxes. Bars answer "how big
+   * was Tuesday" one column at a time; the question this is here for is
+   * whether today is normal, which is a shape — and at seven columns of
+   * forty pixels the bars spent most of their room drawing their own empty
+   * tracks.
+   *
+   * ⚠️ Every day, including the ones nothing ran on. A chart built from the
+   * days that HAVE data draws three days off as three days of work in a row,
+   * which is the opposite of what it is claiming.
+   */
   private week(days: Slice[]): HTMLElement {
     const most = Math.max(...days.map(spent), 1);
-    const chart = element("div", "use-week");
-    for (const day of days) {
-      const column = element("div", "use-day");
-      if (day.key === today()) column.classList.add("is-today");
-      const bar = element("i");
-      /* A floor here too, and for a different reason: an empty day has to be
-       * visibly a day rather than a gap in the row. */
-      bar.style.height = `${Math.max(spent(day) ? 8 : 3, (spent(day) / most) * 100)}%`;
-      /* ⚠️ The bar sits in a TRACK of its own. A bar alone on a dark ground
-       * has no ceiling — nothing says what a full day would look like — so a
-       * fifth of a day and two thirds of one read as the same smudge. */
-      const track = element("div", "use-day-track");
-      track.append(bar);
-      column.append(track);
-      column.append(element("span", "use-day-name", weekday(day.key).slice(0, 2)));
-      column.dataset.tip = `${weekday(day.key)} · ${short(spent(day))}`
-        + (day.runs ? ` · ${day.runs} run${day.runs === 1 ? "" : "s"}` : "");
-      chart.append(column);
+    const wrap = element("div", "use-chart");
+
+    /* The drawing space. ⚠️ `preserveAspectRatio="none"` stretches the
+     * geometry to whatever width the panel is, which would stretch the stroke
+     * with it — `vector-effect` on the paths is what keeps the line an even
+     * 1.5px at any width, and without it the line is visibly thinner along
+     * its flat stretches. */
+    const view = svgEl("svg", { viewBox: "0 0 100 40", preserveAspectRatio: "none",
+      class: "use-chart-svg", "aria-hidden": "true", focusable: "false" });
+    const defs = svgEl("defs", {});
+    const grad = svgEl("linearGradient", { id: "use-chart-fill", x1: "0", y1: "0", x2: "0", y2: "1" });
+    grad.append(
+      svgEl("stop", { offset: "0", "stop-color": "var(--accent)", "stop-opacity": ".34" }),
+      svgEl("stop", { offset: "1", "stop-color": "var(--accent)", "stop-opacity": "0" }),
+    );
+    defs.append(grad);
+    view.append(defs);
+
+    /* Points over the MIDDLE of each day's own column, with a little headroom
+     * at the top so the busiest day is not welded to the edge of its frame.
+     *
+     * ⚠️ The middle, not the edges. Spread from 0 to 100 the curve is a
+     * seventh of a week out of step with the labels underneath it — Monday's
+     * trough sits over Tuesday — and nothing about the picture looks wrong,
+     * which is the whole problem. The line runs flat out to each edge so the
+     * chart still fills its box. */
+    const step = 100 / days.length;
+    const at = (index: number) => (index + 0.5) * step;
+    const high = (day: Slice) => 38 - (spent(day) / most) * 33;
+    const points = days.map((day, index) => [at(index), high(day)] as const);
+
+    const line = points.map(([x, y], index) => {
+      if (!index) return `M0 ${y.toFixed(2)} L${x.toFixed(2)} ${y.toFixed(2)}`;
+      const [px, py] = points[index - 1];
+      /* A gentle curve rather than a kink at every point — and the control
+       * points sit on the HORIZONTAL midpoint, which is what stops a zero day
+       * between two busy ones from swinging the curve below the floor. */
+      const mid = (px + x) / 2;
+      return `C${mid.toFixed(2)} ${py.toFixed(2)} ${mid.toFixed(2)} ${y.toFixed(2)} `
+        + `${x.toFixed(2)} ${y.toFixed(2)}`;
+    }).join(" ");
+
+    /* Out to the right edge as well, so the fill has no notch in its corners. */
+    const full = `${line} L100 ${(points.at(-1)?.[1] ?? 38).toFixed(2)}`;
+    view.append(svgEl("path", { d: `${full} L100 40 L0 40 Z`, fill: "url(#use-chart-fill)" }));
+    view.append(svgEl("path", { d: full, class: "use-chart-line", fill: "none" }));
+    wrap.append(view);
+
+    /* Today, as a dot on the line. ⚠️ An HTML element placed over the chart
+     * rather than a circle inside it: the drawing space is stretched, and a
+     * circle in it comes out an ellipse as wide as the panel. */
+    const last = points.at(-1);
+    if (last) {
+      const dot = element("i", "use-chart-dot");
+      dot.style.left = `${last[0]}%`;
+      dot.style.top = `${(last[1] / 40) * 100}%`;
+      wrap.append(dot);
     }
+
+    /* One hover target per day, and the day's own initial under it. */
+    const labels = element("div", "use-days");
+    for (const day of days) {
+      const slot = element("div", "use-day");
+      if (day.key === today()) slot.classList.add("is-today");
+      slot.append(element("span", "use-day-name", weekday(day.key)));
+      slot.dataset.tip = `${weekday(day.key)} \u00b7 ${short(spent(day))}`
+        + (day.runs ? ` \u00b7 ${day.runs} run${day.runs === 1 ? "" : "s"}` : "");
+      labels.append(slot);
+    }
+    const chart = element("div", "use-week");
+    chart.append(wrap, labels);
     return chart;
   }
 
@@ -622,8 +694,7 @@ export class AgentsScreen {
     const { window: short5, week, plan } = live.limits;
     const row = element("div", "use-plan");
     const name = element("span", "use-plan-name");
-    paintIcon(name, markFor(live.provider));
-    name.append(element("span", "", plan
+    name.append(mark("use-plan-mark", live), element("span", "", plan
       ? `${agentName(live.provider)} ${plan}` : agentName(live.provider)));
     row.append(name);
     for (const [label, used] of [["5h", short5], ["week", week]] as const) {
@@ -678,9 +749,8 @@ export class AgentsScreen {
          * this panel never carried, on a screen whose whole subject is which
          * agent is doing what. */
         const name = element("span", "use-name");
-        const mark = element("span", "use-mark");
-        paintIcon(mark, markFor(row.key));
-        name.append(mark, element("span", "use-who", agentName(row.key)));
+        name.append(mark("use-mark", { provider: row.key }),
+          element("span", "use-who", agentName(row.key)));
         if (row.top) name.append(element("span", "use-model", modelName(row.top)));
         return name;
       }));
@@ -710,6 +780,12 @@ export class AgentsScreen {
     this.staged = first.id;
     this.detailed = true;
     this.changed();
+  }
+
+  /** Whether the screen is showing one session rather than the overview.
+   *  The island's header reads this to decide what its arrow means. */
+  isDetailed(): boolean {
+    return this.detailed && this.sessions.some(one => one.id === this.staged);
   }
 
   /** Back to the overview. */

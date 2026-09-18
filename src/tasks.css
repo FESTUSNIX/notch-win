@@ -2398,6 +2398,13 @@ html[data-motion=never] .t-text-swap { transition:none !important; }
      colour is something you read rather than something you look at. */
   --good: #30d158;    /* connected, healthy, nothing to do */
   --warn: #ff9f0a;    /* an agent waiting, a task overdue */
+  /* Whose agent it is, in its own colour. ⚠️ Both taken from the vendors'
+     own files rather than picked: the terracotta is the fill in Anthropic's
+     `claude-logo.svg`, and OpenAI ships its mark in black and white only —
+     white is the one for a dark surface. The STATE keeps the pip, the word
+     and the card's wash; this is the other fact, and it never changes. */
+  --mark-claude: #d97757;
+  --mark-codex: #f0efeb;
   --hot: #ff6961;     /* a disk at 97%, a CPU pinned */
   --cool: #5ac8fa;    /* the calendar, meetings */
   --calm: #a78bfa;    /* media */
@@ -3048,17 +3055,38 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    while what you came to find out is which of them has stopped. The mark
    carries whose agent it is; the colour carries what it is doing. */
 
+/* Whose agent it is, in the agent's own colour — and the plinth tinted from
+   the same `currentColor`, so a mark is lit from inside rather than sitting
+   in a grey box. ⚠️ The STATE is not in here: it has the pip, the word and
+   the card's own wash, and two facts sharing one channel loses whichever
+   moved last. */
+.agent-card-mark[data-agent="claude"],
+.agent-detail-mark[data-agent="claude"],
+.use-mark[data-agent="claude"],
+.use-plan-mark[data-agent="claude"] { color:var(--mark-claude); }
+.agent-card-mark[data-agent="codex"],
+.agent-detail-mark[data-agent="codex"],
+.use-mark[data-agent="codex"],
+.use-plan-mark[data-agent="codex"] { color:var(--mark-codex); }
+.agent-card-mark[data-agent], .agent-detail-mark[data-agent] {
+  background-color:color-mix(in srgb, currentColor 11%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, currentColor 20%, transparent), var(--gloss); }
+
 /* ── The overview ─────────────────────────────────────
    ⚠️ `auto-fill`, not `auto-fit`: with two sessions open, `auto-fit` stretches
    them across the whole panel and they stop being cards — the same rule the
    shelf grid documents. ⚠️ And `align-content:start`, or the rows stretch to
    fill whatever height the island last had and feed that back into its own
    measurement. */
-.agent-grid { display:grid; gap:9px; align-content:start;
-  grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); }
+.agent-grid { display:grid; gap:10px; align-content:start;
+  /* ⚠️ 166, which is what puts FOUR across the island's own width. The
+     number is not a taste: at 186 a fourth session wrapped onto a row of its
+     own with two thirds of it empty, which is the layout this grid replaced,
+     one row further down. */
+  grid-template-columns:repeat(auto-fill, minmax(166px, 1fr)); }
 
-.agent-card { display:flex; flex-direction:column; align-items:stretch; gap:7px;
-  padding:11px 12px 10px; border-radius:var(--r-tile); text-align:left; width:100%;
+.agent-card { display:flex; flex-direction:column; align-items:stretch; gap:8px;
+  padding:13px 14px 12px; border-radius:var(--r-tile); text-align:left; width:100%;
   background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1);
   transition:background-color var(--duration-quick) var(--ease-smooth-out),
@@ -3075,32 +3103,28 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 
 .agent-card-top { display:flex; align-items:center; justify-content:space-between;
   gap:8px; }
-.agent-card-mark { display:grid; place-items:center; width:28px; height:28px;
+.agent-card-mark { display:grid; place-items:center; width:30px; height:30px;
   flex-shrink:0; border-radius:9px; color:#8b8b8b;
   background-color:rgba(255,255,255,.05); background-image:var(--sheen);
   box-shadow:inset 0 0 0 1px var(--hair), var(--gloss);
   transition:scale var(--duration-fast) var(--ease-smooth-out),
     color var(--duration-quick) var(--ease-smooth-out); }
-.agent-card-mark svg { width:16px; height:16px; }
-.agent-card-state { display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
-  font-size:10px; font-weight:600; color:#7e7e7e; }
-.agent-card-name { font-size:13.5px; font-weight:600; letter-spacing:-.01em;
+.agent-card-mark svg { width:17px; height:17px; }
+.agent-card-state { display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
+  font-size:11.5px; font-weight:600; color:#8e8e8e; }
+.agent-card-name { font-size:15px; font-weight:600; letter-spacing:-.012em;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-card-meta { display:flex; align-items:baseline; gap:6px; min-width:0;
-  font-size:10.5px; color:#6e6e6e; }
-.agent-card-meta > * + *::before { content:"·"; margin-right:6px; color:#4a4a4a; }
-.agent-card-doing { font-size:11px; color:#8e8e8e; min-height:16px;
+.agent-card-meta { display:flex; align-items:baseline; gap:7px; min-width:0;
+  font-size:12px; color:#9a9a9a; }
+.agent-card-meta > * + *::before { content:"·"; margin-right:7px; color:#565656; }
+/* What it is doing, at a size somebody can read across a desk. ⚠️ This is
+   the one LIVE line on a card and it was the smallest, dimmest thing on it. */
+.agent-card-doing { font-size:12px; color:#a6a6a6; min-height:17px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-card-doing.is-quiet { color:#5a5a5a; display:flex; gap:5px; }
+.agent-card-doing.is-quiet { color:#767676; display:flex; gap:6px; }
 
 /* The state's colour, on the parts that carry state. */
-.agent-card.is-working .agent-card-mark { color:var(--accent);
-  background-color:color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent), var(--gloss); }
 .agent-card.is-working .agent-card-state { color:var(--accent); }
-.agent-card.is-waiting .agent-card-mark { color:var(--warn);
-  background-color:rgba(255,159,10,.14);
-  box-shadow:inset 0 0 0 1px rgba(255,159,10,.28), var(--gloss); }
 .agent-card.is-waiting .agent-card-state { color:var(--warn); }
 .agent-card.is-waiting { background-image:
   linear-gradient(180deg, rgba(255,159,10,.08), transparent 55%), var(--sheen); }
@@ -3122,60 +3146,47 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    take — a checklist, a sentence, a pair of figures — and the version of this
    that was tucked into the overview had them at 10 and 11 pixels with
    four-pixel gaps: a density for scanning past, not for stopping on. */
-.agent-detail { position:relative; padding:20px 20px 16px; border-radius:var(--r-tile);
-  background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
-.agent-detail.is-working { background-image:
-  linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 46%),
-  var(--sheen); }
-.agent-detail.is-waiting { background-image:
-  linear-gradient(180deg, rgba(255,159,10,.1), transparent 46%), var(--sheen); }
+/* ⚠️ FLAT. The island panel is already a card — rounded, shadowed, sitting
+   on the desktop — and a second one inside it with its own edge four pixels
+   in is a box in a box: the inner edge says "there is more of this screen
+   outside me", which on a screen that is only this is a lie. The one raised
+   thing left is the quoted message, which is the only thing here that is
+   somebody else's words. */
+.agent-detail { position:relative; padding:4px 2px 2px; }
 .agent-detail.is-quiet { opacity:.6; }
-
-/* The way back, and the bell, in the corners the copy does not use. */
-.agent-back { position:absolute; top:12px; left:12px; width:28px; height:28px;
-  padding:0; border-radius:50%; display:grid; place-items:center; color:#6a6a6a; }
-.agent-back svg { width:15px; height:15px; }
-.agent-back:hover { background:var(--tile-on); color:#fff; }
-.agent-detail > .agent-snooze { position:absolute; top:12px; right:12px; }
+.agent-detail > .agent-snooze { position:absolute; top:0; right:0; }
 
 .agent-detail-head { display:flex; align-items:center; gap:14px; width:100%;
-  min-width:0; padding:0 0 0 30px; text-align:left; background:transparent; }
+  min-width:0; padding:0; text-align:left; background:transparent; }
 .agent-detail-head:hover { background:transparent; }
 .agent-detail-head:hover .agent-detail-name { color:#fff; text-decoration:underline;
   text-underline-offset:4px; text-decoration-color:rgba(255,255,255,.28); }
 .agent-detail-head:active { scale:.995; transition-duration:90ms; }
 /* 40px: this is the one thing on the screen that says whose agent it is, and
    the screen is now about exactly one session. */
-.agent-detail-mark { display:grid; place-items:center; width:40px; height:40px;
-  flex-shrink:0; border-radius:13px; color:#8b8b8b;
+.agent-detail-mark { display:grid; place-items:center; width:42px; height:42px;
+  flex-shrink:0; border-radius:14px; color:#8b8b8b;
   background-color:rgba(255,255,255,.05); background-image:var(--sheen);
   box-shadow:inset 0 0 0 1px var(--hair), var(--gloss); }
-.agent-detail-mark svg { width:22px; height:22px; }
-.agent-detail.is-working .agent-detail-mark { color:var(--accent);
-  background-color:color-mix(in srgb, var(--accent) 13%, transparent);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent), var(--gloss); }
-.agent-detail.is-waiting .agent-detail-mark { color:var(--warn);
-  background-color:rgba(255,159,10,.15);
-  box-shadow:inset 0 0 0 1px rgba(255,159,10,.3), var(--gloss); }
+.agent-detail-mark svg { width:23px; height:23px; }
 
 .agent-detail-who { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
 .agent-detail-line { display:flex; align-items:center; gap:10px; min-width:0; }
-.agent-detail-name { font-size:17px; font-weight:600; letter-spacing:-.015em;
+.agent-detail-name { font-size:19px; font-weight:600; letter-spacing:-.018em;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .agent-live-state { display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
-  font-size:11.5px; font-weight:600; color:#8b8b8b; }
+  font-size:13px; font-weight:600; color:#9a9a9a; }
 .is-working .agent-live-state { color:var(--accent); }
 .is-waiting .agent-live-state { color:var(--warn); }
 /* The facts line: whose agent, which model, which branch.
    ⚠️ The separators are PSEUDO-ELEMENTS. Put in the markup they would be
    inside the model's own element, and every reader of that text — a test, a
    screen reader, a copy — would get "· Opus 5" instead of "Opus 5". */
-.agent-detail-meta { display:flex; align-items:center; gap:8px; min-width:0;
-  font-size:11.5px; color:#787878; }
+.agent-detail-meta { display:flex; align-items:center; gap:9px; min-width:0;
+  font-size:13px; color:#909090; }
 .agent-detail-meta > * + *::before { content:"·"; margin-right:8px; color:#4a4a4a; }
-.agent-agent { color:#a2a2a2; font-weight:600; }
-.agent-model { color:#8e8e8e; overflow:hidden; text-overflow:ellipsis;
+.agent-agent { color:#c0c0c0; font-weight:600; }
+.agent-model { color:#9c9c9c; overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
 .agent-branch { font-variant-numeric:tabular-nums; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; max-width:130px; }
@@ -3184,15 +3195,17 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 /* Two panels: a list of actions, and one sentence of prose. Stacked, the
    sentence reads as one more step. */
 .agent-detail-body { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
-  gap:16px; align-items:start; margin-top:18px; }
+  gap:22px; align-items:start; margin-top:22px; }
 .agent-detail-body:has(> .agent-panel:only-child) { grid-template-columns:minmax(0, 1fr); }
 .agent-panel { min-width:0; }
-.agent-panel-title { margin:0 0 7px; font-size:9.5px; font-weight:600;
-  letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.3); }
+/* See `.spend-title`. Sentence case at a readable size — an eyebrow over
+   every block on the screen is a form, not a hierarchy. */
+.agent-panel-title { margin:0 0 9px; font-size:12.5px; font-weight:600;
+  color:#a8a8a8; }
 
-.agent-steps { display:flex; flex-direction:column; gap:4px; min-width:0; }
-.agent-step { display:flex; align-items:center; gap:9px; min-width:0;
-  font-size:12.5px; line-height:1.5; color:#8a8a8a;
+.agent-steps { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.agent-step { display:flex; align-items:center; gap:10px; min-width:0;
+  font-size:13.5px; line-height:1.55; color:#9c9c9c;
   /* The stagger: each line arrives a beat after the one above, which is what
      makes a list that appeared all at once read as a list that was WRITTEN. */
   animation:agent-step-in var(--duration-fast) var(--ease-smooth-out) backwards;
@@ -3202,11 +3215,11 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   to { opacity:1; translate:0 0; filter:blur(0); }
 }
 @media (prefers-reduced-motion: reduce) { .agent-step { animation:none; } }
-.agent-tick { display:grid; place-items:center; width:15px; height:15px;
-  flex-shrink:0; color:#5a5a5a; }
+.agent-tick { display:grid; place-items:center; width:16px; height:16px;
+  flex-shrink:0; color:#6a6a6a; }
 /* ⚠️ 12px, so `paintIcon`'s own 20 is overridden here as it is on the head
    marks. A tick at icon size beside 12px text is a bullet, not a tick. */
-.agent-tick svg { width:12px; height:12px; }
+.agent-tick svg { width:13px; height:13px; }
 .agent-step-say { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .is-working .agent-step.is-done .agent-tick { color:color-mix(in srgb, var(--accent) 62%, transparent); }
 .is-waiting .agent-step.is-done .agent-tick { color:rgba(255,159,10,.6); }
@@ -3217,34 +3230,34 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .is-waiting .agent-step.is-now .agent-tick { color:var(--warn); }
 
 /* The sentence, as something said rather than as another field. */
-.agent-bubble { padding:11px 13px; border-radius:14px 14px 14px 5px;
+.agent-bubble { padding:13px 15px; border-radius:14px 14px 14px 5px;
   background-color:var(--tile-hi); box-shadow:inset 0 0 0 1px var(--hair);
   min-width:0; }
-.agent-bubble-say { margin:0; font-size:12.5px; line-height:1.55; color:#d6d6d6;
+.agent-bubble-say { margin:0; font-size:13.5px; line-height:1.6; color:#dcdcdc;
   overflow:hidden; display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; }
 /* A thought is not a statement. Same box, quieter ink. */
-.agent-bubble.is-thought .agent-bubble-say { color:#a0a0a0; font-style:italic; }
+.agent-bubble.is-thought .agent-bubble-say { color:#b0b0b0; font-style:italic; }
 
 /* ── The figures ──────────────────────────────────────
    ⚠️ With their units under them. "5.6M / 18k" is two facts run together in
    the hope the reader remembers which way round they go; on a card that trade
    buys the width, and here there is no width problem to trade against. */
-.agent-facts { display:flex; gap:24px; margin-top:18px; }
+.agent-facts { display:flex; gap:32px; margin-top:22px; }
 .agent-fact { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.agent-fact-value { font-size:15px; font-weight:600; color:#e4e4e4;
-  font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
-.agent-fact-what { font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
-  color:rgba(255,255,255,.32); }
+.agent-fact-value { font-size:19px; font-weight:600; color:#ededed;
+  font-variant-numeric:tabular-nums; letter-spacing:-.015em; }
+/* See `.spend-title`: the unit is a word under a number, not an eyebrow. */
+.agent-fact-what { font-size:11.5px; color:#8e8e8e; }
 
 /* ── What a session has spent ────────────────────────────
    ⚠️ The bar is the OUTPUT share, not the total. The total is the two
    figures beside it; how much of a session was the model talking back is what
    tells a long read apart from a long write, and no number says it at a
    glance. */
-.agent-spend { display:flex; align-items:center; gap:7px; margin-top:auto;
-  padding-top:8px; font-size:10px; color:#5f5f5f; font-variant-numeric:tabular-nums; }
+.agent-spend { display:flex; align-items:center; gap:8px; margin-top:auto;
+  padding-top:9px; font-size:11.5px; color:#7e7e7e; font-variant-numeric:tabular-nums; }
 .agent-detail .agent-spend { margin-top:14px; padding-top:0; }
-.agent-spend-out { color:#8a8a8a; }
+.agent-spend-out { color:#a6a6a6; }
 .agent-spend-rail { flex:1; height:3px; border-radius:999px; min-width:24px;
   background:rgba(255,255,255,.07); overflow:hidden; }
 .agent-spend-rail i { display:block; height:100%; border-radius:999px;
@@ -3401,14 +3414,18 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    The usage notch says the window is going; this says what ate it. Under the
    sessions rather than above them: the live ones are why you opened the
    screen, and this is what you look at second. */
-.spend { margin-top:14px; padding:12px 13px; border-radius:var(--r-tile);
+.spend { margin-top:15px; padding:14px 16px 13px; border-radius:var(--r-tile);
   background-color:var(--tile); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 .spend-head { display:flex; align-items:baseline; justify-content:space-between;
   gap:10px; margin-bottom:9px; }
-.spend-title { margin:0; font-size:10px; font-weight:600; letter-spacing:.08em;
-  text-transform:uppercase; color:rgba(255,255,255,.42); }
-.spend-total { font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+/* ⚠️ A HEADING, not an eyebrow. Ten pixels of uppercase at .08em tracking
+   is a label for a form field — it is the hardest thing on the panel to read
+   and it was being used for every title on it. Sentence case, at a size that
+   says which of these is the section and which is the row. */
+.spend-title { margin:0; font-size:15px; font-weight:600; letter-spacing:-.01em;
+  color:#fff; }
+.spend-total { font-size:12.5px; color:#9a9a9a; font-variant-numeric:tabular-nums; }
 /* ── The week ─────────────────────────────────────────
    Seven columns, so today has something to be bigger or smaller THAN. One
    number cannot say whether a day was heavy; the same number with six days
@@ -3419,89 +3436,94 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    by side, the shape of the week and the list of who spent it are one glance
    — and the panel is half as tall, which is what made room for it at all. */
 .use-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
-  gap:18px; align-items:start; }
+  gap:28px; align-items:start; margin-top:14px; }
 .use-grid:has(> .use-col:only-child) { grid-template-columns:minmax(0, 1fr); }
 .use-col { min-width:0; display:flex; flex-direction:column; }
-/* The first heading in a column sits under the panel's own head, which has
-   already opened the space it needs. */
-.use-col > .use-cut:first-child { margin-top:0; }
 
-.use-week { display:flex; align-items:flex-end; gap:4px; height:46px; }
-/* ⚠️ Each column has a TRACK. Bars alone on a dark ground read as a row of
-   loose pills — there is no baseline and no ceiling, so a short day and an
-   empty one look like the same nothing. The track is what makes a bar a
-   fraction of something. */
-.use-day { flex:1; display:flex; flex-direction:column; align-items:stretch;
-  height:100%; padding:0; background:transparent; }
-.use-day-track { flex:1; display:flex; align-items:flex-end; min-height:0;
-  border-radius:4px; background:rgba(255,255,255,.04);
-  box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; }
-.use-day-name { font-size:8.5px; letter-spacing:.04em; text-transform:uppercase;
-  color:rgba(255,255,255,.24); text-align:center; margin-top:4px; }
-.use-day.is-today .use-day-name { color:rgba(255,255,255,.55); }
-/* ⚠️ Well clear of the track it sits in. At 14% white on a 4% track the bar
-   and the box behind it were the same grey, so a 20% day and a 60% day looked
-   like two empty boxes with a smudge in them. */
-.use-day i { display:block; width:100%; border-radius:3px;
-  background:rgba(255,255,255,.34);
-  transition:height var(--duration-slow) var(--ease-smooth-out); }
-.use-day:hover i { background:rgba(255,255,255,.5); }
-/* ⚠️ Today is the ACCENT, not merely brighter. Six grey columns and one
-   slightly-less-grey column is a difference you have to look for, on the one
-   column the eye came here to find. */
-.use-day.is-today i { background:linear-gradient(180deg,
-  var(--accent), color-mix(in srgb, var(--accent) 55%, transparent)); }
+/* Section titles. See `.spend-title`: sentence case, and big enough to be
+   read rather than decoded. */
+.use-cut { margin:0 0 8px; font-size:12.5px; font-weight:600; color:#a8a8a8; }
+.use-col > .use-cut + .use-list + .use-cut { margin-top:16px; }
+
+/* ── The week ─────────────────────────────────────────
+   A line over an area. ⚠️ Bars answered "how big was Tuesday" one column at
+   a time; the question this is here for is whether today is normal, which is
+   a SHAPE — and at seven columns of forty pixels the bars spent most of their
+   room drawing their own empty tracks. */
+.use-week { display:flex; flex-direction:column; gap:7px; }
+.use-chart { position:relative; height:70px; }
+/* `overflow:visible`, because the dot sits ON the line and the line touches
+   the top of its own box on the busiest day. */
+.use-chart-svg { position:absolute; inset:0; width:100%; height:100%;
+  overflow:visible; }
+/* ⚠️ `non-scaling-stroke`: the drawing space is stretched to the panel's
+   width, and without this the stroke is stretched with it — visibly thinner
+   along the flat stretches than up the steep ones. */
+.use-chart-line { stroke:var(--accent); stroke-width:1.75; fill:none;
+  stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
+.use-chart-dot { position:absolute; width:7px; height:7px; border-radius:50%;
+  background:var(--accent); translate:-50% -50%;
+  box-shadow:0 0 0 3.5px color-mix(in srgb, var(--accent) 20%, transparent); }
+
+.use-days { display:flex; }
+.use-day { flex:1; padding:3px 0; border-radius:6px; text-align:center;
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.use-day:hover { background-color:rgba(255,255,255,.05); }
+.use-day-name { font-size:11px; color:#767676; }
+.use-day.is-today .use-day-name { color:var(--accent); font-weight:600; }
 
 /* ── A cut of the day ────────────────────────────────── */
-.use-cut { margin:9px 0 5px; font-size:9.5px; font-weight:600; letter-spacing:.07em;
-  text-transform:uppercase; color:rgba(255,255,255,.28); }
-.use-list { display:flex; flex-direction:column; gap:3px; }
-.use-row { display:flex; align-items:center; gap:9px; }
-.use-name { display:flex; align-items:center; gap:6px; min-width:96px; max-width:132px;
-  flex-shrink:0; font-size:11.5px; color:#c4c4c4; overflow:hidden;
+.use-list { display:flex; flex-direction:column; gap:6px; }
+.use-row { display:flex; align-items:center; gap:11px; }
+.use-name { display:flex; align-items:center; gap:7px; min-width:104px; max-width:148px;
+  flex-shrink:0; font-size:12.5px; color:#d4d4d4; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
-.use-mark { display:grid; place-items:center; width:15px; height:15px; flex-shrink:0;
+.use-mark { display:grid; place-items:center; width:17px; height:17px; flex-shrink:0;
   color:#8e8e8e; }
-/* ⚠️ 13px: `paintIcon` draws at 20, which beside 11.5px text is a picture
+/* ⚠️ 15px: `paintIcon` draws at 20, which beside 12.5px text is a picture
    with a caption rather than a name with a mark. */
-.use-mark svg { width:13px; height:13px; }
-.use-who { flex-shrink:0; }
+.use-mark svg { width:15px; height:15px; }
+.use-who { flex-shrink:0; font-weight:500; }
 /* The model is the quiet half of the name, not a second column: which model
    only means anything attached to whose agent it was. */
-.use-model { color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.use-rail { flex:1; height:5px; border-radius:999px; background:rgba(0,0,0,.3);
+.use-model { color:#8a8a8a; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.use-rail { flex:1; height:6px; border-radius:999px; background:rgba(0,0,0,.3);
   box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; min-width:24px; }
-/* ⚠️ The accent, not a colour per agent. Two brands' worth of paint on one
-   panel is a legend to learn for an ordering the bar lengths already give —
-   and the marks beside them already say which is which. */
+/* ⚠️ The accent, not a colour per agent. The MARK carries whose it is; two
+   brands' worth of paint on the bars as well would be a legend to learn for
+   an ordering the lengths already give. */
 .use-rail i { display:block; height:100%; border-radius:999px;
   background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
   transition:width var(--duration-slow) var(--ease-smooth-out); }
-.use-tokens { font-size:11px; color:var(--dim); min-width:42px; text-align:right;
+.use-tokens { font-size:12.5px; color:#b0b0b0; min-width:46px; text-align:right;
   font-variant-numeric:tabular-nums; flex-shrink:0; }
 
 /* ── What is left of the plan ─────────────────────────────
    Only one agent reports this, and only while a session is live. It is the
    one figure here that is not about what you SPENT but about what you have
-   got left, so it sits above the breakdowns rather than among them. */
-.use-plan { display:flex; align-items:center; gap:10px; padding:7px 9px; margin-bottom:4px;
-  border-radius:9px; background:rgba(255,255,255,.035);
+   got left, so it sits under the week rather than among the breakdowns. */
+.use-plan { display:flex; align-items:center; gap:14px; padding:10px 12px;
+  margin-top:14px; border-radius:11px; background:rgba(255,255,255,.035);
   box-shadow:inset 0 0 0 1px var(--hair); }
-.use-plan-name { display:flex; align-items:center; gap:6px; flex-shrink:0;
-  font-size:11px; color:#b4b4b4; text-transform:capitalize; }
-.use-plan-name svg { width:13px; height:13px; }
-.use-plan-slot { display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
-.use-plan-label { font-size:9.5px; color:#5f5f5f; flex-shrink:0; }
-.use-meter { flex:1; height:4px; border-radius:999px; background:rgba(0,0,0,.35);
+.use-plan-name { display:flex; align-items:center; gap:7px; flex-shrink:0;
+  font-size:12.5px; color:#c4c4c4; text-transform:capitalize; }
+.use-plan-mark { display:grid; place-items:center; width:16px; height:16px;
+  flex-shrink:0; color:#8e8e8e; }
+.use-plan-mark svg { width:15px; height:15px; }
+.use-plan-slot { display:flex; align-items:center; gap:7px; flex:1; min-width:0; }
+.use-plan-label { font-size:11px; color:#767676; flex-shrink:0; }
+.use-meter { flex:1; height:5px; border-radius:999px; background:rgba(0,0,0,.35);
   box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden; min-width:20px; }
 .use-meter i { display:block; height:100%; border-radius:999px;
-  background:color-mix(in srgb, var(--accent) 70%, #fff 0%);
+  background:color-mix(in srgb, var(--accent) 72%, transparent);
   transition:width var(--duration-slow) var(--ease-smooth-out); }
 /* Nearly out is the one state worth a colour of its own: it is the only
    reading here that changes what you would do next. */
 .use-meter.is-high i { background:var(--warn); }
-.use-plan-used { font-size:10px; color:#8e8e8e; font-variant-numeric:tabular-nums;
-  min-width:26px; text-align:right; flex-shrink:0; }
+.use-plan-used { font-size:12px; color:#a4a4a4; font-variant-numeric:tabular-nums;
+  min-width:30px; text-align:right; flex-shrink:0; }
+
 
 .snooze-clear { padding:0 3px; font-size:inherit; color:var(--accent); background:transparent; }
 .snooze-clear:hover { background:transparent; text-decoration:underline; }
