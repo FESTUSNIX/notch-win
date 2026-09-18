@@ -56,6 +56,8 @@ interface Prefs {
   pomodoroPill: string;
   ringStops: string[];
   ringGlass: boolean;
+  ringHoldMs: number;
+  ringTap: string;
   followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
@@ -221,10 +223,14 @@ const PANE_HTML: Record<PaneId, string> = {
     <div class="set-group" id="rail-screens">
     </div></div>
     <div><p class="set-label">The ring</p>
-    <p class="set-why">Hold the key and let go to pick; tap it to leave the ring up. Eight at most — nothing chosen means the screens on your rail.</p>
+    <p class="set-why">Tap the key for one thing; hold it to bring the ring up, aim, and let go to pick.</p>
     <div class="set-group">
+      ${row("A tap does", "", `<select id="ring-tap"></select>`)}
+      ${row("Hold to open the ring", "",
+        `<input type="range" id="ring-hold" min="120" max="800" step="10"><span class="set-value" id="ring-hold-value"></span>`)}
       ${row("Frosted", "", check("ring-glass"))}
     </div>
+    <p class="set-why">Eight at most — nothing chosen means the screens on your rail.</p>
     <div id="ring-stops"></div></div>`,
 
   pill: `
@@ -393,6 +399,7 @@ let prefs: Prefs = {
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
   pomodoroPill: "bar", ringStops: [], ringGlass: true, followLive: true,
+  ringHoldMs: 250, ringTap: "@search",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -560,6 +567,15 @@ foldDelay.oninput = () => {
   savePrefs();
 };
 
+/* How long the ring's key has to be held before the ring is drawn. Under it,
+ * the press is a tap and does something else entirely. */
+const ringHold = get<HTMLInputElement>("ring-hold");
+ringHold.oninput = () => {
+  prefs.ringHoldMs = Number(ringHold.value);
+  get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;
+  savePrefs();
+};
+
 const POMODORO = [
   ["pom-work", "pomodoroWork"], ["pom-break", "pomodoroBreak"], ["pom-long", "pomodoroLong"],
 ] as const;
@@ -637,6 +653,31 @@ function accentNow(): string {
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue("--accent").trim();
   return /^#[0-9a-f]{6}$/i.test(raw) ? raw : "#00ff88";
+}
+
+/** What a TAP of the ring's key does.
+ *
+ * ⚠️ The same list the ring itself holds, plus the palette — a tap is the
+ * ring's middle without the ring, so anything the ring can do it can do. The
+ * palette leads because it is what most presses of that key were going to
+ * anyway, which is the whole reason a tap stopped drawing a menu first.
+ */
+function paintTap() {
+  const select = get<HTMLSelectElement>("ring-tap");
+  select.replaceChildren();
+  const add = (value: string, label: string) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  };
+  add("@search", "Command palette");
+  for (const stop of ringChoices(SCREENS)) add(stop.id, stop.label);
+  select.value = prefs.ringTap || "@search";
+  select.onchange = () => {
+    prefs.ringTap = select.value;
+    savePrefs();
+  };
 }
 
 /** What the ring holds.
@@ -1233,6 +1274,9 @@ function paintPrefs() {
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
+  get<HTMLInputElement>("ring-hold").value = String(prefs.ringHoldMs);
+  get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;
+  paintTap();
   paintScreens();
   paintRing();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;

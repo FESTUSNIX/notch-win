@@ -177,35 +177,97 @@ fn all_down(keys: &[i32]) -> bool {
             .all(|key| unsafe { (GetAsyncKeyState(*key) as u16 & 0x8000) != 0 })
 }
 
-/// Wait for the ring's key to come up, and commit if it was HELD.
+/// The whole gesture, from the key going down to it coming up.
 ///
-/// ⚠️ One thread per opening, and it ends with the gesture. 16ms is a frame:
-/// a poll slower than that is a pick that lands visibly late, and one faster
-/// is spending a core on a key nobody is pressing.
-fn watch_release(app: AppHandle, shortcut: String) {
+/// ⚠️ **A tap is not a small hold.** Pressed and let go, this key opens the
+/// command palette (or whatever else is configured) and the ring is never
+/// drawn at all — which is the right trade for a key you press forty times a
+/// day: the palette is where most of those presses were going anyway, and a
+/// menu that flashes up for 90ms on the way there is noise. The ring is what
+/// you get for holding on, and by then your hand has already decided.
+///
+/// ⚠️ And it is all in ONE place: opening, the tap, the pick and the giving
+/// up. The previous version had the press in the handler, the release in a
+/// thread and the toggle inside `ring::open`, and the three of them disagreed
+/// about what state the world was in — which is how the ring ended up
+/// impossible to open at all.
+///
+/// ⚠️ It says what it did, to the log. Every part of this is invisible: a
+/// gesture that quietly does nothing is indistinguishable from a shortcut
+/// Windows never delivered, and that cost two rounds of guessing.
+fn gesture(app: AppHandle, shortcut: String) {
     let keys = keys_of(&shortcut);
     if keys.is_empty() {
+        /* Nothing to watch for, so there is no tap and no hold — the ring
+         * opens on the press, the way it always did. A shortcut made of keys
+         * this file cannot name is rare enough to be worth a fallback rather
+         * than a refusal. */
+        crate::log::note(&format!("ring: {shortcut} has no watchable keys, opening at once"));
+        let hand = app.clone();
+        let _ = app.run_on_main_thread(move || crate::ring::open(&hand));
         return;
     }
     std::thread::spawn(move || {
+        let prefs = crate::prefs::current(&app);
+        let hold = prefs.ring_hold_ms.clamp(80, 2000);
         let since = now_ms();
+        let mut opened = false;
         loop {
             std::thread::sleep(std::time::Duration::from_millis(16));
-            /* The ring went away by other means — picked with the mouse, or
-             * dismissed. Nothing to wait for. */
-            if !crate::ring::showing(&app) {
-                RING_DOWN.store(0, Ordering::SeqCst);
-                return;
-            }
-            if all_down(&keys) {
+            let held = now_ms().saturating_sub(since);
+            let down = all_down(&keys);
+
+            /* Held long enough: the ring comes up under the pointer. ⚠️ On the
+             * MAIN thread. Showing a window from a worker is a thing tauri
+             * will do and Windows will occasionally not, and the failure is a
+             * window that exists and is not on screen. */
+            if down && !opened && held >= hold {
+                opened = true;
+                crate::log::note(&format!("ring: held {held}ms, opening"));
+                let hand = app.clone();
+                let _ = app.run_on_main_thread(move || crate::ring::open(&hand));
                 continue;
             }
-            /* ⚠️ `swap`, so whoever gets here first owns the release. The
-             * plugin's own `Released` may yet arrive on some machine, and two
-             * commits for one gesture would pick twice. */
-            let down = RING_DOWN.swap(0, Ordering::SeqCst);
-            if down != 0 && now_ms().saturating_sub(since) >= crate::ring::HOLD.as_millis() as u64 {
+
+            if down {
+                /* Somebody dismissed it by walking away from it — see
+                 * `ring::spawn`. The gesture is over even though the key is
+                 * still down; releasing it must not then pick something. */
+                if opened && !crate::ring::showing(&app) {
+                    crate::log::note("ring: went away while the key was down");
+                    RING_DOWN.store(0, Ordering::SeqCst);
+                    return;
+                }
+                /* ⚠️ A key that never comes up. The plugin has been seen to
+                 * lose a release, and `GetAsyncKeyState` cannot be wrong for
+                 * thirty seconds — but if it is, this is what stops a thread
+                 * polling for the rest of the session. */
+                if held > 30_000 {
+                    crate::log::note("ring: gave up waiting for the key");
+                    RING_DOWN.store(0, Ordering::SeqCst);
+                    return;
+                }
+                continue;
+            }
+
+            /* Let go. ⚠️ `swap`, so whoever gets here first owns the gesture:
+             * the plugin's own `Released` may yet arrive on some machine, and
+             * two commits for one press would pick twice. */
+            let owned = RING_DOWN.swap(0, Ordering::SeqCst) != 0;
+            if !owned {
+                return;
+            }
+            if opened {
+                crate::log::note(&format!("ring: let go after {held}ms, picking"));
                 crate::ring::commit(&app);
+            } else {
+                /* A tap. ⚠️ The ring was never drawn, so there is nothing to
+                 * aim at and nothing to close — this is the whole reason the
+                 * ring is not opened on the press any more. */
+                let what = prefs.ring_tap.clone();
+                crate::log::note(&format!("ring: tapped after {held}ms, doing {what}"));
+                let hand = app.clone();
+                let _ = app.run_on_main_thread(move || crate::ring::ring_pick(hand, what));
             }
             return;
         }
@@ -452,45 +514,36 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                     match event.state() {
                         ShortcutState::Pressed => {
                             /* ⚠️ **Windows repeats a held key**, and every repeat
-                             * arrives here as another Pressed. `open` toggles
-                             * — the same key again puts the ring away — so
-                             * holding the key past the keyboard's repeat delay
-                             * closed the ring and then flickered it open and
-                             * shut thirty times a second.
+                             * arrives here as another Pressed. Without this the
+                             * gesture below would be started thirty times a
+                             * second for as long as the key was down.
                              *
-                             * ⚠️ But the flag saying "still down" is only
-                             * meaningful while the ring is UP. Trusting it on
-                             * its own cost the feature entirely: the release
-                             * that was supposed to clear it never arrives here
-                             * (see `watch_release`), so after the first ring of
-                             * the session every press was read as a repeat and
-                             * the key did nothing at all, for ever. */
-                            if RING_DOWN.load(Ordering::SeqCst) != 0
-                                && crate::ring::showing(&handler)
-                            {
+                             * ⚠️ And the flag is only trusted while the RING is
+                             * up or the gesture is young: it used to be trusted
+                             * on its own, and one lost release left the key
+                             * doing nothing at all for the rest of the
+                             * session. */
+                            let down = RING_DOWN.load(Ordering::SeqCst);
+                            let live = down != 0
+                                && (crate::ring::showing(&handler)
+                                    || now_ms().saturating_sub(down) < 3_000);
+                            if live {
                                 return;
                             }
                             RING_DOWN.store(now_ms().max(1), Ordering::SeqCst);
-                            crate::ring::open(&handler);
-                            /* Only while it is actually up: `open` toggles, so
-                             * this press may have been the one that closed it. */
-                            if crate::ring::showing(&handler) {
-                                watch_release(handler.clone(), current.ring.clone());
-                            } else {
-                                RING_DOWN.store(0, Ordering::SeqCst);
-                            }
+                            /* ⚠️ Nothing is opened here. A tap does something
+                             * else entirely and a hold opens the ring; which
+                             * of the two this is will not be known for another
+                             * couple of hundred milliseconds. See `gesture`. */
+                            gesture(handler.clone(), current.ring.clone());
                         }
                         ShortcutState::Released => {
                             /* ⚠️ Kept, and it may never fire: on this machine
-                             * the plugin does not report a release at all, which
-                             * is why `watch_release` exists. `swap` is what makes
-                             * the two safe together — whoever arrives first takes
-                             * the gesture, and a second one finds a zero. */
-                            let down = RING_DOWN.swap(0, Ordering::SeqCst);
-                            let held = now_ms().saturating_sub(down);
-                            if down != 0 && held >= crate::ring::HOLD.as_millis() as u64 {
-                                crate::ring::commit(&handler);
-                            }
+                             * the plugin does not report a release at all,
+                             * which is why `gesture` watches the keys itself.
+                             * If it ever does arrive first, the swap in there
+                             * finds a zero and the gesture is not run twice. */
+                            crate::log::note("ring: the plugin reported a release");
                         }
                     }
                     return;

@@ -3787,3 +3787,23 @@ The two halves were the same fault.
      window with no room to spare is a ring half outside its own window. And
      the result is clamped, because being slightly off centre is cosmetic
      while being off the edge is a menu that does nothing when pressed.
+589. ⚠️ **A tap is not a small hold.** The ring opened on the PRESS, so a key
+     pressed forty times a day drew a menu forty times a day — and most of
+     those presses were on their way to the palette, which is the ring's own
+     middle. Nothing is opened on the press now: under the hold time it is a
+     tap and does one configured thing, over it the ring comes up. The menu is
+     what you get for holding on, by which point the hand has already decided.
+590. ⚠️ **The pick depended on the page having seen a `pointermove`.** The
+     ring's window takes no focus, skips the taskbar and sits topmost, and if
+     any one of those ever costs it a mouse message then `aimed` is null,
+     letting go picks nothing, and a gesture that is working perfectly looks
+     broken. The OS always knows where the pointer is — the commit carries it.
+591. ⚠️ **Three places with an opinion about one piece of state is three
+     opinions that disagree.** The press was handled in the shortcut handler,
+     the release in a thread, and "is it already up?" inside `ring::open`,
+     which toggled. Between them they made the ring impossible to open, twice,
+     in two different ways. The whole gesture is one function now.
+592. ⚠️ **A gesture that quietly does nothing is indistinguishable from a
+     shortcut the OS never delivered.** Every step of this one says what it did
+     to the log — down, opened, tapped, picked, gave up — because two rounds
+     were spent guessing which of those had happened.

@@ -138,6 +138,16 @@ pub struct Prefs {
     /// must not be an empty ring, so "unset" and "deliberately empty" have to
     /// be different answers and the second one is not offered.
     pub ring_stops: Vec<String>,
+    /// How long the ring's key has to be HELD before the ring is drawn.
+    ///
+    /// ⚠️ Below this it is a tap, and a tap does `ring_tap` instead — the
+    /// ring is never drawn at all. A key pressed forty times a day is mostly
+    /// pressed to get to the palette, and a menu that flashes up for 90ms on
+    /// the way there is noise.
+    pub ring_hold_ms: u64,
+    /// What a TAP of the ring's key does. A ring stop id: `@search` for the
+    /// palette, a screen name, or an `act:` verb.
+    pub ring_tap: String,
     /// Whether the ring is frosted glass rather than a solid disc.
     ///
     /// ⚠️ On by default. The ring floats over whatever you were working in,
@@ -212,6 +222,11 @@ impl Default for Prefs {
             pomodoro_pill: "bar".into(),
             ring_stops: Vec::new(),
             ring_glass: true,
+            /* A quarter of a second: long enough that a press on the way to
+             * the palette is never mistaken for a hold, short enough that
+             * holding does not feel like waiting. */
+            ring_hold_ms: 250,
+            ring_tap: "@search".into(),
             follow_live: true,
             call_mode: true,
             call_mute_mic: true,

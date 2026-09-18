@@ -65,6 +65,14 @@
         plugin's own `Released` never arrives on this machine, which is why
         the gesture had never worked — and why the auto-repeat guard locked
         the ring out of opening at all. See AGENTS 581.
+  - [x] **Tap for one thing, hold for the ring.** A tap opens the command
+        palette (or whatever is set in Settings → Island) and never draws the
+        menu; the ring is what holding past 0.25s gets you. Both the delay and
+        what a tap does are preferences.
+  - [x] **The pick carries the pointer** rather than trusting the page to have
+        seen it move — see AGENTS 590.
+  - [ ] The whole gesture is now logged. If it misbehaves again, the log says
+        which step: `Settings → General → Open log`.
 
 - ~~Settings: too many words, too many switches in one pane~~ — **done**. The
   descriptions under every row are gone except where the consequence is

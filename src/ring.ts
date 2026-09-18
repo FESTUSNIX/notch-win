@@ -294,9 +294,25 @@ async function boot() {
   });
   /* ⚠️ The key was HELD and let go: that is the pick. Press, flick the
    * wrist, let go — one gesture, no click, and the hand never leaves the
-   * position it was already in. A tap leaves the ring up instead, which is
-   * what somebody reading the labels for the first week is doing. */
-  await listen("ring:commit", () => take(aimed));
+   * position it was already in.
+   *
+   * ⚠️ A TAP never gets here, because a tap never opens the ring: it does
+   * whatever the tap is set to — the palette, by default — and the menu is
+   * not drawn at all. See `gesture` in shortcuts.rs. */
+  await listen<[number, number] | null>("ring:commit", event => {
+    /* ⚠️ Aim at where the pointer IS, not at where this page last saw it
+     * move. A window that takes no focus, skips the taskbar and sits topmost
+     * is a window that might never be handed a mouse message — and then
+     * `aimed` is null, letting go picks nothing, and a gesture that is working
+     * perfectly looks broken. The OS always knows; the payload is its answer,
+     * in physical pixels. */
+    if (event.payload) {
+      const ratio = window.devicePixelRatio || 1;
+      const box = host.getBoundingClientRect();
+      aim(aimedAt(event.payload[0] / ratio - box.left, event.payload[1] / ratio - box.top));
+    }
+    take(aimed);
+  });
 }
 
 if (preview) {

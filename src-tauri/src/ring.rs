@@ -31,7 +31,10 @@ pub const LABEL: &str = "ring";
 /// read the labels is doing — and a hold-and-release is one gesture: press,
 /// flick the wrist, let go. Shorter than this and an ordinary press is
 /// mistaken for a flick; much longer and the gesture has a pause in it.
-pub const HOLD: std::time::Duration = std::time::Duration::from_millis(200);
+/// ⚠️ The DEFAULT only — `prefs.ring_hold_ms` is what the gesture reads. It
+/// is the line between a tap and a hold, and the two now do entirely different
+/// things: under it the ring is never drawn at all.
+pub const HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// How wide the window is, in design pixels, before the display's scaling.
 /// ⚠️ Must be at least the ring's own diameter plus room for the labels that
@@ -76,8 +79,11 @@ fn window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 pub fn open(app: &AppHandle) {
     let Some(window) = window(app) else { return };
     if window.is_visible().unwrap_or(false) {
-        // The same key again is "put it away", the way the island's toggle is.
-        close(app);
+        /* ⚠️ Already up, so this is not a second gesture — it is the same one
+         * arriving twice, and the ring must stay where it is. It used to close
+         * here, on the theory that the key is a toggle, which is what turned a
+         * repeated key into a ring that flickered. The way out is letting go,
+         * or walking away from it. */
         return;
     }
     let Some((x, y)) = cursor() else { return };
@@ -179,7 +185,20 @@ pub fn commit(app: &AppHandle) {
     if !showing(app) {
         return;
     }
-    let _ = app.emit_to(LABEL, "ring:commit", ());
+    /* ⚠️ WHERE the pointer is, sent with the pick — rather than leaving the
+     * page to remember where it last saw it move. The page only learns that
+     * from `pointermove`, which it gets only if this window is given mouse
+     * input at all: it takes no focus, it is a tool window and it is topmost,
+     * and if any one of those ever costs it a mouse message then letting go
+     * picks nothing and the gesture looks broken while working perfectly.
+     *
+     * The OS always knows. Physical pixels, like `ring:at`. */
+    let at = app
+        .get_webview_window(LABEL)
+        .and_then(|window| window.outer_position().ok())
+        .zip(cursor())
+        .map(|(at, (x, y))| (x - at.x, y - at.y));
+    let _ = app.emit_to(LABEL, "ring:commit", at);
 }
 
 /// Picked one. The island opens on it, and the ring gets out of the way first.
