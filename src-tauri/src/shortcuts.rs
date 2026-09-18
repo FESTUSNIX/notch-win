@@ -45,40 +45,29 @@ static AUTO_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// experiences a keyboard that has stopped typing two characters.
 ///
 /// The Polish (programmers) layout maps AltGr to **A C E L N O S X Z**. None of
-/// those may be used here. The letters below are chosen from what is left.
-pub const DEFAULT_TOGGLE: &str = "Ctrl+Alt+Space";
 pub const DEFAULT_HIDE: &str = "Ctrl+Alt+H";
-/// ⚠️ Was `Ctrl+Alt+N`, which is `AltGr+N` — it ate `ń`. T for task.
-pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+T";
-/// M for monitor. Only does anything on a machine with more than one.
-pub const DEFAULT_DISPLAY: &str = "Ctrl+Alt+M";
 /// ⚠️ Was `Ctrl+Alt+S`, which is `AltGr+S` — it ate `ś`. V for the
-/// clipboard verb: this parks whatever is on it.
-pub const DEFAULT_SHELF: &str = "Ctrl+Alt+V";
 /// K for the palette. ⚠️ Not Alt+Space: Flow Launcher, PowerToys Run and
 /// half the launchers on Windows already claim that, and a shortcut that
-/// silently fails to register is worse than an unfamiliar one.
-pub const DEFAULT_PALETTE: &str = "Ctrl+Alt+K";
 /// R for ring. ⚠️ Not on the AltGr list above, and deliberately not one of
 /// the letters a screen might want later: this is the key that exists so that
 /// no screen ever needs one of its own.
-pub const DEFAULT_RING: &str = "Ctrl+Alt+R";
+/// ⚠️ ONE key for both, and no modifier stack. Tapped it is the palette —
+/// which is what most presses of it were for — and held it is the ring, which
+/// is where everything else lives. `Alt+W` because it is near the hand and
+/// takes nothing from a Polish layout; see `eats_a_letter`.
+pub const DEFAULT_RING: &str = "Alt+W";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Shortcuts {
     /// Expands or collapses the island.
-    pub toggle: String,
     /// Takes the island and the usage notch off screen entirely.
     pub hide: String,
     /// Opens the island on Today with the caret already in the composer.
-    pub capture: String,
     /// Sends the island to the next display.
-    pub display: String,
     /// Puts whatever is on the clipboard on the shelf.
-    pub shelf: String,
     /// Opens the command palette.
-    pub palette: String,
     /// Puts the ring of screens around the pointer.
     pub ring: String,
 }
@@ -86,12 +75,7 @@ pub struct Shortcuts {
 impl Default for Shortcuts {
     fn default() -> Self {
         Self {
-            toggle: DEFAULT_TOGGLE.into(),
             hide: DEFAULT_HIDE.into(),
-            capture: DEFAULT_CAPTURE.into(),
-            display: DEFAULT_DISPLAY.into(),
-            shelf: DEFAULT_SHELF.into(),
-            palette: DEFAULT_PALETTE.into(),
             ring: DEFAULT_RING.into(),
         }
     }
@@ -357,27 +341,12 @@ pub fn get_shortcuts(app: AppHandle) -> Shortcuts {
 /// user with one working key and no way to tell which, so a rejected binding
 /// puts the previous pair back before returning the error.
 #[tauri::command]
-pub fn set_shortcuts(
-    app: AppHandle,
-    toggle: String,
-    hide: String,
-    capture: String,
-    display: String,
-    shelf: String,
-    palette: String,
-    ring: String,
-) -> Result<(), String> {
+pub fn set_shortcuts(app: AppHandle, hide: String, ring: String) -> Result<(), String> {
     let next = Shortcuts {
-        toggle: toggle.trim().into(),
         hide: hide.trim().into(),
-        capture: capture.trim().into(),
-        display: display.trim().into(),
-        shelf: shelf.trim().into(),
-        palette: palette.trim().into(),
         ring: ring.trim().into(),
     };
-    let all = [&next.toggle, &next.hide, &next.capture, &next.display, &next.shelf,
-        &next.palette, &next.ring];
+    let all = [&next.hide, &next.ring];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -399,12 +368,7 @@ pub fn set_shortcuts(
         Ok(()) => {
             *app.state::<ShortcutState_>().0.lock().unwrap() = next.clone();
             let mut config = crate::config::load();
-            config.shortcut_toggle = next.toggle;
             config.shortcut_hide = next.hide;
-            config.shortcut_capture = next.capture;
-            config.shortcut_display = next.display;
-            config.shortcut_shelf = next.shelf;
-            config.shortcut_palette = next.palette;
             config.shortcut_ring = next.ring;
             crate::config::save(&config);
             Ok(())
@@ -442,15 +406,7 @@ pub fn eats_a_letter(binding: &str) -> bool {
 
 fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
     let manager = app.global_shortcut();
-    for (name, binding) in [
-        ("Expand", &shortcuts.toggle),
-        ("Hide", &shortcuts.hide),
-        ("Capture", &shortcuts.capture),
-        ("Next display", &shortcuts.display),
-        ("Shelf", &shortcuts.shelf),
-        ("Palette", &shortcuts.palette),
-        ("Ring", &shortcuts.ring),
-    ] {
+    for (name, binding) in [("Hide", &shortcuts.hide), ("Ring", &shortcuts.ring)] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
             // no way to say which, so the message must not pretend it can.
@@ -469,13 +425,17 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
      * because the person cannot be expected to connect "my keyboard stopped
      * typing ś" to a hotkey they set weeks ago. */
     let mut moved = Vec::new();
+    /* ⚠️ The ring's key took over the palette's job, so anybody still on the
+     * ring's OLD default is moved to the new one — otherwise the key they know
+     * as "the palette" does nothing at all and the ring stays on a combination
+     * chosen when it was one feature among seven. A binding somebody actually
+     * chose for themselves is left alone: only the old default is moved. */
+    if config.shortcut_ring.eq_ignore_ascii_case("Ctrl+Alt+R") {
+        moved.push(format!("ring: {} -> {DEFAULT_RING}", config.shortcut_ring));
+        config.shortcut_ring = DEFAULT_RING.to_string();
+    }
     for (field, fallback, name) in [
-        (&mut config.shortcut_toggle, DEFAULT_TOGGLE, "open"),
         (&mut config.shortcut_hide, DEFAULT_HIDE, "hide"),
-        (&mut config.shortcut_capture, DEFAULT_CAPTURE, "add a task"),
-        (&mut config.shortcut_display, DEFAULT_DISPLAY, "next display"),
-        (&mut config.shortcut_shelf, DEFAULT_SHELF, "shelf"),
-        (&mut config.shortcut_palette, DEFAULT_PALETTE, "search"),
         (&mut config.shortcut_ring, DEFAULT_RING, "ring"),
     ] {
         if eats_a_letter(field) {
@@ -489,12 +449,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
     }
 
     let shortcuts = Shortcuts {
-        toggle: config.shortcut_toggle,
         hide: config.shortcut_hide,
-        capture: config.shortcut_capture,
-        display: config.shortcut_display,
-        shelf: config.shortcut_shelf,
-        palette: config.shortcut_palette,
         ring: config.shortcut_ring,
     };
 
@@ -556,52 +511,6 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                 if matches(&pressed, &current.hide) {
                     let hidden = crate::config::load().chrome_hidden;
                     set_chrome_hidden(&handler, !hidden);
-                } else if matches(&pressed, &current.capture) {
-                    // Capture must work from anywhere, so it un-hides first and
-                    // always lands on the composer.
-                    if crate::config::load().chrome_hidden {
-                        set_chrome_hidden(&handler, false);
-                    }
-                    let _ = handler.emit_to("tasks", "island:capture", ());
-                } else if matches(&pressed, &current.toggle) {
-                    // Bringing the island up should also bring it back on screen:
-                    // otherwise the expand key does nothing while it is hidden,
-                    // which reads as a broken shortcut rather than a hidden app.
-                    if crate::config::load().chrome_hidden {
-                        set_chrome_hidden(&handler, false);
-                    }
-                    let _ = handler.emit_to("tasks", "island:toggle", ());
-                } else if matches(&pressed, &current.palette) {
-                    /* Unlike the shelf shortcut, this one DOES bring the island
-                     * back: a palette you cannot see is not a palette. */
-                    if crate::config::load().chrome_hidden {
-                        set_chrome_hidden(&handler, false);
-                    }
-                    let _ = handler.emit_to("tasks", "island:palette", ());
-                } else if matches(&pressed, &current.shelf) {
-                    /* Deliberately does NOT open the island. The point is to
-                     * park something without leaving what you are in; showing
-                     * a panel would be the interruption the shelf exists to
-                     * avoid. The pill says what landed. */
-                    match crate::shelf::shelf_capture(handler.clone()) {
-                        Ok(what) => {
-                            let _ = handler.emit_to("tasks", "island:shelved", what);
-                        }
-                        Err(message) => {
-                            let _ = handler.emit_to("tasks", "island:shelved-failed", message);
-                        }
-                    }
-                } else if matches(&pressed, &current.display) {
-                    // Moving it while it is off screen would be a keypress with
-                    // no visible result, so bring it back first.
-                    if crate::config::load().chrome_hidden {
-                        set_chrome_hidden(&handler, false);
-                    }
-                    if let Some(name) = crate::drag::next_display(&handler, "tasks") {
-                        // The island is click-through chrome on a bezel; moved
-                        // to a screen you were not looking at it reads as gone.
-                        let _ = handler.emit_to("tasks", "island:moved", name);
-                    }
                 }
             })
             .build(),
@@ -682,10 +591,7 @@ mod tests {
     #[test]
     fn no_shipped_default_eats_a_letter() {
         let defaults = Shortcuts::default();
-        for binding in [
-            &defaults.toggle, &defaults.hide, &defaults.capture,
-            &defaults.display, &defaults.shelf, &defaults.palette,
-        ] {
+        for binding in [&defaults.hide, &defaults.ring] {
             assert!(!eats_a_letter(binding), "{binding}");
         }
     }

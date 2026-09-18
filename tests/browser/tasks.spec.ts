@@ -486,16 +486,22 @@ test("settings: one window, eight pages, and nothing that can show a token", asy
   /* The recorder takes a key press, not typing. ⚠️ `Ctrl+Alt+J` rather than
      a letter AltGr claims — see the guard checked below. */
   await page.getByRole("tab", {name: "Shortcuts"}).click();
-  await page.locator("#key-toggle").click();
-  await expect(page.locator("#key-toggle")).toHaveClass(/is-listening/);
+  /* ⚠️ TWO of them, where there were seven. Every global shortcut is a
+   * combination taken away from every other application on the machine, and
+   * six of the seven were doors into things one key already opens: tapped it
+   * is the palette, held it is the ring, and everything that had a key of its
+   * own is a wedge or a row away. */
+  await expect(page.locator(".key-record")).toHaveCount(2);
+  await page.locator("#key-ring").click();
+  await expect(page.locator("#key-ring")).toHaveClass(/is-listening/);
   await page.keyboard.press("Control+Alt+J");
-  await expect(page.locator("#key-toggle")).toHaveText("CtrlAltJ");
+  await expect(page.locator("#key-ring")).toHaveText("CtrlAltJ");
   await expect(page.locator("#altgr-note")).toBeHidden();
 
   /* ⚠️ Ctrl+Alt IS AltGr on Windows, and on a Polish layout `Ctrl+Alt+N`
      takes `ń` away everywhere on the machine. The warning is the only thing
      connecting the two, since neither Windows nor Tauri says a word. */
-  await page.locator("#key-capture").click();
+  await page.locator("#key-hide").click();
   await page.keyboard.press("Control+Alt+N");
   await expect(page.locator("#altgr-note")).toContainText("AltGr+N");
   await page.screenshot({path: "test-results/settings-keys.png"});

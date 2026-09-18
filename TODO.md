@@ -73,6 +73,13 @@
         seen it move — see AGENTS 590.
   - [ ] The whole gesture is now logged. If it misbehaves again, the log says
         which step: `Settings → General → Open log`.
+  - [x] **Two global shortcuts, not seven.** `Alt+W` tapped is the palette and
+        held is the ring; `Ctrl+Alt+H` still hides everything. The five that
+        went — open the island, add a task, shelve the clipboard, next display
+        and the palette's own key — are all a wedge or a palette row away.
+  - [x] **Overshooting is forgiven.** Past the ring's edge the angle alone
+        decides, out to 250px, and a wedge holds until the pointer is a fifth
+        of a wedge into the next one.
 
 - ~~Settings: too many words, too many switches in one pane~~ — **done**. The
   descriptions under every row are gone except where the consequence is

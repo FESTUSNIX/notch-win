@@ -190,7 +190,11 @@ document.addEventListener("visibilitychange", () => {
 /** What the pointer is aiming at, as a screen name. */
 function aimedAt(x: number, y: number): string | null {
   const stops = ringStops(prefs, SCREENS);
-  const found = aiming(x, y, stops.length);
+  /* ⚠️ What is already aimed at goes IN, because the answer depends on it:
+   * a wedge holds until the pointer is properly into the next one. See
+   * `aiming`. */
+  const at = aimed === SEARCH ? "search" : stops.findIndex(stop => stop.id === aimed);
+  const found = aiming(x, y, stops.length, at === -1 ? null : at);
   if (found === null) return null;
   if (found === "search") return SEARCH;
   return stops[found]?.id ?? null;

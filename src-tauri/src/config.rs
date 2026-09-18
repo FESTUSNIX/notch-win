@@ -56,12 +56,12 @@ pub struct Config {
     /// choice survives a restart — someone who hid the chrome to present or to
     /// record did not ask for it back the next time the app launches.
     pub chrome_hidden: bool,
-    pub shortcut_toggle: String,
+    /// ⚠️ TWO shortcuts, where there were seven. Every one of them is a
+    /// combination taken away from every other application on the machine, and
+    /// six of the seven were doors into things the ring and the palette open
+    /// anyway — a key each for "add a task" and "shelve the clipboard" is the
+    /// list this app built a radial menu to stop growing.
     pub shortcut_hide: String,
-    pub shortcut_capture: String,
-    pub shortcut_display: String,
-    pub shortcut_shelf: String,
-    pub shortcut_palette: String,
     /// The ring of screens around the pointer.
     pub shortcut_ring: String,
 }
@@ -84,12 +84,7 @@ impl Default for Config {
             task_monitor: None,
             claude_backoff_until_ms: None,
             chrome_hidden: false,
-            shortcut_toggle: crate::shortcuts::DEFAULT_TOGGLE.into(),
             shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
-            shortcut_capture: crate::shortcuts::DEFAULT_CAPTURE.into(),
-            shortcut_display: crate::shortcuts::DEFAULT_DISPLAY.into(),
-            shortcut_shelf: crate::shortcuts::DEFAULT_SHELF.into(),
-            shortcut_palette: crate::shortcuts::DEFAULT_PALETTE.into(),
             shortcut_ring: crate::shortcuts::DEFAULT_RING.into(),
         }
     }

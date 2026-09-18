@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  REACH, INNER, MIDDLE, MOST, OUTER, aiming, at, nudge, ringStops, sector, spanOf,
+  CANCEL, REACH, INNER, MIDDLE, MOST, OUTER, aiming, at, nudge, ringStops, sector, spanOf,
 } from '../src/ring-geometry.ts';
 import { SCREENS } from '../src/screens.ts';
 
@@ -61,15 +61,53 @@ test('aiming reads the angle, so the labels are not dead ground', () => {
   assert.equal(aiming(last.x, last.y, count), count - 1);
 });
 
-test('the middle is the search, and beyond the labels is nothing', () => {
+test('the middle is the search, and overshooting still counts', () => {
   assert.equal(aiming(MIDDLE, MIDDLE, 8), 'search');
   assert.equal(aiming(MIDDLE, MIDDLE - (INNER - 12), 8), 'search');
-  /* ⚠️ Null rather than a nearest guess. The window is a square holding a
-   * circle, so its corners are part of it — and a click there means "put this
-   * away", not "I meant the screen closest to my mistake". */
+
+  /* ⚠️ Past the ring's own edge the ANGLE is still the answer. A hand that
+   * throws the pointer at a wedge overshoots it more often than not, and the
+   * direction it threw in is not in doubt just because it went too far — a
+   * menu that drops what you are plainly pointing at the moment you move
+   * decisively is one that punishes moving decisively. */
+  assert.equal(aiming(MIDDLE, MIDDLE - (REACH + 40), 8), 0);
+  assert.equal(aiming(MIDDLE, MIDDLE - (CANCEL - 4), 8), 0);
+
+  /* ⚠️ And out beyond THAT it is nothing, rather than a nearest guess. The
+   * window is a square holding a circle, so its corners are part of it — and
+   * letting go out there means "put this away", not "I meant whichever was
+   * closest to my mistake". */
   assert.equal(aiming(0, 0, 8), null);
-  assert.equal(aiming(MIDDLE, MIDDLE - (REACH + 40), 8), null);
+  assert.equal(aiming(MIDDLE, MIDDLE - (CANCEL + 4), 8), null);
   assert.equal(aiming(MIDDLE, MIDDLE - OUTER, 0), null, 'no segments, nothing to aim at');
+});
+
+test('a wedge holds until the pointer is properly into the next one', () => {
+  const count = 8;
+  const per = 1 / count;
+  const ring = (INNER + OUTER) / 2;
+  /* A hair past the boundary between wedge 0 and wedge 1. ⚠️ This is where a
+   * pointer that has just travelled fast comes to rest as often as anywhere,
+   * and without the hysteresis it sits there flickering between two stops —
+   * unreadable, and a coin toss for whatever letting go then picks. */
+  const edge = at(per / 2 + per * 0.05, ring);
+  assert.equal(aiming(edge.x, edge.y, count), 1, 'with nothing held it is simply the next one');
+  assert.equal(aiming(edge.x, edge.y, count, 0), 0, 'holding 0, a hair over is still 0');
+  assert.equal(aiming(edge.x, edge.y, count, 1), 1);
+
+  // Properly into it, and it changes.
+  const into = at(per / 2 + per * 0.4, ring);
+  assert.equal(aiming(into.x, into.y, count, 0), 1);
+
+  /* ⚠️ Only the NEIGHBOURS are sticky. A jump across the ring is a decision,
+   * not a wobble, and holding on through one would be a menu arguing with the
+   * hand. */
+  const across = at(0.5, ring);
+  assert.equal(aiming(across.x, across.y, count, 0), 4);
+
+  // And it wraps: wedge 0 holds against the one before it, too.
+  const back = at(-per * 0.05 - per / 2 + 1, ring);
+  assert.equal(aiming(back.x, back.y, count, 0), 0);
 });
 
 test('what you aim at is the wedge you are pointing at', () => {

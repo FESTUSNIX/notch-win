@@ -115,15 +115,16 @@ const THRESHOLDS = [
   { id: "memory", title: "Memory", fallback: 90 },
 ];
 
+/* ⚠️ TWO, where there were seven. Every global shortcut is a combination
+ * taken away from every other application on the machine, and six of the seven
+ * were doors into things one key already opens: tap it for the palette, hold
+ * it for the ring, and everything that had a key of its own is a wedge or a
+ * row away. A list of shortcuts that grows is the problem the ring was built
+ * to end — it should not have gone on growing beside it. */
 const KEYS = [
-  { id: "palette", title: "Search & commands", note: "The command palette." },
-  { id: "toggle", title: "Open the island", note: "" },
-  { id: "capture", title: "Add a task", note: "Opens Today with the caret in the composer." },
-  { id: "shelf", title: "Shelve the clipboard", note: "" },
-  { id: "display", title: "Next display", note: "Does nothing on one monitor." },
+  { id: "ring", title: "Search, and the ring",
+    note: "Tap it for the palette. Hold it and the ring comes up under the pointer." },
   { id: "hide", title: "Hide everything", note: "Takes both notches off screen." },
-  { id: "ring", title: "Ring of screens",
-    note: "Puts every screen around the pointer. Pick one and the island opens on it." },
 ] as const;
 type KeyId = (typeof KEYS)[number]["id"];
 type Shortcuts = Record<KeyId, string>;
@@ -1014,8 +1015,9 @@ async function paintEverything() {
  * ⚠️ Every field, every time. `set_shortcuts` registers the whole set or none
  * of it, so a form sending a subset does not save part of it — it fails
  * outright on a missing argument. This window sent two of six for a while,
- * which meant saving a shortcut silently did nothing at all. */
-let keys: Shortcuts = { palette: "", toggle: "", capture: "", shelf: "", display: "", hide: "", ring: "" };
+ * which meant saving a shortcut silently did nothing at all. Two is now the
+ * whole set, which is one fewer way to get that wrong. */
+let keys: Shortcuts = { hide: "", ring: "" };
 let listening: KeyId | null = null;
 
 /** The accelerator Windows will actually take, built from the physical key

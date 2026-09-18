@@ -24,6 +24,25 @@ export const OUTER = 132;
  * word. What the margin is FOR now is the hand: a flick that overshoots the
  * edge should still take the wedge it was plainly aimed at. */
 export const REACH = OUTER + 21;
+
+/** Past here, the gesture is abandoned rather than aimed.
+ *
+ * ⚠️ Generous, because a radial menu is aimed at by DIRECTION and a hand that
+ * throws the pointer at a wedge routinely overshoots the ring entirely — and
+ * a menu that drops what you are plainly pointing at the moment you move
+ * decisively is a menu that punishes moving decisively. Out here only the
+ * angle matters, which is how every marking menu worth using behaves; the
+ * corners of the window are still far enough out to mean "no". */
+export const CANCEL = 250;
+
+/** How far into the next wedge the pointer has to go before it is the next
+ *  wedge, as a fraction of one.
+ *
+ * ⚠️ Without this, a pointer resting on a boundary flickers between two stops
+ * — and a boundary is exactly where a pointer that has just travelled fast
+ * comes to rest. A fifth of a wedge is about nine degrees of eight, which is
+ * far enough to be deliberate and near enough not to be felt. */
+const STICK = 0.2;
 /** Where to draw the ring, given where the pointer landed inside the window.
  *
  * @param value the pointer's offset inside the window, in PHYSICAL pixels.
@@ -163,15 +182,40 @@ export function spanOf(index: number, count: number): { from: number; to: number
  * of the ring, and a menu that goes dead where its own labels are is worse than
  * one with no labels at all.
  */
-export function aiming(x: number, y: number, count: number): number | null | "search" {
+export function aiming(
+  x: number,
+  y: number,
+  count: number,
+  held: number | null | "search" = null,
+): number | null | "search" {
   const dx = x - MIDDLE;
   const dy = y - MIDDLE;
   const distance = Math.hypot(dx, dy);
   if (distance < INNER - 8) return "search";
-  if (distance > REACH + 16) return null;
+  /* ⚠️ Only out HERE is nothing aimed at. Between the ring's edge and this,
+   * the angle is still the answer: a hand that throws the pointer at a wedge
+   * overshoots the ring more often than not, and the direction it threw in is
+   * not in doubt just because it went too far. */
+  if (distance > CANCEL) return null;
   if (count < 1) return null;
   const per = 1 / count;
   // Back to turns, with the same quarter-turn offset the drawing uses.
   const turn = (Math.atan2(dy, dx) / (Math.PI * 2) + 0.25 + per / 2 + 1) % 1;
-  return Math.floor(turn / per) % count;
+  const now = Math.floor(turn / per) % count;
+
+  /* ── Sticky at the boundary ──────────────────────────────────────────
+   * ⚠️ The wedge being aimed at holds until the pointer is properly into the
+   * next one. A pointer that has just travelled fast comes to rest near a
+   * boundary as often as not, and without this it sits there flickering
+   * between two stops — which is both unreadable and a coin toss for whatever
+   * letting go then picks. */
+  if (typeof held === "number" && held !== now && held >= 0 && held < count) {
+    const step = (now - held + count) % count;
+    const into = (turn / per) % 1;
+    // Only the two neighbours are sticky: a jump across the ring is a
+    // decision, not a wobble.
+    if (step === 1 && into < STICK) return held;
+    if (step === count - 1 && into > 1 - STICK) return held;
+  }
+  return now;
 }

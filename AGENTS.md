@@ -3820,3 +3820,26 @@ The two halves were the same fault.
      key poll notices, which is why the poll is still what drives the gesture.
      The entry claimed it never came, on the evidence of a feature that was
      broken three ways at once. Log first, conclude second.
+595. ⚠️ **A list of global shortcuts that grows is the problem the ring was
+     built to end** — and it went on growing beside it. Seven of them, each one
+     a combination taken away from every other application on the machine, six
+     of them doors into things one key already opens. Two now: tapped it is the
+     palette, held it is the ring, and everything that had a key of its own is
+     a wedge or a row away.
+596. ⚠️ **Changing a default does nothing for anybody who already has a
+     config.** The ring's key moved from `Ctrl+Alt+R` to `Alt+W`, and without a
+     migration every existing install would keep the old combination while the
+     key its owner thinks of as "the palette" did nothing at all. Only the
+     exact old DEFAULT is moved; a binding somebody chose is theirs.
+597. ⚠️ **A radial menu that drops the aim the moment you move decisively
+     punishes moving decisively.** A hand that throws the pointer at a wedge
+     overshoots the ring more often than not, and the direction it threw in is
+     not in doubt for having gone too far. Past the ring's edge the ANGLE alone
+     decides, out to a cancel radius the corners of the window can still
+     reach — which is how every marking menu worth using behaves.
+598. ⚠️ **A pointer that has just travelled fast comes to rest on a boundary
+     as often as anywhere.** Without hysteresis it sits there flickering
+     between two wedges, which is unreadable and makes whatever letting go
+     picks a coin toss. A wedge holds until the pointer is a fifth of a wedge
+     into the next one — and only its NEIGHBOURS are sticky, because a jump
+     across the ring is a decision rather than a wobble.

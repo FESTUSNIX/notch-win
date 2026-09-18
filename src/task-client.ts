@@ -260,14 +260,12 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return structuredClone(demoCall) as T;
   }
   if (command === "get_calendar") return structuredClone(demoCalendar) as T;
-  /* ⚠️ All six, and the ones Rust actually defaults to. This stub was three
-     keys and a stale `Ctrl+Alt+N` for `capture` — which is `AltGr+N`, the
-     combination that ate `ń` and is the reason the defaults moved. The
-     settings window's AltGr guard is what found it: it warned about a shortcut
-     no build has shipped for months. */
-  if (command === "get_shortcuts") return {palette:"Ctrl+Alt+K",toggle:"Ctrl+Alt+Space",
-    capture:"Ctrl+Alt+T",shelf:"Ctrl+Alt+V",display:"Ctrl+Alt+M",hide:"Ctrl+Alt+H",
-    ring:"Ctrl+Alt+R"} as T;
+  /* ⚠️ Both of them, and the ones Rust actually defaults to. This stub was
+     three keys and a stale `Ctrl+Alt+N` — which is `AltGr+N`, the combination
+     that ate `ń` and is the reason the defaults moved. The settings window's
+     AltGr guard is what found it: it warned about a shortcut no build had
+     shipped for months. */
+  if (command === "get_shortcuts") return {hide:"Ctrl+Alt+H", ring:"Alt+W"} as T;
   if (command === "ring_pick" || command === "ring_close") return undefined as T;
   if (command === "get_chrome_hidden") return false as T;
   if (command === "show_chrome" || command === "toggle_chrome") return undefined as T;
