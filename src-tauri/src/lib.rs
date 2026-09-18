@@ -19,6 +19,7 @@ mod guard;
 mod dropprobe;
 mod log;
 mod model;
+mod money;
 mod notes;
 mod notices;
 mod notify;
@@ -480,6 +481,7 @@ pub fn run() {
         .manage(workspaces::Store::default())
         .manage(shelf::Store::default())
         .manage(runlog::Store::default())
+        .manage(money::Store::default())
         .manage(usage::Store::default())
         .manage(Latest::default())
         .manage(History(Mutex::new(remembered)))
@@ -524,6 +526,7 @@ pub fn run() {
             task_window::task_window_diagnostics,
             task_window::set_clock_format,
             runlog::get_runs,
+            money::get_rates,
             usage::get_usage,
             shelf::get_shelf,
             shelf::shelf_add_paths,
@@ -719,6 +722,7 @@ pub fn run() {
             workspaces::load(app.handle());
             shelf::load(app.handle());
             runlog::load(app.handle());
+            money::load(app.handle());
             usage::load(app.handle());
             sessions::spawn(app.handle().clone());
             drag::watch_displays(app.handle().clone());

@@ -316,6 +316,16 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return true as T;
   }
   if (command === "copy_text") return undefined as T;
+  /* ⚠️ A REAL table, trimmed — what the service answered on 17 Sep 2026.
+     Made-up rates would make the converter's row look right while proving
+     nothing about the crossing, which is the only arithmetic in it. */
+  if (command === "get_rates") return {
+    date: "2026-09-17", base: "EUR", fetchedMs: Date.now(),
+    rates: {AUD: 1.6139, BRL: 5.8905, CAD: 1.6068, CHF: 0.9466, CNY: 7.7009,
+      CZK: 24.308, DKK: 7.4753, GBP: 0.8583, HKD: 9.0071, HUF: 362.98,
+      JPY: 178.75, KRW: 1587.31, MXN: 19.7337, NOK: 11.6, NZD: 1.79,
+      PLN: 4.358, SEK: 11.02, SGD: 1.47, TRY: 47.9, USD: 1.1481, ZAR: 19.8},
+  } as T;
   if (command === "open_external") return undefined as T;
   if (command === "google_status") return true as T;
   // ⚠️ Empty, and that is the honest stub: the preview has no account, and a

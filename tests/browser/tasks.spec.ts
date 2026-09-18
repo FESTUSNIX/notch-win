@@ -1396,6 +1396,30 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
   await field.fill("today");
   await expect(rows.first().locator(".palette-title")).not.toHaveText(/^=/);
 
+  /* ── And money, beside it ─────────────────────────────────
+   * The other thing a launcher is used for that has nothing to do with
+   * launching. ⚠️ The rates are asked for ONCE and held — the row is live
+   * rather than instant because of that one fetch, so this polls. */
+  await field.fill("120 usd to pln");
+  const money = rows.first();
+  await expect.poll(async () => money.locator(".palette-title").textContent())
+    .toBe("= 455.50 PLN");
+  /* What it was worked out from, and WHEN. ⚠️ The date is not decoration:
+   * these are daily reference rates, so an answer on a Sunday is Friday's
+   * number and a converter that hides that is one you cannot check. */
+  await expect(money.locator(".palette-note")).toHaveText("120 USD at 3.796 · 17 Sep");
+
+  // The same sentence, written the way a hand in a hurry writes it.
+  await field.fill("$120 zl");
+  await expect.poll(async () => rows.first().locator(".palette-title").textContent())
+    .toBe("= 455.50 PLN");
+
+  /* ⚠️ And almost everything else is left alone. Anything that parses puts
+   * a row at the TOP of the results, so the grammar saying no is the half of
+   * the feature that decides whether the palette is still usable. */
+  await field.fill("notes");
+  await expect(rows.first().locator(".palette-title")).not.toHaveText(/^=/);
+
   /* Tab opens a row's own verbs. ⚠️ The mark is DRAWN as well as bound, since
    * a key nobody can see is a feature nobody uses. */
   await field.fill("setup");

@@ -2,7 +2,40 @@
 
 ## My ideas for the next features
 
-- Currency converter extension for the command palette
+- ~~Currency converter extension for the command palette~~ — **done**.
+  `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
+  Frankfurter with exchangerate-api behind it, one table against the euro
+  cached on disk for six hours, and the crossing done in the page. The row
+  says what it worked from and WHICH DAY, because a daily rate on a Sunday is
+  Friday's number.
+  - [ ] No home currency, so `120 usd` alone does nothing — it needs a
+        preference, and a converter that guesses which country you are in is
+        a converter that is wrong abroad.
+  - [ ] Crypto is not in it. The ECB does not publish it and the sources that
+        do want a key.
+
+- **Five more for the palette**, in the order they would earn their place:
+  1. **Units** — `70 kg to lb`, `12 ft in m`, `220f c`, `1.5gb mb`. The same
+     shape as the converter above and no network at all: a table of factors
+     and the same grammar. Most value for the fewest lines in the app.
+  2. **Dates and times** — `in 3 weeks`, `days until 24 dec`,
+     `1789714959` (an epoch, as a date), `16:00 CET in warsaw`. Every one of
+     those is a browser tab today, and the island already owns a calendar, a
+     clock and the week's shape.
+  3. **Jump to a window** — type a title, get that window. `win.rs` already
+     enumerates every visible window with its title and pid, and
+     `focus_session` already raises one: this is a provider over machinery
+     that exists, and it is the thing alt-tab is worst at with twenty windows.
+  4. **What you copied** — the shelf already keeps it. Searching it from the
+     palette turns a screen you have to open into a line you can type, which
+     is the difference between a feature and a habit.
+  5. **Encode, hash, generate** — `b64 hello`, `url <text>`, `md5 <text>`,
+     `uuid`, `pw 20`. Pure, offline, and the exact set of things a developer
+     currently pastes into somebody else's website — which for a password or
+     a token is the part that should stop.
+  - Also considered and not chosen yet: a colour tool (`#0f61ff` → rgb/hsl,
+    and set the accent), and translation (needs a key, and the good ones are
+    not free).
 
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the

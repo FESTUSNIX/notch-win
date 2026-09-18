@@ -48,6 +48,9 @@ import { type RailStop } from "./island-rail";
 import { tips } from "./tips";
 import { iconFor } from "./file-kind";
 import { calc } from "./palette-calc";
+import {
+  convert, parseMoney, sayAmount, sayDay, sayMoney, sayRate, type Rates,
+} from "./money";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
@@ -1356,6 +1359,65 @@ palette.add(query => {
   }];
 });
 
+/* ── Money ──────────────────────────────────────────────────────────────
+ * `120 usd to pln`, beside the arithmetic. The second thing a launcher is
+ * used for that has nothing to do with launching, and the alternative is a
+ * browser tab that wants cookie consent first.
+ *
+ * ⚠️ The rates are ASKED FOR ONCE and held here — `money.rs` caches them on
+ * disk and refuses to fetch more than once every six hours, but a promise per
+ * keystroke would still be a command per keystroke. The row is live rather
+ * than instant because of that first fetch; everything after it is arithmetic.
+ */
+let rates: Rates | null = null;
+let asking: Promise<void> | null = null;
+
+function haveRates(): Promise<void> {
+  /* ⚠️ One flight, not one per keystroke. Four characters typed quickly is
+   * four providers running, and without this it is four fetches racing to
+   * write the same table. */
+  asking ??= call<Rates>("get_rates")
+    .then(table => { rates = table?.rates ? table : null; })
+    .catch(() => { /* offline, and the row simply does not appear */ })
+    .finally(() => {
+      /* ⚠️ Cleared so the NEXT query can ask again. The first attempt of a
+       * session can land while the machine is still on a captive portal, and a
+       * promise kept for ever would mean the converter never worked again
+       * until the app restarted. Only a failure clears it. */
+      if (!rates) asking = null;
+    });
+  return asking;
+}
+
+palette.addLive(async query => {
+  const money = parseMoney(query);
+  if (!money) return [];
+  await haveRates();
+  if (!rates) return [];
+  const value = convert(money, rates);
+  if (value === null) return [];
+  const said = sayMoney(value, money.to);
+  return [{
+    id: `money:${money.from}${money.to}${money.amount}`,
+    title: `= ${said} ${money.to}`,
+    /* What it was worked out from, and WHEN. ⚠️ The date is not decoration:
+     * these are daily reference rates, so an answer on Sunday is Friday's
+     * number and a converter that hides that is one you cannot check. */
+    note: `${sayAmount(money.amount)} ${money.from} at `
+      + `${sayRate(money, rates)} · ${sayDay(rates.date)}`,
+    keywords: "currency exchange rate convert money",
+    icon: "copy",
+    hint: "Rate",
+    tier: TIER.answer,
+    pinned: true,
+    volatile: true,
+    /* ⚠️ Copied through Rust, not `navigator.clipboard` — the palette hands
+     * the caret back before an action runs, and the web clipboard API rejects
+     * on an unfocused document, silently, in a promise nobody awaits. */
+    run: () => call("copy_text", { text: said.replace(/,/g, "") }),
+  }];
+});
+
 /* The applications. ⚠️ Fetched ONCE and searched in here, not asked per
  * keystroke: the list is a shell call per shortcut to build and it does not
  * change while you are typing. The array starts empty, so the provider simply
@@ -1415,7 +1477,10 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
   /* Three characters, same threshold as the create-a-task row. Everything
    * answers "e" with half the disk, and a palette that fills with system DLLs
    * on the way to typing "editor" is worse than no file search. */
-  if (!prefs.useEverything || query.length < 3 || calc(query)) { resolve([]); return; }
+  if (!prefs.useEverything || query.length < 3 || calc(query) || parseMoney(query)) {
+    resolve([]);
+    return;
+  }
   const mine = ++asked;
   window.setTimeout(() => {
     if (mine !== asked) { resolve([]); return; }
@@ -1470,7 +1535,7 @@ palette.add(() => workspaces.all().map(([folder, workspace]) => ({
   id: `ws:${folder}`,
   title: workspace.name,
   note: workspace.apps.length
-    ? `workspace \u00b7 ${workspace.apps.length} app${workspace.apps.length === 1 ? "" : "s"}`
+    ? `workspace · ${workspace.apps.length} app${workspace.apps.length === 1 ? "" : "s"}`
     : "workspace",
   keywords: `${folder} workspace project open start`,
   icon: "folder" as TaskIcon,
@@ -1542,7 +1607,7 @@ palette.add(() => stars.all().map(([id, star]) => ({
  * reach things, and a "create" row that shows up for every stray keystroke
  * turns every mistyped search into an accidental task. */
 palette.add(query => {
-  if (query.length < 3 || calc(query)) return [];
+  if (query.length < 3 || calc(query) || parseMoney(query)) return [];
   return [{
     id: "make:task",
     title: `Add task "${query}"`,

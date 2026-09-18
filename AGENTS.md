@@ -3713,3 +3713,32 @@ The two halves were the same fault.
      time somebody picks with the mouse — after which the document stays
      activated for the life of the window. Worth knowing before concluding the
      sound is broken.
+575. ⚠️ **`reqwest` sends no User-Agent, and a CDN in front of a free API
+     will simply not answer one that has none.** No status code, no error to
+     read, no connection refused — the request hangs until the client's own
+     timeout fires, so it looks exactly like the service being down. `curl`
+     answered the same URL in under a second the whole time, which is the
+     comparison that finds this.
+576. ⚠️ **A free service moves house and the feature goes quiet.**
+     `api.frankfurter.app` is a 301 to `api.frankfurter.dev/v1` now, and every
+     page of documentation still names the old one. Follow the redirect
+     deliberately, and keep a SECOND source: the first one answered in under a
+     second, then spent half an hour returning 522 and timing out, which is
+     what one person's free API looks like on a bad afternoon.
+577. ⚠️ **`\b` after a non-ASCII letter is not where a reader thinks.** A word
+     boundary is defined against ASCII word characters, and `ł` is not one — so
+     `/(\d)\s*(zł)\b/` fails to match `100zł to eur` and the conversion silently
+     stops being a conversion. A lookahead for the letters that could follow.
+578. ⚠️ **`undefined * 4` is `NaN`, and `NaN` renders perfectly happily.** A
+     currency the table does not carry has no rate, and the row that comes out
+     reads "= NaN PLN" — which looks like the app broke rather than like the
+     source does not publish that currency. Every lookup that feeds arithmetic
+     returns `null` on a miss and the row is not drawn at all.
+579. ⚠️ **Dates are compared as STRINGS in this app**, which works only
+     because they are zero-padded and big-endian. An RFC 2822 date from a
+     second source — `Fri, 18 Sep 2026` — dropped into the same field sorts by
+     weekday, and nothing about it looks wrong.
+580. ⚠️ **`toLocaleDateString`'s "short" month is four letters in some
+     locales.** `en-GB` says "Sept", `en-US` says "Sep", and the row is a
+     character wider on one machine than another for no reason anybody can
+     see. A twelve-entry table, where the string has to be stable.
