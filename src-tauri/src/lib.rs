@@ -572,6 +572,7 @@ pub fn run() {
             call::get_call,
             call::call_action,
             ring::ring_pick,
+            ring::ring_aim,
             ring::ring_close,
             notices::get_notices,
             notices::notice_dismiss,

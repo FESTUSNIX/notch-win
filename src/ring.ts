@@ -211,6 +211,13 @@ function aim(next: string | null) {
   for (const part of host.querySelectorAll<SVGElement>("[data-screen]")) {
     part.classList.toggle("is-at", part.dataset.screen === next);
   }
+  /* ⚠️ Told to the other side as it happens. Letting go of the key is
+   * noticed in Rust, and asking the page what it was aiming at AT THAT MOMENT
+   * meant an event into a window that is hidden half the time, takes no focus
+   * and skips the taskbar — which on this machine arrived nowhere at all: the
+   * log showed every release detected and every pick sent, and nothing ever
+   * happened. This direction is the one that works. */
+  if (native) void call("ring_aim", { screen: next }).catch(() => {});
   /* ⚠️ A tick per wedge CROSSED, with the dial's own floor on it. Sweeping
    * the pointer round the ring crosses eight of them in a quarter of a second,
    * and eight clicks in a quarter second is a buzz rather than detents — see
@@ -292,27 +299,11 @@ async function boot() {
     setClicks(prefs.timerSound !== "");
     draw();
   });
-  /* ⚠️ The key was HELD and let go: that is the pick. Press, flick the
-   * wrist, let go — one gesture, no click, and the hand never leaves the
-   * position it was already in.
-   *
-   * ⚠️ A TAP never gets here, because a tap never opens the ring: it does
-   * whatever the tap is set to — the palette, by default — and the menu is
-   * not drawn at all. See `gesture` in shortcuts.rs. */
-  await listen<[number, number] | null>("ring:commit", event => {
-    /* ⚠️ Aim at where the pointer IS, not at where this page last saw it
-     * move. A window that takes no focus, skips the taskbar and sits topmost
-     * is a window that might never be handed a mouse message — and then
-     * `aimed` is null, letting go picks nothing, and a gesture that is working
-     * perfectly looks broken. The OS always knows; the payload is its answer,
-     * in physical pixels. */
-    if (event.payload) {
-      const ratio = window.devicePixelRatio || 1;
-      const box = host.getBoundingClientRect();
-      aim(aimedAt(event.payload[0] / ratio - box.left, event.payload[1] / ratio - box.top));
-    }
-    take(aimed);
-  });
+  /* ⚠️ Nothing listens for the pick any more. Letting go is noticed in
+   * Rust and taken there, out of what this page has been reporting as it
+   * aimed — see `commit` and `AIMED` in ring.rs. The event that used to carry
+   * it went into a window that is hidden half the time, and on this machine it
+   * arrived nowhere. */
 }
 
 if (preview) {

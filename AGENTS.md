@@ -3807,3 +3807,16 @@ The two halves were the same fault.
      shortcut the OS never delivered.** Every step of this one says what it did
      to the log — down, opened, tapped, picked, gave up — because two rounds
      were spent guessing which of those had happened.
+593. ⚠️ **An event INTO the ring's window is not a thing to depend on.** The
+     log showed it exactly: the key going down, the ring opening at 260ms, the
+     release detected at 1053ms and the pick sent — every single time — and
+     nothing ever happened. That window is hidden half the time, takes no
+     focus, skips the taskbar and is topmost; whatever the reason, a question
+     sent into it and needed answered within a frame is not one to build a
+     gesture on. The page now REPORTS what it is aiming at as the pointer
+     moves, which is the direction that works, and letting go is taken here.
+594. ⚠️ **And correcting AGENTS 581: the plugin's `Released` does arrive on
+     this machine** — it is simply five to forty milliseconds later than the
+     key poll notices, which is why the poll is still what drives the gesture.
+     The entry claimed it never came, on the evidence of a feature that was
+     broken three ways at once. Log first, conclude second.

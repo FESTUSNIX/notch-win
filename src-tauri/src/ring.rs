@@ -42,6 +42,22 @@ pub const HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 /// rendering bug.
 const SIZE: f64 = 420.0;
 
+/// What the ring is aiming at, as the PAGE last worked it out.
+///
+/// ⚠️ Kept on this side of the boundary, written by the page as the pointer
+/// moves. Which wedge an angle belongs to depends on the ring's geometry, its
+/// preferences and how many stops are showing — all of which live in the page,
+/// and two answers to that question would disagree the first time somebody
+/// changed what the ring holds. So the page still decides; it just says so
+/// while it can, rather than being asked at the one moment it has to answer.
+static AIMED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn aim_at(what: Option<String>) {
+    if let Ok(mut held) = AIMED.lock() {
+        *held = what;
+    }
+}
+
 fn cursor() -> Option<(i32, i32)> {
     let mut point = POINT::default();
     unsafe { GetCursorPos(&mut point).ok()? };
@@ -112,6 +128,10 @@ pub fn open(app: &AppHandle) {
      * the ring out of the state the last pick left it in. Before, so the first
      * frame is already right; after, so it is right even if that one was
      * missed. The page does the same work either way. */
+    /* ⚠️ A fresh gesture aims at nothing until the pointer says otherwise.
+     * Left over from the last one, letting go without moving would pick
+     * whatever was under the pointer a minute ago. */
+    aim_at(None);
     let at = (x - left, y - top);
     let _ = window.emit_to(LABEL, "ring:at", at);
     let _ = window.show();
@@ -169,47 +189,66 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// The pointer moved to another wedge — or off all of them.
+#[tauri::command]
+pub fn ring_aim(screen: Option<String>) {
+    aim_at(screen);
+}
+
 #[tauri::command]
 pub fn ring_close(app: AppHandle) {
+    crate::log::note("ring: the page asked to close");
     close(&app);
 }
 
 /// The key was let go after a hold: take whatever is aimed at.
 ///
-/// ⚠️ Asked of the PAGE rather than worked out here. The pointer's position
-/// is knowable from Rust, but which wedge it is over depends on the ring's own
-/// geometry, the preferences and how many stops are showing — all of which
-/// live in the page. Two answers to that question would disagree the first
-/// time somebody changed what the ring holds.
+/// ⚠️ **It does the pick itself.** This used to ask the page — emit
+/// `ring:commit`, let it answer with `ring_pick` — and on this machine that
+/// event arrived nowhere: the log showed the release detected and the pick
+/// sent, every time, and nothing ever happened. A window that is hidden half
+/// the time, takes no focus and skips the taskbar is not a reliable place to
+/// send a question you need answered within a frame.
+///
+/// The page still decides WHAT is aimed at, because only it knows the
+/// geometry — it just says so as the pointer moves, which is the direction
+/// that works. See `AIMED`.
 pub fn commit(app: &AppHandle) {
     if !showing(app) {
+        crate::log::note("ring: let go, but the ring had already gone");
         return;
     }
-    /* ⚠️ WHERE the pointer is, sent with the pick — rather than leaving the
-     * page to remember where it last saw it move. The page only learns that
-     * from `pointermove`, which it gets only if this window is given mouse
-     * input at all: it takes no focus, it is a tool window and it is topmost,
-     * and if any one of those ever costs it a mouse message then letting go
-     * picks nothing and the gesture looks broken while working perfectly.
-     *
-     * The OS always knows. Physical pixels, like `ring:at`. */
-    let at = app
-        .get_webview_window(LABEL)
-        .and_then(|window| window.outer_position().ok())
-        .zip(cursor())
-        .map(|(at, (x, y))| (x - at.x, y - at.y));
-    let _ = app.emit_to(LABEL, "ring:commit", at);
+    let aimed = AIMED.lock().ok().and_then(|held| held.clone());
+    match aimed {
+        Some(screen) => {
+            crate::log::note(&format!("ring: picking {screen}"));
+            pick(app, screen);
+        }
+        /* Nothing aimed at, so the gesture was abandoned — and abandoning it
+         * costs nothing. ⚠️ The pointer is in the MIDDLE when the ring opens
+         * under it, so this is only reached by letting go out in a corner. */
+        None => {
+            crate::log::note("ring: let go with nothing aimed at");
+            close(app);
+        }
+    }
 }
 
 /// Picked one. The island opens on it, and the ring gets out of the way first.
 #[tauri::command]
 pub fn ring_pick(app: AppHandle, screen: String) {
-    close(&app);
+    crate::log::note(&format!("ring: the page picked {screen}"));
+    pick(&app, screen);
+}
+
+/// Take it: the ring goes away, the island goes there.
+fn pick(app: &AppHandle, screen: String) {
+    close(app);
     /* ⚠️ Un-hidden first, for the same reason the palette shortcut does it: a
      * ring that picks a screen on an island which is off screen is a key that
      * appears to do nothing at all. */
     if crate::config::load().chrome_hidden {
-        crate::shortcuts::set_chrome_hidden(&app, false);
+        crate::shortcuts::set_chrome_hidden(app, false);
     }
     /* ⚠️ A VERB goes to its own event. The island answers `island:go` by
      * changing screens, and an action that arrived down the same pipe would
@@ -220,6 +259,7 @@ pub fn ring_pick(app: AppHandle, screen: String) {
     } else {
         let _ = app.emit_to("tasks", "island:go", screen);
     }
+    aim_at(None);
 }
 
 #[cfg(test)]
