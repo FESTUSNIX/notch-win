@@ -14,6 +14,8 @@
 
 - New: Money managing features for the whole app. We must think what would be helpful for the user to manage their money, and how to integrate it into the app. This could include budgeting tools, expense tracking, subscription management, and financial insights.
 
+- Ambient mode / music AFK mode. A mode where we can open up a big full-scren view of the music player with music, visualizations, lyrics and relaxing visuals. This could be a great way to enjoy music while working or relaxing.
+
 - ~~Currency converter extension for the command palette~~ — **done**.
   `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
   Frankfurter with exchangerate-api behind it, one table against the euro

@@ -69,6 +69,9 @@ let draft = "";
 let barMiddle = 0;
 /** True while the sliver is being dragged along the edge. */
 let sliding = false;
+/** The edge the last dock event named, so the monitor is only re-read when it
+ *  actually changes. */
+let side = "";
 
 /* ⚠️ The island's own spring, at the island's own numbers. The whole point of
  * this rewrite is that a docked note moves like the rest of the app rather
@@ -137,7 +140,18 @@ async function measure() {
  *
  * ⚠️ Position only. The size is Rust's and never changes — see the note at the
  * top of this file. */
+/** ⚠️ One placement in flight at a time. These are driven by an event stream
+ *  at sixty a second; without the guard two moves overlap and the window can
+ *  land on the older of the two. */
+let placing = false;
+
 async function place() {
+  if (!win || placing) return;
+  placing = true;
+  try { await put(); } finally { placing = false; }
+}
+
+async function put() {
   if (!win) return;
   const dpr = window.devicePixelRatio || 1;
   const w = Math.round(room().w * dpr);
@@ -403,48 +417,41 @@ function freshen() {
   pin.setAttribute("aria-label", said);
 }
 
-/* ── Sliding it along the edge ────────────────────────────────────────
+/* ── Moving it along the edge ────────────────────────────────────────────
  *
- * ⚠️ Our own drag, not `data-tauri-drag-region`. That one hands the gesture to
- * Windows, which moves the window wherever the pointer goes — and a drawer that
- * can be dropped in the middle of the screen is a sticky note again. This one
- * only ever changes how far DOWN the sliver sits, and which side it is on. */
+ * ⚠️ The SAME gesture as dragging a note out of the island, and for the same
+ * reason: where the pointer is on a desk with three monitors is a question
+ * only Rust can answer. This page knows `screenX` in its own window's CSS
+ * pixels and its own monitor's scale — so working out which half of which
+ * screen the pointer is in meant multiplying by a scale factor that belongs to
+ * a different display, and the drawer flipped edges the moment it was dragged
+ * on a secondary monitor.
+ *
+ * So the page starts a drag session and stops it. The ghost, the zones, the
+ * edge and the position all come back as `notch:note-dock` events, exactly as
+ * they do when the note is dragged out of the wall — one gesture, one answer,
+ * written once. */
 function grab(tab: HTMLElement, tap = true) {
-  let from: { x: number; y: number; middle: number } | null = null;
+  let from: { x: number; y: number } | null = null;
   let moved = false;
-  let step = 0;
 
   tab.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
-    from = { x: event.screenX, y: event.screenY, middle: barMiddle };
+    from = { x: event.screenX, y: event.screenY };
     moved = false;
     tab.setPointerCapture(event.pointerId);
-    void measure();
   });
 
   tab.addEventListener("pointermove", event => {
-    if (!from) return;
-    const dpr = window.devicePixelRatio || 1;
-    if (!moved && Math.abs(event.screenY - from.y) < 4
-      && Math.abs(event.screenX - from.x) < 4) return;
-    if (!moved) {
-      moved = true;
-      /* ⚠️ The whole window counts as chrome for the duration. The drawer is
-       * click-through outside its shape, and a drag that wandered a few pixels
-       * off it would have the pointer taken away mid-gesture. */
-      sliding = true;
-      report();
-    }
-    barMiddle = Math.round(from.middle + (event.screenY - from.y) * dpr);
-    /* Which half of the screen the pointer is in, so the drawer changes sides
-     * by being dragged across rather than by a setting nobody would find. */
-    edge = event.screenX * dpr > field.x + field.w / 2 ? "right" : "left";
-    host.dataset.edge = edge;
-    paint();
-    // ⚠️ One placement per frame. A pointer reports faster than the window can
-    // move, and every one of those is a window message.
-    if (step) return;
-    step = requestAnimationFrame(() => { step = 0; void place(); });
+    if (!from || moved) return;
+    if (Math.abs(event.screenY - from.y) < 4 && Math.abs(event.screenX - from.x) < 4) return;
+    moved = true;
+    /* ⚠️ The whole window counts as chrome for the duration. The drawer is
+     * click-through outside its shape, and a drag that wandered a few pixels
+     * off it would have the pointer taken away mid-gesture. */
+    sliding = true;
+    report();
+    void call("note_drag_start", { id }).catch(() => {});
   });
 
   const drop = (event: PointerEvent) => {
@@ -464,17 +471,22 @@ function grab(tab: HTMLElement, tap = true) {
     }
     moved = false;
     sliding = false;
+    void call("note_drag_end").catch(() => {});
     report();
-    void call("dock_note", { id, edge, y: barMiddle }).catch(() => {});
   };
   tab.addEventListener("pointerup", drop);
-  tab.addEventListener("pointercancel", () => {
+  tab.addEventListener("pointercancel", event => {
+    if (!from) return;
     from = null;
+    tab.releasePointerCapture?.(event.pointerId);
+    if (!moved) return;
     moved = false;
     sliding = false;
+    void call("note_drag_end").catch(() => {});
+    report();
   });
   tab.addEventListener("keydown", event => {
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (!tap || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     locked = !locked;
     freshen();
@@ -561,8 +573,21 @@ async function boot() {
       edge = event.payload.edge === "left" ? "left" : "right";
       barMiddle = event.payload.y;
       host.dataset.edge = edge;
+      /* ⚠️ Held OPEN for the whole drag, and let go of at the end. Dragging a
+       * note to an edge with nothing to see is dragging air, and a drawer that
+       * folded itself halfway through the gesture moving it is worse. */
       locked = event.payload.dragging;
-      void place();
+      /* The monitor can change under it mid-drag — that is the point of the
+       * gesture — so the work area is re-read when the EDGE changes. ⚠️ Not on
+       * every event: these arrive sixty times a second, and `measure` is a
+       * round trip to Rust for a rectangle that only moves when the drag
+       * crosses to another screen. */
+      if (edge !== side) {
+        side = edge;
+        void measure().then(() => { void place(); });
+      } else {
+        void place();
+      }
       settle();
     });
 

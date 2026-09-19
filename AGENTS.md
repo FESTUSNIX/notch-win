@@ -3999,3 +3999,26 @@ The two halves were the same fault.
      unopenable.** A press and a drag end the same way, and the click after a
      release is what opens the note — so the swallow has to be conditional on a
      drag having actually happened, not on the release.
+627. ⚠️ **`close()` schedules a window for destruction and returns.** For a
+     while afterwards `get_webview_window` still hands the dying window back —
+     so the next dock found it, called `show()` on it and appeared to do
+     nothing at all: the note said it was docked and nothing was on the edge,
+     every time after the first. Undocking HIDES the window now; only deleting
+     the note closes it, and a hidden one re-docks without building a webview.
+628. ⚠️ **Building the webview first spent a third of the gesture doing
+     nothing.** The overlay took a few hundred milliseconds to make, the drag
+     was a second long, and the watcher was started after the build — so a
+     quick drag was over before anything was watching, and the shown window was
+     hidden again by a watcher that found the flag already down. The pointer is
+     watched first and the overlay catches up.
+629. ⚠️ **A poll that checks the flag before it samples never samples a short
+     gesture at all.** Sample first, decide, then check whether to carry on —
+     or a drag shorter than one tick sets everything in motion and exits
+     without ever asking where the pointer was.
+630. ⚠️ **A page cannot work out which half of which SCREEN the pointer is
+     on.** It has `screenX` in its own window's CSS pixels and its own
+     monitor's scale factor; on a desk with three displays that is a number
+     multiplied by a scale belonging to a different one, and the docked note
+     flipped edges the moment it was dragged on a secondary monitor. Both
+     drags — out of the island, and along the edge — now hand the question to
+     the one poll in Rust that has physical coordinates.

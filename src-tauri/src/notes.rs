@@ -185,9 +185,10 @@ pub fn save_note(app: AppHandle, id: String, body: String) -> Vec<Note> {
 
 #[tauri::command]
 pub async fn remove_note(app: AppHandle, id: String) -> Vec<Note> {
-    /* ⚠️ The window goes with the note. A sticky note whose note has been
-     * deleted is a square of text on the desktop that nothing can reach. */
-    close_pin(&app, &id);
+    /* ⚠️ The window goes with the note. A docked note whose note has been
+     * deleted is a strip of text on the edge of the screen that nothing can
+     * reach. Closed rather than hidden: there is nothing left to show. */
+    drop_pin(&app, &id);
     let snapshot = {
         let state = app.state::<Store>();
         let Ok(mut held) = state.0.lock() else { return Vec::new() };
@@ -206,7 +207,22 @@ fn label(id: &str) -> String {
     format!("note-{id}")
 }
 
+/// Take a note off the edge.
+///
+/// ⚠️ HIDDEN, not closed, and this one cost a debugging session. `close()`
+/// schedules a window for destruction and returns; for a while afterwards
+/// `get_webview_window` still hands it back — so the next dock found the dying
+/// window, called `show()` on it and appeared to do nothing at all. The note
+/// said it was docked and nothing was on the edge. A hidden window also
+/// re-docks instantly, where a rebuilt one costs a webview.
 fn close_pin(app: &AppHandle, id: &str) {
+    if let Some(window) = app.get_webview_window(&label(id)) {
+        let _ = window.hide();
+    }
+}
+
+/// Destroy it for good. Only when the note itself is gone.
+fn drop_pin(app: &AppHandle, id: &str) {
     if let Some(window) = app.get_webview_window(&label(id)) {
         let _ = window.close();
     }
@@ -260,10 +276,23 @@ pub async fn pin_note(
 fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
     let name = label(&note.id);
     if let Some(existing) = app.get_webview_window(&name) {
+        crate::log::note(&format!("note {}: drawer already made, showing", note.id));
         let _ = existing.show();
-        let _ = existing.set_focus();
+        /* ⚠️ And told to place itself again. It was hidden where it last was,
+         * which after an undock-and-redock is the wrong edge or the wrong
+         * monitor — and the page only places itself on boot. */
+        let _ = app.emit(
+            "notch:note-dock",
+            DockAt {
+                id: note.id.clone(),
+                edge: side_of(&note.edge),
+                y: note.y,
+                dragging: true,
+            },
+        );
         return Ok(());
     }
+    crate::log::note(&format!("note {}: making a drawer", note.id));
     /* ⚠️ The id rides in the QUERY. The page has to know which note it is
      * before it can ask for anything, and reading its own window label back is
      * a round trip on every load for something already known here. */
@@ -585,11 +614,18 @@ fn drag_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 #[tauri::command]
 pub async fn note_drag_start(app: AppHandle, id: String) {
     use std::sync::atomic::Ordering;
+    crate::log::note(&format!("note drag: start {id}"));
     if DRAGGING.swap(true, Ordering::SeqCst) {
         return;
     }
+    /* ⚠️ The pointer is watched BEFORE the overlay is built. Making a webview
+     * takes a few hundred milliseconds the first time, and a drag is a second
+     * long — so building first spent a third of the gesture doing nothing, and
+     * a quick one was over before the watcher had started. The overlay catches
+     * up; the poller skips it until it exists. */
+    watch_drag(app.clone(), id);
     let Some(window) = drag_window(&app) else {
-        DRAGGING.store(false, Ordering::SeqCst);
+        crate::log::note("note drag: no overlay could be made");
         return;
     };
     // Over the monitor the pointer is on, whichever that is.
@@ -602,7 +638,7 @@ pub async fn note_drag_start(app: AppHandle, id: String) {
         }
     }
     let _ = window.show();
-    watch_drag(app, id);
+    crate::log::note("note drag: the overlay is up");
 }
 
 /// End it. ⚠️ Where it lands is decided by the POLLER, from the last place the
@@ -611,6 +647,7 @@ pub async fn note_drag_start(app: AppHandle, id: String) {
 #[tauri::command]
 pub fn note_drag_end() {
     DRAGGING.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::log::note("note drag: let go");
 }
 
 fn watch_drag(app: AppHandle, id: String) {
@@ -618,13 +655,49 @@ fn watch_drag(app: AppHandle, id: String) {
     crate::guard::spawn("note drag", move || {
         let mut docked = false;
         let mut last = String::new();
-        while DRAGGING.load(Ordering::SeqCst) {
-            std::thread::sleep(std::time::Duration::from_millis(16));
-            let Some((cx, cy)) = crate::win::cursor() else { continue };
-            let Some(window) = app.get_webview_window(DRAG_LABEL) else { break };
-            let Some(work) = crate::win::work_area(&window) else { continue };
+        let mut monitor: Option<(i32, i32)> = None;
+        crate::log::note("note drag: watching");
+        loop {
+            /* ⚠️ Sampled BEFORE the flag is checked, so a drag shorter than one
+             * tick still gets one reading and one decision. Checking first meant
+             * a quick flick out of the island set the note pinned and then
+             * exited without ever asking where the pointer was. */
+            let Some((cx, cy)) = crate::win::cursor() else {
+                if !DRAGGING.load(Ordering::SeqCst) { break }
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue;
+            };
+            /* ⚠️ A missing overlay is not the end of the drag. It is still
+             * being built for the first few frames, and breaking out here meant
+             * the one gesture that had to work — the first — was the one that
+             * never docked anything. */
+            let Some(window) = app.get_webview_window(DRAG_LABEL) else {
+                if !DRAGGING.load(Ordering::SeqCst) { break }
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue;
+            };
+
+            /* ⚠️ The overlay follows the pointer BETWEEN MONITORS. It is one
+             * screen wide; on a desk with three of them, a drag that starts on
+             * the middle one and ends on the left was a gesture with no ghost
+             * and no zones for most of its length — and the edges it lit were
+             * the wrong screen's. */
+            if let Ok(Some(screen)) = window.monitor_from_point(cx as f64, cy as f64) {
+                let at = screen.position();
+                if monitor != Some((at.x, at.y)) {
+                    monitor = Some((at.x, at.y));
+                    let size = screen.size();
+                    let _ = window.set_position(tauri::PhysicalPosition::new(at.x, at.y));
+                    let _ = window.set_size(tauri::PhysicalSize::new(size.width, size.height));
+                }
+            }
+            let Some(work) = crate::win::work_area(&window) else {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue;
+            };
             let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor())
             else {
+                std::thread::sleep(std::time::Duration::from_millis(16));
                 continue;
             };
 
@@ -647,25 +720,36 @@ fn watch_drag(app: AppHandle, id: String) {
                 },
             );
 
-            if edge.is_empty() {
-                continue;
-            }
+            let carry_on = DRAGGING.load(Ordering::SeqCst);
+            if !edge.is_empty() {
             /* ⚠️ The drawer is opened ONCE, the first time the pointer reaches
              * an edge — not on the first millimetre of the drag. Building a
              * webview is the expensive part of this whole gesture, and doing
              * it for every drag that was going somewhere else is the cost
              * nobody sees but everybody feels. */
-            if !docked {
-                docked = true;
-                dock_for_drag(&app, &id, edge, cy);
-            } else {
-                let _ = app.emit(
-                    "notch:note-dock",
-                    DockAt { id: id.clone(), edge: edge.to_string(), y: cy, dragging: true },
-                );
+                if !docked {
+                    docked = true;
+                    crate::log::note(&format!("note drag: reached the {edge} edge"));
+                    dock_for_drag(&app, &id, edge, cy);
+                } else {
+                    let _ = app.emit(
+                        "notch:note-dock",
+                        DockAt {
+                            id: id.clone(),
+                            edge: edge.to_string(),
+                            y: cy,
+                            dragging: true,
+                        },
+                    );
+                }
             }
+            if !carry_on {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(16));
         }
 
+        crate::log::note(&format!("note drag: done, docked={docked} edge={last:?}"));
         if let Some(window) = app.get_webview_window(DRAG_LABEL) {
             let _ = window.hide();
         }
@@ -689,7 +773,11 @@ fn watch_drag(app: AppHandle, id: String) {
             return;
         }
         let Some((_, cy)) = crate::win::cursor() else { return };
-        dock_note(app.clone(), id.clone(), last, cy);
+        dock_note(app.clone(), id.clone(), last.clone(), cy);
+        let _ = app.emit(
+            "notch:note-dock",
+            DockAt { id: id.clone(), edge: side_of(&last), y: cy, dragging: false },
+        );
     });
 }
 
