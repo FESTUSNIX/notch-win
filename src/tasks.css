@@ -1051,121 +1051,74 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .note-mark:active { scale:.9; transition-duration:90ms; }
 
 /* ── A note docked to the edge of the screen ─────────────────────────────
-   ⚠️ A DRAWER, not a sticky square. What was here before was a little window
-   you dragged somewhere and then lost behind something, which is what happens
-   to every desktop sticky note ever written. This one is welded to the side:
-   a sliver that says the note is there, and the whole note when the pointer
-   arrives — the island's own move, on the other axis.
+   A DRAWER, not a sticky square: what was here before was a little window you
+   dragged somewhere and then lost behind something, which is what happens to
+   every desktop sticky note ever written. This one is welded to the side — a
+   sliver that says the note is there, and the whole note when the pointer
+   arrives.
 
-   ⚠️ The window is exactly the sliver when it is shut and exactly the panel
-   when it is open; `note-window.ts` resizes it. So everything here is drawn
-   against a box that changes size, and the panel is positioned ABSOLUTELY
-   against the edge rather than laid out — a flex child would have no room to
-   be in for the frame before the window grows. */
+   ⚠️ **It is the island's shape and the island's spring**, not a second
+   invention. The window never resizes: it is bigger than the open drawer at
+   all times, transparent, and click-through everywhere it is not painted (see
+   `watch_pin` in notes.rs). What animates is the SHAPE, drawn per frame by
+   `notchPath` — the same path the island cuts itself out of the bezel with —
+   so the drawer has the same silhouette, flaring back OUT to the screen edge
+   at each end instead of sitting against it as a rounded box.
+
+   ⚠️ So there is almost nothing here about geometry. Width, height, position
+   and the clip are all written by `note-window.ts` every frame; what is left
+   in CSS is the surface and the two layers that cross-fade on it. */
 .drawer-page { background:transparent; height:100vh; overflow:hidden; }
 #drawer { position:relative; height:100vh; overflow:hidden;
-  --face:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
-  --ruled:repeating-linear-gradient(180deg, transparent 0, transparent 23px,
-    rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px); }
+  --face:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper)); }
 
-/* ── Moulded into the edge ───────────────────────────────────────────────
-   The same profile the island has where it meets the top of the screen: the
-   body stands off the edge by its own radius, and two FILLETS flare it back
-   out to meet the edge in a concave curve. ⚠️ Painted, not cut. The window is
-   transparent, so a concave corner cannot be a `border-radius` — there is
-   nothing behind to show through it. Each fillet is a square of the surface's
-   own colour with a quarter-disc taken out by a radial gradient, which is the
-   only shape that leaves the curve bending the right way. */
-.drawer-moulded::before, .drawer-moulded::after { content:""; position:absolute;
-  width:var(--r); height:var(--r); pointer-events:none;
-  transition:opacity var(--duration-quick) var(--ease-smooth-out); }
-#drawer[data-edge="right"] .drawer-moulded::before,
-#drawer[data-edge="right"] .drawer-moulded::after { right:0; }
-#drawer[data-edge="left"] .drawer-moulded::before,
-#drawer[data-edge="left"] .drawer-moulded::after { left:0; }
-.drawer-moulded::before { bottom:100%; }
-.drawer-moulded::after { top:100%; }
-#drawer[data-edge="right"] .drawer-moulded::before {
-  background:radial-gradient(circle var(--r) at 0 0,
-    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
-#drawer[data-edge="right"] .drawer-moulded::after {
-  background:radial-gradient(circle var(--r) at 0 100%,
-    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
-#drawer[data-edge="left"] .drawer-moulded::before {
-  background:radial-gradient(circle var(--r) at 100% 0,
-    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
-#drawer[data-edge="left"] .drawer-moulded::after {
-  background:radial-gradient(circle var(--r) at 100% 100%,
-    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
+/* The painted surface. ⚠️ ONE box with one outline, which is the fix for the
+   sliver reading as a little card inside another little card: the sliver and
+   the panel are layers ON this, never boxes of their own. */
+.drawer-shape { position:absolute; overflow:hidden;
+  clip-path:url(#drawer-clip);
+  background-color:var(--face);
+  background-image:repeating-linear-gradient(180deg,
+    transparent 0, transparent 23px,
+    rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px);
+  /* ⚠️ No `box-shadow`. A clip-path cuts the shadow off with everything else,
+     so an outline drawn here is a line that stops where the flare starts — the
+     "doubled" look this replaced. The edge is the tint instead. */
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--tint) 20%, rgba(255,255,255,.08)); }
 
-/* ── The sliver ──────────────────────────────────────────────────────── */
-.drawer-tab { position:absolute; top:50%; translate:0 -50%; z-index:2;
-  --r:9px;
-  /* ⚠️ The BODY is the sliver minus its two fillets. Collapsed, the window
-     is exactly 136px tall and clips anything outside it — so a full-height
-     body would put both fillets off the top and bottom of the screen, where
-     they are invisible and the corners come out square. */
-  width:22px; height:calc(136px - 2 * var(--r));
-  display:flex; flex-direction:column;
+/* ── The sliver ──────────────────────────────────────────────────────────
+   What is on screen when nobody is looking at it. ⚠️ Pinned to the bezel side
+   and vertically centred IN THE SHAPE, so it sits still while the shape grows
+   around it and fades out under the note. */
+.drawer-sliver { position:absolute; top:50%; translate:0 -50%;
+  width:22px; height:136px; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:7px; padding:9px 0;
-  cursor:grab; user-select:none; overflow:hidden;
-  background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 6%), #1c1b21);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
-  transition:width var(--duration-fast) var(--ease-smooth-out),
-    background-color var(--duration-fast) var(--ease-smooth-out); }
-.drawer-tab:active { cursor:grabbing; }
-/* ⚠️ The fillets take the TAB's colour, not the panel's — it is a shade
-   lighter, and a fillet a shade out reads as a seam rather than as a curve. */
-.drawer-tab::before, .drawer-tab::after {
-  --face:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 6%), #1c1b21); }
-#drawer[data-edge="right"] .drawer-tab { right:0; border-radius:11px 0 0 11px; }
-#drawer[data-edge="left"] .drawer-tab { left:0; border-radius:0 11px 11px 0; }
-.drawer-tab:hover { background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 12%), #24232a); }
+  cursor:grab; user-select:none; overflow:hidden; }
+.drawer-sliver:active { cursor:grabbing; }
+#drawer[data-edge="right"] .drawer-sliver { right:0; }
+#drawer[data-edge="left"] .drawer-sliver { left:0; }
 /* The colour, and the only thing on the sliver that is always legible. */
-.drawer-tab-mark { flex-shrink:0; width:6px; height:6px; border-radius:50%;
+.drawer-sliver-mark { flex-shrink:0; width:6px; height:6px; border-radius:50%;
   background:color-mix(in srgb, var(--tint) 70%, var(--accent));
   transition:box-shadow var(--duration-fast) var(--ease-smooth-out); }
-#drawer.is-locked .drawer-tab-mark { box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 30%, transparent); }
+#drawer.is-locked .drawer-sliver-mark {
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 30%, transparent); }
 /* ⚠️ Turned on its side rather than shortened to two letters. A 22px sliver
    has room for one line of text if that line runs the other way, and "ssh key
    for the pi" read vertically is a note you recognise where "ss" is not. */
-.drawer-tab-name { writing-mode:vertical-rl; text-orientation:mixed;
+.drawer-sliver-name { writing-mode:vertical-rl; text-orientation:mixed;
   min-height:0; font-size:10.5px; letter-spacing:.2px; color:#9a9894;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  transition:opacity var(--duration-quick) var(--ease-smooth-out); }
-/* ⚠️ Gone the moment the panel is out. Open, the sliver sits against the
-   note's own first line saying exactly the same thing — which is what made the
-   drawer look like it had drawn its contents twice. Open, it is a grip. */
-/* ⚠️ And the sliver stops being a surface. Open, the panel is the surface and
-   the sliver is a grip ON it — left as a box of its own it reads as a second
-   little card floating over the note, and its own fillets paint the tab's
-   colour across the corners the panel has just moulded into the edge. */
-#drawer.is-open .drawer-tab { width:15px; background-color:transparent;
-  box-shadow:none; }
-#drawer.is-open .drawer-tab::before, #drawer.is-open .drawer-tab::after { opacity:0; }
-#drawer.is-open .drawer-tab-name { opacity:0; }
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* ── The note ────────────────────────────────────────────────────────────
-   ⚠️ The FULL width of the window, with the sliver riding on top of it. The
-   panel's right edge is therefore the screen's edge, which is what lets the
-   fillets above mould it into that edge — a panel that stopped short of the
-   sliver would be a floating card with a bar beside it. */
-.drawer-panel { position:absolute; left:0; right:0; z-index:1; --r:18px;
-  top:var(--r); bottom:var(--r);
-  display:flex; flex-direction:column; gap:8px; padding:12px 30px 14px 15px;
-  background-color:var(--face); background-image:var(--ruled);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06),
-    0 10px 34px -12px rgba(0,0,0,.9);
-  /* ⚠️ The whole width, not fourteen pixels. This is a drawer being pulled
-     out of the side of the screen; a card fading up in place is the gesture
-     for something that was already there. */
-  translate:100% 0; opacity:0; pointer-events:none;
-  transition:translate var(--duration-fast) var(--ease-smooth-out),
-    opacity var(--duration-quick) var(--ease-smooth-out); }
-#drawer[data-edge="right"] .drawer-panel { border-radius:18px 0 0 18px; }
-#drawer[data-edge="left"] .drawer-panel { border-radius:0 18px 18px 0;
-  translate:-100% 0; padding:12px 15px 14px 30px; }
-#drawer.is-open .drawer-panel { translate:0 0; opacity:1; pointer-events:auto; }
+   ⚠️ A FIXED size, clipped by the shape as it grows — the island's own trick
+   for its two layers. Sized from the spring instead, every word in the note
+   would re-wrap sixty times a second while the drawer opened. */
+.drawer-panel { position:absolute; top:50%; translate:0 -50%;
+  width:330px; height:340px;
+  display:flex; flex-direction:column; gap:8px; padding:14px 26px 16px 20px; }
+#drawer[data-edge="right"] .drawer-panel { right:0; }
+#drawer[data-edge="left"] .drawer-panel { left:0; padding:14px 20px 16px 26px; }
 
 .drawer-head { display:flex; align-items:center; justify-content:space-between;
   gap:8px; flex-shrink:0; }

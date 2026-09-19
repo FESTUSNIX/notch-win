@@ -76,12 +76,22 @@ pub struct Note {
     pub tint: String,
 }
 
-/// The collapsed drawer, in logical pixels — the sliver that says the note is
-/// there. ⚠️ The real geometry is worked out in `note-window.ts`, which is the
-/// one place that knows the monitor and the expanded size too; this is only
-/// what the window is BUILT at, and it is built hidden.
-const BAR_W: f64 = 22.0;
-const BAR_H: f64 = 136.0;
+/// The drawer's window, in logical pixels.
+///
+/// ⚠️ It does not resize, and that is the whole design. A window that grows
+/// on hover can only jump: there is no way to animate one at sixty frames a
+/// second across a process boundary. The island solved this by being a big
+/// transparent window that is click-through everywhere it is not painted, with
+/// the SHAPE animating inside it — `watch_pin` below is this window's half of
+/// that bargain, and `note-window.ts` draws the shape with the island's own
+/// `notchPath` and its own spring.
+///
+/// ⚠️ BIGGER than the drawer it holds (330 by 340). The spring overshoots
+/// its target — that is what makes it read as a spring — and the overshoot
+/// needs somewhere to go, or the shape is sliced off square at the moment it is
+/// moving fastest.
+const WINDOW_W: f64 = 362.0;
+const WINDOW_H: f64 = 400.0;
 
 #[derive(Default)]
 pub struct Store(pub Mutex<Vec<Note>>);
@@ -284,10 +294,94 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
          * so anything built here is a guess, and a guess that is shown is a
          * window seen in the wrong corner for the frame before it moves. */
         .visible(false)
-        .inner_size(BAR_W, BAR_H)
+        .inner_size(WINDOW_W, WINDOW_H)
         .build()
         .map_err(|e| e.to_string())?;
+    /* ⚠️ One watcher per docked note, and it is what makes the window above
+     * usable at all: 330x340 of transparent window at the edge of the screen
+     * would otherwise swallow every click on whatever is behind it. */
+    watch_pin(app.clone(), name);
     Ok(())
+}
+
+/// Keep a docked note click-through everywhere it is not painted, and tell it
+/// when the pointer arrives.
+///
+/// ⚠️ A copy of `hover::spawn`, deliberately, and a short one. That loop is
+/// the island's: it re-places the window when the taskbar moves, watches for a
+/// click elsewhere to dismiss on, and carries a drop zone — none of which a
+/// note has, and all of which would have to grow a label test to stay out of
+/// its way. What the two genuinely share is the state the rects live in.
+///
+/// ⚠️ It exits when the window does. `pin_note(false)` closes the window and
+/// this is how the thread finds out; without the break there would be one
+/// 100ms poll per note ever docked, for the life of the app.
+fn watch_pin(app: AppHandle, label: String) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    crate::guard::spawn("note hover", move || {
+        /* ⚠️ `Option`, not `bool` — the same trap `hover.rs` documents. Starting
+         * at `false` means the first tick sees no change and never calls
+         * `set_ignore_cursor_events`, so the window ships as whatever the
+         * builder left it: an invisible rectangle that eats clicks. */
+        let mut was: Option<bool> = None;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let Some(window) = app.get_webview_window(&label) else { return };
+            if !window.is_visible().unwrap_or(false) {
+                was = None;
+                continue;
+            }
+            let mut point = POINT::default();
+            if unsafe { GetCursorPos(&mut point) }.is_err() {
+                continue;
+            }
+            let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor()) else {
+                continue;
+            };
+            let rects = {
+                let guard = app.state::<crate::hover::InteractiveRects>();
+                let Ok(held) = guard.0.lock() else { continue };
+                held.get(&label).cloned().unwrap_or_default()
+            };
+            // CSS pixels relative to the window -> physical pixels on screen.
+            let on = rects.iter().any(|r| {
+                let left = origin.x as f64 + r.x * scale;
+                let top = origin.y as f64 + r.y * scale;
+                (point.x as f64) >= left
+                    && (point.x as f64) < left + r.width * scale
+                    && (point.y as f64) >= top
+                    && (point.y as f64) < top + r.height * scale
+            });
+            if was != Some(on) {
+                was = Some(on);
+                let _ = window.set_ignore_cursor_events(!on);
+                /* ⚠️ Re-hardened immediately. That call rewrites the whole
+                 * extended-style word, which drops the tool-window bit — and
+                 * for a note it must also NOT put the no-activate bit back, or
+                 * the note stops being typeable. See `win::harden`. */
+                crate::win::harden(&window);
+            }
+            if was == Some(true) || on {
+                let _ = window.emit_to(
+                    label.as_str(),
+                    "note:hover",
+                    NoteHover {
+                        hover: on,
+                        y: (point.y as f64 - origin.y as f64) / scale,
+                    },
+                );
+            }
+        }
+    });
+}
+
+/// Where the pointer is on a docked note, in CSS pixels down its own window.
+#[derive(Clone, serde::Serialize)]
+pub struct NoteHover {
+    pub hover: bool,
+    pub y: f64,
 }
 
 /// `left` or `right`, and never anything else.

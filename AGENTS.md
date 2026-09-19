@@ -3936,3 +3936,26 @@ The two halves were the same fault.
      say where it will land. The answer was not to draw a ghost but to do the
      thing early: the note DOCKS as you drag, so the real drawer slides out of
      the edge you are heading for and follows the pointer until you let go.
+616. ⚠️ **A window that grows on hover can only ever JUMP.** There is no
+     resizing one at sixty frames a second across a process boundary, and every
+     attempt reads as a snap with an animation after it — the animation being
+     the content catching up with a window that has already finished moving.
+     The island solved this by never resizing: it is a big transparent window,
+     click-through everywhere it is not painted, with the SHAPE animating
+     inside it. The docked note is the same arrangement now, and the fix was to
+     stop writing new geometry and start calling `notchPath` and `Spring`.
+617. ⚠️ **A `clip-path` cuts the box-shadow off with everything else.** An
+     outline drawn on a clipped shape stops dead where the clip begins, so the
+     drawer had a bordered rectangle inside an unbordered one — which is
+     exactly what "it looks doubled" meant. Anything on a clipped surface has
+     to be an inset, and the flares get their edge from the fill.
+618. ⚠️ **Two layers stacked on one surface must hand the pointer over as
+     they cross-fade.** Both are always present; only their opacity says which
+     one is the drawer right now. Without swapping `pointer-events` with the
+     fade, a press on a sliver that is no longer visible lands on it rather
+     than on the note covering it, for the whole second half of the animation.
+619. ⚠️ **`set_ignore_cursor_events` rewrites the whole extended-style word**,
+     so `win::harden` runs after every call — and it put `WS_EX_NOACTIVATE`
+     back. On the island that is the point; on a docked note it made the note
+     unwritable the first time the pointer touched it. `harden` now asks which
+     window it is.

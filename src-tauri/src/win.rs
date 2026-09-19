@@ -71,7 +71,15 @@ pub fn harden(window: &WebviewWindow) {
 
     unsafe {
         let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        let next = if window.label() == "tasks" && crate::task_window::input_active() {
+        /* ⚠️ A docked note is NEVER no-activate. It is the one window in the
+         * app you are meant to click into and type in — the island is the
+         * opposite and pays for that in plumbing — and this runs after every
+         * `set_ignore_cursor_events`, which rewrites the whole extended-style
+         * word. Without the exception the note became unwritable the first
+         * time the pointer touched it. */
+        let keeps_focus = window.label().starts_with("note-")
+            || (window.label() == "tasks" && crate::task_window::input_active());
+        let next = if keeps_focus {
             (current | WS_EX_TOOLWINDOW.0) & !WS_EX_NOACTIVATE.0
         } else {
             current | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0

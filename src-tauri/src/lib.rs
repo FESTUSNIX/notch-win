@@ -68,7 +68,11 @@ fn set_interactive_rects(
     rects: Vec<CssRect>,
     state: tauri::State<InteractiveRects>,
 ) {
-    if !matches!(window.label(), "notch" | "tasks") {
+    /* ⚠️ Docked notes report too. Each one is a window the size of the
+     * OPEN drawer, click-through everywhere it is not painted — the same
+     * arrangement the island has, for the same reason: a shape that animates
+     * cannot be a window that resizes. */
+    if !matches!(window.label(), "notch" | "tasks") && !window.label().starts_with("note-") {
         return;
     }
     if let Ok(mut held) = state.0.lock() {

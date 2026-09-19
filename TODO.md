@@ -190,11 +190,21 @@
         the pointer arrives — press the sliver to keep it open, drag it to
         slide it along the edge or across to the other one. Which edge and how
         far down are remembered; docked notes come back when the app restarts.
-  - [x] **Moulded into the edge**, with the same concave corners the island has
-        where it meets the top of the screen: the panel stands off the edge by
-        its own radius and two fillets flare it back out. Painted, not cut —
-        the window is transparent, so there is nothing behind a `border-radius`
-        to show through.
+  - [x] **The island's shape and the island's spring**, literally: the drawer
+        is cut by `notchPath` — the same path the island cuts itself out of the
+        bezel with — and driven by `Spring` at the island's own numbers. So it
+        flares back OUT to the screen edge at each end instead of sitting
+        against it as a rounded box, and it arrives with the same overshoot
+        everything else in the app does.
+  - [x] **The window never resizes.** It is bigger than the open drawer at all
+        times, transparent, and click-through everywhere it is not painted —
+        `watch_pin` in notes.rs is a short copy of `hover.rs` for that. A
+        window that grows on hover can only jump; there is no resizing one at
+        sixty frames a second across a process boundary.
+  - [ ] One 100ms polling thread per docked note, which is the price of the
+        arrangement above. Fine for the handful anybody docks; if it ever
+        becomes twenty, they want one loop over a list rather than twenty
+        loops.
   - [x] **The drag docks as it goes.** A drag with no preview is a drag of
         nothing: the card cannot leave the island's window. The real drawer is
         the preview — it slides out of the edge you are heading for and follows

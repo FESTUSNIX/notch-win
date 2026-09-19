@@ -1774,29 +1774,45 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
      through the same commands the island does, so this is a second window onto
      one store, not a second copy.
 
-     ⚠️ A DRAWER, not a sticky square — what was here before was a little
-     window you dragged somewhere and then lost behind something, which is what
-     happens to every desktop sticky note ever written. */
-  await page.setViewportSize({width: 330, height: 340});
+     ⚠️ The window NEVER RESIZES. It is bigger than the open drawer at all
+     times, transparent, and click-through everywhere it is not painted; what
+     animates is the shape inside it, cut by the island's own `notchPath` and
+     driven by the island's own spring. A window that grows on hover can only
+     jump — there is no resizing one at sixty frames a second across a process
+     boundary. */
+  await page.setViewportSize({width: 362, height: 400});
   await page.goto("/note.html?id=n1");
 
-  // Shut, it is a sliver with the note's first words turned on their side.
-  const tab = page.locator(".drawer-tab");
-  await expect(tab.locator(".drawer-tab-name")).toHaveText(/ssh key/);
-  await expect(tab.locator(".drawer-tab-name")).toHaveCSS("writing-mode", /vertical/);
-  const panel = page.locator(".drawer-panel");
-  await expect(panel).toHaveCSS("opacity", "0");
-  await expect(panel).toHaveCSS("pointer-events", "none");
-  /* Shut, at the size the window actually is: 22 by 136. ⚠️ Worth a picture of
-     its own — the sliver is what is on screen for all but a few seconds a day,
-     and at this size a stray shadow or a second outline is most of it. */
-  await page.setViewportSize({width: 22, height: 136});
-  await page.screenshot({path: "test-results/docked-note-shut.png"});
-  await page.setViewportSize({width: 330, height: 340});
+  const shape = page.locator(".drawer-shape");
+  const sliver = page.locator(".drawer-sliver");
+  await expect(sliver.locator(".drawer-sliver-name")).toHaveText(/ssh key/);
+  await expect(sliver.locator(".drawer-sliver-name"))
+    .toHaveCSS("writing-mode", /vertical/);
 
-  // The pointer arriving is the whole gesture.
-  await tab.hover();
-  await expect(panel).toHaveCSS("opacity", "1");
+  /* Shut, the shape is the sliver: 22 wide, against the edge, with the rest of
+     the window a hole. ⚠️ Measured rather than eyeballed — every part of this
+     is written by JS each frame, so a stylesheet cannot be asked. */
+  const shut = await shape.boundingBox();
+  expect(Math.round(shut!.width)).toBe(22);
+  expect(Math.round(shut!.height)).toBe(136);
+  expect(Math.abs(Math.round(362 - (shut!.x + shut!.width)))).toBe(0);
+  await expect(page.locator(".drawer-panel")).toHaveCSS("opacity", "0");
+
+  /* ⚠️ The silhouette is the island's, flares and all: rounded on the inward
+     side and flaring back OUT to the screen edge at each end, so it reads as
+     part of the edge rather than as a rounded box parked against it. The path
+     comes from `notchPath`, which is where the arc sweeps and the clamping
+     already live. */
+  const d = await page.locator("#drawer-clip-path").getAttribute("d");
+  expect(d).toMatch(/^M22\.00 0A/);
+  await page.screenshot({path: "test-results/docked-note-shut.png"});
+
+  // The pointer arriving is the whole gesture, and the shape springs open.
+  await sliver.hover();
+  await expect.poll(async () => Math.round((await shape.boundingBox())!.width))
+    .toBeGreaterThan(300);
+  await expect(page.locator(".drawer-panel")).toHaveCSS("opacity", "1");
+
   const field = page.locator(".drawer-live");
   await expect(field).toContainText("ssh key for the pi");
   // The same renderer as the wall: markers are read, not shown.
@@ -1809,31 +1825,17 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(0);
 
   // The sliver stops repeating the note the moment the note is on screen.
-  await expect(page.locator(".drawer-tab-name")).toHaveCSS("opacity", "0");
+  await expect(sliver).toHaveCSS("opacity", "0");
 
-  /* ⚠️ MOULDED into the edge, the way the island is moulded into the top of
-     the screen: flush against it, standing off it at top and bottom by its own
-     radius so the two fillets have somewhere to flare. A panel that stopped
-     short of the edge would be a floating card with a bar beside it. */
-  const shape = await page.evaluate(() => {
-    const panel = document.querySelector(".drawer-panel")!.getBoundingClientRect();
-    return {
-      gap: Math.abs(Math.round(window.innerWidth - panel.right)),
-      top: Math.round(panel.top),
-      ink: getComputedStyle(document.querySelector(".drawer-live")!).color,
-    };
-  });
-  expect(shape.gap).toBe(0);
-  expect(shape.top).toBe(18);
-  expect(shape.ink).toBe("rgb(228, 226, 222)");
-
-  // A press on the sliver keeps it open, so it can be left there.
-  await tab.click();
+  /* It can be kept open, so the note can be left on screen. ⚠️ From the
+     PANEL, not the sliver — once the note is up it is the note that is under
+     the pointer, and the sliver beneath it has stopped taking presses. */
+  await page.getByLabel("Keep it open", {exact: true}).click();
   await expect(page.locator("#drawer")).toHaveClass(/is-locked/);
   await expect(page.getByLabel("Let it close", {exact: true})).toHaveCount(1);
 
-  /* ⚠️ Editable where it is drawn, with no mode to enter. Pressing a note
-     to turn it into an editor was one press between a thought and writing it
+  /* ⚠️ Editable where it is drawn, with no mode to enter. Pressing a note to
+     turn it into an editor was one press between a thought and writing it
      down — and the press had no visible target, so the whole panel lit up,
      which reads as selecting rather than as opening. */
   await expect(field).toHaveAttribute("contenteditable", "true");
@@ -1842,7 +1844,6 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await expect(field).toContainText("(port 2222)");
   await page.screenshot({path: "test-results/docked-note.png"});
 });
-
 
 test("the shelf parks things and hands them back", async ({page}) => {
   await page.goto("/tasks.html?nocal");

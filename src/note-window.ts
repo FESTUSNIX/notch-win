@@ -3,19 +3,20 @@
  * ⚠️ This is the one window in the app that is MEANT to take focus. The island
  * is `WS_EX_NOACTIVATE` so that glancing at it never steals the caret, and
  * every field on it pays for that in plumbing; a note you cannot click into and
- * type in is not a note. It is an ordinary focusable window that happens to be
- * undecorated, always on top and off the taskbar.
+ * type in is not a note.
  *
- * ⚠️ **A drawer, not a sticky square.** What was here before was a little
- * window you dragged somewhere and then lost behind something — which is what
- * happens to every desktop sticky note ever written. This one docks: a sliver
- * at the side of the screen that says the note is there, and the whole note
- * when the pointer arrives. The same move the island makes, on the other axis.
+ * ⚠️ **It is the island's own arrangement, not a second invention.** The window
+ * never resizes: it is the size of the OPEN drawer at all times, transparent,
+ * and click-through everywhere it is not painted — `watch_pin` in notes.rs
+ * keeps that true, the way `hover.rs` does for the island. What animates is the
+ * SHAPE inside it, drawn with the island's own `notchPath` and driven by the
+ * island's own `Spring`. A window that grows on hover can only ever jump:
+ * there is no way to resize one at sixty frames a second across a process
+ * boundary, and every attempt reads as a snap with an animation after it.
  *
- * ⚠️ **The geometry lives here and only here.** Rust builds the window hidden
- * at a guess and this page places it, because the edge, the monitor, the two
- * sizes and the hover expansion are one problem — split across two languages it
- * is four numbers that have to agree and do not.
+ * ⚠️ So the drawer has the island's silhouette, flares and all — rounded on the
+ * inward side and flaring back OUT to the screen edge at each end, so it reads
+ * as part of the edge rather than as a rounded box parked against it.
  *
  * ⚠️ It reads and writes through the same commands the island does, so a note
  * changed here is changed there on the next `notch:notes` and vice versa.
@@ -26,6 +27,8 @@ import { listen } from "@tauri-apps/api/event";
 import { call, native } from "./task-client";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
+import { Spring } from "./motion";
+import { notchPath, notchTransform } from "./layout";
 import { editable, markersOf } from "./note-live";
 import { noteTitle, noteWhen, tintOf, type Note } from "./notes";
 import "./tasks.css";
@@ -36,33 +39,66 @@ const id = new URLSearchParams(location.search).get("id") ?? "";
 const host = document.getElementById("drawer")!;
 const win = native ? getCurrentWindow() : null;
 
-/* ── The two sizes, in logical pixels ─────────────────────────────────────
- * ⚠️ The bar is 22 wide and that is a floor, not a taste: it is the whole
+/* ── The two shapes ───────────────────────────────────────────────────────
+ * ⚠️ The sliver is 22 wide and that is a floor, not a taste: it is the whole
  * hover target, and anything thinner is a line you have to aim at rather than
- * a thing you move the pointer towards. */
+ * a thing you move the pointer towards.
+ *
+ * ⚠️ The open size is smaller than the WINDOW on purpose. The spring
+ * overshoots past its target — that is what makes it feel like a spring — and
+ * the overshoot needs somewhere to go, or the shape is sliced off square at
+ * the moment it is moving fastest. */
 const BAR_W = 22;
 const BAR_H = 136;
 const PANEL_W = 330;
 const PANEL_H = 340;
-/** How long the panel takes to come out, and therefore how long the window
- *  must stay big enough to hold it on the way back in. ⚠️ Must match the
- *  transition in `tasks.css`; shrink the window first and the panel vanishes
- *  instead of sliding. */
-const SLIDE = 260;
+/** The flare where the shape meets the screen edge, and the radius on the side
+ *  that does not. ⚠️ Both are clamped by `notchPath` when the shape is too
+ *  small to hold them, which is a good part of why it is reused. */
+const FLARE = 16;
+const CORNER = 18;
 
 let note: Note | null = null;
 let edge: "left" | "right" = "right";
-let open = false;
-/** Pinned open by a click on the bar, rather than by the pointer being there. */
+/** Pinned open by a press on the sliver, rather than by the pointer being on it. */
 let locked = false;
+let hovering = false;
 /** Held here rather than read back off the field: a redraw replaces it. */
 let draft = "";
-/** The top of the COLLAPSED bar, in physical pixels on the docked monitor. */
-let barTop = 0;
-/** True while the island is dragging this note along the edge. */
-let dragging = false;
+/** The middle of the sliver, in physical pixels down the docked monitor. */
+let barMiddle = 0;
+/** True while the sliver is being dragged along the edge. */
+let sliding = false;
 
-/* ── Where the window goes ───────────────────────────────────────────── */
+/* ⚠️ The island's own spring, at the island's own numbers. The whole point of
+ * this rewrite is that a docked note moves like the rest of the app rather
+ * than like a window being resized. */
+const fold = new Spring(0, 0.46, 0.62);
+let frame = 0;
+let last = 0;
+
+/* ── The parts ───────────────────────────────────────────────────────── */
+
+const clip = document.getElementById("drawer-clip-path") as unknown as SVGPathElement;
+const shape = element("div", "drawer-shape");
+const sliver = element("div", "drawer-sliver");
+const panel = element("section", "drawer-panel");
+shape.append(sliver, panel);
+host.append(shape);
+
+/** The window's own size in CSS pixels.
+ *
+ * ⚠️ Read rather than assumed. Rust builds the window and is the only place
+ * that knows how big it made it; a constant here would be a second opinion,
+ * and the two disagreeing means a shape drawn outside its own window. */
+function room() {
+  return {
+    w: document.documentElement.clientWidth,
+    h: document.documentElement.clientHeight,
+  };
+}
+
+/* ── Where the window sits ───────────────────────────────────────────── */
 
 interface Area { x: number; y: number; w: number; h: number }
 
@@ -89,81 +125,141 @@ async function measure() {
   field = { x: 0, y: 0, w: Math.round(screen.width * dpr), h: Math.round(screen.height * dpr) };
 }
 
-/** Put the window where the current state says it should be.
+/** Put the window against its edge, centred on the sliver.
  *
- * ⚠️ ONE call for the move and the resize — see `move_pin` in notes.rs. Sent
- * as two the drawer is briefly the new width at the old x, which on the
- * right-hand edge is a window hanging off the side of the screen. */
+ * ⚠️ Position only. The size is Rust's and never changes — see the note at the
+ * top of this file. */
 async function place() {
   if (!win) return;
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.round((open ? PANEL_W : BAR_W) * dpr);
-  const h = Math.round((open ? PANEL_H : BAR_H) * dpr);
-  const bar = Math.round(BAR_H * dpr);
+  const w = Math.round(room().w * dpr);
+  const h = Math.round(room().h * dpr);
   const x = edge === "right" ? field.x + field.w - w : field.x;
-  /* The bar's middle stays put while the panel grows around it, so the note
-   * opens where you were pointing rather than jumping to a corner. */
-  const middle = barTop + bar / 2;
-  const top = Math.min(Math.max(Math.round(middle - h / 2), field.y),
+  const top = Math.min(Math.max(Math.round(barMiddle - h / 2), field.y),
     field.y + field.h - h);
   try { await call("move_pin", { id, x, y: top, w, h }); } catch { /* still there */ }
 }
 
-/** Open or shut the drawer, window and all.
+/* ── What is clickable ───────────────────────────────────────────────────
  *
- * ⚠️ The order is the whole of it. Opening: make the window big FIRST, then
- * let the panel slide into the room that now exists. Shutting: let it slide
- * out and only then take the room away, or the panel is clipped out of
- * existence on the first frame and there is no animation to see. */
-async function swing(next: boolean) {
-  if (next === open) return;
-  open = next;
-  if (next) {
-    await place();
-    // A frame, so the transition has a start to run from rather than arriving
-    // already finished.
-    requestAnimationFrame(() => host.classList.add("is-open"));
+ * ⚠️ The window is a HOLE everywhere outside these rects — that is what makes
+ * 330 by 340 of transparent window at the edge of the screen liveable — so a
+ * shape drawn outside them is visible, unhoverable and unclickable. Reported
+ * whenever the shape settles, and eagerly on the way open so the pointer never
+ * falls out of a drawer that is still growing. */
+function report() {
+  if (!native) return;
+  const size = room();
+  const box = shape.getBoundingClientRect();
+  /* A little slack, like the island's: a folding drawer must not drop the
+   * pointer mid-animation and re-collapse under the cursor. */
+  const pad = 6;
+  const rects = sliding
+    ? [{ x: 0, y: 0, width: size.w, height: size.h }]
+    : [{
+      x: box.x - pad, y: box.y - pad,
+      width: box.width + 2 * pad, height: box.height + 2 * pad,
+    }];
+  void call("set_interactive_rects", { rects }).catch(() => {});
+}
+
+/* ── The shape ───────────────────────────────────────────────────────── */
+
+function paint() {
+  const t = Math.max(0, fold.value);
+  const { w: winW, h: winH } = room();
+  /* ⚠️ Clamped to the window. The spring overshoots, and a shape wider than
+   * the window it is drawn in is a shape with a straight edge sliced through
+   * it — which is the one thing the flares exist to avoid. */
+  const depth = Math.min(winW, BAR_W + (PANEL_W - BAR_W) * t);
+  const length = Math.min(winH, BAR_H + (PANEL_H - BAR_H) * t);
+
+  shape.style.width = `${depth}px`;
+  shape.style.height = `${length}px`;
+  shape.style.top = `${(winH - length) / 2}px`;
+  shape.style.left = edge === "left" ? "0px" : `${winW - depth}px`;
+
+  /* The island's shape, by the island's own hand. ⚠️ Reusing `notchPath`
+   * rather than re-deriving it: the arc sweep flags and the corner and flare
+   * clamping are exactly the parts that are easy to get subtly wrong, and they
+   * are already right and already tested there. */
+  clip.setAttribute("d", notchPath(depth, length, FLARE, CORNER));
+  clip.setAttribute("transform", notchTransform(edge, depth));
+
+  /* Cross-fade, like the island's two layers: the sliver is gone before the
+   * note arrives, so the two are never both legible at once. */
+  const shown = Math.min(1, t);
+  sliver.style.opacity = `${Math.max(0, 1 - shown * 2.4)}`;
+  panel.style.opacity = `${Math.max(0, (shown - 0.45) / 0.55)}`;
+  /* ⚠️ Whichever layer is legible is the one that takes the pointer. They
+   * sit on top of each other, so without this the invisible one is still the
+   * hit target for half the animation — and a press on a sliver that is no
+   * longer there lands on a note that is not there yet. */
+  panel.style.pointerEvents = shown > 0.55 ? "auto" : "none";
+  sliver.style.pointerEvents = shown > 0.55 ? "none" : "auto";
+}
+
+function tick(at: number) {
+  const dt = Math.min(0.05, (at - last) / 1000);
+  last = at;
+  fold.step(dt);
+  paint();
+  if (!fold.settled) {
+    frame = requestAnimationFrame(tick);
     return;
   }
-  host.classList.remove("is-open");
-  window.setTimeout(() => { if (!open) void place(); }, SLIDE);
+  frame = 0;
+  fold.snap(fold.value > 0.5 ? 1 : 0);
+  paint();
+  report();
 }
 
-let waiting = 0;
-function want(next: boolean, delay: number) {
-  clearTimeout(waiting);
-  waiting = window.setTimeout(() => { void swing(next); }, delay);
+function run() {
+  if (frame) return;
+  last = performance.now();
+  frame = requestAnimationFrame(tick);
 }
-
-/* ── Writing in it ──────────────────────────────────────────────────────
- *
- * ⚠️ There is no "edit mode". The note IS the field: the pointer arrives, the
- * drawer opens, you put the caret in a word and type. Pressing a note to turn
- * it into an editor was one press between a thought and writing it down, and
- * the press had no visible target — the whole panel lit up, which reads as
- * selecting rather than as opening.
- */
-
-/** The editor, while the panel is built. */
-let live: HTMLElement | null = null;
-/** How long after the last keystroke the note writes itself down. */
-const SAVE_AFTER = 650;
-let saving = 0;
-/** Set while the caret is in the note, so a list arriving from the island does
- *  not redraw the panel out from under it. */
-let repaint = false;
 
 /** Whether the caret is in the note. */
 function typing(): boolean {
   return !!live && document.activeElement === live;
 }
 
+/** Open or shut the drawer, from whatever is true right now. */
+function settle() {
+  const open = locked || hovering || typing();
+  fold.setTarget(open ? 1 : 0);
+  /* ⚠️ On the way IN the whole window is reported as chrome before the shape
+   * has grown into it, so the pointer cannot fall out of a drawer that is
+   * still opening. On the way out `tick` reports the real shape once it has
+   * arrived. */
+  if (open && native) {
+    const size = room();
+    void call("set_interactive_rects", {
+      rects: [{ x: 0, y: 0, width: size.w, height: size.h }],
+    }).catch(() => {});
+  }
+  run();
+}
+
+/* ── Writing in it ──────────────────────────────────────────────────────
+ *
+ * ⚠️ There is no "edit mode". The note IS the field: the pointer arrives, the
+ * drawer opens, you put the caret in a word and type. */
+
+/** The editor, while the panel is built. */
+let live: HTMLElement | null = null;
+/** How long after the last keystroke the note writes itself down. */
+const SAVE_AFTER = 650;
+let saving = 0;
+/** Set when a change arrived while the caret was in the note, so the panel can
+ *  be redrawn once it leaves. */
+let repaint = false;
+
 function later() {
   clearTimeout(saving);
   saving = window.setTimeout(() => { void save(); }, SAVE_AFTER);
 }
-
-/* ── Writing in it ───────────────────────────────────────────────────── */
 
 async function save() {
   clearTimeout(saving);
@@ -179,45 +275,43 @@ async function save() {
   } catch { /* the words are still in `draft`; the next save tries again */ }
   /* ⚠️ No redraw. This runs with the caret in the note — that is what an
    * autosave IS — and a redraw here takes the caret, the selection and the
-   * undo stack with it. The panel is already showing what was sent. */
+   * undo stack with it. */
   const when = host.querySelector<HTMLElement>(".drawer-title");
   if (when && note) when.textContent = noteWhen(note.written, Date.now());
+  const name = host.querySelector<HTMLElement>(".drawer-sliver-name");
+  if (name && note) name.textContent = noteTitle(note.body, 28);
 }
 
+/* ── Drawing the contents ────────────────────────────────────────────── */
+
 function render() {
-  host.replaceChildren();
   host.dataset.edge = edge;
   host.dataset.tint = tintOf(note);
   host.classList.toggle("is-locked", locked);
   live = null;
 
-  /* ── The sliver ───────────────────────────────────────────────────
-   * What is on screen when nobody is looking at it: a coloured edge and the
-   * note's first words turned on their side.
-   *
-   * ⚠️ The words go when the panel comes out. Open, the sliver sits against
-   * the note's own first line saying the same thing — which is what made it
-   * look like the drawer had drawn its contents twice. Open it is a grip. */
-  const tab = element("div", "drawer-tab drawer-moulded");
-  tab.setAttribute("role", "button");
-  tab.setAttribute("tabindex", "0");
-  tab.setAttribute("aria-label", locked ? "Let the note close" : "Keep the note open");
-  tab.append(element("span", "drawer-tab-mark"));
-  tab.append(element("span", "drawer-tab-name", noteTitle(note?.body ?? "", 28)));
-  grab(tab);
+  /* The sliver: a coloured dot and the note's first words turned on their
+   * side. ⚠️ It is a LAYER inside the shape, not a shape of its own — the
+   * outline round it is the drawer's, once, which is what stopped it reading
+   * as a little box inside another little box. */
+  sliver.replaceChildren();
+  sliver.setAttribute("role", "button");
+  sliver.setAttribute("tabindex", "0");
+  sliver.setAttribute("aria-label", locked ? "Let the note close" : "Keep the note open");
+  sliver.append(element("span", "drawer-sliver-mark"));
+  sliver.append(element("span", "drawer-sliver-name", noteTitle(note?.body ?? "", 28)));
 
-  /* ── The note ─────────────────────────────────────────────────────── */
-  const panel = element("section", "drawer-panel drawer-moulded");
+  panel.replaceChildren();
   const head = element("div", "drawer-head");
   /* ⚠️ WHEN, not what. The sliver beside it already carries the first line
    * and the paper below it opens with the same words — a title here was the
-   * same sentence three times, on a panel 308px wide. */
+   * same sentence three times, on a panel 300px wide. */
   head.append(element("span", "drawer-title",
     note ? noteWhen(note.written, Date.now()) : ""));
   const tools = element("div", "drawer-tools");
   for (const [icon, label, on, run] of [
     ["pin", locked ? "Let it close" : "Keep it open", locked,
-      () => { locked = !locked; freshen(); if (!locked) want(false, 120); }],
+      () => { locked = !locked; freshen(); settle(); }],
     ["copy", "Copy", false,
       () => { void call("copy_text", { text: note?.body ?? "" }).catch(() => {}); }],
     ["close", "Undock", false,
@@ -236,22 +330,20 @@ function render() {
 
   if (!note) {
     panel.append(element("p", "drawer-gone", "This note is gone."));
-    host.append(tab, panel);
     return;
   }
 
-  /* ⚠️ Editable from the moment it opens. The note is the field — put the
-   * caret in a word and type. */
   const box = element("div", "drawer-live note-body");
   box.setAttribute("aria-label", "Note");
   editable(box, note.body, () => {
     draft = markersOf(box);
     later();
   });
-  box.addEventListener("focus", () => { repaint = false; });
+  box.addEventListener("focus", () => { repaint = false; settle(); });
   box.addEventListener("blur", () => {
     draft = markersOf(box);
-    void save().then(() => { if (repaint) render(); });
+    void save().then(() => { if (repaint) { render(); paint(); } });
+    settle();
   });
   box.addEventListener("keydown", event => {
     /* ⚠️ Escape lets go of the note rather than discarding it — there is
@@ -261,12 +353,11 @@ function render() {
       event.preventDefault();
       box.blur();
       locked = false;
-      void swing(false);
+      settle();
     }
   });
   panel.append(box);
   live = box;
-  host.append(tab, panel);
 }
 
 /** The few things that change without the note changing. ⚠️ Written into the
@@ -286,15 +377,15 @@ function freshen() {
  * ⚠️ Our own drag, not `data-tauri-drag-region`. That one hands the gesture to
  * Windows, which moves the window wherever the pointer goes — and a drawer that
  * can be dropped in the middle of the screen is a sticky note again. This one
- * only ever changes how far DOWN the bar sits, and which side it is on. */
+ * only ever changes how far DOWN the sliver sits, and which side it is on. */
 function grab(tab: HTMLElement) {
-  let from: { x: number; y: number; top: number } | null = null;
+  let from: { x: number; y: number; middle: number } | null = null;
   let moved = false;
-  let frame = 0;
+  let step = 0;
 
   tab.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
-    from = { x: event.screenX, y: event.screenY, top: barTop };
+    from = { x: event.screenX, y: event.screenY, middle: barMiddle };
     moved = false;
     tab.setPointerCapture(event.pointerId);
     void measure();
@@ -305,16 +396,24 @@ function grab(tab: HTMLElement) {
     const dpr = window.devicePixelRatio || 1;
     if (!moved && Math.abs(event.screenY - from.y) < 4
       && Math.abs(event.screenX - from.x) < 4) return;
-    moved = true;
-    barTop = Math.round(from.top + (event.screenY - from.y) * dpr);
+    if (!moved) {
+      moved = true;
+      /* ⚠️ The whole window counts as chrome for the duration. The drawer is
+       * click-through outside its shape, and a drag that wandered a few pixels
+       * off it would have the pointer taken away mid-gesture. */
+      sliding = true;
+      report();
+    }
+    barMiddle = Math.round(from.middle + (event.screenY - from.y) * dpr);
     /* Which half of the screen the pointer is in, so the drawer changes sides
      * by being dragged across rather than by a setting nobody would find. */
     edge = event.screenX * dpr > field.x + field.w / 2 ? "right" : "left";
     host.dataset.edge = edge;
+    paint();
     // ⚠️ One placement per frame. A pointer reports faster than the window can
     // move, and every one of those is a window message.
-    if (frame) return;
-    frame = requestAnimationFrame(() => { frame = 0; void place(); });
+    if (step) return;
+    step = requestAnimationFrame(() => { step = 0; void place(); });
   });
 
   const drop = (event: PointerEvent) => {
@@ -324,37 +423,55 @@ function grab(tab: HTMLElement) {
     if (!moved) {
       // A press that went nowhere is a press: keep the note open, or let go.
       locked = !locked;
-      render();
-      void swing(locked ? true : false);
+      freshen();
+      settle();
       return;
     }
     moved = false;
-    void call("dock_note", { id, edge, y: barTop }).catch(() => {});
+    sliding = false;
+    report();
+    void call("dock_note", { id, edge, y: barMiddle }).catch(() => {});
   };
   tab.addEventListener("pointerup", drop);
-  tab.addEventListener("pointercancel", () => { from = null; moved = false; });
+  tab.addEventListener("pointercancel", () => {
+    from = null;
+    moved = false;
+    sliding = false;
+  });
   tab.addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     locked = !locked;
-    render();
-    void swing(locked);
+    freshen();
+    settle();
   });
 }
+grab(sliver);
 
-/* ── The pointer ─────────────────────────────────────────────────────── */
-
-document.documentElement.addEventListener("pointerenter", () => { want(true, 80); });
+/* ── The pointer ─────────────────────────────────────────────────────────
+ *
+ * ⚠️ From RUST, not from the page. The window ignores cursor events wherever
+ * it is not painted, and a window that ignores them receives none at all — so
+ * the page cannot see the pointer arrive in the first place. `watch_pin` polls
+ * the cursor against the rects `report` sends and says when it is on the
+ * shape. The page's own enter and leave still run, and are what keep the
+ * drawer open while the pointer moves about inside it. */
+if (native) {
+  void listen<{ hover: boolean; y: number }>("note:hover", event => {
+    hovering = event.payload.hover;
+    settle();
+  });
+}
+document.documentElement.addEventListener("pointerenter", () => {
+  hovering = true;
+  settle();
+});
 document.documentElement.addEventListener("pointerleave", () => {
-  /* ⚠️ Never while the caret is in it. Shutting the drawer under somebody who
-   * is typing in it would take the words off screen mid-sentence, and the
-   * pointer is nowhere near the note while they type. */
-  if (locked || dragging || typing()) return;
-  /* ⚠️ A pause before it shuts, and a longer one than the pause before it
-   * opens. A drawer that closes the instant the pointer clips its corner is
-   * one you have to chase, and the cost of being wrong in this direction is a
-   * quarter of a second of a note being visible. */
-  want(false, 240);
+  /* ⚠️ Never shuts while the caret is in it — `settle` asks. Taking the words
+   * off screen mid-sentence because the pointer wandered is the one thing a
+   * note that is also a window must not do. */
+  hovering = false;
+  settle();
 });
 
 /* ── Boot ────────────────────────────────────────────────────────────── */
@@ -367,16 +484,15 @@ async function boot() {
   edge = note?.edge === "left" ? "left" : "right";
   draft = note?.body ?? "";
   render();
+  paint();
 
   if (!native) return;
   await measure();
-  const dpr = window.devicePixelRatio || 1;
   /* Never docked before: halfway down, where the pointer already goes. */
-  barTop = note?.y && note.y > 0
-    ? note.y
-    : Math.round(field.y + field.h / 2 - (BAR_H * dpr) / 2);
+  barMiddle = note?.y && note.y > 0 ? note.y : Math.round(field.y + field.h / 2);
   try {
     await place();
+    report();
   } finally {
     /* ⚠️ Shown here and nowhere else — the window is built hidden so it is
      * never seen in the wrong corner. In a `finally` because a window that
@@ -395,6 +511,7 @@ async function boot() {
     if (typing()) { note = next; repaint = true; return; }
     note = next;
     render();
+    paint();
   });
 
   /* ── Being dragged out of the island ──────────────────────────────────
@@ -406,17 +523,11 @@ async function boot() {
     "notch:note-dock", event => {
       if (event.payload.id !== id) return;
       edge = event.payload.edge === "left" ? "left" : "right";
-      barTop = event.payload.y;
+      barMiddle = event.payload.y;
       host.dataset.edge = edge;
-      dragging = event.payload.dragging;
-      clearTimeout(waiting);
-      if (dragging) {
-        if (!open) { void swing(true); return; }
-        void place();
-        return;
-      }
-      /* Let go: the sliver again, unless the pointer happens to be on it. */
-      void swing(false);
+      locked = event.payload.dragging;
+      void place();
+      settle();
     });
 
   /* The screen itself can change under a docked window — a monitor unplugged,
@@ -433,6 +544,7 @@ if (!native) {
     edge = note?.edge === "left" ? "left" : "right";
     draft = note?.body ?? "";
     render();
+    paint();
   })();
 } else {
   void boot();
@@ -440,7 +552,7 @@ if (!native) {
 
 if (native) {
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !typing()) { locked = false; void swing(false); }
+    if (event.key === "Escape" && !typing()) { locked = false; settle(); }
   });
 }
 
