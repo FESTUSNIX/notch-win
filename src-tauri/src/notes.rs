@@ -276,6 +276,15 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
          * that here would make the note unwritable. */
         .decorations(false)
         .transparent(true)
+        /* ⚠️ Windows draws its OWN frame on an undecorated window — rounded
+         * corners, a hairline and a drop shadow, all from DWM — and it lands on
+         * the window's rectangle, not on the shape painted inside it. So the
+         * drawer came out as a rounded rectangle with a border and a shadow,
+         * with our notch invisible inside it: the "doubled" look, and the
+         * reason the flares could not be seen. Every other window in this app
+         * already says `"shadow": false` in `tauri.conf.json`; this one is
+         * built in code and had never been told. */
+        .shadow(false)
         .always_on_top(true)
         /* Out of Alt-Tab and off the taskbar: eight docked notes in the task
          * switcher is the cost of having eight of them, and always-on-top

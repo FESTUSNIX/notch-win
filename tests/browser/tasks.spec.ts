@@ -1827,6 +1827,13 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   // The sliver stops repeating the note the moment the note is on screen.
   await expect(sliver).toHaveCSS("opacity", "0");
 
+  /* ⚠️ The open drawer has a handle of its own. Moving it means grabbing the
+     sliver — and the sliver is under the note the moment the pointer arrives,
+     because arriving is what opens it. Without this strip there was no way to
+     reposition a drawer you could see. */
+  await expect(page.locator(".drawer-grip")).toHaveCSS("cursor", "grab");
+  await expect(page.locator(".drawer-grip")).toHaveCSS("opacity", "1");
+
   /* It can be kept open, so the note can be left on screen. ⚠️ From the
      PANEL, not the sliver — once the note is up it is the note that is under
      the pointer, and the sliver beneath it has stopped taking presses. */

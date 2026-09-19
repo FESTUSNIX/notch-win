@@ -608,6 +608,14 @@ export class NotesScreen {
       if (!this.dragging) {
         this.dragging = true;
         card.classList.add("is-dragging");
+        /* ⚠️ The island is click-through everywhere it is not painted, and
+         * a watcher in Rust turns that back on the moment the pointer leaves
+         * its chrome — which is one frame into dragging a note OUT of it. A
+         * window ignoring cursor events receives none, so the drag died on the
+         * island's own edge every time and nothing arrived to show for it.
+         * `set_drop_zone` is the existing escape hatch: it makes the whole
+         * window count as chrome, and a file drag already uses it. */
+        void call("set_drop_zone", { active: true }).catch(() => {});
         // The drawer appears, docked and open: the preview is the real thing.
         void this.pin(note.id, true, at);
         return;
@@ -625,6 +633,7 @@ export class NotesScreen {
       if (!from) return;
       from = null;
       card.releasePointerCapture?.(event.pointerId);
+      void call("set_drop_zone", { active: false }).catch(() => {});
       if (!this.dragging) return;
       this.dragging = false;
       card.classList.remove("is-dragging");
@@ -655,6 +664,9 @@ export class NotesScreen {
       this.dragging = false;
       card.classList.remove("is-dragging");
       card.releasePointerCapture?.(event.pointerId);
+      // ⚠️ Cleared here too. A drop zone left standing is an island that never
+      // folds again, and a cancel is exactly when nobody is watching.
+      void call("set_drop_zone", { active: false }).catch(() => {});
     });
   }
 

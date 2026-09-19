@@ -83,7 +83,15 @@ const clip = document.getElementById("drawer-clip-path") as unknown as SVGPathEl
 const shape = element("div", "drawer-shape");
 const sliver = element("div", "drawer-sliver");
 const panel = element("section", "drawer-panel");
-shape.append(sliver, panel);
+/* ⚠️ The open drawer needs a handle of its own. Moving it means grabbing the
+ * sliver — and the sliver is under the note the moment the pointer arrives,
+ * because arriving is what opens it. So there was no way to reposition a
+ * drawer you could see: the only grab area was the one that disappears when
+ * you reach for it. This strip runs down the bezel edge, where the sliver
+ * was. */
+const grip = element("div", "drawer-grip");
+for (let i = 0; i < 3; i++) grip.append(element("span", "drawer-grip-dot"));
+shape.append(sliver, panel, grip);
 host.append(shape);
 
 /** The window's own size in CSS pixels.
@@ -195,8 +203,26 @@ function paint() {
    * sit on top of each other, so without this the invisible one is still the
    * hit target for half the animation — and a press on a sliver that is no
    * longer there lands on a note that is not there yet. */
+  /* ⚠️ The note SLIDES out of the edge rather than fading in on the spot.
+   * Revealed in place, the content is at its final position from the first
+   * frame and only the shape moves — which reads as a window opening over the
+   * sliver rather than as the sliver becoming the window. Eighteen pixels of
+   * travel is enough to tie the two together, and it is a transform, so
+   * nothing inside re-wraps while it runs. */
+  const slide = (1 - shown) * 18 * (edge === "right" ? 1 : -1);
+  panel.style.translate = `${slide}px -50%`;
+  grip.style.opacity = panel.style.opacity;
+  /* ⚠️ Whichever layer is legible is the one that takes the pointer. They sit
+   * on top of each other, so without this the invisible one is still the hit
+   * target for half the animation — and a press on a sliver that is no longer
+   * there lands on a note that is not there yet.
+   *
+   * ⚠️ Except mid-drag. A pointer capture outranks hit testing, but taking the
+   * events away from the element holding one is not worth finding out about
+   * halfway through a gesture. */
   panel.style.pointerEvents = shown > 0.55 ? "auto" : "none";
-  sliver.style.pointerEvents = shown > 0.55 ? "none" : "auto";
+  grip.style.pointerEvents = shown > 0.55 ? "auto" : "none";
+  sliver.style.pointerEvents = sliding || shown <= 0.55 ? "auto" : "none";
 }
 
 function tick(at: number) {
@@ -227,6 +253,11 @@ function typing(): boolean {
 
 /** Open or shut the drawer, from whatever is true right now. */
 function settle() {
+  /* ⚠️ Not while it is being moved. Sliding the drawer up the edge is not a
+   * statement about whether it should be open, and letting the pointer's
+   * comings and goings fold it mid-drag means the thing being dragged changes
+   * size under the hand doing it. */
+  if (sliding) return;
   const open = locked || hovering || typing();
   fold.setTarget(open ? 1 : 0);
   /* ⚠️ On the way IN the whole window is reported as chrome before the shape
@@ -378,7 +409,7 @@ function freshen() {
  * Windows, which moves the window wherever the pointer goes — and a drawer that
  * can be dropped in the middle of the screen is a sticky note again. This one
  * only ever changes how far DOWN the sliver sits, and which side it is on. */
-function grab(tab: HTMLElement) {
+function grab(tab: HTMLElement, tap = true) {
   let from: { x: number; y: number; middle: number } | null = null;
   let moved = false;
   let step = 0;
@@ -422,9 +453,13 @@ function grab(tab: HTMLElement) {
     tab.releasePointerCapture?.(event.pointerId);
     if (!moved) {
       // A press that went nowhere is a press: keep the note open, or let go.
-      locked = !locked;
-      freshen();
-      settle();
+      // ⚠️ On the sliver only. The grip sits on the open note, where a stray
+      // click that pinned it open would be a control nobody asked for.
+      if (tap) {
+        locked = !locked;
+        freshen();
+        settle();
+      }
       return;
     }
     moved = false;
@@ -447,6 +482,7 @@ function grab(tab: HTMLElement) {
   });
 }
 grab(sliver);
+grab(grip, false);
 
 /* ── The pointer ─────────────────────────────────────────────────────────
  *

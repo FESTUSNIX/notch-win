@@ -1081,10 +1081,11 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   background-image:repeating-linear-gradient(180deg,
     transparent 0, transparent 23px,
     rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px);
-  /* ⚠️ No `box-shadow`. A clip-path cuts the shadow off with everything else,
-     so an outline drawn here is a line that stops where the flare starts — the
-     "doubled" look this replaced. The edge is the tint instead. */
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--tint) 20%, rgba(255,255,255,.08)); }
+  /* ⚠️ NO outline of any kind. A clip-path cuts a box-shadow off with
+     everything else, so even an inset hairline is a rectangle drawn inside the
+     shape — a border that stops where the flare starts, which is half of what
+     "it looks doubled" meant. The island has none either: it is a solid shape
+     and the edge of the fill is the edge. */ }
 
 /* ── The sliver ──────────────────────────────────────────────────────────
    What is on screen when nobody is looking at it. ⚠️ Pinned to the bezel side
@@ -1116,9 +1117,29 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
    would re-wrap sixty times a second while the drawer opened. */
 .drawer-panel { position:absolute; top:50%; translate:0 -50%;
   width:330px; height:340px;
-  display:flex; flex-direction:column; gap:8px; padding:14px 26px 16px 20px; }
+  /* ⚠️ The top and bottom padding clear the FLARE. The shape's straight edge
+     runs at the flare's radius, not at zero — that is what a notch is — so the
+     first 16px of the panel is cut away everywhere except against the bezel,
+     and a header sitting at 14px came out sliced along the top. */
+  display:flex; flex-direction:column; gap:8px; padding:28px 26px 26px 22px; }
 #drawer[data-edge="right"] .drawer-panel { right:0; }
-#drawer[data-edge="left"] .drawer-panel { left:0; padding:14px 20px 16px 26px; }
+#drawer[data-edge="left"] .drawer-panel { left:0; padding:28px 22px 26px 26px; }
+
+/* The handle on the open drawer, where the sliver was. ⚠️ Quiet until the
+   pointer is on the note: it is furniture, and a permanent set of dots on a
+   300px panel is one more thing to read every time you glance at it. */
+.drawer-grip { position:absolute; top:50%; translate:0 -50%;
+  width:18px; height:120px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:4px;
+  cursor:grab; opacity:0; }
+.drawer-grip:active { cursor:grabbing; }
+#drawer[data-edge="right"] .drawer-grip { right:2px; }
+#drawer[data-edge="left"] .drawer-grip { left:2px; }
+.drawer-grip-dot { width:3px; height:3px; border-radius:50%;
+  background:rgba(255,255,255,.18);
+  transition:background-color var(--duration-quick) var(--ease-smooth-out); }
+.drawer-shape:hover .drawer-grip-dot { background:rgba(255,255,255,.34); }
+.drawer-grip:hover .drawer-grip-dot { background:rgba(255,255,255,.6); }
 
 .drawer-head { display:flex; align-items:center; justify-content:space-between;
   gap:8px; flex-shrink:0; }

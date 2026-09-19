@@ -201,6 +201,11 @@
         `watch_pin` in notes.rs is a short copy of `hover.rs` for that. A
         window that grows on hover can only jump; there is no resizing one at
         sixty frames a second across a process boundary.
+  - [x] **A grip on the open drawer.** Moving it means grabbing the sliver —
+        and the sliver is under the note the moment the pointer arrives,
+        because arriving is what opens it. The strip of dots down the bezel
+        edge is the handle that exists when you can see the thing you want to
+        move.
   - [ ] One 100ms polling thread per docked note, which is the price of the
         arrangement above. Fine for the handful anybody docks; if it ever
         becomes twenty, they want one loop over a list rather than twenty

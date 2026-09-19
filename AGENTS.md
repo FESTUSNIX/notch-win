@@ -3959,3 +3959,27 @@ The two halves were the same fault.
      back. On the island that is the point; on a docked note it made the note
      unwritable the first time the pointer touched it. `harden` now asks which
      window it is.
+620. ⚠️ **Windows draws its OWN frame on an undecorated window.** DWM gives
+     it rounded corners, a hairline and a drop shadow — and they land on the
+     window's RECTANGLE, not on the shape painted inside it. So a drawer cut
+     into a notch came out as a rounded rectangle with a border and a shadow,
+     with the notch invisible inside it: "it looks doubled, and it still has no
+     rounded top and bottom". Every other window in this app says
+     `"shadow": false` in `tauri.conf.json`; this one is built in code and had
+     never been told.
+621. ⚠️ **An island that goes click-through the moment the pointer leaves it
+     cannot be dragged OUT of.** The hover watcher turns `ignore_cursor_events`
+     back on one frame into the gesture, a window ignoring cursor events
+     receives none, and the pointer capture dies on the island's own edge — so
+     the drag was over before it had gone anywhere and nothing appeared to show
+     for it. `set_drop_zone`, which a file drag already uses, is the existing
+     way to say "count the whole window as chrome for now".
+622. ⚠️ **A notch's straight edge runs at the FLARE's radius, not at zero.**
+     That is what a notch is. So padding measured from the box's own top is
+     sliced off along the first sixteen pixels everywhere except against the
+     bezel, and a header set at 14px came out cut along its top.
+623. ⚠️ **A handle that disappears when you reach for it is not a handle.**
+     Hovering the sliver is what opens the drawer, so by the time a press
+     lands the sliver is under the note that just covered it — leaving a window
+     you could see and could not move. The open state needs a grip of its own,
+     and it belongs where the sliver was.
