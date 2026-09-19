@@ -417,6 +417,29 @@ export class AgentsScreen {
     if (session.branch) meta.append(element("span", "agent-branch", session.branch));
     who.append(meta);
     head.append(who);
+
+    /* ── What it has spent, on the title's own line ──────────────────────
+     * ⚠️ Up here rather than under the panels. At the bottom it was the last
+     * thing on a screen that is otherwise about what the agent is DOING — and
+     * it is the one part of this screen that is true whether or not anything
+     * is happening, which is exactly what a header carries. The title has an
+     * empty right-hand end; this is what it is for. */
+    const facts = element("div", "agent-facts");
+    const fact = (what: string, value: string) => {
+      const box = element("div", "agent-fact");
+      box.append(element("span", "agent-fact-value", value),
+        element("span", "agent-fact-what", what));
+      return box;
+    };
+    facts.append(fact("read", short(session.input)), fact("written", short(session.output)));
+    const clock = element("span", "agent-fact-value", held(session.forSecs));
+    this.clocks.set(session.id, clock);
+    const since = element("div", "agent-fact");
+    since.append(clock, element("span", "agent-fact-what",
+      session.state === "waiting" ? "waiting" : session.state === "working" ? "running" : "quiet"));
+    facts.append(since);
+    if (session.lastRunSecs) facts.append(fact("last run", spoken(session.lastRunSecs)));
+    head.append(facts);
     card.append(head);
 
     /* ── What it did, and what it said about it ──────────────────
@@ -453,33 +476,10 @@ export class AgentsScreen {
     }
     if (body.childElementCount) card.append(body);
 
-    /* ── The figures, spelled out ──────────────────────────────
-     * ⚠️ With their units, not as a row of bare numbers. "5.6M / 18k" is two
-     * facts run together in the hope that whoever reads it remembers which way
-     * round they go; on the overview that trade is worth it for the width, and
-     * here there is no width problem to trade against. */
-    const facts = element("div", "agent-facts");
-    const fact = (what: string, value: string) => {
-      const box = element("div", "agent-fact");
-      box.append(element("span", "agent-fact-value", value),
-        element("span", "agent-fact-what", what));
-      return box;
-    };
-    facts.append(fact("read", short(session.input)), fact("written", short(session.output)));
-    const clock = element("span", "agent-fact-value", held(session.forSecs));
-    this.clocks.set(session.id, clock);
-    const held_ = element("div", "agent-fact");
-    held_.append(clock, element("span", "agent-fact-what",
-      session.state === "waiting" ? "waiting" : session.state === "working" ? "running" : "quiet"));
-    facts.append(held_);
-    if (session.lastRunSecs) {
-      facts.append(fact("last run", spoken(session.lastRunSecs)));
-    }
-    card.append(facts);
     /* ⚠️ No bar down here. The output share is worth a shape on a CARD,
      * where the figures are abbreviated to four characters and unlabelled —
-     * but the facts above already say "512k read, 9k written" in words, and a
-     * lone green sliver under them is a control nobody can name. */
+     * but the facts in the header already say "512k read, 9k written" in
+     * words, and a lone green sliver under them is a control nobody can name. */
     return card;
   }
 

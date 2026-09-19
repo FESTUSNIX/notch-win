@@ -269,17 +269,40 @@ const LANDS = 40;
  * second and draws it, so the screen to open on is the screen behind the thing
  * you just looked down at — and deriving it a second way here would be two
  * answers to one question that disagree at the edges. */
+/** When something ASKED for a screen — the ring, a verb, a palette row.
+ *
+ * ⚠️ An explicit choice outranks the liveliest claim, and for a little while
+ * after it. Opening the island runs `landOn` a frame later, so picking "Notes"
+ * from the ring showed Notes for one frame and then the agent that happened to
+ * be working — which reads as the ring picking the wrong thing. */
+/* ⚠️ `-Infinity`, not zero. `performance.now()` starts at zero when the page
+ * loads, so a zero here means "steered, just now" for the first second and a
+ * half of the app's life — which is exactly when the island first opens. */
+let steered = -Infinity;
+const STEERED_FOR = 1500;
+
+/** True for the instant the island is opening onto a live claim. See `show`. */
+let landing = false;
+
 function landOn() {
   if (!prefs.followLive) return;
+  if (performance.now() - steered < STEERED_FOR) return;
   const best = pick(claims());
   if (!best || best.steers === false || best.priority < LANDS) return;
-  if (best.screen !== screen) show(best.screen);
   /* ⚠️ The agent claim opens the SESSION, not the screen. You looked down,
    * saw that something was running and opened it — the thing you came for is
    * that session, and the overview with it somewhere in it is one tap behind
-   * the arrow. Walking to the same screen from the rail is the other intent
-   * entirely, which is why `show` clears it and this sets it AFTER. */
+   * the arrow.
+   *
+   * ⚠️ And BEFORE the screen is shown, not after. Set afterwards, the panel
+   * measured the overview first and then the detail — so it opened at the
+   * height of a screen it never displayed and shrank once it had, which is a
+   * panel that looks like it is loading something. `landing` is what stops
+   * `show` clearing the choice on its way past. */
+  landing = true;
   if (best.screen === "agents") agentsScreen.openFromPill();
+  if (best.screen !== screen) show(best.screen);
+  landing = false;
 }
 
 const surface = new IslandSurface(open => {
@@ -485,8 +508,12 @@ function show(name: ScreenName, live = false) {
    * detail is what the strip expands into; arriving here from the rail, the
    * palette or a keyboard step and finding one session filling the screen
    * because the pill happened to be showing it an hour ago is a screen that
-   * remembers something you never asked it to. */
-  if (name === "agents") agentsScreen.showList();
+   * remembers something you never asked it to.
+   *
+   * ⚠️ Unless this IS the strip opening — see `landing` in `landOn`, which
+   * chooses the session first precisely so the panel is measured once, at the
+   * size it is about to be. */
+  if (name === "agents" && !landing) agentsScreen.showList();
   if (name === "review") void review.load().then(() => render());
   /* The direction the selection travelled, so the new screen arrives from the
    * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens
@@ -1985,6 +2012,8 @@ async function boot() {
      * its own shortcut does not. */
     await listen<string>("island:do", event => {
       const verb = event.payload;
+      // Same reason as `island:go`: a verb that opens a screen has chosen one.
+      steered = performance.now();
       if (verb === "task") {
         show("today");
         surface.show(true);
@@ -2020,6 +2049,9 @@ async function boot() {
 
     await listen<string>("island:go", event => {
       if (event.payload === "@search") { void summon(); return; }
+      // ⚠️ Before `show`, because opening the island lands on its own a frame
+      // later and would otherwise take the screen back. See `steered`.
+      steered = performance.now();
       show(event.payload as ScreenName);
       surface.show(true);
       surface.pinFor(4000);

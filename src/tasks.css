@@ -3192,7 +3192,7 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .agent-detail > .agent-snooze { position:absolute; top:0; right:0; }
 
 .agent-detail-head { display:flex; align-items:center; gap:14px; width:100%;
-  min-width:0; padding:0; text-align:left; background:transparent; }
+  min-width:0; padding:0 34px 0 0; text-align:left; background:transparent; }
 .agent-detail-head:hover { background:transparent; }
 .agent-detail-head:hover .agent-detail-name { color:#fff; text-decoration:underline;
   text-underline-offset:4px; text-decoration-color:rgba(255,255,255,.28); }
@@ -3205,7 +3205,9 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
   box-shadow:inset 0 0 0 1px var(--hair), var(--gloss); }
 .agent-detail-mark svg { width:23px; height:23px; }
 
-.agent-detail-who { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
+/* ⚠️ 1px between the name and what is under it, not 5. They are one block
+   — who this is — and a gap the size of a line space made them two. */
+.agent-detail-who { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
 .agent-detail-line { display:flex; align-items:center; gap:10px; min-width:0; }
 .agent-detail-name { font-size:19px; font-weight:600; letter-spacing:-.018em;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -3230,9 +3232,13 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 /* Two panels: a list of actions, and one sentence of prose. Stacked, the
    sentence reads as one more step. */
 .agent-detail-body { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
-  gap:22px; align-items:start; margin-top:22px; }
+  gap:22px; align-items:stretch; margin-top:20px; }
 .agent-detail-body:has(> .agent-panel:only-child) { grid-template-columns:minmax(0, 1fr); }
-.agent-panel { min-width:0; }
+/* ⚠️ The two panels are the same height, and their headings share a line.
+   Left to themselves the sentence and the checklist are two boxes of whatever
+   height their contents happen to be, hanging off a grid row — which reads as
+   two things that were put there separately. */
+.agent-panel { min-width:0; display:flex; flex-direction:column; }
 /* See `.spend-title`. Sentence case at a readable size — an eyebrow over
    every block on the screen is a form, not a hierarchy. */
 .agent-panel-title { margin:0 0 9px; font-size:12.5px; font-weight:600;
@@ -3265,9 +3271,10 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
 .is-waiting .agent-step.is-now .agent-tick { color:var(--warn); }
 
 /* The sentence, as something said rather than as another field. */
+/* Stretched to the panel, so its bottom edge lands with the last step. */
 .agent-bubble { padding:13px 15px; border-radius:14px 14px 14px 5px;
   background-color:var(--tile-hi); box-shadow:inset 0 0 0 1px var(--hair);
-  min-width:0; }
+  min-width:0; flex:1; }
 .agent-bubble-say { margin:0; font-size:13.5px; line-height:1.6; color:#dcdcdc;
   overflow:hidden; display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; }
 /* A thought is not a statement. Same box, quieter ink. */
@@ -3277,12 +3284,22 @@ html[data-motion=never] *::after { transition:none!important; animation:none!imp
    ⚠️ With their units under them. "5.6M / 18k" is two facts run together in
    the hope the reader remembers which way round they go; on a card that trade
    buys the width, and here there is no width problem to trade against. */
-.agent-facts { display:flex; gap:32px; margin-top:22px; }
-.agent-fact { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.agent-fact-value { font-size:19px; font-weight:600; color:#ededed;
-  font-variant-numeric:tabular-nums; letter-spacing:-.015em; }
-/* See `.spend-title`: the unit is a word under a number, not an eyebrow. */
-.agent-fact-what { font-size:11.5px; color:#8e8e8e; }
+/* ⚠️ On the title's line, at the far end of it — and therefore smaller
+   than they were at the bottom of the screen. A figure the size of the name
+   beside it is a second title; these are the numbers you check, not the ones
+   you read first. */
+.agent-facts { display:flex; gap:18px; flex-shrink:0; align-items:baseline; }
+.agent-fact { display:flex; flex-direction:column; gap:1px; min-width:0;
+  text-align:right; }
+.agent-fact-value { font-size:14px; font-weight:600; color:#e4e4e4;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+.agent-fact-what { font-size:10.5px; color:#8a8a8a; }
+/* Narrow: the figures wrap under the name rather than squeezing it. */
+@media (max-width: 560px) {
+  .agent-detail-head { flex-wrap:wrap; }
+  .agent-facts { width:100%; justify-content:flex-start; margin-top:10px; }
+  .agent-fact { text-align:left; }
+}
 
 /* ── What a session has spent ────────────────────────────
    ⚠️ The bar is the OUTPUT share, not the total. The total is the two

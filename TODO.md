@@ -80,6 +80,12 @@
   - [x] **Overshooting is forgiven.** Past the ring's edge the angle alone
         decides, out to 250px, and a wedge holds until the pointer is a fifth
         of a wedge into the next one.
+  - [x] **A tap acts at once.** It was waiting for an event loop that a
+        press-and-release does not wake, so the palette opened on the next
+        keystroke instead.
+  - [x] **What the ring picks is what opens.** Opening the island lands on
+        the liveliest claim a frame later, which used to take the screen back
+        — an agent working outranked the wedge somebody had just chosen.
 
 - ~~Settings: too many words, too many switches in one pane~~ — **done**. The
   descriptions under every row are gone except where the consequence is

@@ -208,6 +208,11 @@ fn gesture(app: AppHandle, shortcut: String) {
             if down && !opened && held >= hold {
                 opened = true;
                 crate::log::note(&format!("ring: held {held}ms, opening"));
+                /* ⚠️ This one DOES go through the main thread — it shows a
+                 * window, and a window shown from a worker is a thing Windows
+                 * will occasionally not do. It gets away with waiting for the
+                 * loop because a hold is a hand in motion, and motion is what
+                 * wakes it. */
                 let hand = app.clone();
                 let _ = app.run_on_main_thread(move || crate::ring::open(&hand));
                 continue;
@@ -250,8 +255,15 @@ fn gesture(app: AppHandle, shortcut: String) {
                  * ring is not opened on the press any more. */
                 let what = prefs.ring_tap.clone();
                 crate::log::note(&format!("ring: tapped after {held}ms, doing {what}"));
-                let hand = app.clone();
-                let _ = app.run_on_main_thread(move || crate::ring::ring_pick(hand, what));
+                /* ⚠️ Straight from this thread, NOT through the main one. What a
+                 * tap does is send an event to a WebView, which needs no event
+                 * loop — and going through `run_on_main_thread` meant waiting
+                 * for that loop to wake, which on a press-and-release it does
+                 * not: nothing moves, so nothing wakes it. The palette then
+                 * opened on the next keystroke, whatever that keystroke was,
+                 * and the one that was supposed to close it appeared to do
+                 * nothing at all. */
+                crate::ring::ring_pick(app.clone(), what);
             }
             return;
         }

@@ -3843,3 +3843,26 @@ The two halves were the same fault.
      picks a coin toss. A wedge holds until the pointer is a fifth of a wedge
      into the next one — and only its NEIGHBOURS are sticky, because a jump
      across the ring is a decision rather than a wobble.
+599. ⚠️ **`run_on_main_thread` waits for the loop to WAKE, and a
+     press-and-release does not wake it.** The tap opened the palette on the
+     next keystroke, whatever that keystroke was, and the tap meant to close it
+     appeared to do nothing — because nothing had moved since. What a tap does
+     is send an event to a WebView, which needs no event loop at all; only the
+     hold, which shows a window, has to go through the main thread, and it gets
+     away with it because a hold is a hand in motion.
+600. ⚠️ **Opening the island runs `landOn` a frame later, which takes the
+     screen back.** Picking "Notes" from the ring showed Notes for one frame
+     and then whichever agent happened to be working — the liveliest claim
+     beating the choice somebody had just made with their hand. An explicit
+     navigation is latched for a second and a half, and outranks every claim
+     during it.
+601. ⚠️ **`performance.now()` starts at ZERO**, so a "when did this last
+     happen" latch initialised to 0 reads as "just now" for the first seconds
+     of the page's life — which is exactly when the island first opens. The
+     latch starts at `-Infinity`.
+602. ⚠️ **A panel measured before its content is replaced opens at the size
+     of a screen it never shows.** Landing on a session measured the overview,
+     then the detail, and the difference was eighty pixels of empty panel that
+     shrank a moment later — which reads as something still loading. The
+     session is chosen BEFORE the screen is shown, so there is one render and
+     one measurement, at the size it is about to be.
