@@ -69,9 +69,6 @@ let draft = "";
 let barMiddle = 0;
 /** True while the sliver is being dragged along the edge. */
 let sliding = false;
-/** The edge the last dock event named, so the monitor is only re-read when it
- *  actually changes. */
-let side = "";
 
 /* ⚠️ The island's own spring, at the island's own numbers. The whole point of
  * this rewrite is that a docked note moves like the rest of the app rather
@@ -538,6 +535,7 @@ async function boot() {
   await measure();
   /* Never docked before: halfway down, where the pointer already goes. */
   barMiddle = note?.y && note.y > 0 ? note.y : Math.round(field.y + field.h / 2);
+  void call("log_line", { line: `drawer up for ${id}` }).catch(() => {});
   try {
     await place();
     report();
@@ -567,9 +565,17 @@ async function boot() {
    * dragging a note to the edge with nothing to see is dragging air. The real
    * note slides out of the edge you are heading for and follows the pointer,
    * so where it will land is where it already is. */
+  let moves = 0;
   await listen<{ id: string; edge: string; y: number; dragging: boolean }>(
     "notch:note-dock", event => {
       if (event.payload.id !== id) return;
+      moves += 1;
+      if (moves % 30 === 1) {
+        void call("log_line", {
+          line: `dock #${moves} ${event.payload.edge} y=${event.payload.y}`
+            + ` dragging=${event.payload.dragging}`,
+        }).catch(() => {});
+      }
       edge = event.payload.edge === "left" ? "left" : "right";
       barMiddle = event.payload.y;
       host.dataset.edge = edge;
@@ -577,16 +583,17 @@ async function boot() {
        * note to an edge with nothing to see is dragging air, and a drawer that
        * folded itself halfway through the gesture moving it is worse. */
       locked = event.payload.dragging;
-      /* The monitor can change under it mid-drag — that is the point of the
-       * gesture — so the work area is re-read when the EDGE changes. ⚠️ Not on
-       * every event: these arrive sixty times a second, and `measure` is a
-       * round trip to Rust for a rectangle that only moves when the drag
-       * crosses to another screen. */
-      if (edge !== side) {
-        side = edge;
+      /* ⚠️ The page does NOT move the window while the drag is running.
+       * `slide_pin` does, from the same poll that decides the edge — because a
+       * page can only move itself when an event reaches it, and this drawer is
+       * often a webview that was hidden a moment ago. Two writers would fight
+       * over the same pixels anyway.
+       *
+       * On the LAST event the work area is re-read and the page takes the
+       * window back, which is also what puts it right if the drag ended on
+       * another monitor. */
+      if (!event.payload.dragging) {
         void measure().then(() => { void place(); });
-      } else {
-        void place();
       }
       settle();
     });

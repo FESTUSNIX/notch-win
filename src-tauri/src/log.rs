@@ -24,6 +24,19 @@ fn path() -> Option<std::path::PathBuf> {
 
 /// Append one line. Never fails loudly: a logger that can panic is worse than
 /// no logger, and this runs on every background thread in the app.
+/// One line, from the web layer.
+///
+/// ⚠️ The only way to see what a page did. Three of the windows in this app are
+/// invisible when they misbehave — the ring, the drop zones, a hidden drawer —
+/// and `console.log` in a WebView nobody can open a devtools window on is a
+/// message to nobody. Capped, because a page in a loop is a page that can fill
+/// a disk.
+#[tauri::command]
+pub fn log_line(window: tauri::WebviewWindow, line: String) {
+    let said: String = line.chars().take(200).collect();
+    note(&format!("{}: {said}", window.label()));
+}
+
 pub fn note(line: &str) {
     let Some(path) = path() else { return };
     if let Some(parent) = path.parent() {

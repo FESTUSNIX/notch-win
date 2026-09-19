@@ -24,7 +24,11 @@ import "./tasks.css";
 
 document.body.className = "dragzone-page";
 
-const id = new URLSearchParams(location.search).get("id") ?? "";
+/* ⚠️ The note comes from the EVENT, not from the URL. This window is made
+ * once and reused for every drag after it, so a page that read its own `?id`
+ * showed the first note ever dragged for the rest of the session. The query is
+ * only what the preview stages from. */
+let showing = "";
 const host = document.getElementById("zones")!;
 
 const left = element("div", "dropzone dropzone-left");
@@ -63,22 +67,45 @@ function at(x: number, y: number) {
   ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 }
 
+/** A line in the app's log. ⚠️ `console.log` in a window nobody can open
+ *  devtools on is a message to nobody, and this one is invisible by design. */
+function say(what: string) {
+  if (native) void call("log_line", { line: what }).catch(() => {});
+}
+
 if (native) {
-  void listen<{ x: number; y: number; edge: string }>("note:drag", event => {
-    const { x, y, edge } = event.payload;
-    at(x, y);
-    host.dataset.ready = "yes";
-    left.classList.toggle("is-near", edge === "left");
-    right.classList.toggle("is-near", edge === "right");
-  });
-  void stage(id);
+  say(`up, ${window.innerWidth}x${window.innerHeight}`);
+  let seen = 0;
+  void listen<{ id: string; x: number; y: number; edge: string; done: boolean }>(
+    "note:drag", event => {
+      const { id, x, y, edge, done } = event.payload;
+      if (done) {
+        /* The drag is over and this window is about to be hidden. ⚠️ Reset,
+         * because hiding keeps whatever was on screen — and the next drag
+         * would open with the last one's ghost already in place. */
+        seen = 0;
+        showing = "";
+        host.dataset.ready = "";
+        left.classList.remove("is-near");
+        right.classList.remove("is-near");
+        return;
+      }
+      if (seen === 0) say(`first pointer at ${Math.round(x)},${Math.round(y)} edge=${edge}`);
+      seen += 1;
+      if (id !== showing) { showing = id; void stage(id); }
+      at(x, y);
+      host.dataset.ready = "yes";
+      left.classList.toggle("is-near", edge === "left");
+      right.classList.toggle("is-near", edge === "right");
+    });
 } else {
   /* The preview has no drag to follow, so it stages one: the zones as they
    * look when the pointer is in the left one, which is the state worth
    * looking at. */
   void (async () => {
     const all = await call<Note[]>("get_notes");
-    await stage(all[0]?.id ?? "");
+    const asked = new URLSearchParams(location.search).get("id") ?? "";
+    await stage(asked || (all[0]?.id ?? ""));
     host.dataset.ready = "yes";
     left.classList.add("is-near");
     at(120, 260);

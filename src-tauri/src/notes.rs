@@ -571,13 +571,22 @@ fn zone_width(work: &windows::Win32::Foundation::RECT) -> i32 {
 }
 
 /// What the overlay is told, sixty times a second.
+///
+/// ⚠️ It carries the NOTE as well as the pointer. The overlay window is made
+/// once and reused for every drag after it, so a page that read the id out of
+/// its own URL showed the first note ever dragged for the rest of the session.
 #[derive(Clone, serde::Serialize)]
 struct DragAt {
+    id: String,
     /// CSS pixels inside the overlay window.
     x: f64,
     y: f64,
     /// `left`, `right`, or empty for "not near an edge".
     edge: String,
+    /// The last message of a drag, so the overlay can put itself away. ⚠️ A
+    /// window that is merely hidden keeps whatever it was showing, and the
+    /// next drag would start with the last one's ghost already on screen.
+    done: bool,
 }
 
 /// Put the overlay over the monitor the pointer is on, and show it.
@@ -714,9 +723,11 @@ fn watch_drag(app: AppHandle, id: String) {
                 DRAG_LABEL,
                 "note:drag",
                 DragAt {
+                    id: id.clone(),
                     x: (cx - origin.x) as f64 / scale,
                     y: (cy - origin.y) as f64 / scale,
                     edge: edge.to_string(),
+                    done: false,
                 },
             );
 
@@ -742,6 +753,10 @@ fn watch_drag(app: AppHandle, id: String) {
                         },
                     );
                 }
+                /* ⚠️ The window is moved here, every tick, whether or not the
+                 * event above ever arrives. The page draws the drawer; where
+                 * the drawer IS belongs to whoever knows where the pointer is. */
+                slide_pin(&app, &id, edge, cy, &work);
             }
             if !carry_on {
                 break;
@@ -751,6 +766,17 @@ fn watch_drag(app: AppHandle, id: String) {
 
         crate::log::note(&format!("note drag: done, docked={docked} edge={last:?}"));
         if let Some(window) = app.get_webview_window(DRAG_LABEL) {
+            let _ = window.emit_to(
+                DRAG_LABEL,
+                "note:drag",
+                DragAt {
+                    id: id.clone(),
+                    x: 0.0,
+                    y: 0.0,
+                    edge: String::new(),
+                    done: true,
+                },
+            );
             let _ = window.hide();
         }
         if !docked {
@@ -779,6 +805,24 @@ fn watch_drag(app: AppHandle, id: String) {
             DockAt { id: id.clone(), edge: side_of(&last), y: cy, dragging: false },
         );
     });
+}
+
+/// Put a docked note's window where the pointer says, right now.
+///
+/// ⚠️ Moved from HERE rather than by the page, and that is the fix for a
+/// drawer that appeared at the edge and then sat there while the pointer went
+/// on without it. The page can only move itself when an event reaches it, and
+/// an event into a webview that was hidden a moment ago is the one delivery
+/// this app has already been bitten by twice. Everything this needs — the
+/// window's real size, the monitor under the cursor, the work area — is here.
+fn slide_pin(app: &AppHandle, id: &str, edge: &str, cy: i32,
+             work: &windows::Win32::Foundation::RECT) {
+    let Some(window) = app.get_webview_window(&label(id)) else { return };
+    let Ok(size) = window.outer_size() else { return };
+    let (w, h) = (size.width as i32, size.height as i32);
+    let x = if edge == "left" { work.left } else { work.right - w };
+    let y = (cy - h / 2).clamp(work.top, (work.bottom - h).max(work.top));
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
 /// Pin a note to an edge mid-drag, and open its drawer there.
