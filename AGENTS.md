@@ -3983,3 +3983,19 @@ The two halves were the same fault.
      lands the sliver is under the note that just covered it — leaving a window
      you could see and could not move. The open state needs a grip of its own,
      and it belongs where the sliver was.
+624. ⚠️ **A drag ghost cannot be drawn by the window the drag started in.**
+     A drag OUT of the island ends somewhere the island is not, and no window
+     paints past its own edge — so the card stayed behind and the gesture was a
+     pointer moving over the desktop with nothing under it. What follows the
+     pointer has to be a window of its own, which is also where the drop zones
+     can be drawn.
+625. ⚠️ **An overlay that covers the screen must ignore cursor events — and a
+     window that ignores them receives none.** So it cannot see the pointer it
+     exists to follow. The cursor is read in Rust and sent to it, and the same
+     poll decides which edge is near: one source for the ghost, the zones and
+     the docking, which is what stops the three disagreeing about where the
+     note is going.
+626. ⚠️ **Swallowing the click that follows a pointerup makes every card
+     unopenable.** A press and a drag end the same way, and the click after a
+     release is what opens the note — so the swallow has to be conditional on a
+     drag having actually happened, not on the release.

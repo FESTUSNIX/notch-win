@@ -1164,6 +1164,82 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .drawer-live:focus-visible { outline:none; }
 .drawer-gone { margin:auto; font-size:12px; color:#6a6a6a; }
 
+/* ── Dragging a note to an edge ──────────────────────────────────────────
+   A window of its own over the whole screen: the island cannot paint past its
+   own edge, and a drag OUT of it ends somewhere the island is not.
+
+   ⚠️ Everything here is `pointer-events: none` by construction — the window
+   ignores cursor events entirely — so none of it can ever be in the way. What
+   it costs instead is that nothing here may rely on `:hover`. */
+.dragzone-page { background:transparent; height:100vh; overflow:hidden;
+  cursor:default; }
+#zones { position:fixed; inset:0; opacity:0;
+  transition:opacity var(--duration-fast) var(--ease-smooth-out); }
+#zones[data-ready="yes"] { opacity:1; }
+
+/* The two edges, as places. ⚠️ A wash and a line rather than a filled panel:
+   this is drawn OVER whatever you were looking at, and a band of colour down
+   a sixth of the screen is a thing you have to see past to finish the gesture
+   it exists to help with. */
+.dropzone { position:fixed; top:0; bottom:0; width:clamp(120px, 16.6vw, 260px);
+  display:flex; align-items:center; justify-content:center;
+  transition:background-color var(--duration-fast) var(--ease-smooth-out); }
+/* ⚠️ Faint until it is the answer. This is drawn OVER whatever you were
+   looking at: a sixth of the screen washed in the accent colour is a thing you
+   have to see past to finish the gesture it exists to help with, and both
+   edges are offered at once. */
+.dropzone-left { left:0;
+  background:linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 7%, transparent), transparent); }
+.dropzone-right { right:0;
+  background:linear-gradient(270deg,
+    color-mix(in srgb, var(--accent) 7%, transparent), transparent); }
+.dropzone.is-near.dropzone-left { background:linear-gradient(90deg,
+  color-mix(in srgb, var(--accent) 20%, transparent), transparent); }
+.dropzone.is-near.dropzone-right { background:linear-gradient(270deg,
+  color-mix(in srgb, var(--accent) 20%, transparent), transparent); }
+
+/* The edge itself, which is where the note will actually land. */
+.dropzone-line { position:absolute; top:12%; bottom:12%; width:5px;
+  border-radius:4px; background:color-mix(in srgb, var(--accent) 55%, transparent);
+  transition:width var(--duration-fast) var(--ease-smooth-out),
+    background-color var(--duration-fast) var(--ease-smooth-out),
+    top var(--duration-fast) var(--ease-smooth-out),
+    bottom var(--duration-fast) var(--ease-smooth-out); }
+.dropzone-left .dropzone-line { left:0; }
+.dropzone-right .dropzone-line { right:0; }
+.dropzone.is-near .dropzone-line { width:9px; top:4%; bottom:4%;
+  background:var(--accent); }
+
+.dropzone-say { font-size:12px; font-weight:600; letter-spacing:.2px;
+  padding:7px 13px; border-radius:10px; color:#fff; opacity:0;
+  background:rgba(0,0,0,.62);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  transition:opacity var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-bounce); }
+.dropzone.is-near .dropzone-say { opacity:1; scale:1; }
+.dropzone:not(.is-near) .dropzone-say { scale:.9; }
+
+/* ── What is under the pointer ───────────────────────────────────────────
+   ⚠️ Anchored at its own top-left and moved with a transform, so the element
+   the pointer is "holding" is the corner it is on. Centring it would put the
+   pointer in the middle of the ghost, where it covers the words. */
+.drag-ghost { position:fixed; top:0; left:0; width:224px;
+  display:flex; flex-direction:column; gap:3px;
+  padding:11px 13px; margin:14px 0 0 16px;
+  border-radius:4px 4px 4px 14px;
+  background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+    0 18px 34px -14px rgba(0,0,0,.95);
+  /* A held card sits at a slight angle — the one piece of this that says
+     "picked up" rather than "arranged". */
+  rotate:-2.5deg;
+  will-change:transform; }
+.drag-ghost-title { font-size:12.5px; font-weight:650; color:#f2f1ee;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.drag-ghost-rest { font-size:11px; color:#96948f;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 /* ── The calendar: a month, and the agenda beside it ─────────────────────
    ⚠️ One view, not two. A grid says WHICH days have something on them; the
    agenda says what. A grid on its own answers neither question, which is why

@@ -565,31 +565,34 @@ export class NotesScreen {
    * ⚠️ Pointer CAPTURE, and that is the only reason this can work at all. The
    * gesture ends outside the window it started in — that is what "out" means —
    * and without capture the island stops hearing about the pointer the moment
-   * it crosses its own edge, so every drag would look like a press that
-   * wandered off.
+   * it crosses its own edge.
    *
-   * ⚠️ And the note DOCKS as you drag, rather than on release. A drag with no
-   * preview is a drag of nothing: the card cannot leave the island's window,
-   * so there is nothing under the pointer and nothing to say where it will
-   * land. Docking live makes the real drawer the preview — it slides out of
-   * the edge you are heading for, holding the note, and follows the pointer up
-   * and down until you let go. Dropping it back on the island puts it away
-   * again. */
+   * ⚠️ And almost nothing else happens here. What you are dragging is drawn by
+   * a window of its own over the whole screen, and the pointer that moves it
+   * is read in Rust — see `watch_drag` in notes.rs. The island cannot paint
+   * past its own edge, so a ghost drawn here would be a card that vanishes at
+   * the island's border, which is the "dragging air" this replaced; and the
+   * overlay ignores cursor events, so it cannot see the pointer itself. One
+   * poll feeds the ghost, the zones and the decision about where the note
+   * lands, which is what stops the three disagreeing. */
   private dragOut(card: HTMLElement, note: Note) {
     let from: { x: number; y: number } | null = null;
-    let frame = 0;
-    let at = { edge: "right", y: 0 };
 
-    /** Which side of the screen the pointer is on, and how far down.
-     *
-     * ⚠️ `screen.width` is the primary monitor in CSS pixels, which is what
-     * `screenX` is measured in too — so these are comparable without knowing
-     * the scale factor. `y` is physical, because that is what a window
-     * position is. */
-    const aimAt = (event: PointerEvent) => ({
-      edge: event.screenX > window.screen.width / 2 ? "right" : "left",
-      y: Math.round(event.screenY * (window.devicePixelRatio || 1)),
-    });
+    const stop = () => {
+      if (!this.dragging) return;
+      this.dragging = false;
+      card.classList.remove("is-dragging");
+      void call("note_drag_end").catch(() => {});
+      void call("set_drop_zone", { active: false }).catch(() => {});
+      /* ⚠️ Asked for again rather than assumed. Where the note ended up was
+       * decided in Rust, from where the pointer really was — the island has no
+       * opinion about it and no way to form one, so the wall reads the answer
+       * back instead of predicting it. */
+      void (async () => {
+        try { this.notes = await call<Note[]>("get_notes"); } catch { /* keep */ }
+        this.changed();
+      })();
+    };
 
     card.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
@@ -598,75 +601,45 @@ export class NotesScreen {
     });
 
     card.addEventListener("pointermove", event => {
-      if (!from) return;
-      const far = Math.hypot(event.screenX - from.x, event.screenY - from.y);
+      if (!from || this.dragging) return;
       /* ⚠️ A threshold, not any movement at all. A press always moves a pixel
        * or two, and a card that flies out on one of them is a card you cannot
        * click. */
-      if (!this.dragging && far < 14) return;
-      at = aimAt(event);
-      if (!this.dragging) {
-        this.dragging = true;
-        card.classList.add("is-dragging");
-        /* ⚠️ The island is click-through everywhere it is not painted, and
-         * a watcher in Rust turns that back on the moment the pointer leaves
-         * its chrome — which is one frame into dragging a note OUT of it. A
-         * window ignoring cursor events receives none, so the drag died on the
-         * island's own edge every time and nothing arrived to show for it.
-         * `set_drop_zone` is the existing escape hatch: it makes the whole
-         * window count as chrome, and a file drag already uses it. */
-        void call("set_drop_zone", { active: true }).catch(() => {});
-        // The drawer appears, docked and open: the preview is the real thing.
-        void this.pin(note.id, true, at);
-        return;
-      }
-      /* ⚠️ One message per frame. A pointer reports faster than a window can
-       * move, and every one of these crosses a process boundary. */
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        void call("drag_pin", { id: note.id, edge: at.edge, y: at.y }).catch(() => {});
-      });
+      if (Math.hypot(event.screenX - from.x, event.screenY - from.y) < 14) return;
+      this.dragging = true;
+      card.classList.add("is-dragging");
+      /* ⚠️ The island is click-through everywhere it is not painted, and a
+       * watcher in Rust turns that back on the moment the pointer leaves its
+       * chrome — which is one frame into dragging a note OUT of it. A window
+       * ignoring cursor events receives none, so the drag used to die on the
+       * island's own edge. `set_drop_zone` is the existing escape hatch, and a
+       * file drag already uses it. */
+      void call("set_drop_zone", { active: true }).catch(() => {});
+      void call("note_drag_start", { id: note.id }).catch(() => {});
     });
 
-    const drop = (event: PointerEvent) => {
+    card.addEventListener("pointerup", event => {
       if (!from) return;
       from = null;
       card.releasePointerCapture?.(event.pointerId);
-      void call("set_drop_zone", { active: false }).catch(() => {});
-      if (!this.dragging) return;
-      this.dragging = false;
-      card.classList.remove("is-dragging");
-      /* Let go over the island itself and the note is put away — the same
-       * gesture backwards, which is how it reads whether the drag was a
-       * mistake or a decision to take the note off the edge.
-       *
-       * ⚠️ The island's own BOX, not the window's. The window is bigger than
-       * what is drawn in it, and a drag that ended on the transparent part
-       * beside the panel would read as "never left" — which is the one place
-       * it obviously did. */
-      const box = document.getElementById("island")?.getBoundingClientRect();
-      const home = !!box && event.clientX >= box.left && event.clientX <= box.right
-        && event.clientY >= box.top && event.clientY <= box.bottom;
-      if (home) {
-        void this.pin(note.id, false);
-        return;
-      }
-      void call("dock_note", { id: note.id, edge: at.edge, y: at.y }).catch(() => {});
-      this.changed();
-      // The click that would otherwise follow the release would open the note.
+      /* ⚠️ Where it LANDS is not decided here. This release is a pointer event
+       * seen through a capture, in the island's own coordinates; the poller
+       * knows where the pointer actually was on the screen, which is the only
+       * place the answer can be read from. */
+      /* ⚠️ Only after a real DRAG. The click that follows a release is what
+       * opens the note, and swallowing it on every press made every card on
+       * the wall unopenable. */
+      const dragged = this.dragging;
+      stop();
+      if (!dragged) return;
       const swallow = (click: Event) => { click.stopPropagation(); click.preventDefault(); };
       card.addEventListener("click", swallow, { capture: true, once: true });
-    };
-    card.addEventListener("pointerup", drop);
+    });
+
     card.addEventListener("pointercancel", event => {
       from = null;
-      this.dragging = false;
-      card.classList.remove("is-dragging");
       card.releasePointerCapture?.(event.pointerId);
-      // ⚠️ Cleared here too. A drop zone left standing is an island that never
-      // folds again, and a cancel is exactly when nobody is watching.
-      void call("set_drop_zone", { active: false }).catch(() => {});
+      stop();
     });
   }
 

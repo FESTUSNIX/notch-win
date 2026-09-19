@@ -12,6 +12,8 @@
 
 ## My ideas for the next features
 
+- New: Money managing features for the whole app. We must think what would be helpful for the user to manage their money, and how to integrate it into the app. This could include budgeting tools, expense tracking, subscription management, and financial insights.
+
 - ~~Currency converter extension for the command palette~~ — **done**.
   `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
   Frankfurter with exchangerate-api behind it, one table against the euro
@@ -52,7 +54,6 @@
   times a week, and the palette is a shorter road to it than what is used now.
   A palette that answers everything is a palette nobody can predict, so an
   idea that is merely clever is listed and not built.
-
   1. **Start a timer by saying how long.** `20 min`, `1h30`, `7:30 alarm`.
      The timer, its pill and its screen all exist; this is a parser and one
      call. ⚠️ The grammar has to stay narrow — a bare number must not start
@@ -89,56 +90,6 @@
   and half a command is a real command), killing processes by name (same
   reason, with a worse failure), and anything that reads a credential back out
   of Credential Manager — tokens never come back to a WebView.
-
-- ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
-  Every screen at a direction, the palette in the middle, picking one opens the
-  island on it. ⚠️ Eight at most: past that, aiming stops being faster than
-  reading.
-  - [x] **Hold and let go to pick.** Press, flick the wrist, let go — one
-        gesture, no click. A tap still opens it and leaves it up, which is what
-        somebody reading the labels is doing. 200ms is the line.
-  - [x] **Verbs as well as screens**, and they are what stops it being a
-        navigation menu: add a task, write a note (both with the caret where it
-        belongs), shelve the clipboard, start a pomodoro. Chosen in
-        `Settings → Island → The ring`, eight at most.
-  - [ ] The chosen list is ordered by the settings list rather than dragged. A
-        ring whose wedges move about is one where aiming stops working, so the
-        order has to come from somewhere fixed — but "somewhere fixed" is
-        currently "the order this list happens to be written in".
-  - [x] **Hold and let go actually works.** Windows repeats a held key and
-        every repeat was another press, so holding it toggled the ring shut.
-  - [x] **One label, under the ring**, instead of eight around it — long
-        names ran over their own wedges. Frosted by default, with a solid
-        style for a busy background, a tick per wedge crossed and a lower one
-        on the pick.
-  - [ ] The ticks come from the ring's own page, which a global shortcut does
-        not activate — they may stay silent until the first mouse pick of
-        the session. See AGENTS 574.
-  - [x] **The release is watched here now**, with `GetAsyncKeyState`: the
-        plugin's own `Released` never arrives on this machine, which is why
-        the gesture had never worked — and why the auto-repeat guard locked
-        the ring out of opening at all. See AGENTS 581.
-  - [x] **Tap for one thing, hold for the ring.** A tap opens the command
-        palette (or whatever is set in Settings → Island) and never draws the
-        menu; the ring is what holding past 0.25s gets you. Both the delay and
-        what a tap does are preferences.
-  - [x] **The pick carries the pointer** rather than trusting the page to have
-        seen it move — see AGENTS 590.
-  - [ ] The whole gesture is now logged. If it misbehaves again, the log says
-        which step: `Settings → General → Open log`.
-  - [x] **Two global shortcuts, not seven.** `Alt+W` tapped is the palette and
-        held is the ring; `Ctrl+Alt+H` still hides everything. The five that
-        went — open the island, add a task, shelve the clipboard, next display
-        and the palette's own key — are all a wedge or a palette row away.
-  - [x] **Overshooting is forgiven.** Past the ring's edge the angle alone
-        decides, out to 250px, and a wedge holds until the pointer is a fifth
-        of a wedge into the next one.
-  - [x] **A tap acts at once.** It was waiting for an event loop that a
-        press-and-release does not wake, so the palette opened on the next
-        keystroke instead.
-  - [x] **What the ring picks is what opens.** Opening the island lands on
-        the liveliest claim a frame later, which used to take the screen back
-        — an agent working outranked the wedge somebody had just chosen.
 
 - ~~Settings: too many words, too many switches in one pane~~ — **done**. The
   descriptions under every row are gone except where the consequence is
@@ -210,11 +161,13 @@
         arrangement above. Fine for the handful anybody docks; if it ever
         becomes twenty, they want one loop over a list rather than twenty
         loops.
-  - [x] **The drag docks as it goes.** A drag with no preview is a drag of
-        nothing: the card cannot leave the island's window. The real drawer is
-        the preview — it slides out of the edge you are heading for and follows
-        the pointer until you let go. Dropping it back on the island puts it
-        away again.
+  - [x] **Dragging one out has something to drag.** A window of its own covers
+        the screen, holding a small card of the note under the pointer and a
+        lit zone down each edge; reach one and the drawer opens there and
+        follows you, let go anywhere else and the note goes back to the wall.
+        The island cannot paint past its own edge, so none of this could be
+        drawn where the gesture starts — and the overlay ignores cursor events,
+        so the pointer is read in Rust and sent to it.
   - [ ] The drawer docks to the CURRENT monitor, which in practice is the
         primary one — the window is built before it has been placed, so there
         is nothing to ask which screen it is on. Dragging it to another
@@ -413,4 +366,52 @@ until the answer arrives as a `tool_result`.
         name and no icon, and a row that cannot say what it is is a slider
         nobody dares move.
 
----
+- ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
+  Every screen at a direction, the palette in the middle, picking one opens the
+  island on it. ⚠️ Eight at most: past that, aiming stops being faster than
+  reading.
+  - [x] **Hold and let go to pick.** Press, flick the wrist, let go — one
+        gesture, no click. A tap still opens it and leaves it up, which is what
+        somebody reading the labels is doing. 200ms is the line.
+  - [x] **Verbs as well as screens**, and they are what stops it being a
+        navigation menu: add a task, write a note (both with the caret where it
+        belongs), shelve the clipboard, start a pomodoro. Chosen in
+        `Settings → Island → The ring`, eight at most.
+  - [ ] The chosen list is ordered by the settings list rather than dragged. A
+        ring whose wedges move about is one where aiming stops working, so the
+        order has to come from somewhere fixed — but "somewhere fixed" is
+        currently "the order this list happens to be written in".
+  - [x] **Hold and let go actually works.** Windows repeats a held key and
+        every repeat was another press, so holding it toggled the ring shut.
+  - [x] **One label, under the ring**, instead of eight around it — long
+        names ran over their own wedges. Frosted by default, with a solid
+        style for a busy background, a tick per wedge crossed and a lower one
+        on the pick.
+  - [ ] The ticks come from the ring's own page, which a global shortcut does
+        not activate — they may stay silent until the first mouse pick of
+        the session. See AGENTS 574.
+  - [x] **The release is watched here now**, with `GetAsyncKeyState`: the
+        plugin's own `Released` never arrives on this machine, which is why
+        the gesture had never worked — and why the auto-repeat guard locked
+        the ring out of opening at all. See AGENTS 581.
+  - [x] **Tap for one thing, hold for the ring.** A tap opens the command
+        palette (or whatever is set in Settings → Island) and never draws the
+        menu; the ring is what holding past 0.25s gets you. Both the delay and
+        what a tap does are preferences.
+  - [x] **The pick carries the pointer** rather than trusting the page to have
+        seen it move — see AGENTS 590.
+  - [ ] The whole gesture is now logged. If it misbehaves again, the log says
+        which step: `Settings → General → Open log`.
+  - [x] **Two global shortcuts, not seven.** `Alt+W` tapped is the palette and
+        held is the ring; `Ctrl+Alt+H` still hides everything. The five that
+        went — open the island, add a task, shelve the clipboard, next display
+        and the palette's own key — are all a wedge or a palette row away.
+  - [x] **Overshooting is forgiven.** Past the ring's edge the angle alone
+        decides, out to 250px, and a wedge holds until the pointer is a fifth
+        of a wedge into the next one.
+  - [x] **A tap acts at once.** It was waiting for an event loop that a
+        press-and-release does not wake, so the palette opened on the next
+        keystroke instead.
+  - [x] **What the ring picks is what opens.** Opening the island lands on
+        the liveliest claim a frame later, which used to take the screen back
+        — an agent working outranked the wedge somebody had just chosen.

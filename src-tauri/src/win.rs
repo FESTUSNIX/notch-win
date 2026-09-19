@@ -100,6 +100,19 @@ pub fn harden(window: &WebviewWindow) {
     }
 }
 
+/// Where the pointer is, in physical screen pixels.
+///
+/// ⚠️ One definition. Three loops in this app read the cursor, and each one
+/// that spelled out the `POINT` and the unsafe call was a place the next
+/// reader had to check for a sign error.
+pub fn cursor() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = POINT::default();
+    unsafe { GetCursorPos(&mut point).ok()? };
+    Some((point.x, point.y))
+}
+
 /// The usable rectangle of the monitor the window is on, in physical pixels.
 /// This is `NSScreen.visibleFrame`'s counterpart: it already excludes the
 /// taskbar, and it changes when the taskbar hides, moves or resizes.

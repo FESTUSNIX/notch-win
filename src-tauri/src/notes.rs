@@ -514,6 +514,208 @@ pub fn restore(app: &AppHandle) {
     }
 }
 
+
+/* ── Dragging a note out of the island ───────────────────────────────────
+ *
+ * ⚠️ The thing being dragged cannot be drawn by the island. A drag out ENDS
+ * outside the island's window, and a window cannot paint past its own edge —
+ * so the card stayed behind and the gesture was a pointer moving over the
+ * desktop with nothing under it. What follows the pointer is a window of its
+ * own: full screen, transparent, click-through, and drawn by `dragzone.ts`.
+ *
+ * ⚠️ And the pointer is read HERE rather than sent from the island. The
+ * overlay ignores cursor events — it has to, or it would swallow every click
+ * on the screen it covers — and a window that ignores them receives none, so
+ * it cannot know where the pointer is. One poll in Rust feeds both it and the
+ * docking decision, and the island is left holding nothing but the gesture. */
+
+const DRAG_LABEL: &str = "dragzone";
+static DRAGGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// How near an edge counts as "drop it here", in physical pixels.
+///
+/// ⚠️ A fraction of the screen with a floor and a ceiling, not a constant. On a
+/// 4K monitor 140px is a sliver nobody can aim at; on a laptop a sixth of the
+/// width is a third of the usable desktop.
+fn zone_width(work: &windows::Win32::Foundation::RECT) -> i32 {
+    ((work.right - work.left) / 6).clamp(120, 260)
+}
+
+/// What the overlay is told, sixty times a second.
+#[derive(Clone, serde::Serialize)]
+struct DragAt {
+    /// CSS pixels inside the overlay window.
+    x: f64,
+    y: f64,
+    /// `left`, `right`, or empty for "not near an edge".
+    edge: String,
+}
+
+/// Put the overlay over the monitor the pointer is on, and show it.
+fn drag_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    let existing = app.get_webview_window(DRAG_LABEL);
+    let window = match existing {
+        Some(found) => found,
+        None => tauri::WebviewWindowBuilder::new(
+            app,
+            DRAG_LABEL,
+            tauri::WebviewUrl::App("dragzone.html".into()),
+        )
+        .title("Codenotch drop zones")
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(false)
+        .build()
+        .ok()?,
+    };
+    /* ⚠️ Click-through, always. This window covers the entire screen; one
+     * moment of it taking the pointer is every click on the desktop going
+     * nowhere. */
+    let _ = window.set_ignore_cursor_events(true);
+    crate::win::harden(&window);
+    Some(window)
+}
+
+/// Begin the gesture: the overlay appears and the pointer starts being read.
+#[tauri::command]
+pub async fn note_drag_start(app: AppHandle, id: String) {
+    use std::sync::atomic::Ordering;
+    if DRAGGING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let Some(window) = drag_window(&app) else {
+        DRAGGING.store(false, Ordering::SeqCst);
+        return;
+    };
+    // Over the monitor the pointer is on, whichever that is.
+    if let Some((x, y)) = crate::win::cursor() {
+        if let Ok(Some(monitor)) = window.monitor_from_point(x as f64, y as f64) {
+            let at = monitor.position();
+            let size = monitor.size();
+            let _ = window.set_position(tauri::PhysicalPosition::new(at.x, at.y));
+            let _ = window.set_size(tauri::PhysicalSize::new(size.width, size.height));
+        }
+    }
+    let _ = window.show();
+    watch_drag(app, id);
+}
+
+/// End it. ⚠️ Where it lands is decided by the POLLER, from the last place the
+/// pointer actually was — not by the island, which by then is reporting a
+/// release it saw through a pointer capture and cannot map to a screen.
+#[tauri::command]
+pub fn note_drag_end() {
+    DRAGGING.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn watch_drag(app: AppHandle, id: String) {
+    use std::sync::atomic::Ordering;
+    crate::guard::spawn("note drag", move || {
+        let mut docked = false;
+        let mut last = String::new();
+        while DRAGGING.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            let Some((cx, cy)) = crate::win::cursor() else { continue };
+            let Some(window) = app.get_webview_window(DRAG_LABEL) else { break };
+            let Some(work) = crate::win::work_area(&window) else { continue };
+            let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor())
+            else {
+                continue;
+            };
+
+            let zone = zone_width(&work);
+            let edge = if cx <= work.left + zone {
+                "left"
+            } else if cx >= work.right - zone {
+                "right"
+            } else {
+                ""
+            };
+            last = edge.to_string();
+            let _ = window.emit_to(
+                DRAG_LABEL,
+                "note:drag",
+                DragAt {
+                    x: (cx - origin.x) as f64 / scale,
+                    y: (cy - origin.y) as f64 / scale,
+                    edge: edge.to_string(),
+                },
+            );
+
+            if edge.is_empty() {
+                continue;
+            }
+            /* ⚠️ The drawer is opened ONCE, the first time the pointer reaches
+             * an edge — not on the first millimetre of the drag. Building a
+             * webview is the expensive part of this whole gesture, and doing
+             * it for every drag that was going somewhere else is the cost
+             * nobody sees but everybody feels. */
+            if !docked {
+                docked = true;
+                dock_for_drag(&app, &id, edge, cy);
+            } else {
+                let _ = app.emit(
+                    "notch:note-dock",
+                    DockAt { id: id.clone(), edge: edge.to_string(), y: cy, dragging: true },
+                );
+            }
+        }
+
+        if let Some(window) = app.get_webview_window(DRAG_LABEL) {
+            let _ = window.hide();
+        }
+        if !docked {
+            return;
+        }
+        if last.is_empty() {
+            /* Let go in the middle of the screen: the note goes back where it
+             * was. ⚠️ The window is closed as well as unpinned, or the drawer
+             * stays on the edge with nothing in the store saying it should. */
+            let snapshot = {
+                let state = app.state::<Store>();
+                let Ok(mut held) = state.0.lock() else { return };
+                if let Some(note) = held.iter_mut().find(|note| note.id == id) {
+                    note.pinned = false;
+                }
+                held.clone()
+            };
+            close_pin(&app, &id);
+            publish(&app, &snapshot);
+            return;
+        }
+        let Some((_, cy)) = crate::win::cursor() else { return };
+        dock_note(app.clone(), id.clone(), last, cy);
+    });
+}
+
+/// Pin a note to an edge mid-drag, and open its drawer there.
+fn dock_for_drag(app: &AppHandle, id: &str, edge: &str, y: i32) {
+    let snapshot = {
+        let state = app.state::<Store>();
+        let Ok(mut held) = state.0.lock() else { return };
+        let Some(note) = held.iter_mut().find(|note| note.id == id) else { return };
+        note.pinned = true;
+        note.edge = side_of(edge);
+        note.y = y;
+        held.clone()
+    };
+    publish(app, &snapshot);
+    if let Some(note) = snapshot.iter().find(|note| note.id == id) {
+        if let Err(error) = open_pin(app, note) {
+            crate::log::note(&format!("note {id} could not be docked: {error}"));
+        }
+    }
+    let _ = app.emit(
+        "notch:note-dock",
+        DockAt { id: id.to_string(), edge: side_of(edge), y, dragging: true },
+    );
+}
+
 /// A few bits of entropy for the id. ⚠️ Not `rand::random` on a `u64`: this is
 /// a tiebreaker inside one millisecond, not a security decision, and pulling
 /// the RNG in for it is a dependency in a hot path for nothing.

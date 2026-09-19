@@ -555,6 +555,8 @@ pub fn run() {
             notes::pin_note,
             notes::dock_note,
             notes::drag_pin,
+            notes::note_drag_start,
+            notes::note_drag_end,
             notes::move_pin,
             notes::tint_note,
             stars::get_stars,

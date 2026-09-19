@@ -1576,9 +1576,21 @@ test("a star keeps something, and keeps it in the empty list", async ({page}) =>
  * ⚠️ `force`, and the arc is why: the tools sit ON a curve, and the band the
  * curve is drawn with covers them as far as a hit test is concerned. It is
  * pressable with a real pointer — the band is what the pointer travels along —
- * but Playwright's actionability check sees only the topmost element. */
+ * but Playwright's actionability check sees only the topmost element.
+ *
+ * ⚠️ And it RETRIES, because the arc is rebuilt on every render of the
+ * island — which happens on a clock. A forced click resolves the element first
+ * and dispatches second, so a render landing between the two clicks something
+ * that is no longer in the document, and nothing happens at all. This is the
+ * one helper in the file that presses a moving target. */
 async function newNote(page: Page) {
-  await page.getByRole("button", {name: "New note", exact: true}).click({force: true});
+  const plus = page.getByRole("button", {name: "New note", exact: true});
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await plus.click({force: true}).catch(() => {});
+    if (await page.locator(".note-sheet").count()) return;
+    await page.waitForTimeout(120);
+  }
+  await expect(page.locator(".note-sheet")).toHaveCount(1);
 }
 
 test("notes: the note is the screen, and the pile stays findable", async ({page}) => {
@@ -1729,30 +1741,28 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
   await expect(cards.first()).toHaveClass(/is-pinned/);
   await expect(cards.first().locator(".note-docked")).toHaveCount(1);
 
-  /* ⚠️ Dragging a note out DOCKS IT AS IT GOES. A drag with no preview is a
-     drag of nothing — the card cannot leave the island's window, so there is
-     nothing under the pointer and nothing to say where it will land. The real
-     drawer is the preview: it slides out of the edge you are heading for and
-     follows the pointer until you let go. */
+  /* ⚠️ Dragging a note out hands the gesture OVER. What you are dragging is
+     drawn by a window covering the whole screen and moved by a pointer read in
+     Rust — the island cannot paint past its own edge, so a ghost drawn here
+     would vanish at the island's border, which is what "dragging air" was. All
+     the island does is notice the drag and say so; where the note lands is
+     decided from where the pointer really is. */
   const dragged = cards.nth(1);
   const grip = (await dragged.boundingBox())!;
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
   await page.mouse.move(grip.x + 120, grip.y + 60, {steps: 4});
   await page.mouse.move(1270, 700, {steps: 6});
+  await expect(dragged).toHaveClass(/is-dragging/);
   await page.mouse.up();
   await expect(cards.nth(1)).toHaveClass(/is-pinned/);
   // And the release does not also open the note it was dragging.
   await expect(page.locator(".note-wall")).toHaveCount(1);
-
-  /* Dropped back on the island, it goes away again — a drag that ends where
-     it started should undo itself. */
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(1270, 700, {steps: 4});
-  await page.mouse.move(grip.x + 20, grip.y + 20, {steps: 4});
-  await page.mouse.up();
-  await expect(cards.nth(1)).not.toHaveClass(/is-pinned/);
+  // A press that never became a drag still opens the note, which is the one
+  // thing swallowing the click after a drag can take away.
+  await cards.nth(1).click();
+  await expect(page.locator(".note-sheet")).toHaveCount(1);
+  await page.locator("#island-back").click();
 
   /* ⚠️ Delete ASKS. A note is the only thing this app stores that is not a
      cache of something else, and the button that throws one away sits 30px
@@ -1767,6 +1777,43 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
   await bin.click();
   await expect(page.locator(".note-wall")).toHaveCount(1);
   await expect(cards).toHaveCount(before - 1);
+});
+
+test("what you are dragging, and where it can go", async ({page}) => {
+  /* The drop zones are a window of their own over the whole screen. ⚠️ They
+     have to be: the island cannot paint past its own edge, and a drag OUT of
+     it ends somewhere the island is not — so the card stayed behind and the
+     gesture was a pointer moving over the desktop with nothing under it.
+
+     ⚠️ And the window ignores cursor events, which is why nothing on this page
+     may rely on `:hover`. It covers the entire screen; one moment of it taking
+     the pointer is every click on the desktop going nowhere. */
+  await page.setViewportSize({width: 1280, height: 800});
+  await page.goto("/dragzone.html?id=n1");
+
+  // What is being dragged is the NOTE, not a rectangle.
+  const ghost = page.locator(".drag-ghost");
+  await expect(ghost.locator(".drag-ghost-title")).toHaveText("ssh key for the pi");
+  await expect(ghost.locator(".drag-ghost-rest")).toContainText("root@10.0.0.4");
+
+  // Both edges are offered; the one the pointer is near is the one that says so.
+  await expect(page.locator(".dropzone")).toHaveCount(2);
+  await expect(page.locator(".dropzone-left")).toHaveClass(/is-near/);
+  await expect(page.locator(".dropzone-right")).not.toHaveClass(/is-near/);
+  await expect(page.locator(".dropzone-left .dropzone-say")).toHaveCSS("opacity", "1");
+  await expect(page.locator(".dropzone-right .dropzone-say")).toHaveCSS("opacity", "0");
+
+  /* ⚠️ Moved with a TRANSFORM and nothing else. This runs on every pointer
+     sample for as long as the drag lasts; writing `left`/`top` would lay out a
+     window the size of the screen sixty times a second. */
+  const held = await ghost.evaluate(el => ({
+    transform: getComputedStyle(el).transform,
+    left: getComputedStyle(el).left,
+  }));
+  expect(held.transform).toContain("matrix");
+  expect(held.left).toBe("0px");
+
+  await page.screenshot({path: "test-results/drag-zones.png"});
 });
 
 test("a docked note is a drawer welded to the edge of the screen", async ({page}) => {

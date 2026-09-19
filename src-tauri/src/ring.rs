@@ -17,8 +17,6 @@
 //! pointer away is, and `hover.rs`'s own poll is what notices.
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindowBuilder, WebviewUrl};
-use windows::Win32::Foundation::POINT;
-use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::win;
 
@@ -58,11 +56,10 @@ fn aim_at(what: Option<String>) {
     }
 }
 
-fn cursor() -> Option<(i32, i32)> {
-    let mut point = POINT::default();
-    unsafe { GetCursorPos(&mut point).ok()? };
-    Some((point.x, point.y))
-}
+/// ⚠️ `win::cursor`, not a second copy. Three loops in this app read the
+/// pointer, and each one that spelled out the `POINT` and the unsafe call was
+/// a place the next reader had to check for a sign error.
+use crate::win::cursor;
 
 /// Build it the first time it is asked for.
 ///
