@@ -129,9 +129,11 @@ const listeners = new Set<(value: TaskSnapshot) => void>();
 const emit = () => listeners.forEach(fn => fn(structuredClone(demo)));
 const demoStars: Record<string, Record<string, string>> = {};
 const hoursAgo = (h: number) => Date.now() - h * 3_600_000;
-let demoNotes = [
+let demoNotes: {id: string; body: string; written: number; edited: number;
+  pinned?: boolean; edge?: string; y?: number; tint?: string}[] = [
   {id:"n1", body:"ssh key for the pi\nroot@10.0.0.4, port 2222", written:hoursAgo(1), edited:hoursAgo(1)},
-  {id:"n2", body:"Spotkanie w Krakowie — wtorek 14:00", written:hoursAgo(5), edited:hoursAgo(5)},
+  {id:"n2", body:"Spotkanie w Krakowie — wtorek 14:00", written:hoursAgo(5), edited:hoursAgo(5),
+   tint:"violet"},
   {id:"n3", body:"Book: The Design of Everyday Things", written:hoursAgo(30), edited:hoursAgo(30)},
   {id:"n4", body:"Bin day is Thursday", written:hoursAgo(50), edited:hoursAgo(50)},
   {id:"n5", body:"Raspberry pi power supply is 5V 3A", written:hoursAgo(200), edited:hoursAgo(200)},
@@ -439,10 +441,21 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return structuredClone(demoNotes) as T;
   }
   if (command === "pin_note") {
-    demoNotes = demoNotes.map(n => n.id === String(args.id) ? {...n, pinned: !!args.pinned} : n);
+    demoNotes = demoNotes.map(n => n.id === String(args.id)
+      ? {...n, pinned: !!args.pinned,
+         ...(args.edge ? {edge: String(args.edge)} : {}),
+         ...(args.y === undefined ? {} : {y: Number(args.y)})}
+      : n);
     return structuredClone(demoNotes) as T;
   }
-  if (command === "place_note") return undefined as T;
+  if (command === "tint_note") {
+    demoNotes = demoNotes.map(n => n.id === String(args.id)
+      ? {...n, tint: String(args.tint ?? "")} : n);
+    return structuredClone(demoNotes) as T;
+  }
+  /* The drawer's own window calls; there is no window in a preview, so the
+     page lays itself out at whatever size the browser gave it. */
+  if (command === "dock_note" || command === "move_pin") return undefined as T;
   if (command === "remove_note") {
     demoNotes = demoNotes.filter(n => n.id !== String(args.id));
     return structuredClone(demoNotes) as T;

@@ -517,6 +517,10 @@ function show(name: ScreenName, live = false) {
    * chooses the session first precisely so the panel is measured once, at the
    * size it is about to be. */
   if (name === "agents" && !landing) agentsScreen.showList();
+  /* ⚠️ Walking off the notes screen WRITES whatever is in the sheet. There
+   * is no save button on it — it writes itself down as you stop typing — so
+   * the one path that can outrun the timer is leaving the screen inside it. */
+  if (from === "notes" && name !== "notes") notes.leave();
   if (name === "review") void review.load().then(() => render());
   /* The direction the selection travelled, so the new screen arrives from the
    * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens
@@ -814,11 +818,13 @@ function paintBack() {
    * things rather than all of them. ⚠️ The same arrow, beside the same
    * name, rather than one inside the panel — two arrows four millimetres
    * apart are two answers to the question "how do I get out of this". */
-  const inside = screen === "agents" && agentsScreen.isDetailed();
+  const inside = (screen === "agents" && agentsScreen.isDetailed())
+    || (screen === "notes" && notes.isDetailed());
   back.hidden = !sent && !inside;
   if (inside) {
-    back.setAttribute("aria-label", "All sessions");
-    back.setAttribute("data-tip", "All sessions");
+    const all = screen === "notes" ? "All notes" : "All sessions";
+    back.setAttribute("aria-label", all);
+    back.setAttribute("data-tip", all);
     if (!back.dataset.icon) paintIcon(back, "back");
     return;
   }
@@ -830,9 +836,13 @@ function paintBack() {
 }
 
 get("island-back").addEventListener("click", () => {
-  // Inside a session, back is the list it came from. See `paintBack`.
+  // Inside a session or a note, back is the list it came from. See `paintBack`.
   if (screen === "agents" && agentsScreen.isDetailed()) {
     agentsScreen.showList();
+    return;
+  }
+  if (screen === "notes" && notes.isDetailed()) {
+    notes.showList();
     return;
   }
   show(cameFrom);

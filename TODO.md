@@ -47,6 +47,49 @@
     and set the accent), and translation (needs a key, and the good ones are
     not free).
 
+- **And eight more, ranked by what they would actually save.** The test each
+  one has to pass is the same: it is something done on this machine several
+  times a week, and the palette is a shorter road to it than what is used now.
+  A palette that answers everything is a palette nobody can predict, so an
+  idea that is merely clever is listed and not built.
+
+  1. **Start a timer by saying how long.** `20 min`, `1h30`, `7:30 alarm`.
+     The timer, its pill and its screen all exist; this is a parser and one
+     call. ⚠️ The grammar has to stay narrow — a bare number must not start
+     anything, because a bare number is also an amount, a year and a port.
+  2. **Switch the sound output.** `system.rs` already lists the devices and
+     can set one; `→ headphones` in the palette is a daily gesture that is
+     currently three clicks into a Windows flyout that moves between builds.
+     Wi-Fi is the same shape if the enumeration lands.
+  3. **Move the focused window.** `left half`, `right half`, `centre`,
+     `other screen`. `win.rs` already enumerates windows and the island
+     already moves itself between displays. Windows' own Snap needs the mouse
+     or a chord you have to remember; this is a word.
+  4. **The notes, from the palette.** Already promised further down this file
+     under Notes — `searchNotes` folds accents and matches every word, so the
+     provider is a wrapper. It belongs in this list too, because "the pile is
+     findable without opening the screen" is what makes the pile worth having.
+  5. **Snippets, out of the notes that already exist.** A note whose first
+     line is `;;addr` becomes `addr` in the palette, and picking it copies the
+     rest. No new storage, no new editor, no sync — the feature is a naming
+     convention over a thing that is already written down and already backed
+     up with everything else.
+  6. **Numbers in other bases.** `0xff to dec`, `255 in binary`, `1010b hex`.
+     The same family as the unit converter and the same file could hold it:
+     pure, offline, and instant.
+  7. **Characters that are not on a Polish keyboard.** `arrow`, `dash`,
+     `shrug`, `degree` → copies `→`, `—`, `¯\_(ツ)_/¯`, `°`. A small table, and
+     the alternative is a website or a Windows dialog nobody can find twice.
+  8. **A QR of a link.** The one honest way to get a URL from this machine
+     onto a phone. Offline, but it needs a drawing library — which is why it
+     is last rather than second.
+
+  Rejected on purpose, so they are not proposed again: running shell commands
+  from the palette (a palette is a place you type half-finished words into,
+  and half a command is a real command), killing processes by name (same
+  reason, with a worse failure), and anything that reads a credential back out
+  of Credential Manager — tokens never come back to a WebView.
+
 - ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
   Every screen at a direction, the palette in the middle, picking one opens the
   island on it. ⚠️ Eight at most: past that, aiming stops being faster than
@@ -111,17 +154,33 @@
       header beside the timer and the bell — it is a place you visit for one
       thing and leave. Review is still there and is the remaining candidate.
 
-- ~~Quick note widget with history of all notes, search~~ — **done**. A Notes
-  screen: a field that saves on Enter, the pile newest-first, and a search that
-  folds accents and matches every word anywhere. Palette: "Write a note".
+- ~~Quick note widget with history of all notes, search~~ — **done**. Two
+  screens: the WALL is the index — colour, first words, when — and pressing one
+  opens THE NOTE, a full sheet that is both how you read it and how you write
+  it. Search folds accents and matches every word anywhere. Palette: "Write a
+  note".
+  - [x] **The editor is the screen.** What was here before was a two-row
+        composer above the wall, so the one surface you could type into was the
+        smallest thing on it and opening a note meant watching its words jump
+        out of the card into a box somewhere else. There is no save button: the
+        sheet writes itself down when you stop typing, and leaving the screen
+        writes it too.
   - [ ] No global shortcut of its own — the palette command is the fast path.
         One would mean a seventh key and a seventh row in Settings.
-  - [x] Pin a note to the desktop — its own always-on-top, undecorated,
-        draggable window. Position and size are remembered; pinned notes come
-        back when the app restarts.
+  - [x] **Dock a note to the edge of the screen**, by pressing the pin or by
+        dragging the card out of the island. It is a sliver at the side with
+        the note's first words turned on their side, and the whole note when
+        the pointer arrives — press the sliver to keep it open, drag it to
+        slide it along the edge or across to the other one. Which edge and how
+        far down are remembered; docked notes come back when the app restarts.
+  - [ ] The drawer docks to the CURRENT monitor, which in practice is the
+        primary one — the window is built before it has been placed, so there
+        is nothing to ask which screen it is on. Dragging it to another
+        monitor is the missing half.
   - [ ] Notes are not searchable _from the palette_ yet, only from the screen.
-  - [ ] A pinned note has no colour of its own — they are all the same paper.
-        A colour per note is the obvious next thing if the desktop gets busy.
+  - [x] **A colour per note** — six, chosen on the sheet, shown as a band down
+        the card's leading edge and as the sliver's own colour. Stored as a
+        KEY, never a colour, so nothing a note carries can reach a stylesheet.
   - [x] Simple formatting — `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
         `-` and `1.` lists, `>` quotes, `#` headings, ``` fences. Stored as the
         text you typed; parsed on the way out.

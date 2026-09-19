@@ -49,19 +49,39 @@ pub struct Note {
      * the two are one to one, a pinned note with no note is nothing, and a
      * second file would be a second thing to keep in step. */
     pub pinned: bool,
-    /// Where it was left, in physical pixels. 0/0 means "never placed".
-    pub x: i32,
+    /// Which side of the screen it is docked to: `left` or `right`.
+    ///
+    /// ⚠️ Empty means the right, which is what `Default` gives a note written
+    /// before this existed. A note that loaded with no edge and docked nowhere
+    /// would be a window off the side of the screen.
+    pub edge: String,
+    /// How far down the edge the sliver sits, in physical pixels. 0 means
+    /// "never docked", and the drawer starts halfway down instead.
     pub y: i32,
+    /* ⚠️ Dead, and kept anyway. A docked note has no x, width or height of its
+     * own any more — the edge decides two of them and the drawer's own sizes
+     * decide the rest — but a note file written by an older build still
+     * carries them, and a field dropped from the struct is a field `serde`
+     * would have to be told to ignore. Cheaper to keep three integers than to
+     * find out later that one of them mattered. */
+    pub x: i32,
     pub w: u32,
     pub h: u32,
+
+    /// One of the palette's colour keys, or empty for plain paper.
+    ///
+    /// ⚠️ A KEY, not a colour. The screen maps it to a custom property, so a
+    /// note cannot carry a string that ends up in a stylesheet — and the
+    /// palette can be retuned in one place without rewriting every note.
+    pub tint: String,
 }
 
-/// The default size of a pinned note, in logical pixels.
-///
-/// ⚠️ Square, like the cards on the wall. A sticky note wider than it is tall
-/// reads as a dialog, and the whole claim of the shape is that it is a piece of
-/// paper.
-pub const PIN_SIZE: f64 = 240.0;
+/// The collapsed drawer, in logical pixels — the sliver that says the note is
+/// there. ⚠️ The real geometry is worked out in `note-window.ts`, which is the
+/// one place that knows the monitor and the expanded size too; this is only
+/// what the window is BUILT at, and it is built hidden.
+const BAR_W: f64 = 22.0;
+const BAR_H: f64 = 136.0;
 
 #[derive(Default)]
 pub struct Store(pub Mutex<Vec<Note>>);
@@ -188,12 +208,30 @@ fn close_pin(app: &AppHandle, id: &str) {
 /// command on Windows — the same reason `open_task_editor` is. It presents as
 /// the whole app hanging on the click.
 #[tauri::command]
-pub async fn pin_note(app: AppHandle, id: String, pinned: bool) -> Result<Vec<Note>, String> {
+pub async fn pin_note(
+    app: AppHandle,
+    id: String,
+    pinned: bool,
+    edge: Option<String>,
+    y: Option<i32>,
+) -> Result<Vec<Note>, String> {
     let snapshot = {
         let state = app.state::<Store>();
         let Ok(mut held) = state.0.lock() else { return Ok(Vec::new()) };
         match held.iter_mut().find(|note| note.id == id) {
-            Some(note) => note.pinned = pinned,
+            Some(note) => {
+                note.pinned = pinned;
+                /* Where it was dropped, when it was dropped rather than
+                 * clicked. ⚠️ Applied BEFORE the window opens, because the
+                 * page reads the note to decide where to dock — set it after
+                 * and the drawer opens on the old edge and jumps. */
+                if let Some(side) = edge.as_deref() {
+                    note.edge = side_of(side);
+                }
+                if let Some(at) = y {
+                    note.y = at;
+                }
+            }
             None => return Ok(held.clone()),
         }
         held.clone()
@@ -220,56 +258,78 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
      * before it can ask for anything, and reading its own window label back is
      * a round trip on every load for something already known here. */
     let url = format!("note.html?id={}", note.id);
-    let mut builder =
-        tauri::WebviewWindowBuilder::new(app, &name, tauri::WebviewUrl::App(url.into()))
-            .title("Note")
-            /* ⚠️ Undecorated, but NOT `WS_EX_NOACTIVATE`. This is the one window
-             * in the app that is MEANT to take focus — you click a sticky note
-             * to type in it. The island is the opposite and pays for it in
-             * plumbing; copying that here would make the note unwritable. */
-            .decorations(false)
-            .transparent(true)
-            .always_on_top(true)
-            /* Out of Alt-Tab and off the taskbar: eight sticky notes in the task
-             * switcher is the cost of having eight of them, and always-on-top
-             * means there is nowhere for one to be lost. */
-            .skip_taskbar(true)
-            .resizable(true)
-            .min_inner_size(160.0, 140.0);
-
-    builder = if note.w > 0 && note.h > 0 {
-        builder.inner_size(f64::from(note.w), f64::from(note.h))
-    } else {
-        builder.inner_size(PIN_SIZE, PIN_SIZE)
-    };
-    /* ⚠️ Only when it has been placed. `position(0, 0)` is the top-left corner
-     * of the primary monitor — under the island, in the corner Windows already
-     * puts everything else. A never-placed note takes the default instead. */
-    if note.x != 0 || note.y != 0 {
-        builder = builder.position(f64::from(note.x), f64::from(note.y));
-    }
-    builder.build().map_err(|e| e.to_string())?;
+    tauri::WebviewWindowBuilder::new(app, &name, tauri::WebviewUrl::App(url.into()))
+        .title("Note")
+        /* ⚠️ Undecorated, but NOT `WS_EX_NOACTIVATE`. This is the one window
+         * in the app that is MEANT to take focus — you click a note to type in
+         * it. The island is the opposite and pays for it in plumbing; copying
+         * that here would make the note unwritable. */
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        /* Out of Alt-Tab and off the taskbar: eight docked notes in the task
+         * switcher is the cost of having eight of them, and always-on-top
+         * means there is nowhere for one to be lost. */
+        .skip_taskbar(true)
+        /* ⚠️ NOT resizable, and not because a drawer should not be resized.
+         * An undecorated resizable window on Windows still carries invisible
+         * resize borders, and a collapsed drawer is 22px wide — it is ALL
+         * border. Every drag along the edge would have resized it instead of
+         * moving it. `move_pin` below is unaffected: tao's `set_inner_size` is
+         * a `SetWindowPos` and never consults the flag. */
+        .resizable(false)
+        /* ⚠️ Hidden until the page has docked it, and this is load-bearing.
+         * The edge, the monitor and the expanded size are all worked out in
+         * `note-window.ts` — one place, where the hover expansion also lives —
+         * so anything built here is a guess, and a guess that is shown is a
+         * window seen in the wrong corner for the frame before it moves. */
+        .visible(false)
+        .inner_size(BAR_W, BAR_H)
+        .build()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Remember where a note was dragged to.
+/// `left` or `right`, and never anything else.
+///
+/// ⚠️ Folded here rather than trusted from the page. The edge is written into
+/// a data attribute a stylesheet reads, and every value that is not one of
+/// these two means a drawer docked nowhere.
+fn side_of(said: &str) -> String {
+    if said == "left" { "left".into() } else { "right".into() }
+}
+
+/// Move and resize a docked note in one go.
+///
+/// ⚠️ ONE command for both, and that is the whole reason it exists. The page
+/// could call `setPosition` and `setSize` itself, but each is an IPC round
+/// trip — and between the two the drawer is the new width at the old x, which
+/// on the right-hand edge is a window hanging off the side of the screen. Sent
+/// together they reach the message loop in one pass and paint once.
+#[tauri::command]
+pub fn move_pin(app: AppHandle, id: String, x: i32, y: i32, w: u32, h: u32) {
+    let Some(window) = app.get_webview_window(&label(&id)) else { return };
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    let _ = window.set_size(tauri::PhysicalSize::new(w.max(1), h.max(1)));
+}
+
+/// Remember which edge a note is docked to, and how far down it.
 ///
 /// ⚠️ Called by the window itself rather than from a `Moved` handler here.
 /// Tauri reports a move on every pixel of a drag; the page sends one when the
 /// pointer goes up, which is one write per drag rather than four hundred.
 #[tauri::command]
-pub fn place_note(app: AppHandle, id: String, x: i32, y: i32, w: u32, h: u32) {
+pub fn dock_note(app: AppHandle, id: String, edge: String, y: i32) {
+    let side = side_of(&edge);
     let snapshot = {
         let state = app.state::<Store>();
         let Ok(mut held) = state.0.lock() else { return };
         let Some(note) = held.iter_mut().find(|note| note.id == id) else { return };
-        if note.x == x && note.y == y && note.w == w && note.h == h {
+        if note.edge == side && note.y == y {
             return;
         }
-        note.x = x;
+        note.edge = side;
         note.y = y;
-        note.w = w;
-        note.h = h;
         held.clone()
     };
     /* ⚠️ Saved but NOT emitted. `notch:notes` redraws every note everywhere,
@@ -277,6 +337,28 @@ pub fn place_note(app: AppHandle, id: String, x: i32, y: i32, w: u32, h: u32) {
      * would repaint the island's whole wall for a window moving on another
      * monitor. */
     crate::config::save_beside(FILE, &snapshot);
+}
+
+/// Colour one note.
+///
+/// ⚠️ The whole list comes back and is emitted, like a save: the colour is on
+/// the note, so the wall, the open editor and the docked drawer are three
+/// views of one thing that has changed.
+#[tauri::command]
+pub fn tint_note(app: AppHandle, id: String, tint: String) -> Vec<Note> {
+    /* A key, capped. Anything longer is not one of ours, and a stylesheet is
+     * what reads it. */
+    let tint: String = tint.chars().filter(|c| c.is_ascii_alphabetic()).take(16).collect();
+    let snapshot = {
+        let state = app.state::<Store>();
+        let Ok(mut held) = state.0.lock() else { return Vec::new() };
+        if let Some(note) = held.iter_mut().find(|note| note.id == id) {
+            note.tint = tint;
+        }
+        held.clone()
+    };
+    publish(&app, &snapshot);
+    snapshot
 }
 
 /// Put back whatever was on the desktop when the app last closed.

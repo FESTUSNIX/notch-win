@@ -809,39 +809,35 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   background-color:var(--tile-hi); background-image:var(--sheen);
   box-shadow:var(--hairline), var(--gloss), var(--lift-1); }
 /* ── Notes ───────────────────────────────────────────────────────────────
-   A field, a search, and the pile. ⚠️ The field is FIRST and always there:
-   the whole claim of a quick note is that writing one costs a keystroke, and a
-   screen that opens on a list you have to find "new" in has already lost. */
-.note-composer { display:flex; flex-direction:column; gap:8px; flex-shrink:0;
-  padding:10px; border-radius:14px;
-  background-color:var(--tile); background-image:var(--sheen);
-  box-shadow:var(--hairline), var(--gloss);
-  transition:box-shadow var(--duration-quick) var(--ease-smooth-out); }
-.note-composer:focus-within { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
-  var(--gloss); }
-.note-composer.is-editing { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
-  var(--gloss), var(--lift-1); }
-.note-field { width:100%; min-height:44px; font:inherit; font-size:13px;
-  line-height:1.5; resize:none; border:0; padding:6px 7px; border-radius:9px;
-  color:#fff; background:transparent; }
-.note-field:focus-visible { outline:none; }
-.note-field::placeholder { color:#6a6a6a; }
-.note-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; }
-.note-save { font-size:11.5px; font-weight:600; padding:6px 13px; border-radius:9px;
-  color:var(--on-accent);
-  background-color:var(--accent);
-  background-image:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.4),
-    0 1px 2px rgba(0,0,0,.5), var(--glow-accent); }
-.note-save:hover:not(:disabled) { background-color:var(--accent-hi); }
-.note-save:active:not(:disabled) { scale:.96; transition-duration:90ms; }
-.note-save:disabled { opacity:.45; cursor:default; }
-.note-cancel { font-size:11.5px; padding:6px 11px; border-radius:9px; color:#a5a5a5; }
-.note-cancel:hover { color:#fff; background:var(--tile-hi); }
-.note-cancel:active { scale:.97; transition-duration:90ms; }
+   Two screens. The WALL is the index — colour, first words, when — and
+   pressing one opens THE SHEET, which is the note at full size and is also
+   where it is written. ⚠️ There is no third thing: the version before this had
+   a two-row composer above the wall, so the one surface you could type into
+   was the smallest one on screen and opening a note meant watching its words
+   jump out of the card into a box somewhere else. */
 
-.note-search { display:flex; align-items:center; gap:9px; flex-shrink:0;
-  margin-top:11px; }
+/* The six colours a note can be. ⚠️ Keys, mapped here — a note stores `amber`
+   and never a colour, so nothing a note carries can end up inside a
+   declaration, and the palette is retuned in one place. */
+:root {
+  --note-paper: #17161a;
+  --tint-amber: #f0b24a;
+  --tint-rose: #f0708a;
+  --tint-violet: #a88bf5;
+  --tint-sky: #63b0f0;
+  --tint-lime: #87c85e;
+}
+/* ⚠️ A mix PERCENTAGE rather than a separate rule per colour, and the plain
+   note is the same rule at 0%. A `color-mix` against `transparent` would eat
+   the alpha instead of leaving the paper alone. */
+[data-tint] { --tint: #ffffff; --tint-wash: 0%; --tint-edge: 0%; }
+[data-tint="amber"] { --tint: var(--tint-amber); --tint-wash: 9%; --tint-edge: 42%; }
+[data-tint="rose"] { --tint: var(--tint-rose); --tint-wash: 9%; --tint-edge: 42%; }
+[data-tint="violet"] { --tint: var(--tint-violet); --tint-wash: 9%; --tint-edge: 42%; }
+[data-tint="sky"] { --tint: var(--tint-sky); --tint-wash: 9%; --tint-edge: 42%; }
+[data-tint="lime"] { --tint: var(--tint-lime); --tint-wash: 9%; --tint-edge: 42%; }
+
+.note-search { display:flex; align-items:center; gap:9px; flex-shrink:0; }
 .note-search-field { flex:1; min-width:0; font:inherit; font-size:12px;
   padding:7px 10px; border:0; border-radius:9px; color:#fff;
   background:rgba(0,0,0,.32);
@@ -862,16 +858,21 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
    ⚠️ `auto-fill`, not `auto-fit`. With `auto-fit` a single note stretches to
    the full width of the island and stops being a square; `auto-fill` keeps the
    empty tracks, so one note is one note-sized square. */
-.note-wall { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
-  gap:9px; align-content:start; margin-top:11px; padding:2px; }
+.note-wall { display:grid; grid-template-columns:repeat(auto-fill, minmax(152px, 1fr));
+  gap:10px; align-content:start; margin-top:11px; padding:2px; }
 
+/* ⚠️ The card IS the button. It does one thing — open the note — and a square
+   of paper you can press anywhere is what a note on a board is; a card holding
+   a hit area that covers most but not all of it is the shape that makes people
+   press twice. */
 .note-card { position:relative; display:flex; flex-direction:column;
-  aspect-ratio:1; min-width:0; overflow:hidden;
-  border-radius:4px 4px 4px 14px;
+  aspect-ratio:1; min-width:0; overflow:hidden; text-align:left; padding:0;
+  border:0; font:inherit; cursor:pointer;
+  border-radius:4px 4px 4px 15px;
   /* ⚠️ A warm off-black, not the tile. Paper is warmer than the surface it is
      on whatever the light, and `--tile` is white at 5.5% — a cold grey that
      reads as another panel rather than as something lying on one. */
-  background-color:#17161a;
+  background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
   /* The ruled lines, at the edge of visible. Any stronger and a three-word
      note looks like a form to fill in. */
   background-image:repeating-linear-gradient(180deg,
@@ -883,34 +884,43 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   transition:transform var(--duration-fast) var(--ease-smooth-out),
     box-shadow var(--duration-fast) var(--ease-smooth-out),
     background-color var(--duration-quick) var(--ease-smooth-out); }
+/* The colour, said once and properly: a band down the leading edge. ⚠️ On the
+   EDGE rather than over the whole card — a note tinted all over at a strength
+   you can actually see is a note whose words you cannot. */
+.note-card::before { content:""; position:absolute; inset:0 auto 0 0; width:3px;
+  background:color-mix(in srgb, var(--tint) var(--tint-edge), transparent);
+  border-radius:3px 0 0 3px; pointer-events:none;
+  transition:width var(--duration-fast) var(--ease-smooth-out); }
 /* ⚠️ The corner is the tell. One corner rounded much harder than the other
    three is what a sheet of paper with a folded corner looks like from above,
    and it costs one value rather than a pseudo-element and a gradient. */
 .note-card::after { content:""; position:absolute; left:0; bottom:0;
   width:16px; height:16px; pointer-events:none;
   background:linear-gradient(45deg, #0c0b0e 0 48%, rgba(255,255,255,.07) 50%, transparent 52%);
-  border-bottom-left-radius:14px; }
+  border-bottom-left-radius:15px; }
 .note-card:hover { transform:translateY(-2px);
-  background-color:#1b1a1f;
+  background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 5%), #1b1a1f);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
     inset 0 1px 0 rgba(255,255,255,.07),
     0 2px 4px rgba(0,0,0,.6), 0 14px 26px -12px rgba(0,0,0,.85); }
-.note-card.is-editing { background-color:#1d1c22;
+.note-card:hover::before { width:4px; }
+.note-card:active { transform:translateY(-1px) scale(.99); transition-duration:90ms; }
+/* ⚠️ Lifted and dimmed, not carried. The card cannot follow the pointer out of
+   the island — it is inside a window that ends at the island's edge — so what
+   says "this is coming out" is the card letting go of the wall. */
+.note-card.is-dragging { transform:translateY(-4px) scale(.97); opacity:.55;
   box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 2px 4px rgba(0,0,0,.6), 0 14px 26px -12px rgba(0,0,0,.85); }
-
-.note-open { flex:1; min-height:0; width:100%; text-align:left;
-  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
-  padding:11px 12px 4px; border-radius:0; background:none; overflow:hidden;
-  /* ⚠️ Faded at the bottom rather than clipped. A square cannot hold every
-     note, and a sentence cut mid-letter reads as a rendering fault; a fade
-     reads as "there is more", which is what pressing it gives you. */
-  mask-image:linear-gradient(180deg, #000 0, #000 78%, transparent 100%); }
-.note-open:active { scale:.99; transition-duration:90ms; }
+    0 18px 30px -14px rgba(0,0,0,.9); }
 
 /* ── What is on the paper ────────────────────────────────────────────── */
 .note-body { display:flex; flex-direction:column; gap:5px; min-width:0;
   font-size:12px; line-height:1.5; color:#d0cfcc; overflow-wrap:anywhere; }
+.note-card > .note-body { flex:1; min-height:0; overflow:hidden;
+  padding:12px 13px 4px;
+  /* ⚠️ Faded at the bottom rather than clipped. A square cannot hold every
+     note, and a sentence cut mid-letter reads as a rendering fault; a fade
+     reads as "there is more", which is what pressing it gives you. */
+  mask-image:linear-gradient(180deg, #000 0, #000 76%, transparent 100%); }
 .note-body p, .note-body h4, .note-body ul, .note-body ol, .note-body pre { margin:0; }
 .note-head { font-size:13px; font-weight:650; color:#f2f1ee; letter-spacing:-.15px; }
 .note-quote { padding-left:8px; color:#9a9894; font-style:italic;
@@ -927,91 +937,84 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   font-size:11px; padding:1px 4px; border-radius:4px;
   background:rgba(255,255,255,.07); color:#e0ded9; }
 .note-body s { color:#77756f; }
+.note-hit { font-weight:700; color:#0b0b0d; border-radius:3px; padding:0 1px;
+  background:color-mix(in srgb, var(--accent) 72%, #fff); }
 
 .note-foot { display:flex; align-items:center; justify-content:space-between;
-  gap:6px; padding:0 8px 7px 12px; flex-shrink:0; }
-/* ⚠️ Revealed under the pointer, and the card is a button — so the static
-   cue is the card itself lifting, and the time beside them never moves.
-   `:focus-within` brings them back for a keyboard, or they are unreachable by
-   Tab. */
-.note-doing { display:flex; align-items:center; gap:1px; }
-.note-do { width:24px; height:24px; padding:0; border-radius:7px;
-  display:grid; place-items:center; color:#6a6a6a; opacity:0;
-  transition:opacity var(--duration-quick) var(--ease-smooth-out),
-    color var(--duration-quick) var(--ease-smooth-out); }
-.note-do svg { width:13px; height:13px; }
-.note-card:hover .note-do, .note-card:focus-within .note-do { opacity:1; }
-.note-do:hover { color:#fff; background:rgba(255,255,255,.10); }
-.note-do:active { scale:.9; transition-duration:90ms; }
-
-.note-none { margin:22px 0; text-align:center; font-size:12px; color:#5f5f5f; }
-/* A pinned note says so at rest — the pin stays lit while the other two tools
-   wait for the pointer. Otherwise the only way to know which of nine notes is
-   on your desktop is to go and look at the desktop. */
-.note-pin.is-on { opacity:1; color:var(--accent); }
-.note-card.is-pinned { box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+  gap:6px; padding:0 11px 9px 13px; flex-shrink:0; }
+.note-when { font-size:10.5px; color:#6f6d69; }
+.note-docked { display:grid; place-items:center; width:16px; height:16px;
+  color:color-mix(in srgb, var(--tint) 70%, var(--accent)); }
+.note-docked svg { width:12px; height:12px; }
+.note-card.is-pinned { box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),
   inset 0 1px 0 rgba(255,255,255,.055),
   0 1px 2px rgba(0,0,0,.55), 0 6px 16px -8px rgba(0,0,0,.75); }
-/* ── A note stuck to the desktop ─────────────────────────────────────────
-   ⚠️ The same paper as the wall, because it is the same object. A sticky note
-   that looks like a dialog is a dialog; what makes this read as a note you put
-   somewhere is that it is the card you pressed, moved. */
-.sticky-page { background:transparent; height:100vh; overflow:hidden; }
-#sticky { display:flex; flex-direction:column; height:100vh; overflow:hidden;
-  border-radius:6px 6px 6px 18px;
-  background-color:#17161a;
+
+.note-none { margin:22px 0; text-align:center; font-size:12px; color:#5f5f5f; }
+
+/* ── One note, full size ─────────────────────────────────────────────────
+   ⚠️ The sheet is sized by `min-height`, never by a percentage. The island
+   measures a screen by adding its children up, and a child that is `100%` of a
+   parent whose height is the thing being measured comes out as nothing. */
+.note-sheet { display:flex; flex-direction:column; gap:9px; min-height:318px;
+  padding:11px 12px 10px; border-radius:16px;
+  background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
   background-image:repeating-linear-gradient(180deg,
-    transparent 0, transparent 21px,
-    rgba(255,255,255,.028) 21px, rgba(255,255,255,.028) 22px);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.075),
-    inset 0 1px 0 rgba(255,255,255,.07),
-    0 8px 28px -10px rgba(0,0,0,.85); }
-#sticky::after { content:""; position:fixed; left:0; bottom:0;
-  width:18px; height:18px; pointer-events:none;
-  background:linear-gradient(45deg, #0c0b0e 0 48%, rgba(255,255,255,.08) 50%, transparent 52%);
-  border-bottom-left-radius:18px; }
+    transparent 0, transparent 25px,
+    rgba(255,255,255,.022) 25px, rgba(255,255,255,.022) 26px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06),
+    inset 0 1px 0 rgba(255,255,255,.06), var(--lift-1);
+  transition:background-color var(--duration-fast) var(--ease-smooth-out); }
 
-/* ⚠️ A drag STRIP, not the whole window. `data-tauri-drag-region` on the body
-   would make every press a drag — and the body is what you click to edit, so
-   the note would be unwritable and it would look like the click doing
-   nothing. */
-.sticky-bar { display:flex; align-items:center; justify-content:space-between;
-  gap:8px; height:26px; padding:0 6px 0 10px; flex-shrink:0; cursor:grab; }
-.sticky-bar:active { cursor:grabbing; }
-.sticky-grip { width:26px; height:3px; border-radius:2px;
-  background:rgba(255,255,255,.14); }
-.sticky-tools { display:flex; align-items:center; gap:1px; }
-/* Hidden until the pointer is on the note. A sticky note is mostly looked at
-   rather than used, and two buttons sitting on it all day is two buttons of
-   the paper gone. */
-.sticky-do { width:22px; height:22px; padding:0; border-radius:6px;
-  display:grid; place-items:center; color:#6a6a6a; opacity:0;
-  transition:opacity var(--duration-quick) var(--ease-smooth-out),
-    color var(--duration-quick) var(--ease-smooth-out); }
-.sticky-do svg { width:12px; height:12px; }
-#sticky:hover .sticky-do, #sticky:focus-within .sticky-do { opacity:1; }
-.sticky-do:hover { color:#fff; background:rgba(255,255,255,.10); }
-.sticky-do:active { scale:.9; transition-duration:90ms; }
+.note-sheet-head { display:flex; align-items:center; justify-content:space-between;
+  gap:10px; flex-shrink:0; }
+/* ⚠️ Six dots, always all six — not a swatch that opens a picker. The whole
+   job of this control is to be one press, and a menu that has to be opened to
+   change a colour is the reason nobody colours anything. */
+.note-tints { display:flex; align-items:center; gap:5px; }
+.note-tint { width:17px; height:17px; padding:0; border-radius:50%;
+  background-color:color-mix(in srgb, var(--tint) 72%, transparent);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+  transition:transform var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out); }
+.note-tint[data-tint=""] { background-color:rgba(255,255,255,.09); }
+.note-tint:hover { transform:scale(1.14); }
+.note-tint:active { transform:scale(.94); transition-duration:90ms; }
+.note-tint[aria-pressed="true"] { box-shadow:inset 0 0 0 1px rgba(255,255,255,.3),
+  0 0 0 2px var(--note-paper), 0 0 0 3.5px color-mix(in srgb, var(--tint) 70%, #fff); }
+.note-tint[data-tint=""][aria-pressed="true"] { box-shadow:inset 0 0 0 1px rgba(255,255,255,.3),
+  0 0 0 2px var(--note-paper), 0 0 0 3.5px rgba(255,255,255,.34); }
 
-/* ⚠️ A flex column starting at the top. A `<button>` centres its content, so
-   a three-word note sat in the middle of the square like a label rather than
-   lying at the top of the sheet like writing. */
-.sticky-open { flex:1; min-height:0; width:100%; text-align:left;
-  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
-  padding:2px 13px 13px; border-radius:0; background:none; overflow:hidden;
-  /* Faded rather than clipped: a sentence cut mid-letter reads as a fault. */
-  mask-image:linear-gradient(180deg, #000 0, #000 86%, transparent 100%); }
-.sticky-open:active { scale:.995; transition-duration:90ms; }
+.note-sheet-tools { display:flex; align-items:center; gap:2px; }
+.note-sheet-do { width:27px; height:27px; padding:0; border-radius:8px;
+  display:grid; place-items:center; color:#7c7a76;
+  transition:color var(--duration-quick) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
+.note-sheet-do svg { width:14px; height:14px; }
+.note-sheet-do:hover { color:#fff; background:var(--tile-hi); }
+.note-sheet-do:active { scale:.9; transition-duration:90ms; }
+.note-sheet-do.is-on { color:var(--accent); }
+.note-sheet-do:disabled { opacity:.35; cursor:default; }
 
-.sticky-field { flex:1; min-height:0; width:100%; resize:none; border:0;
-  font:inherit; font-size:12.5px; line-height:1.55; color:#e4e2de;
-  padding:2px 13px 13px; background:transparent; }
-.sticky-field:focus-visible { outline:none; }
-.sticky-gone { margin:auto; font-size:12px; color:#6a6a6a; }
+/* ⚠️ The field is the SHEET, not a box on it — no border, no inset, no
+   background of its own. What makes this read as writing on paper rather than
+   as a form is that there is nothing drawn round the words. */
+.note-sheet-field { flex:1; min-height:206px; width:100%; resize:none; border:0;
+  font:inherit; font-size:13.5px; line-height:1.62; color:#eceae6;
+  padding:2px 2px 4px; background:transparent; }
+.note-sheet-field:focus-visible { outline:none; }
+.note-sheet-field::placeholder { color:#6a6a6a; }
 
+.note-sheet-foot { display:flex; align-items:center; justify-content:space-between;
+  gap:8px; flex-shrink:0; }
+/* One word, and mostly no word at all. ⚠️ It is the only thing standing in for
+   a save button, so it has to be legible when it speaks and invisible when it
+   has nothing to say. */
+.note-state { font-size:10.5px; color:#6a6a6a; min-width:44px; text-align:right;
+  transition:color var(--duration-quick) var(--ease-smooth-out); }
 
 /* ── The format bar ──────────────────────────────────────────────────── */
-.note-marks { display:flex; align-items:center; gap:2px; margin-right:auto; }
+.note-marks { display:flex; align-items:center; gap:2px; }
 .note-mark { width:26px; height:26px; padding:0; border-radius:7px;
   font-size:12px; color:#7c7c7c; line-height:1; }
 .note-mark-bold { font-weight:800; }
@@ -1019,6 +1022,94 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .note-mark-list { font-size:15px; }
 .note-mark:hover { color:#fff; background:var(--tile-hi); }
 .note-mark:active { scale:.9; transition-duration:90ms; }
+
+/* ── A note docked to the edge of the screen ─────────────────────────────
+   ⚠️ A DRAWER, not a sticky square. What was here before was a little window
+   you dragged somewhere and then lost behind something, which is what happens
+   to every desktop sticky note ever written. This one is welded to the side:
+   a sliver that says the note is there, and the whole note when the pointer
+   arrives — the island's own move, on the other axis.
+
+   ⚠️ The window is exactly the sliver when it is shut and exactly the panel
+   when it is open; `note-window.ts` resizes it. So everything here is drawn
+   against a box that changes size, and the panel is positioned ABSOLUTELY
+   against the edge rather than laid out — a flex child would have no room to
+   be in for the frame before the window grows. */
+.drawer-page { background:transparent; height:100vh; overflow:hidden; }
+#drawer { position:relative; height:100vh; overflow:hidden; }
+
+.drawer-tab { position:absolute; top:50%; translate:0 -50%;
+  width:22px; height:136px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:7px; padding:8px 0;
+  cursor:grab; user-select:none; overflow:hidden;
+  background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 5%), #1b1a20);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
+    0 2px 10px -4px rgba(0,0,0,.8);
+  transition:width var(--duration-fast) var(--ease-smooth-out),
+    background-color var(--duration-fast) var(--ease-smooth-out); }
+.drawer-tab:active { cursor:grabbing; }
+#drawer[data-edge="right"] .drawer-tab { right:0; border-radius:13px 0 0 13px; }
+#drawer[data-edge="left"] .drawer-tab { left:0; border-radius:0 13px 13px 0; }
+.drawer-tab:hover { background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 10%), #232229); }
+/* The colour, and the only thing on the sliver that is always legible. */
+.drawer-tab-mark { flex-shrink:0; width:6px; height:6px; border-radius:50%;
+  background:color-mix(in srgb, var(--tint) 70%, var(--accent)); }
+#drawer.is-locked .drawer-tab-mark { box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 24%, transparent); }
+/* ⚠️ Turned on its side rather than shortened to two letters. A 22px sliver
+   has room for one line of text if that line runs the other way, and "ssh key
+   for the pi" read vertically is a note you recognise where "ss" is not. */
+.drawer-tab-name { writing-mode:vertical-rl; text-orientation:mixed;
+  font-size:10.5px; letter-spacing:.2px; color:#9a9894;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.drawer-panel { position:absolute; top:0; bottom:0; width:308px;
+  display:flex; flex-direction:column; gap:8px; padding:11px 13px 13px;
+  opacity:0; pointer-events:none; filter:blur(2px);
+  background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
+  background-image:repeating-linear-gradient(180deg,
+    transparent 0, transparent 23px,
+    rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.075),
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 10px 34px -12px rgba(0,0,0,.9);
+  transition:opacity var(--duration-fast) var(--ease-smooth-out),
+    filter var(--duration-fast) var(--ease-smooth-out),
+    translate var(--duration-fast) var(--ease-smooth-out); }
+#drawer[data-edge="right"] .drawer-panel { right:22px; translate:14px 0;
+  border-radius:17px 0 0 17px; }
+#drawer[data-edge="left"] .drawer-panel { left:22px; translate:-14px 0;
+  border-radius:0 17px 17px 0; }
+#drawer.is-open .drawer-panel { opacity:1; translate:0 0; filter:none;
+  pointer-events:auto; }
+
+.drawer-head { display:flex; align-items:center; justify-content:space-between;
+  gap:8px; flex-shrink:0; }
+.drawer-title { min-width:0; flex:1; font-size:11px; color:#8a8884;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.drawer-tools { display:flex; align-items:center; gap:1px; }
+.drawer-do { width:24px; height:24px; padding:0; border-radius:7px;
+  display:grid; place-items:center; color:#6a6a6a;
+  transition:color var(--duration-quick) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out); }
+.drawer-do svg { width:13px; height:13px; }
+.drawer-do:hover { color:#fff; background:rgba(255,255,255,.10); }
+.drawer-do:active { scale:.9; transition-duration:90ms; }
+.drawer-do.is-on { color:var(--accent); }
+
+/* ⚠️ A flex column starting at the top. A `<button>` centres its content, so
+   a three-word note sat in the middle like a label rather than lying at the
+   top of the sheet like writing. */
+.drawer-open { flex:1; min-height:0; width:100%; text-align:left;
+  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
+  padding:0; border-radius:8px; background:none; overflow:hidden;
+  /* Faded rather than clipped: a sentence cut mid-letter reads as a fault. */
+  mask-image:linear-gradient(180deg, #000 0, #000 88%, transparent 100%); }
+.drawer-open:active { scale:.995; transition-duration:90ms; }
+.drawer-field { flex:1; min-height:0; width:100%; resize:none; border:0;
+  font:inherit; font-size:12.5px; line-height:1.55; color:#e4e2de;
+  padding:0; background:transparent; }
+.drawer-field:focus-visible { outline:none; }
+.drawer-gone { margin:auto; font-size:12px; color:#6a6a6a; }
 
 /* ── The calendar: a month, and the agenda beside it ─────────────────────
    ⚠️ One view, not two. A grid says WHICH days have something on them; the

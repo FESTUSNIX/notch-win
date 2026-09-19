@@ -6,14 +6,21 @@
  * an hour, the shape of an idea — and putting that in a task list means making
  * a decision about it at the one moment you had no time to. See notes.rs.
  *
- * The screen is a field, a search, and the pile. Writing is one key; everything
- * else here is about finding the thing again a fortnight later.
+ * ⚠️ **Two screens, not one.** The wall is the index: colour, first words,
+ * when. Pressing one opens THE NOTE — a full sheet you read and write in the
+ * same place, with no separate "edit" mode to be in or out of. The version
+ * before this had a two-row composer at the top and the notes themselves as
+ * thumbnails underneath, so the one thing on screen you could type into was
+ * the smallest thing on it, and opening a note meant watching its words jump
+ * out of the card and into a box somewhere else.
  */
 import { call, native } from "./task-client";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
 import { listen } from "@tauri-apps/api/event";
-import { highlight, noteWhen, searchNotes, type Note } from "./notes";
+import {
+  highlight, noteTitle, noteWhen, searchNotes, TINTS, tintOf, type Note,
+} from "./notes";
 import { blocks, plain, toggleList, toggleMark, type Block } from "./note-format";
 import type { Activity } from "./island-activity";
 
@@ -25,23 +32,46 @@ export interface NotesDeps {
   say: (what: string, why: string) => void;
 }
 
+/** How long after the last keystroke the sheet writes itself down.
+ *
+ * ⚠️ There is no save button on the sheet, and this is what replaces it. Short
+ * enough that closing the island a second after typing keeps the words, long
+ * enough that a sentence is one write rather than forty. Every path that can
+ * take the sheet off screen also flushes, so this is the ceiling on how much
+ * can be lost, not the mechanism. */
+const SAVE_AFTER = 650;
+
 export class NotesScreen {
   readonly name = "notes" as const;
   notes: Note[] = [];
-  /** The note being edited, or "" for a new one. */
-  private editing = "";
+  /** The note on screen, "" for a new unsaved one, or `null` for the wall. */
+  private open: string | null = null;
   private query = "";
-  /** Held here rather than read off the field at save time: the screen
-   *  re-renders on every keystroke and the field is a new element each time. */
+  /** Held here rather than read off the field at save time: the screen can be
+   *  rebuilt under it and the field is a new element when it is. */
   private draft = "";
   private busy = false;
-
-  private body!: HTMLTextAreaElement;
+  private saving = 0;
+  /** Set while a save is in flight, so the list arriving back from Rust does
+   *  not redraw the sheet out from under the caret. */
+  private field: HTMLTextAreaElement | null = null;
 
   constructor(private host: HTMLElement, private deps: NotesDeps, private changed: () => void) {}
 
   async boot() {
-    if (native) await listen<Note[]>("notch:notes", e => { this.notes = e.payload; this.changed(); });
+    if (native) {
+      await listen<Note[]>("notch:notes", e => {
+        this.notes = e.payload;
+        /* ⚠️ No redraw while a sheet is open. Every save round-trips through
+         * Rust and comes back as this event, and a redraw replaces the
+         * textarea — so autosaving would take the caret, the selection and the
+         * undo stack away mid-sentence, roughly twice a line. The sheet is
+         * already showing what was sent; the wall behind it is rebuilt when it
+         * comes back. */
+        if (this.open !== null) return;
+        this.changed();
+      });
+    }
     try { this.notes = await call<Note[]>("get_notes"); } catch { /* none yet */ }
     this.changed();
   }
@@ -51,9 +81,13 @@ export class NotesScreen {
    *  never a moment when one of them is the most live thing on the machine. */
   activity(): Activity | null { return null; }
 
-  title$() { return "Notes"; }
+  title$() { return this.open === null ? "Notes" : "Note"; }
 
   tools() {
+    /* On the sheet the plus would open a second one over the first, and the
+     * one control that screen needs is the way out — which is the island's
+     * arrow, already beside the name. */
+    if (this.open !== null) return { tools: [] };
     return {
       tools: [{
         icon: "plus" as const,
@@ -63,18 +97,56 @@ export class NotesScreen {
     };
   }
 
-  /** Open the composer on a note, or on a blank one. */
+  /** Whether one note is on screen rather than the wall. The island's header
+   *  reads this to decide what its arrow means — see `paintBack`. */
+  isDetailed(): boolean { return this.open !== null; }
+
+  /** Back to the wall, keeping whatever was typed. */
+  showList() {
+    if (this.open === null) return;
+    this.leave();
+    this.changed();
+  }
+
+  /** The screen is being left — for the wall, or for another screen.
+   *
+   * ⚠️ Walking away WRITES. The sheet is the editor, so leaving it with
+   * words in it is the commonest way anything here gets written down, and the
+   * autosave's timer is only a ceiling on what a crash could cost.
+   *
+   * ⚠️ And it does not redraw: `show()` calls this on its way to another
+   * screen and renders once at the end, so a redraw here is a second render of
+   * a screen that is about to be hidden. */
+  leave() {
+    if (this.open === null) return;
+    /* ⚠️ Started BEFORE the sheet is forgotten and finished after. `flush`
+     * reads which note it is writing on its first line, so the id is already
+     * captured — and the wall behind is drawn from a list that only arrives
+     * when the write comes back, so it is redrawn then rather than left a
+     * note short until something else happens to render. */
+    const writing = this.flush();
+    this.open = null;
+    this.draft = "";
+    this.field = null;
+    void writing.then(() => this.changed()).catch(() => {});
+  }
+
+  /** Open a note, or a blank one. */
   async compose(id: string) {
-    this.editing = id;
+    if (this.open !== null && this.open !== id) await this.flush();
+    this.open = id;
     this.draft = this.notes.find(note => note.id === id)?.body ?? "";
+    this.field = null;
     this.changed();
     try {
       await this.deps.focus(true);
-      this.body.focus();
+      const field = this.field as HTMLTextAreaElement | null;
+      if (!field) return;
+      field.focus();
       // The caret at the END of what is there, not selecting it: opening a note
       // to add a line is far commoner than opening one to replace it.
-      this.body.setSelectionRange(this.draft.length, this.draft.length);
-    } catch { /* the field is still there; it just has no caret yet */ }
+      field.setSelectionRange(this.draft.length, this.draft.length);
+    } catch { /* the sheet is still there; it just has no caret yet */ }
   }
 
   /** Put a marker round the selection, and the caret back where it was.
@@ -92,40 +164,71 @@ export class NotesScreen {
     this.draft = next.body;
     field.focus();
     field.setSelectionRange(next.from, next.to);
+    this.later();
   }
 
-  private async save() {
-    if (this.busy) return;
+  /** Write it down shortly, unless something happens first. */
+  private later() {
+    clearTimeout(this.saving);
+    this.mark("…");
+    this.saving = window.setTimeout(() => { void this.flush(); }, SAVE_AFTER);
+  }
+
+  /** Write it down now.
+   *
+   * ⚠️ Never calls `changed()`. This runs while the caret is in the field —
+   * that is the whole point of an autosaving sheet — and a redraw here is a
+   * lost caret every time a sentence pauses. What it does instead is keep the
+   * id, so the second save edits the note the first one created rather than
+   * writing a new one. */
+  private async flush() {
+    clearTimeout(this.saving);
+    if (this.open === null || this.busy) return;
     const body = this.draft.trim();
-    const id = this.editing;
-    /* Cleared and rendered BEFORE the write. The list arrives from Rust, and
-     * leaving the words in the field until it does means a second Enter saves
-     * them twice. */
-    this.draft = "";
-    this.editing = "";
+    const id = this.open;
+    const before = this.notes.find(note => note.id === id)?.body ?? "";
+    // Nothing to say, and nothing said before: a blank new note is not a note.
+    if (body === before.trim() || (!body && !id)) { this.mark(""); return; }
     this.busy = true;
-    this.changed();
     try {
       this.notes = await call<Note[]>("save_note", { id, body });
+      /* ⚠️ Newest first, so a note that has just been created is the head of
+       * the list that comes back. Without this the sheet would still be on ""
+       * and the next keystroke would write a second note.
+       *
+       * ⚠️ And the host is re-stamped with it. `render` decides whether the
+       * open sheet may be left alone by comparing the two, so an id that
+       * changed here and nowhere else means the very next render rebuilds the
+       * sheet — taking the caret out of it one save into writing. */
+      if (!id && body && this.open === id) {
+        this.open = this.notes[0]?.id ?? "";
+        this.host.dataset.note = this.open;
+      }
+      this.mark("Saved");
     } catch (error) {
+      this.mark("Not saved");
       this.deps.say("Could not save", String(error).replace(/^invoke error: /i, ""));
-      // Hand the words back rather than losing them to a failed write.
-      this.draft = body;
-      this.editing = id;
     } finally {
       this.busy = false;
-      this.changed();
     }
   }
 
-  /** Stick it to the desktop, or take it off again.
+  /** The one word in the corner of the sheet that says where the words are.
+   *  ⚠️ Written into the element rather than rendered: see `flush`. */
+  private mark(said: string) {
+    const state = this.host.querySelector<HTMLElement>(".note-state");
+    if (state) state.textContent = said;
+  }
+
+  /** Stick it to the edge of the screen, or take it off again.
    *
    * ⚠️ The whole list comes back, because pinning is stored ON the note — so
    * this is the same round trip a save is, not a separate flag to keep in
    * step. */
-  private async pin(id: string, pinned: boolean) {
-    try { this.notes = await call<Note[]>("pin_note", { id, pinned }); }
-    catch (error) {
+  private async pin(id: string, pinned: boolean, where?: { edge: string; y: number }) {
+    try {
+      this.notes = await call<Note[]>("pin_note", { id, pinned, ...(where ?? {}) });
+    } catch (error) {
       this.deps.say(pinned ? "Could not pin" : "Could not unpin",
         String(error).replace(/^invoke error: /i, ""));
     }
@@ -133,64 +236,155 @@ export class NotesScreen {
   }
 
   private async remove(id: string) {
+    clearTimeout(this.saving);
     try { this.notes = await call<Note[]>("remove_note", { id }); }
     catch (error) { this.deps.say("Could not delete", String(error)); }
-    if (this.editing === id) { this.editing = ""; this.draft = ""; }
+    if (this.open === id) { this.open = null; this.draft = ""; this.field = null; }
     this.changed();
   }
 
   render() {
+    /* ⚠️ The open sheet is built ONCE and then left alone. This screen is
+     * redrawn by the island's own render, which runs on a clock and on every
+     * unrelated thing that changes — and every one of those redraws would
+     * replace the textarea the user is typing into. Nothing on the sheet
+     * changes by itself; what does (the saved mark, the colour, the pin) is
+     * written into the element it belongs to. */
+    if (this.open !== null && this.host.dataset.note === this.open
+        && this.field?.isConnected) {
+      this.freshen();
+      return;
+    }
     this.host.replaceChildren();
+    this.host.dataset.note = this.open ?? "";
+    if (this.open !== null) { this.sheet(); return; }
+    this.wall();
+  }
 
-    /* ── Writing one ──────────────────────────────────────────────────── */
-    const composer = element("div", `note-composer${this.editing ? " is-editing" : ""}`);
+  /** The note being shown, once it exists. */
+  private here(): Note | null {
+    return this.notes.find(one => one.id === this.open) ?? null;
+  }
+
+  /** The handful of things on an open sheet that change without the sheet
+   *  changing — written into the elements rather than rebuilt, because the
+   *  caret is in the middle of it. See `render`. */
+  private freshen() {
+    const note = this.here();
+    const sheet = this.host.querySelector<HTMLElement>(".note-sheet");
+    if (!sheet) return;
+    const tint = tintOf(note);
+    sheet.dataset.tint = tint;
+    for (const swatch of sheet.querySelectorAll<HTMLElement>(".note-tint")) {
+      swatch.setAttribute("aria-pressed", String((swatch.dataset.tint ?? "") === tint));
+    }
+    const pin = sheet.querySelector<HTMLElement>(".note-sheet-pin");
+    if (!pin) return;
+    const pinned = !!note?.pinned;
+    pin.classList.toggle("is-on", pinned);
+    const said = pinned ? "Undock" : "Dock to the screen edge";
+    pin.dataset.tip = said;
+    pin.setAttribute("aria-label", said);
+  }
+
+  /* ── One note, full size ──────────────────────────────────────────── */
+
+  private sheet() {
+    const id = this.open ?? "";
+    const note = this.notes.find(one => one.id === id) ?? null;
+    const sheet = element("div", "note-sheet");
+    sheet.dataset.tint = tintOf(note);
+    /* Pointer down on the sheet is what lifts NOACTIVATE. ⚠️ Not `focus`: the
+     * focus event arrives after the click has already been given to whatever
+     * was in front, which is the whole trap. */
+    sheet.addEventListener("pointerdown", () => {
+      void this.deps.focus(true).catch(() => {});
+    });
+
+    /* ── Colour, and what can be done to the whole note ─────────────── */
+    const head = element("div", "note-sheet-head");
+    const tints = element("div", "note-tints");
+    tints.setAttribute("role", "group");
+    tints.setAttribute("aria-label", "Colour");
+    for (const { key, label } of TINTS) {
+      const swatch = element("button", "note-tint");
+      (swatch as HTMLButtonElement).type = "button";
+      swatch.dataset.tint = key;
+      swatch.dataset.tip = label;
+      swatch.setAttribute("aria-label", label);
+      swatch.setAttribute("aria-pressed", String(tintOf(note) === key));
+      swatch.onclick = () => {
+        /* ⚠️ Painted here as well as through the note, because a new note has
+         * no id yet — its colour has to survive the first save rather than be
+         * thrown away when the id arrives. */
+        sheet.dataset.tint = key;
+        for (const other of tints.querySelectorAll<HTMLElement>(".note-tint")) {
+          other.setAttribute("aria-pressed", String(other.dataset.tint === key));
+        }
+        void (async () => {
+          await this.flush();
+          const saved = this.open;
+          if (saved) await this.paintQuietly(saved, key);
+        })();
+      };
+      tints.append(swatch);
+    }
+    head.append(tints);
+
+    /* ⚠️ Every one of these reads `this.open` when it is PRESSED, never the
+     * note this render closed over. A sheet opened on a blank note has no note
+     * until the first autosave lands — and that save deliberately does not
+     * redraw, so a button holding the id from build time would stay dead on
+     * the one note you were most likely to want to dock. */
+    const tools = element("div", "note-sheet-tools");
+    const pinned = !!note?.pinned;
+    for (const [icon, label, run] of [
+      ["pin", pinned ? "Undock" : "Dock to the screen edge",
+        () => { const one = this.here(); if (one) void this.pin(one.id, !one.pinned); }],
+      ["copy", "Copy",
+        () => { void call("copy_text", { text: this.draft }).catch(() => {}); }],
+      ["close", "Delete",
+        () => { const one = this.here(); if (one) void this.remove(one.id); }],
+    ] as const) {
+      const button = element("button",
+        `note-sheet-do note-sheet-${icon}${icon === "pin" && pinned ? " is-on" : ""}`);
+      (button as HTMLButtonElement).type = "button";
+      button.dataset.tip = label;
+      button.setAttribute("aria-label", label);
+      paintIcon(button, icon);
+      button.onclick = run;
+      tools.append(button);
+    }
+    head.append(tools);
+    sheet.append(head);
+
+    /* ── The words ──────────────────────────────────────────────────── */
     const field = document.createElement("textarea");
-    field.className = "note-field";
-    field.rows = 2;
+    field.className = "note-sheet-field";
     field.maxLength = 20_000;
-    field.placeholder = this.editing ? "Change the note…" : "Write something down…";
+    field.placeholder = "Write something down…";
     field.setAttribute("aria-label", "Note");
     field.value = this.draft;
     field.oninput = () => {
       this.draft = field.value;
-      /* ⚠️ No `changed()` here. The screen redraws on a keystroke and a redraw
-       * replaces the textarea, which loses the caret, the selection and the
-       * undo stack. The draft is kept in the field and read on save. */
-      field.style.height = "auto";
-      field.style.height = `${Math.min(160, field.scrollHeight)}px`;
+      this.later();
     };
     field.onkeydown = event => {
-      /* ⚠️ Enter SAVES, Shift+Enter is a newline. A quick note is one key or it
-       * is not quick — and a textarea whose Enter does nothing is the shape
-       * every "notes" box has, which is why nobody uses them for one line. */
-      if (event.key === "Enter" && !event.shiftKey) {
+      /* ⚠️ Enter is a NEWLINE here, where on the old two-row composer it
+       * saved. This is the note itself at full size — the shape you write a
+       * list in — and a sheet whose Enter throws you back to the wall is one
+       * you cannot write a second line in. Saving happens on its own. */
+      if (event.key === "Escape") {
         event.preventDefault();
-        this.draft = field.value;
-        void this.save();
-        return;
-      }
-      if (event.key === "Escape" && this.editing) {
-        event.preventDefault();
-        this.editing = "";
-        this.draft = "";
-        this.changed();
+        this.showList();
       }
     };
-    /* Pointer down on the field is what lifts NOACTIVATE. ⚠️ Not `focus`: the
-     * focus event arrives after the click has already been given to whatever
-     * was in front, which is the whole trap. */
-    composer.addEventListener("pointerdown", () => {
-      if (!this.busy) void this.deps.focus(true).catch(() => {});
-    });
-    composer.append(field);
+    field.onblur = () => { this.draft = field.value; void this.flush(); };
+    sheet.append(field);
+    this.field = field;
 
-    /* ── The formatting, such as it is ────────────────────────────────
-     * ⚠️ The buttons write MARKERS into the text; they do not switch the
-     * field into a rich editor. The note stays the characters you typed, so it
-     * is greppable, it survives being pasted somewhere else, and the worst a
-     * bug in the parser can do is make a note look wrong rather than lose a
-     * word of it. See note-format.ts. */
-    const actions = element("div", "note-actions");
+    /* ── The markers, and where the words are ───────────────────────── */
+    const foot = element("div", "note-sheet-foot");
     const marks = element("div", "note-marks");
     for (const [label, title, run] of [
       ["B", "Bold", () => this.wrap(field, "**")],
@@ -207,23 +401,21 @@ export class NotesScreen {
       button.addEventListener("pointerdown", event => { event.preventDefault(); run(); });
       marks.append(button);
     }
-    actions.append(marks);
-    if (this.editing) {
-      const cancel = element("button", "note-cancel", "Cancel");
-      (cancel as HTMLButtonElement).type = "button";
-      cancel.onclick = () => { this.editing = ""; this.draft = ""; this.changed(); };
-      actions.append(cancel);
-    }
-    const save = element("button", "note-save", this.editing ? "Save" : "Add note");
-    (save as HTMLButtonElement).type = "button";
-    (save as HTMLButtonElement).disabled = this.busy;
-    save.onclick = () => { this.draft = field.value; void this.save(); };
-    actions.append(save);
-    composer.append(actions);
-    this.host.append(composer);
-    this.body = field;
+    foot.append(marks);
+    foot.append(element("span", "note-state", note ? noteWhen(note.edited, Date.now()) : ""));
+    sheet.append(foot);
+    this.host.append(sheet);
+  }
 
-    /* ── Finding one ──────────────────────────────────────────────────── */
+  /** Colour a note without redrawing the sheet the caret is in. */
+  private async paintQuietly(id: string, tint: string) {
+    try { this.notes = await call<Note[]>("tint_note", { id, tint }); }
+    catch { /* the swatch is already lit; the colour will come back on reload */ }
+  }
+
+  /* ── The pile ─────────────────────────────────────────────────────── */
+
+  private wall() {
     /* ⚠️ Searched on the PLAIN text. On the raw body, `**every**` is found by
      * typing `**every**` and not by typing `every` — which is the one query
      * anybody would use. */
@@ -262,7 +454,6 @@ export class NotesScreen {
       this.host.append(search);
     }
 
-    /* ── The pile ─────────────────────────────────────────────────────── */
     if (!this.notes.length) {
       const empty = element("div", "day-empty");
       empty.append(element("h3", "", "Nothing written down"),
@@ -283,43 +474,92 @@ export class NotesScreen {
     const list = element("div", "note-wall");
     const now = Date.now();
     for (const note of found) {
-      const card = element("article", `note-card${note.id === this.editing ? " is-editing" : ""}`
-        + (note.pinned ? " is-pinned" : ""));
-
-      const open = element("button", "note-open");
-      (open as HTMLButtonElement).type = "button";
-      open.setAttribute("aria-label", `Edit ${plain(note.body).slice(0, 40)}`);
-      open.append(this.paper(note.body));
-      open.onclick = () => { void this.compose(note.id); };
-      card.append(open);
+      /* ⚠️ The card is the BUTTON, not a card with a button inside it. It
+       * does one thing — open the note — and a square of paper you can press
+       * anywhere is what a note on a board is; a card holding an invisible
+       * hit area that covers most but not all of it is the shape that makes
+       * people press twice. */
+      const card = element("button", `note-card${note.pinned ? " is-pinned" : ""}`);
+      (card as HTMLButtonElement).type = "button";
+      card.dataset.tint = tintOf(note);
+      card.dataset.note = note.id;
+      card.setAttribute("aria-label", `Open ${noteTitle(plain(note.body), 40) || "empty note"}`);
+      card.append(this.paper(note.body));
 
       const foot = element("div", "note-foot");
       foot.append(element("span", "note-when", noteWhen(note.written, now)));
-      const doing = element("div", "note-doing");
-      for (const [icon, label, run] of [
-        /* ⚠️ Pin is FIRST and stays visible while it is on. The other two are
-         * revealed by the pointer; a pinned note has to say so at rest, or the
-         * only way to know which of nine notes is on your desktop is to go and
-         * look at the desktop. */
-        ["pin", note.pinned ? "Unpin" : "Pin to the desktop",
-          () => { void this.pin(note.id, !note.pinned); }],
-        ["copy", "Copy", () => { void call("copy_text", { text: note.body }).catch(() => {}); }],
-        ["close", "Delete", () => { void this.remove(note.id); }],
-      ] as const) {
-        const button = element("button",
-          `note-do${icon === "pin" ? " note-pin" : ""}${icon === "pin" && note.pinned ? " is-on" : ""}`);
-        (button as HTMLButtonElement).type = "button";
-        button.setAttribute("aria-label", icon === "pin" ? label : `${label} note`);
-        button.dataset.tip = label;
-        paintIcon(button, icon);
-        button.onclick = run;
-        doing.append(button);
+      if (note.pinned) {
+        const mark = element("span", "note-docked");
+        mark.dataset.tip = "On the screen edge";
+        paintIcon(mark, "pin");
+        foot.append(mark);
       }
-      foot.append(doing);
       card.append(foot);
+
+      card.onclick = () => { void this.compose(note.id); };
+      this.dragOut(card, note);
       list.append(card);
     }
     this.host.append(list);
+  }
+
+  /* ── Dragging a note out of the island ────────────────────────────────
+   *
+   * ⚠️ Pointer CAPTURE, and that is the only reason this can work at all. The
+   * gesture ends outside the window it started in — that is what "out" means —
+   * and without capture the island stops hearing about the pointer the moment
+   * it crosses its own edge, so every drag would look like a press that
+   * wandered off.
+   *
+   * The drop decides one thing: which side of the screen it docks to. Where
+   * exactly it lands vertically is where you let go, and the drawer clamps it
+   * to the monitor itself. */
+  private dragOut(card: HTMLElement, note: Note) {
+    let from: { x: number; y: number } | null = null;
+    let dragging = false;
+
+    card.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      from = { x: event.screenX, y: event.screenY };
+      dragging = false;
+      card.setPointerCapture(event.pointerId);
+    });
+
+    card.addEventListener("pointermove", event => {
+      if (!from) return;
+      const far = Math.hypot(event.screenX - from.x, event.screenY - from.y);
+      /* ⚠️ A threshold, not any movement at all. A press always moves a pixel
+       * or two, and a card that starts flying on one of them is a card you
+       * cannot click. */
+      if (!dragging && far < 14) return;
+      dragging = true;
+      card.classList.add("is-dragging");
+    });
+
+    const done = (event: PointerEvent) => {
+      if (!from) return;
+      from = null;
+      card.releasePointerCapture?.(event.pointerId);
+      if (!dragging) return;
+      dragging = false;
+      card.classList.remove("is-dragging");
+      /* Which half of the screen it was let go in. ⚠️ `screen.width` is the
+       * primary monitor in CSS pixels, which is what `screenX` is measured in
+       * too — so these are comparable without knowing the scale factor. */
+      const edge = event.screenX > (window.screen.width / 2) ? "right" : "left";
+      const y = Math.round(event.screenY * (window.devicePixelRatio || 1));
+      void this.pin(note.id, true, { edge, y });
+      // The click that would otherwise follow the release would open the note.
+      const swallow = (click: Event) => { click.stopPropagation(); click.preventDefault(); };
+      card.addEventListener("click", swallow, { capture: true, once: true });
+    };
+    card.addEventListener("pointerup", done);
+    card.addEventListener("pointercancel", event => {
+      from = null;
+      dragging = false;
+      card.classList.remove("is-dragging");
+      card.releasePointerCapture?.(event.pointerId);
+    });
   }
 
   /** A note, as it was written — lists as lists, bold as bold.
@@ -375,6 +615,4 @@ export class NotesScreen {
       host.append(run);
     }
   }
-
-
 }

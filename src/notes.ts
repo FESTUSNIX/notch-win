@@ -15,10 +15,39 @@ export interface Note {
   /** Whether it has a window of its own on the desktop. ⚠️ Window state, kept
    *  on the note because the two are one to one — see notes.rs. */
   pinned?: boolean;
+  /** Which side of the screen the docked drawer sits on. */
+  edge?: string;
   x?: number;
   y?: number;
   w?: number;
   h?: number;
+  /** A key of `TINTS`, or empty for plain paper. */
+  tint?: string;
+}
+
+/* ── Colour ───────────────────────────────────────────────────
+ * ⚠️ A KEY, never a colour. What is stored on a note is `amber`, and the
+ * stylesheet decides what amber is — so a note can never carry a string that
+ * ends up inside a CSS declaration, and the palette can be retuned in one place
+ * without rewriting every note that used it.
+ *
+ * ⚠️ Six, and the first is "none". A colour picker on a note is for telling
+ * four notes apart at a glance, which is a job six swatches do and thirty do
+ * not — past about eight nobody remembers which colour meant what, and the
+ * control stops being a glance and becomes a decision. */
+export const TINTS: { key: string; label: string }[] = [
+  { key: "", label: "Plain" },
+  { key: "amber", label: "Amber" },
+  { key: "rose", label: "Rose" },
+  { key: "violet", label: "Violet" },
+  { key: "sky", label: "Sky" },
+  { key: "lime", label: "Lime" },
+];
+
+/** The note's colour key, folded to one the stylesheet knows. */
+export function tintOf(note: { tint?: string } | null | undefined): string {
+  const said = note?.tint ?? "";
+  return TINTS.some(one => one.key === said && one.key) ? said : "";
 }
 
 /** The first line, which is the closest thing a note has to a title.

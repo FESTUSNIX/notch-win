@@ -3866,3 +3866,35 @@ The two halves were the same fault.
      shrank a moment later — which reads as something still loading. The
      session is chosen BEFORE the screen is shown, so there is one render and
      one measurement, at the size it is about to be.
+
+603. ⚠️ **An undecorated window that is `resizable` is ALL resize border once
+     it is 22px wide.** tao answers `WM_NCHITTEST` for undecorated windows and
+     hands them invisible edges, so every attempt to drag the docked note along
+     the screen edge resized it instead. `resizable(false)` is the fix and costs
+     nothing: `set_inner_size` is a `SetWindowPos` that never consults the flag,
+     and `WM_GETMINMAXINFO` clamps only to constraints nobody set. Both read in
+     tao 0.35.3 rather than assumed.
+604. ⚠️ **A window moved and resized in two IPC calls is briefly the new size
+     in the old place.** On the right-hand edge that is a window hanging off the
+     side of the screen for a frame, every time the drawer opens. One command
+     does both, so the two `SetWindowPos` calls reach the message loop in one
+     pass.
+605. ⚠️ **A screen that is redrawn on a clock cannot hold a caret.** The
+     island renders for reasons that have nothing to do with the screen being
+     typed into, and each one replaced the textarea — selection, undo stack and
+     all. An open editor is built ONCE and then left alone; the few things on it
+     that change without it changing are written into their own elements.
+606. ⚠️ **An autosave that redraws is an autosave that eats what you are
+     typing.** Every save round-trips through Rust and comes back as the event
+     every screen redraws on, so writing itself down twice a line meant losing
+     the caret twice a line. The open sheet ignores that event; the list behind
+     it is redrawn when the sheet closes.
+607. ⚠️ **A blank note has no id until its first save lands** — so every
+     control that closed over "the note" at build time was dead on the one note
+     you were most likely to want to dock. They read the id when PRESSED, and
+     the save that mints it re-stamps the element that decides whether the sheet
+     may be left alone.
+608. ⚠️ **A drag that ends outside the window it began in needs
+     `setPointerCapture`** — that is what "drag it out" means. Without it the
+     island stops hearing about the pointer at its own edge, and dragging a note
+     onto the desktop reads as a press that wandered off and did nothing.
