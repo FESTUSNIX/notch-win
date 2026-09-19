@@ -172,6 +172,7 @@ let demoPrefs: Record<string, unknown> = {
      from a test: it is a segmented control in a window this page cannot open. */
   pomodoroPill: new URLSearchParams(location.search).has("pomtime") ? "time" : "bar",
   ringStops: [], ringGlass: true, ringHoldMs: 250, ringTap: "@search",
+  homeCurrency: "PLN",
   followLive: !new URLSearchParams(location.search).has("nofollow"),
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
 };

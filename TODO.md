@@ -1,5 +1,15 @@
 # TODO
 
+## Decisions this must not quietly undo
+
+- The bezel shape. Everything is welded to a screen edge and keeps the fillet.
+- One settings window. Anything new that is a preference goes in `prefs.rs` and
+  gets a control there — not a popover somewhere else.
+- The accent is one variable. No new hardcoded colour; derive with `color-mix`.
+- Tokens never reach a WebView, a log, or an error message.
+- `AGENTS.md` is the log of things that failed silently. Every trap this pass
+  turns up gets a numbered entry.
+
 ## My ideas for the next features
 
 - ~~Currency converter extension for the command palette~~ — **done**.
@@ -8,16 +18,16 @@
   cached on disk for six hours, and the crossing done in the page. The row
   says what it worked from and WHICH DAY, because a daily rate on a Sunday is
   Friday's number.
-  - [ ] No home currency, so `120 usd` alone does nothing — it needs a
-        preference, and a converter that guesses which country you are in is
-        a converter that is wrong abroad.
-  - [ ] Crypto is not in it. The ECB does not publish it and the sources that
-        do want a key.
+  - [x] **A home currency**, in `Settings → Search → Money`, so `120 usd` and
+        `$120` have an answer on their own. Off by default — a converter that
+        guesses which country you are in is wrong the moment you travel.
 
 - **Five more for the palette**, in the order they would earn their place:
-  1. **Units** — `70 kg to lb`, `12 ft in m`, `220f c`, `1.5gb mb`. The same
-     shape as the converter above and no network at all: a table of factors
-     and the same grammar. Most value for the fewest lines in the app.
+  1. ~~**Units**~~ — **done**. `70 kg to lb`, `12ft in m`, `220°F to C`,
+     `1.5 GB in MiB`: length, mass, temperature, data, time, volume, area and
+     speed, no network, and both byte families because a drive and an
+     operating system mean different things by "GB". Temperature carries an
+     offset — scaled as a ratio, 20°C comes out as 36°F.
   2. **Dates and times** — `in 3 weeks`, `days until 24 dec`,
      `1789714959` (an epoch, as a date), `16:00 CET in warsaw`. Every one of
      those is a browser tab today, and the island already owns a calendar, a
@@ -117,18 +127,6 @@
         text you typed; parsed on the way out.
   - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
         at one grows a state machine, and a note is not a document.
-
-- ~~Feature (media): volume mixer, per app~~ — **done**, on the System screen:
-  a row per app with a rail and a mute, sorted by what is making a sound now.
-  ⚠️ `eRender` sessions, read on OPEN and never polled — it is a COM walk of
-  every session on the machine. A write goes to every session of that process,
-  because a browser opens one per renderer.
-  - [x] The app's own icon on each row, from the shell — the same extractor
-        the palette and the call strip use, so there is one leaky-handle path
-        rather than three.
-  - [ ] Pid 0 — Windows' own system sounds — is left out: it has no process to
-        name and no icon, and a row that cannot say what it is is a slider
-        nobody dares move.
 
 - ~~Improve (today): overhaul the Today screen~~ — **done**. The chips are
   raised rather than washed in their list's colour (the dot carries it); the
@@ -302,14 +300,16 @@ until the answer arrives as a `tool_result`.
         else until the island can scroll a screen without it reading as cut
         off.
 
+- ~~Feature (media): volume mixer, per app~~ — **done**, on the System screen:
+  a row per app with a rail and a mute, sorted by what is making a sound now.
+  ⚠️ `eRender` sessions, read on OPEN and never polled — it is a COM walk of
+  every session on the machine. A write goes to every session of that process,
+  because a browser opens one per renderer.
+  - [x] The app's own icon on each row, from the shell — the same extractor
+        the palette and the call strip use, so there is one leaky-handle path
+        rather than three.
+  - [ ] Pid 0 — Windows' own system sounds — is left out: it has no process to
+        name and no icon, and a row that cannot say what it is is a slider
+        nobody dares move.
+
 ---
-
-## Decisions this must not quietly undo
-
-- The bezel shape. Everything is welded to a screen edge and keeps the fillet.
-- One settings window. Anything new that is a preference goes in `prefs.rs` and
-  gets a control there — not a popover somewhere else.
-- The accent is one variable. No new hardcoded colour; derive with `color-mix`.
-- Tokens never reach a WebView, a log, or an error message.
-- `AGENTS.md` is the log of things that failed silently. Every trap this pass
-  turns up gets a numbered entry.

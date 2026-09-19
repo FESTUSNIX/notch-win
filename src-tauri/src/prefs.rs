@@ -148,6 +148,13 @@ pub struct Prefs {
     /// What a TAP of the ring's key does. A ring stop id: `@search` for the
     /// palette, a screen name, or an `act:` verb.
     pub ring_tap: String,
+    /// The currency `120 usd` on its own is converted into.
+    ///
+    /// ⚠️ Empty by default, and it has to be: a converter that guesses which
+    /// country somebody is in is one that is wrong the moment they travel, and
+    /// an answer in a currency nobody chose is a number with no units anybody
+    /// can trust. Two named currencies never need it.
+    pub home_currency: String,
     /// Whether the ring is frosted glass rather than a solid disc.
     ///
     /// ⚠️ On by default. The ring floats over whatever you were working in,
@@ -227,6 +234,7 @@ impl Default for Prefs {
              * holding does not feel like waiting. */
             ring_hold_ms: 250,
             ring_tap: "@search".into(),
+            home_currency: String::new(),
             follow_live: true,
             call_mode: true,
             call_mute_mic: true,

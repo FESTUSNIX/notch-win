@@ -51,6 +51,7 @@ import { calc } from "./palette-calc";
 import {
   convert, parseMoney, sayAmount, sayDay, sayMoney, sayRate, type Rates,
 } from "./money";
+import { convertUnits, parseUnits, sayMeasure, sayUnit } from "./units";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
@@ -221,6 +222,8 @@ interface Prefs {
   pomodoroPill: string;
   ringStops: string[];
   followLive: boolean;
+  /** What `120 usd` on its own converts into. Empty is off — see `parseMoney`. */
+  homeCurrency: string;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -238,7 +241,7 @@ let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
-  timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  timerSound: "Notification.Reminder", timerMode: "pomodoro", homeCurrency: "",
   pomodoroPill: "bar", ringStops: [], followLive: true,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
@@ -1416,8 +1419,32 @@ function haveRates(): Promise<void> {
   return asking;
 }
 
+/* ── Units ────────────────────────────────────────────
+ * `70 kg to lb`, beside the money and the arithmetic. The same grammar, and no
+ * network at all — a table of factors, which is why this one is instant where
+ * the rates are a promise. */
+palette.add(query => {
+  const measure = parseUnits(query);
+  if (!measure) return [];
+  const value = convertUnits(measure);
+  if (value === null) return [];
+  const said = sayMeasure(value);
+  return [{
+    id: `units:${measure.from}${measure.to}${measure.amount}`,
+    title: `= ${said} ${sayUnit(measure.to)}`,
+    note: `${sayMeasure(measure.amount)} ${sayUnit(measure.from)}`,
+    keywords: "convert units measure",
+    icon: "copy",
+    hint: "Units",
+    tier: TIER.answer,
+    pinned: true,
+    volatile: true,
+    run: () => call("copy_text", { text: said.replace(/,/g, "") }),
+  }];
+});
+
 palette.addLive(async query => {
-  const money = parseMoney(query);
+  const money = parseMoney(query, prefs.homeCurrency);
   if (!money) return [];
   await haveRates();
   if (!rates) return [];
@@ -1504,7 +1531,7 @@ palette.addLive(query => new Promise<Action[]>(resolve => {
   /* Three characters, same threshold as the create-a-task row. Everything
    * answers "e" with half the disk, and a palette that fills with system DLLs
    * on the way to typing "editor" is worse than no file search. */
-  if (!prefs.useEverything || query.length < 3 || calc(query) || parseMoney(query)) {
+  if (!prefs.useEverything || query.length < 3 || calc(query) || parseMoney(query, prefs.homeCurrency) || parseUnits(query)) {
     resolve([]);
     return;
   }
@@ -1634,7 +1661,7 @@ palette.add(() => stars.all().map(([id, star]) => ({
  * reach things, and a "create" row that shows up for every stray keystroke
  * turns every mistyped search into an accidental task. */
 palette.add(query => {
-  if (query.length < 3 || calc(query) || parseMoney(query)) return [];
+  if (query.length < 3 || calc(query) || parseMoney(query, prefs.homeCurrency) || parseUnits(query)) return [];
   return [{
     id: "make:task",
     title: `Add task "${query}"`,

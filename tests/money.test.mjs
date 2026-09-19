@@ -85,3 +85,22 @@ test('the question is echoed as it was typed, and the day is said', () => {
   assert.equal(sayDay('2026-09-17'), '17 Sep');
   assert.equal(sayDay(''), '');
 });
+
+test('one currency and a home to take it to', () => {
+  /* ⚠️ OFF by default, and it has to be: a converter that guesses which
+   * country you are in is one that is wrong the moment you travel, and an
+   * answer in a currency nobody chose is a number with no units anybody can
+   * trust. */
+  assert.equal(parseMoney('120 usd'), null);
+  assert.deepEqual(parseMoney('120 usd', 'PLN'), { amount: 120, from: 'USD', to: 'PLN' });
+  assert.deepEqual(parseMoney('$120', 'PLN'), { amount: 120, from: 'USD', to: 'PLN' });
+  // The home currency in the home currency is not a question.
+  assert.equal(parseMoney('120 pln', 'PLN'), null);
+  /* ⚠️ An AMOUNT is required, where two currencies do not need one: "usd to
+   * pln" is a rate somebody asked for, but a bare "pln" is a word — it is in
+   * "pln", in "plnia" and in whatever three letters a project is called. */
+  assert.equal(parseMoney('usd', 'PLN'), null);
+  assert.equal(parseMoney('notes', 'PLN'), null);
+  // And naming both still wins over the home.
+  assert.deepEqual(parseMoney('120 usd to gbp', 'PLN'), { amount: 120, from: 'USD', to: 'GBP' });
+});

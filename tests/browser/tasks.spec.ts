@@ -1424,6 +1424,24 @@ test("the palette does arithmetic, goes a level deeper, and learns", async ({pag
   await expect.poll(async () => rows.first().locator(".palette-title").textContent())
     .toBe("= 455.50 PLN");
 
+  /* With a home currency set, one is enough — see `parseMoney`. The fixture
+   * says PLN, the way somebody in Poland would. */
+  await field.fill("$120");
+  await expect.poll(async () => rows.first().locator(".palette-title").textContent())
+    .toBe("= 455.50 PLN");
+
+  /* ── And units, the same shape without the network ───────────────── */
+  await field.fill("70 kg to lb");
+  await expect(rows.first().locator(".palette-title")).toHaveText("= 154.32 lb");
+  await expect(rows.first().locator(".palette-note")).toHaveText("70 kg");
+  /* ⚠️ Temperature is not a ratio: scaled as one, 20°C comes out as 36°F — a
+   * number that looks like a temperature and is not one. */
+  await field.fill("20c in f");
+  await expect(rows.first().locator(".palette-title")).toHaveText("= 68 °F");
+  // Two units that measure different things have no answer, so no row.
+  await field.fill("5 kg to miles");
+  await expect(rows.first().locator(".palette-title")).not.toHaveText(/^=/);
+
   /* ⚠️ And almost everything else is left alone. Anything that parses puts
    * a row at the TOP of the results, so the grammar saying no is the half of
    * the feature that decides whether the palette is still usable. */

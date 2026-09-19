@@ -58,6 +58,7 @@ interface Prefs {
   ringGlass: boolean;
   ringHoldMs: number;
   ringTap: string;
+  homeCurrency: string;
   followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
@@ -278,7 +279,12 @@ const PANE_HTML: Record<PaneId, string> = {
     <div><p class="set-label">Applications</p><div class="set-group">
       ${row("Index the Start Menu", "", check("index-apps"))}
     </div>
-    <p class="set-note">Off, the palette cannot launch applications — and start-up is a second and a half quicker.</p></div>`,
+    <p class="set-note">Off, the palette cannot launch applications — and start-up is a second and a half quicker.</p></div>
+    <div><p class="set-label">Money</p><div class="set-group">
+      ${row("Your currency", "So `120 usd` on its own has an answer. Two named currencies never need it.",
+        `<input id="home-currency" autocomplete="off" spellcheck="false" maxlength="3"
+          placeholder="PLN" style="text-transform:uppercase;width:5.5rem">`)}
+    </div></div>`,
 
   keys: `
     <div><p class="set-label">Global shortcuts</p><div class="set-group" id="keys"></div>
@@ -400,7 +406,7 @@ let prefs: Prefs = {
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", timerMode: "pomodoro",
   pomodoroPill: "bar", ringStops: [], ringGlass: true, followLive: true,
-  ringHoldMs: 250, ringTap: "@search",
+  ringHoldMs: 250, ringTap: "@search", homeCurrency: "",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
 };
@@ -570,6 +576,16 @@ foldDelay.oninput = () => {
 
 /* How long the ring's key has to be held before the ring is drawn. Under it,
  * the press is a tap and does something else entirely. */
+/* ⚠️ Three letters, upper-cased, or nothing. A half-typed code would have
+ * the converter answering in "P" for as long as it took to type the rest. */
+const homeCurrency = get<HTMLInputElement>("home-currency");
+homeCurrency.oninput = () => {
+  const said = homeCurrency.value.toUpperCase().replace(/[^A-Z]/g, "");
+  homeCurrency.value = said;
+  prefs.homeCurrency = said.length === 3 ? said : "";
+  savePrefs();
+};
+
 const ringHold = get<HTMLInputElement>("ring-hold");
 ringHold.oninput = () => {
   prefs.ringHoldMs = Number(ringHold.value);
@@ -1276,6 +1292,7 @@ function paintPrefs() {
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
+  get<HTMLInputElement>("home-currency").value = prefs.homeCurrency;
   get<HTMLInputElement>("ring-hold").value = String(prefs.ringHoldMs);
   get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;
   paintTap();

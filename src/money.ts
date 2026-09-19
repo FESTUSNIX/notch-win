@@ -97,12 +97,18 @@ function codeOf(word: string): string | null {
 }
 
 /**
- * `100 usd to pln`, `$100 pln`, `eur to gbp`.
+ * `100 usd to pln`, `$100 pln`, `eur to gbp` — and, with a home currency set,
+ * `$100` on its own.
+ *
+ * @param home the currency to convert INTO when only one is named. ⚠️ Off by
+ * default and it has to be: a converter that guesses which country you are in
+ * is a converter that is wrong the moment you travel, and "100 usd" answered
+ * in a currency nobody chose is a number with no units anybody can trust.
  *
  * @returns `null` for anything that is not plainly a conversion — which is
  * most of what gets typed into a palette.
  */
-export function parseMoney(text: string): Money | null {
+export function parseMoney(text: string, home = ""): Money | null {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 48) return null;
   /* Symbols are split off the number: `$100` and `100zł` are both one token
@@ -137,6 +143,13 @@ export function parseMoney(text: string): Money | null {
     const code = codeOf(word);
     if (!code) return null;
     seen.push(code);
+  }
+  /* One currency and a home to take it to. ⚠️ An AMOUNT is required here,
+   * where two currencies do not need one: "usd to pln" is a rate somebody
+   * asked for, but a bare "pln" is a word — it is in "pln" and "plnia" and in
+   * whatever three letters a project is called. */
+  if (seen.length === 1 && home && amount !== null && seen[0] !== home) {
+    return { amount, from: seen[0], to: home };
   }
   if (seen.length !== 2) return null;
   const [from, to] = seen;
