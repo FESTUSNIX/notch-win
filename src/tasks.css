@@ -995,15 +995,42 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .note-sheet-do:active { scale:.9; transition-duration:90ms; }
 .note-sheet-do.is-on { color:var(--accent); }
 .note-sheet-do:disabled { opacity:.35; cursor:default; }
+/* ⚠️ Armed, not confirmed. A note is the only thing this app stores that is
+   not a cache of something else, and the button that throws one away sits
+   30px from the one that copies it — so the first press turns it red and the
+   second does the deed. It disarms itself after four seconds: a control left
+   cocked is a worse trap than the one this is fixing. */
+.note-sheet-do.is-armed { color:#fff; background:#c0392b;
+  box-shadow:0 0 0 1px rgba(255,255,255,.14), 0 2px 8px -3px rgba(192,57,43,.9); }
+.note-sheet-do.is-armed:hover { background:#d8402f; }
+@media (prefers-reduced-motion: no-preference) {
+  .note-sheet-do.is-armed { animation:note-armed var(--duration-fast) var(--ease-smooth-out); }
+}
+@keyframes note-armed {
+  from { scale:.82; }
+  to { scale:1; }
+}
 
 /* ⚠️ The field is the SHEET, not a box on it — no border, no inset, no
    background of its own. What makes this read as writing on paper rather than
-   as a form is that there is nothing drawn round the words. */
-.note-sheet-field { flex:1; min-height:206px; width:100%; resize:none; border:0;
-  font:inherit; font-size:13.5px; line-height:1.62; color:#eceae6;
-  padding:2px 2px 4px; background:transparent; }
-.note-sheet-field:focus-visible { outline:none; }
-.note-sheet-field::placeholder { color:#6a6a6a; }
+   as a form is that there is nothing drawn round the words.
+
+   ⚠️ And it is the NOTE, drawn: bold is bold while you type it and a list has
+   bullets. A textarea showed everybody the source of their own note, which is
+   a thing only the person who wrote the parser wants to look at. */
+.note-sheet-live { flex:1; min-height:206px; width:100%; overflow-y:auto;
+  font-size:13.5px; line-height:1.62; color:#eceae6;
+  padding:2px 2px 4px; background:transparent;
+  scrollbar-width:thin; scrollbar-color:#303030 transparent; }
+.note-sheet-live:focus-visible, .note-live:focus-visible { outline:none; }
+/* The placeholder, on a surface that has no placeholder attribute. ⚠️ Keyed
+   on a flag the editor writes rather than on `:empty` — the editor always has
+   a paragraph in it, even when the paragraph has nothing in it. */
+.note-sheet-live[data-empty="yes"]::before,
+.drawer-live[data-empty="yes"]::before {
+  content:attr(data-placeholder); position:absolute; color:#6a6a6a;
+  pointer-events:none; }
+.note-sheet-live, .drawer-live { position:relative; }
 
 .note-sheet-foot { display:flex; align-items:center; justify-content:space-between;
   gap:8px; flex-shrink:0; }
@@ -1036,55 +1063,113 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
    against the edge rather than laid out — a flex child would have no room to
    be in for the frame before the window grows. */
 .drawer-page { background:transparent; height:100vh; overflow:hidden; }
-#drawer { position:relative; height:100vh; overflow:hidden; }
+#drawer { position:relative; height:100vh; overflow:hidden;
+  --face:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
+  --ruled:repeating-linear-gradient(180deg, transparent 0, transparent 23px,
+    rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px); }
 
-.drawer-tab { position:absolute; top:50%; translate:0 -50%;
-  width:22px; height:136px; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:7px; padding:8px 0;
+/* ── Moulded into the edge ───────────────────────────────────────────────
+   The same profile the island has where it meets the top of the screen: the
+   body stands off the edge by its own radius, and two FILLETS flare it back
+   out to meet the edge in a concave curve. ⚠️ Painted, not cut. The window is
+   transparent, so a concave corner cannot be a `border-radius` — there is
+   nothing behind to show through it. Each fillet is a square of the surface's
+   own colour with a quarter-disc taken out by a radial gradient, which is the
+   only shape that leaves the curve bending the right way. */
+.drawer-moulded::before, .drawer-moulded::after { content:""; position:absolute;
+  width:var(--r); height:var(--r); pointer-events:none;
+  transition:opacity var(--duration-quick) var(--ease-smooth-out); }
+#drawer[data-edge="right"] .drawer-moulded::before,
+#drawer[data-edge="right"] .drawer-moulded::after { right:0; }
+#drawer[data-edge="left"] .drawer-moulded::before,
+#drawer[data-edge="left"] .drawer-moulded::after { left:0; }
+.drawer-moulded::before { bottom:100%; }
+.drawer-moulded::after { top:100%; }
+#drawer[data-edge="right"] .drawer-moulded::before {
+  background:radial-gradient(circle var(--r) at 0 0,
+    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
+#drawer[data-edge="right"] .drawer-moulded::after {
+  background:radial-gradient(circle var(--r) at 0 100%,
+    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
+#drawer[data-edge="left"] .drawer-moulded::before {
+  background:radial-gradient(circle var(--r) at 100% 0,
+    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
+#drawer[data-edge="left"] .drawer-moulded::after {
+  background:radial-gradient(circle var(--r) at 100% 100%,
+    transparent 0 calc(var(--r) - .5px), var(--face) var(--r)); }
+
+/* ── The sliver ──────────────────────────────────────────────────────── */
+.drawer-tab { position:absolute; top:50%; translate:0 -50%; z-index:2;
+  --r:9px;
+  /* ⚠️ The BODY is the sliver minus its two fillets. Collapsed, the window
+     is exactly 136px tall and clips anything outside it — so a full-height
+     body would put both fillets off the top and bottom of the screen, where
+     they are invisible and the corners come out square. */
+  width:22px; height:calc(136px - 2 * var(--r));
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:7px; padding:9px 0;
   cursor:grab; user-select:none; overflow:hidden;
-  background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 5%), #1b1a20);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
-    0 2px 10px -4px rgba(0,0,0,.8);
+  background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 6%), #1c1b21);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
   transition:width var(--duration-fast) var(--ease-smooth-out),
     background-color var(--duration-fast) var(--ease-smooth-out); }
 .drawer-tab:active { cursor:grabbing; }
-#drawer[data-edge="right"] .drawer-tab { right:0; border-radius:13px 0 0 13px; }
-#drawer[data-edge="left"] .drawer-tab { left:0; border-radius:0 13px 13px 0; }
-.drawer-tab:hover { background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 10%), #232229); }
+/* ⚠️ The fillets take the TAB's colour, not the panel's — it is a shade
+   lighter, and a fillet a shade out reads as a seam rather than as a curve. */
+.drawer-tab::before, .drawer-tab::after {
+  --face:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 6%), #1c1b21); }
+#drawer[data-edge="right"] .drawer-tab { right:0; border-radius:11px 0 0 11px; }
+#drawer[data-edge="left"] .drawer-tab { left:0; border-radius:0 11px 11px 0; }
+.drawer-tab:hover { background-color:color-mix(in srgb, var(--tint) calc(var(--tint-wash) + 12%), #24232a); }
 /* The colour, and the only thing on the sliver that is always legible. */
 .drawer-tab-mark { flex-shrink:0; width:6px; height:6px; border-radius:50%;
-  background:color-mix(in srgb, var(--tint) 70%, var(--accent)); }
-#drawer.is-locked .drawer-tab-mark { box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 24%, transparent); }
+  background:color-mix(in srgb, var(--tint) 70%, var(--accent));
+  transition:box-shadow var(--duration-fast) var(--ease-smooth-out); }
+#drawer.is-locked .drawer-tab-mark { box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 30%, transparent); }
 /* ⚠️ Turned on its side rather than shortened to two letters. A 22px sliver
    has room for one line of text if that line runs the other way, and "ssh key
    for the pi" read vertically is a note you recognise where "ss" is not. */
 .drawer-tab-name { writing-mode:vertical-rl; text-orientation:mixed;
-  font-size:10.5px; letter-spacing:.2px; color:#9a9894;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  min-height:0; font-size:10.5px; letter-spacing:.2px; color:#9a9894;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  transition:opacity var(--duration-quick) var(--ease-smooth-out); }
+/* ⚠️ Gone the moment the panel is out. Open, the sliver sits against the
+   note's own first line saying exactly the same thing — which is what made the
+   drawer look like it had drawn its contents twice. Open, it is a grip. */
+/* ⚠️ And the sliver stops being a surface. Open, the panel is the surface and
+   the sliver is a grip ON it — left as a box of its own it reads as a second
+   little card floating over the note, and its own fillets paint the tab's
+   colour across the corners the panel has just moulded into the edge. */
+#drawer.is-open .drawer-tab { width:15px; background-color:transparent;
+  box-shadow:none; }
+#drawer.is-open .drawer-tab::before, #drawer.is-open .drawer-tab::after { opacity:0; }
+#drawer.is-open .drawer-tab-name { opacity:0; }
 
-.drawer-panel { position:absolute; top:0; bottom:0; width:308px;
-  display:flex; flex-direction:column; gap:8px; padding:11px 13px 13px;
-  opacity:0; pointer-events:none; filter:blur(2px);
-  background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
-  background-image:repeating-linear-gradient(180deg,
-    transparent 0, transparent 23px,
-    rgba(255,255,255,.025) 23px, rgba(255,255,255,.025) 24px);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.075),
-    inset 0 1px 0 rgba(255,255,255,.07),
+/* ── The note ────────────────────────────────────────────────────────────
+   ⚠️ The FULL width of the window, with the sliver riding on top of it. The
+   panel's right edge is therefore the screen's edge, which is what lets the
+   fillets above mould it into that edge — a panel that stopped short of the
+   sliver would be a floating card with a bar beside it. */
+.drawer-panel { position:absolute; left:0; right:0; z-index:1; --r:18px;
+  top:var(--r); bottom:var(--r);
+  display:flex; flex-direction:column; gap:8px; padding:12px 30px 14px 15px;
+  background-color:var(--face); background-image:var(--ruled);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06),
     0 10px 34px -12px rgba(0,0,0,.9);
-  transition:opacity var(--duration-fast) var(--ease-smooth-out),
-    filter var(--duration-fast) var(--ease-smooth-out),
-    translate var(--duration-fast) var(--ease-smooth-out); }
-#drawer[data-edge="right"] .drawer-panel { right:22px; translate:14px 0;
-  border-radius:17px 0 0 17px; }
-#drawer[data-edge="left"] .drawer-panel { left:22px; translate:-14px 0;
-  border-radius:0 17px 17px 0; }
-#drawer.is-open .drawer-panel { opacity:1; translate:0 0; filter:none;
-  pointer-events:auto; }
+  /* ⚠️ The whole width, not fourteen pixels. This is a drawer being pulled
+     out of the side of the screen; a card fading up in place is the gesture
+     for something that was already there. */
+  translate:100% 0; opacity:0; pointer-events:none;
+  transition:translate var(--duration-fast) var(--ease-smooth-out),
+    opacity var(--duration-quick) var(--ease-smooth-out); }
+#drawer[data-edge="right"] .drawer-panel { border-radius:18px 0 0 18px; }
+#drawer[data-edge="left"] .drawer-panel { border-radius:0 18px 18px 0;
+  translate:-100% 0; padding:12px 15px 14px 30px; }
+#drawer.is-open .drawer-panel { translate:0 0; opacity:1; pointer-events:auto; }
 
 .drawer-head { display:flex; align-items:center; justify-content:space-between;
   gap:8px; flex-shrink:0; }
-.drawer-title { min-width:0; flex:1; font-size:11px; color:#8a8884;
+.drawer-title { min-width:0; flex:1; font-size:10.5px; color:#77756f;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .drawer-tools { display:flex; align-items:center; gap:1px; }
 .drawer-do { width:24px; height:24px; padding:0; border-radius:7px;
@@ -1096,19 +1181,13 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .drawer-do:active { scale:.9; transition-duration:90ms; }
 .drawer-do.is-on { color:var(--accent); }
 
-/* ⚠️ A flex column starting at the top. A `<button>` centres its content, so
-   a three-word note sat in the middle like a label rather than lying at the
-   top of the sheet like writing. */
-.drawer-open { flex:1; min-height:0; width:100%; text-align:left;
-  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
-  padding:0; border-radius:8px; background:none; overflow:hidden;
-  /* Faded rather than clipped: a sentence cut mid-letter reads as a fault. */
-  mask-image:linear-gradient(180deg, #000 0, #000 88%, transparent 100%); }
-.drawer-open:active { scale:.995; transition-duration:90ms; }
-.drawer-field { flex:1; min-height:0; width:100%; resize:none; border:0;
-  font:inherit; font-size:12.5px; line-height:1.55; color:#e4e2de;
-  padding:0; background:transparent; }
-.drawer-field:focus-visible { outline:none; }
+/* ⚠️ The note, editable where it is drawn. There is no "edit mode" and no box
+   around the words: what makes this read as writing on paper is that nothing
+   is drawn round it. */
+.drawer-live { flex:1; min-height:0; width:100%; overflow-y:auto; padding:0;
+  font-size:12.5px; line-height:1.55; color:#e4e2de;
+  scrollbar-width:thin; scrollbar-color:#3a3a3a transparent; }
+.drawer-live:focus-visible { outline:none; }
 .drawer-gone { margin:auto; font-size:12px; color:#6a6a6a; }
 
 /* ── The calendar: a month, and the agenda beside it ─────────────────────

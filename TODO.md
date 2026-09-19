@@ -165,6 +165,23 @@
         out of the card into a box somewhere else. There is no save button: the
         sheet writes itself down when you stop typing, and leaving the screen
         writes it too.
+  - [x] **And it shows the note, not its source.** Bold is bold while you type
+        it and a list has bullets; typing `- ` or `**` turns into what it means
+        as you type it, and what gets STORED is still the markers — greppable,
+        pasteable, readable in Notepad. The docked drawer is the same editor:
+        the caret goes straight into the words, with no mode to enter first.
+  - [ ] A marker typed into the MIDDLE of an existing line stays as characters
+        until the note is next opened. The rules fire at the end of a block,
+        because that is the one caret position that survives the block being
+        redrawn.
+  - [ ] The round trip normalises: `_italic_` comes back as `*italic*`, a fence
+        loses its language and a mark inside a mark loses the inner one. The
+        parser cannot express any of those, so a view built from it cannot
+        either — and it only ever happens to a note somebody actually edited.
+  - [x] **Delete asks twice.** A note is the only thing this app stores that is
+        not a cache of something else, and the button that throws one away sits
+        30px from the one that copies it. The first press arms it; it disarms
+        itself after four seconds.
   - [ ] No global shortcut of its own — the palette command is the fast path.
         One would mean a seventh key and a seventh row in Settings.
   - [x] **Dock a note to the edge of the screen**, by pressing the pin or by
@@ -173,6 +190,16 @@
         the pointer arrives — press the sliver to keep it open, drag it to
         slide it along the edge or across to the other one. Which edge and how
         far down are remembered; docked notes come back when the app restarts.
+  - [x] **Moulded into the edge**, with the same concave corners the island has
+        where it meets the top of the screen: the panel stands off the edge by
+        its own radius and two fillets flare it back out. Painted, not cut —
+        the window is transparent, so there is nothing behind a `border-radius`
+        to show through.
+  - [x] **The drag docks as it goes.** A drag with no preview is a drag of
+        nothing: the card cannot leave the island's window. The real drawer is
+        the preview — it slides out of the edge you are heading for and follows
+        the pointer until you let go. Dropping it back on the island puts it
+        away again.
   - [ ] The drawer docks to the CURRENT monitor, which in practice is the
         primary one — the window is built before it has been placed, so there
         is nothing to ask which screen it is on. Dragging it to another

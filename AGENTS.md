@@ -3898,3 +3898,41 @@ The two halves were the same fault.
      `setPointerCapture`** — that is what "drag it out" means. Without it the
      island stops hearing about the pointer at its own edge, and dragging a note
      onto the desktop reads as a press that wandered off and did nothing.
+609. ⚠️ **A `contenteditable` block with nothing in it has no line box**, so
+     a caret placed in an empty `<p>` is not really anywhere. Chromium answers
+     the first keystroke by building a SECOND paragraph beside it and leaving
+     the caret before both — which reads as the first letter of every note
+     jumping to the end of it, and as every rule silently not firing, because
+     the caret is in no block at all. An empty block gets a `<br>`; the
+     serialiser skips a trailing one.
+610. ⚠️ **A caret parked at the end of a `<strong>` inherits its style.** So
+     the word typed after `**milk**` came out bold as well: the rule fired, the
+     markers vanished, and everything after them joined the run they were
+     supposed to close. A zero-width space appended after the mark is a
+     foothold OUTSIDE it for the caret to stand in, and one keystroke later the
+     block is redrawn without it.
+611. ⚠️ **The parser trims the end of every line, so typing a space makes the
+     text mean something different from what is on screen** — and the block is
+     redrawn without the space that was just typed. Every word lost the space
+     after it. Whatever decides "has this block changed" has to ask with the
+     trailing whitespace taken off BOTH sides.
+612. ⚠️ **A marker that has already been eaten cannot be read back.** An
+     `<li>` holds no dash and a heading holds no hash — the element carries
+     that — so re-reading their text says "paragraph" every time, and taking
+     it literally turned a heading back into a paragraph on the first letter
+     typed into it. A live parse may ADD structure; it may never take it away.
+613. ⚠️ **`insertUnorderedList` on a paragraph that holds a run leaves the
+     list INSIDE the paragraph.** Not legal HTML, and worse, not a list to
+     anything walking the top level — so the button drew bullets on screen and
+     stored an ordinary line. The list has to be lifted back out before
+     anything reads it.
+614. ⚠️ **A drag that leaves a window needs that window to stop redrawing.**
+     The gesture is held by pointer capture on the card; pinning writes to the
+     store, the store answers with the whole list, the list redraws the wall —
+     and the redraw replaces the very element holding the capture. The drag
+     cancelled itself on its own first frame.
+615. ⚠️ **A drag with no preview is a drag of nothing.** A card cannot leave
+     the island's window, so there is nothing under the pointer and nothing to
+     say where it will land. The answer was not to draw a ghost but to do the
+     thing early: the note DOCKS as you drag, so the real drawer slides out of
+     the edge you are heading for and follows the pointer until you let go.

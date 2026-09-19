@@ -313,6 +313,40 @@ pub fn move_pin(app: AppHandle, id: String, x: i32, y: i32, w: u32, h: u32) {
     let _ = window.set_size(tauri::PhysicalSize::new(w.max(1), h.max(1)));
 }
 
+/// Where a docked note is being dragged to, right now.
+///
+/// ⚠️ Sent to the drawer's own window rather than acted on here, because the
+/// geometry — the monitor, the work area, the two sizes — lives in
+/// `note-window.ts` and must live in exactly one place. See `move_pin`.
+#[derive(Clone, serde::Serialize)]
+pub struct DockAt {
+    pub id: String,
+    pub edge: String,
+    pub y: i32,
+    /// Whether this is a drag in progress. The drawer stays OPEN while it is
+    /// true — the point of dragging a note to the edge is watching it land,
+    /// and a sliver landing tells you nothing about which note it was.
+    pub dragging: bool,
+}
+
+/// Follow the pointer while a note is being dragged out of the island.
+///
+/// ⚠️ Nothing is WRITTEN. This fires on every frame of a drag; `dock_note` is
+/// what saves, once, when the pointer goes up. A file written sixty times a
+/// second for a gesture that has not finished is the same mistake `place_note`
+/// was built to avoid.
+#[tauri::command]
+pub fn drag_pin(app: AppHandle, id: String, edge: String, y: i32) {
+    let side = side_of(&edge);
+    if let Ok(mut held) = app.state::<Store>().0.lock() {
+        if let Some(note) = held.iter_mut().find(|note| note.id == id) {
+            note.edge = side.clone();
+            note.y = y;
+        }
+    }
+    let _ = app.emit("notch:note-dock", DockAt { id, edge: side, y, dragging: true });
+}
+
 /// Remember which edge a note is docked to, and how far down it.
 ///
 /// ⚠️ Called by the window itself rather than from a `Moved` handler here.
@@ -328,15 +362,16 @@ pub fn dock_note(app: AppHandle, id: String, edge: String, y: i32) {
         if note.edge == side && note.y == y {
             return;
         }
-        note.edge = side;
+        note.edge = side.clone();
         note.y = y;
         held.clone()
     };
-    /* ⚠️ Saved but NOT emitted. `notch:notes` redraws every note everywhere,
-     * and a position is of no interest to any of them — emitting one per drag
-     * would repaint the island's whole wall for a window moving on another
-     * monitor. */
+    /* ⚠️ `notch:notes` is NOT emitted. That one redraws every note everywhere,
+     * and an edge is of no interest to any of them — one per drag would
+     * repaint the island's whole wall for a window moving on another monitor.
+     * The drawer gets its own event, which only it listens to. */
     crate::config::save_beside(FILE, &snapshot);
+    let _ = app.emit("notch:note-dock", DockAt { id, edge: side, y, dragging: false });
 }
 
 /// Colour one note.

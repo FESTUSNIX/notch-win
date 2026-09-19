@@ -21,7 +21,8 @@ import { listen } from "@tauri-apps/api/event";
 import {
   highlight, noteTitle, noteWhen, searchNotes, TINTS, tintOf, type Note,
 } from "./notes";
-import { blocks, plain, toggleList, toggleMark, type Block } from "./note-format";
+import { plain } from "./note-format";
+import { caretToEnd, editable, mark as markUp, markersOf, render } from "./note-live";
 import type { Activity } from "./island-activity";
 
 export interface NotesDeps {
@@ -52,9 +53,13 @@ export class NotesScreen {
   private draft = "";
   private busy = false;
   private saving = 0;
-  /** Set while a save is in flight, so the list arriving back from Rust does
-   *  not redraw the sheet out from under the caret. */
-  private field: HTMLTextAreaElement | null = null;
+  /** True while a card is being dragged out to the screen edge. */
+  private dragging = false;
+  /** The live editor, while a sheet is open. ⚠️ Not a textarea: the note is
+   *  drawn as itself and typed into in place — see note-live.ts. */
+  private field: HTMLElement | null = null;
+  /** The delete button, once it has been pressed once. */
+  private armed = 0;
 
   constructor(private host: HTMLElement, private deps: NotesDeps, private changed: () => void) {}
 
@@ -140,30 +145,34 @@ export class NotesScreen {
     this.changed();
     try {
       await this.deps.focus(true);
-      const field = this.field as HTMLTextAreaElement | null;
+      /* ⚠️ Read through a method, not off the property. `changed()` renders
+       * the sheet and the render is what puts the editor there — but the
+       * assignment three lines up is the last thing TypeScript can see, so it
+       * narrows the property to `null` and every use below becomes `never`. A
+       * call it cannot see through is the honest way to say "this changed". */
+      const field = this.editor();
       if (!field) return;
       field.focus();
       // The caret at the END of what is there, not selecting it: opening a note
       // to add a line is far commoner than opening one to replace it.
-      field.setSelectionRange(this.draft.length, this.draft.length);
+      caretToEnd(field);
     } catch { /* the sheet is still there; it just has no caret yet */ }
   }
 
-  /** Put a marker round the selection, and the caret back where it was.
+  /** The live editor, if a sheet is open. See `compose`. */
+  private editor(): HTMLElement | null { return this.field; }
+
+  /** Bold, italic or a list, on whatever is selected.
    *
-   * ⚠️ The field is written directly rather than through `changed()`. A
-   * re-render replaces the textarea and takes the selection with it, which is
-   * the one thing a formatting button must not do. */
-  private wrap(field: HTMLTextAreaElement, marker: string) {
-    const from = field.selectionStart ?? 0;
-    const to = field.selectionEnd ?? from;
-    const next = marker
-      ? toggleMark(field.value, from, to, marker)
-      : toggleList(field.value, from, to);
-    field.value = next.body;
-    this.draft = next.body;
-    field.focus();
-    field.setSelectionRange(next.from, next.to);
+   * ⚠️ The editor is left to do it. The old version rewrote the whole body
+   * as a string and put the caret back by index, which is the right shape for a
+   * textarea and the wrong one for a surface where the text is already drawn:
+   * the browser knows where the selection is inside the marks it made. */
+  private format(what: "bold" | "italic" | "list") {
+    const field = this.field;
+    if (!field) return;
+    markUp(field, what);
+    this.draft = markersOf(field);
     this.later();
   }
 
@@ -235,6 +244,37 @@ export class NotesScreen {
     this.changed();
   }
 
+  /** Delete, on the second press.
+   *
+   * ⚠️ A note is the only thing this app stores that is not a cache of
+   * something else, and the button that throws one away sits 30px from the one
+   * that copies it. So the first press ARMS it — the button turns red and says
+   * so — and only the second does anything. It disarms itself after four
+   * seconds, because a control left cocked is a worse trap than the one this
+   * is fixing.
+   *
+   * ⚠️ Not a dialog. A dialog on the island would have to be a second
+   * surface over a panel that is already small, and it would be dismissed by
+   * the same click that opened it half the time. */
+  private askFirst(button: HTMLElement) {
+    const one = this.here();
+    if (!one) { this.showList(); return; }
+    if (button.classList.contains("is-armed")) {
+      clearTimeout(this.armed);
+      void this.remove(one.id);
+      return;
+    }
+    button.classList.add("is-armed");
+    button.setAttribute("aria-label", "Delete this note — press again");
+    button.dataset.tip = "Press again to delete";
+    clearTimeout(this.armed);
+    this.armed = window.setTimeout(() => {
+      button.classList.remove("is-armed");
+      button.setAttribute("aria-label", "Delete");
+      button.dataset.tip = "Delete";
+    }, 4000);
+  }
+
   private async remove(id: string) {
     clearTimeout(this.saving);
     try { this.notes = await call<Note[]>("remove_note", { id }); }
@@ -244,6 +284,12 @@ export class NotesScreen {
   }
 
   render() {
+    /* ⚠️ Nothing is redrawn mid-drag. A drag out of the island is held by
+     * pointer capture on the CARD, and a redraw replaces that card — which
+     * releases the capture, cancels the gesture and leaves the note halfway to
+     * the edge. Pinning writes to the store and the store answers with a list,
+     * so without this the gesture kills itself on its own first frame. */
+    if (this.dragging) return;
     /* ⚠️ The open sheet is built ONCE and then left alone. This screen is
      * redrawn by the island's own render, which runs on a clock and on every
      * unrelated thing that changes — and every one of those redraws would
@@ -340,11 +386,16 @@ export class NotesScreen {
     const pinned = !!note?.pinned;
     for (const [icon, label, run] of [
       ["pin", pinned ? "Undock" : "Dock to the screen edge",
-        () => { const one = this.here(); if (one) void this.pin(one.id, !one.pinned); }],
+        (_button: HTMLElement) => {
+          const one = this.here();
+          if (one) void this.pin(one.id, !one.pinned);
+        }],
       ["copy", "Copy",
-        () => { void call("copy_text", { text: this.draft }).catch(() => {}); }],
+        (_button: HTMLElement) => {
+          void call("copy_text", { text: this.draft }).catch(() => {});
+        }],
       ["close", "Delete",
-        () => { const one = this.here(); if (one) void this.remove(one.id); }],
+        (button: HTMLElement) => this.askFirst(button)],
     ] as const) {
       const button = element("button",
         `note-sheet-do note-sheet-${icon}${icon === "pin" && pinned ? " is-on" : ""}`);
@@ -352,24 +403,27 @@ export class NotesScreen {
       button.dataset.tip = label;
       button.setAttribute("aria-label", label);
       paintIcon(button, icon);
-      button.onclick = run;
+      button.onclick = () => run(button);
       tools.append(button);
     }
     head.append(tools);
     sheet.append(head);
 
-    /* ── The words ──────────────────────────────────────────────────── */
-    const field = document.createElement("textarea");
-    field.className = "note-sheet-field";
-    field.maxLength = 20_000;
-    field.placeholder = "Write something down…";
+    /* ── The words ─────────────────────────────────────
+     * ⚠️ The note DRAWN, and typed into where it is drawn. Bold is bold while
+     * you write it and a list has bullets — the markers are what gets stored,
+     * not what gets shown. A textarea showed everybody the source of their own
+     * note, which is a thing only the person who wrote the parser wants. */
+    const field = element("div", "note-sheet-live note-body");
     field.setAttribute("aria-label", "Note");
-    field.value = this.draft;
-    field.oninput = () => {
-      this.draft = field.value;
+    field.dataset.placeholder = "Write something down…";
+    editable(field, this.draft, () => {
+      this.draft = markersOf(field);
+      field.dataset.empty = this.draft ? "" : "yes";
       this.later();
-    };
-    field.onkeydown = event => {
+    });
+    field.dataset.empty = this.draft ? "" : "yes";
+    field.addEventListener("keydown", event => {
       /* ⚠️ Enter is a NEWLINE here, where on the old two-row composer it
        * saved. This is the note itself at full size — the shape you write a
        * list in — and a sheet whose Enter throws you back to the wall is one
@@ -378,8 +432,11 @@ export class NotesScreen {
         event.preventDefault();
         this.showList();
       }
-    };
-    field.onblur = () => { this.draft = field.value; void this.flush(); };
+    });
+    field.addEventListener("blur", () => {
+      this.draft = markersOf(field);
+      void this.flush();
+    });
     sheet.append(field);
     this.field = field;
 
@@ -387,9 +444,9 @@ export class NotesScreen {
     const foot = element("div", "note-sheet-foot");
     const marks = element("div", "note-marks");
     for (const [label, title, run] of [
-      ["B", "Bold", () => this.wrap(field, "**")],
-      ["I", "Italic", () => this.wrap(field, "*")],
-      ["•", "List", () => this.wrap(field, "")],
+      ["B", "Bold", () => this.format("bold")],
+      ["I", "Italic", () => this.format("italic")],
+      ["•", "List", () => this.format("list")],
     ] as const) {
       const button = element("button", `note-mark note-mark-${title.toLowerCase()}`, label);
       (button as HTMLButtonElement).type = "button";
@@ -511,17 +568,32 @@ export class NotesScreen {
    * it crosses its own edge, so every drag would look like a press that
    * wandered off.
    *
-   * The drop decides one thing: which side of the screen it docks to. Where
-   * exactly it lands vertically is where you let go, and the drawer clamps it
-   * to the monitor itself. */
+   * ⚠️ And the note DOCKS as you drag, rather than on release. A drag with no
+   * preview is a drag of nothing: the card cannot leave the island's window,
+   * so there is nothing under the pointer and nothing to say where it will
+   * land. Docking live makes the real drawer the preview — it slides out of
+   * the edge you are heading for, holding the note, and follows the pointer up
+   * and down until you let go. Dropping it back on the island puts it away
+   * again. */
   private dragOut(card: HTMLElement, note: Note) {
     let from: { x: number; y: number } | null = null;
-    let dragging = false;
+    let frame = 0;
+    let at = { edge: "right", y: 0 };
+
+    /** Which side of the screen the pointer is on, and how far down.
+     *
+     * ⚠️ `screen.width` is the primary monitor in CSS pixels, which is what
+     * `screenX` is measured in too — so these are comparable without knowing
+     * the scale factor. `y` is physical, because that is what a window
+     * position is. */
+    const aimAt = (event: PointerEvent) => ({
+      edge: event.screenX > window.screen.width / 2 ? "right" : "left",
+      y: Math.round(event.screenY * (window.devicePixelRatio || 1)),
+    });
 
     card.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
       from = { x: event.screenX, y: event.screenY };
-      dragging = false;
       card.setPointerCapture(event.pointerId);
     });
 
@@ -529,34 +601,58 @@ export class NotesScreen {
       if (!from) return;
       const far = Math.hypot(event.screenX - from.x, event.screenY - from.y);
       /* ⚠️ A threshold, not any movement at all. A press always moves a pixel
-       * or two, and a card that starts flying on one of them is a card you
-       * cannot click. */
-      if (!dragging && far < 14) return;
-      dragging = true;
-      card.classList.add("is-dragging");
+       * or two, and a card that flies out on one of them is a card you cannot
+       * click. */
+      if (!this.dragging && far < 14) return;
+      at = aimAt(event);
+      if (!this.dragging) {
+        this.dragging = true;
+        card.classList.add("is-dragging");
+        // The drawer appears, docked and open: the preview is the real thing.
+        void this.pin(note.id, true, at);
+        return;
+      }
+      /* ⚠️ One message per frame. A pointer reports faster than a window can
+       * move, and every one of these crosses a process boundary. */
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        void call("drag_pin", { id: note.id, edge: at.edge, y: at.y }).catch(() => {});
+      });
     });
 
-    const done = (event: PointerEvent) => {
+    const drop = (event: PointerEvent) => {
       if (!from) return;
       from = null;
       card.releasePointerCapture?.(event.pointerId);
-      if (!dragging) return;
-      dragging = false;
+      if (!this.dragging) return;
+      this.dragging = false;
       card.classList.remove("is-dragging");
-      /* Which half of the screen it was let go in. ⚠️ `screen.width` is the
-       * primary monitor in CSS pixels, which is what `screenX` is measured in
-       * too — so these are comparable without knowing the scale factor. */
-      const edge = event.screenX > (window.screen.width / 2) ? "right" : "left";
-      const y = Math.round(event.screenY * (window.devicePixelRatio || 1));
-      void this.pin(note.id, true, { edge, y });
+      /* Let go over the island itself and the note is put away — the same
+       * gesture backwards, which is how it reads whether the drag was a
+       * mistake or a decision to take the note off the edge.
+       *
+       * ⚠️ The island's own BOX, not the window's. The window is bigger than
+       * what is drawn in it, and a drag that ended on the transparent part
+       * beside the panel would read as "never left" — which is the one place
+       * it obviously did. */
+      const box = document.getElementById("island")?.getBoundingClientRect();
+      const home = !!box && event.clientX >= box.left && event.clientX <= box.right
+        && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (home) {
+        void this.pin(note.id, false);
+        return;
+      }
+      void call("dock_note", { id: note.id, edge: at.edge, y: at.y }).catch(() => {});
+      this.changed();
       // The click that would otherwise follow the release would open the note.
       const swallow = (click: Event) => { click.stopPropagation(); click.preventDefault(); };
       card.addEventListener("click", swallow, { capture: true, once: true });
     };
-    card.addEventListener("pointerup", done);
+    card.addEventListener("pointerup", drop);
     card.addEventListener("pointercancel", event => {
       from = null;
-      dragging = false;
+      this.dragging = false;
       card.classList.remove("is-dragging");
       card.releasePointerCapture?.(event.pointerId);
     });
@@ -564,55 +660,21 @@ export class NotesScreen {
 
   /** A note, as it was written — lists as lists, bold as bold.
    *
-   * ⚠️ Built from the parsed structure with text nodes, never `innerHTML`.
-   * A note is arbitrary text pasted from somewhere, and the one thing you must
-   * not do with that is hand it to something that builds elements. */
+   * ⚠️ The same renderer the sheet and the docked drawer use — see
+   * note-live.ts. Three copies of this walk meant a note could legitimately
+   * look like three different notes. */
   private paper(body: string): HTMLElement {
     const sheet = element("div", "note-body");
-    const parsed = blocks(body);
-    let list: HTMLElement | null = null;
-
-    for (const block of parsed) {
-      /* Consecutive bullets share one list, so the marker column lines up and
-       * a gap between two of them is a gap rather than two lists. */
-      if (block.kind === "bullet" || block.kind === "number") {
-        const wanted = block.kind === "bullet" ? "ul" : "ol";
-        if (!list || list.tagName.toLowerCase() !== wanted) {
-          list = element(wanted as "ul", "note-list-block");
-          if (block.kind === "number" && block.index && block.index !== 1) {
-            (list as HTMLOListElement).start = block.index;
-          }
-          sheet.append(list);
-        }
-        const item = element("li", "");
-        this.runs(item, block);
-        list.append(item);
-        continue;
-      }
-      list = null;
-      const tag = block.kind === "head" ? "h4" : block.kind === "code" ? "pre" : "p";
-      const line = element(tag as "p", `note-${block.kind}`);
-      this.runs(line, block);
-      sheet.append(line);
-    }
-    if (!parsed.length) sheet.append(element("p", "note-para", ""));
-    return sheet;
-  }
-
-  /** One block's runs, with the search hits lit inside them. */
-  private runs(host: HTMLElement, block: Block) {
-    for (const span of block.spans) {
-      const tag = span.code ? "code" : span.bold ? "strong"
-        : span.italic ? "em" : span.strike ? "s" : "span";
-      const run = element(tag as "span", "");
-      /* ⚠️ The highlight is applied INSIDE a run, not over the line. Applied
-       * over the line it would have to slice through the formatting and every
-       * mark would have to be re-opened on the other side of a hit. */
-      for (const [index, part] of highlight(span.text, this.query).entries()) {
+    render(sheet, body, text => {
+      const out: Node[] = [];
+      for (const [index, part] of highlight(text, this.query).entries()) {
         if (!part) continue;
-        run.append(index % 2 ? element("b", "note-hit", part) : document.createTextNode(part));
+        out.push(index % 2
+          ? element("b", "note-hit", part)
+          : document.createTextNode(part));
       }
-      host.append(run);
-    }
+      return out;
+    });
+    return sheet;
   }
 }

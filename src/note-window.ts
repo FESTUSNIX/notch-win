@@ -26,7 +26,7 @@ import { listen } from "@tauri-apps/api/event";
 import { call, native } from "./task-client";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
-import { blocks } from "./note-format";
+import { editable, markersOf } from "./note-live";
 import { noteTitle, noteWhen, tintOf, type Note } from "./notes";
 import "./tasks.css";
 
@@ -55,11 +55,12 @@ let edge: "left" | "right" = "right";
 let open = false;
 /** Pinned open by a click on the bar, rather than by the pointer being there. */
 let locked = false;
-let editing = false;
 /** Held here rather than read back off the field: a redraw replaces it. */
 let draft = "";
 /** The top of the COLLAPSED bar, in physical pixels on the docked monitor. */
 let barTop = 0;
+/** True while the island is dragging this note along the edge. */
+let dragging = false;
 
 /* ── Where the window goes ───────────────────────────────────────────── */
 
@@ -134,53 +135,40 @@ function want(next: boolean, delay: number) {
   waiting = window.setTimeout(() => { void swing(next); }, delay);
 }
 
-/* ── What is on the paper ────────────────────────────────────────────── */
+/* ── Writing in it ──────────────────────────────────────────────────────
+ *
+ * ⚠️ There is no "edit mode". The note IS the field: the pointer arrives, the
+ * drawer opens, you put the caret in a word and type. Pressing a note to turn
+ * it into an editor was one press between a thought and writing it down, and
+ * the press had no visible target — the whole panel lit up, which reads as
+ * selecting rather than as opening.
+ */
 
-function paper(body: string): HTMLElement {
-  const sheet = element("div", "note-body");
-  let list: HTMLElement | null = null;
-  for (const block of blocks(body)) {
-    if (block.kind === "bullet" || block.kind === "number") {
-      const wanted = block.kind === "bullet" ? "ul" : "ol";
-      if (!list || list.tagName.toLowerCase() !== wanted) {
-        list = element(wanted as "ul", "note-list-block");
-        if (block.kind === "number" && block.index && block.index !== 1) {
-          (list as HTMLOListElement).start = block.index;
-        }
-        sheet.append(list);
-      }
-      const item = element("li", "");
-      runs(item, block.spans);
-      list.append(item);
-      continue;
-    }
-    list = null;
-    const tag = block.kind === "head" ? "h4" : block.kind === "code" ? "pre" : "p";
-    const line = element(tag as "p", `note-${block.kind}`);
-    runs(line, block.spans);
-    sheet.append(line);
-  }
-  return sheet;
+/** The editor, while the panel is built. */
+let live: HTMLElement | null = null;
+/** How long after the last keystroke the note writes itself down. */
+const SAVE_AFTER = 650;
+let saving = 0;
+/** Set while the caret is in the note, so a list arriving from the island does
+ *  not redraw the panel out from under it. */
+let repaint = false;
+
+/** Whether the caret is in the note. */
+function typing(): boolean {
+  return !!live && document.activeElement === live;
 }
 
-/** ⚠️ Text nodes, never `innerHTML`. A note is arbitrary text the user pasted
- *  from somewhere, and the one thing you must not do with that is hand it to
- *  something that builds elements. */
-function runs(target: HTMLElement, spans: { text: string; bold?: boolean; italic?: boolean; code?: boolean; strike?: boolean }[]) {
-  for (const span of spans) {
-    const tag = span.code ? "code" : span.bold ? "strong"
-      : span.italic ? "em" : span.strike ? "s" : "span";
-    const run = element(tag as "span", "");
-    run.append(document.createTextNode(span.text));
-    target.append(run);
-  }
+function later() {
+  clearTimeout(saving);
+  saving = window.setTimeout(() => { void save(); }, SAVE_AFTER);
 }
 
 /* ── Writing in it ───────────────────────────────────────────────────── */
 
 async function save() {
+  clearTimeout(saving);
   const body = draft.trim();
-  editing = false;
+  if (!note || body === note.body.trim()) return;
   try {
     const all = await call<Note[]>("save_note", { id, body });
     note = all.find(one => one.id === id) ?? null;
@@ -189,7 +177,11 @@ async function save() {
      * closes the window, but clearing the field goes through `save_note`. */
     if (!note) { await win?.close(); return; }
   } catch { /* the words are still in `draft`; the next save tries again */ }
-  render();
+  /* ⚠️ No redraw. This runs with the caret in the note — that is what an
+   * autosave IS — and a redraw here takes the caret, the selection and the
+   * undo stack with it. The panel is already showing what was sent. */
+  const when = host.querySelector<HTMLElement>(".drawer-title");
+  if (when && note) when.textContent = noteWhen(note.written, Date.now());
 }
 
 function render() {
@@ -197,21 +189,25 @@ function render() {
   host.dataset.edge = edge;
   host.dataset.tint = tintOf(note);
   host.classList.toggle("is-locked", locked);
+  live = null;
 
   /* ── The sliver ───────────────────────────────────────────────────
-   * What is on screen when nobody is looking at it: a coloured edge and, if
-   * there is room, the note's first words turned on their side. */
-  const tab = element("div", "drawer-tab");
+   * What is on screen when nobody is looking at it: a coloured edge and the
+   * note's first words turned on their side.
+   *
+   * ⚠️ The words go when the panel comes out. Open, the sliver sits against
+   * the note's own first line saying the same thing — which is what made it
+   * look like the drawer had drawn its contents twice. Open it is a grip. */
+  const tab = element("div", "drawer-tab drawer-moulded");
   tab.setAttribute("role", "button");
   tab.setAttribute("tabindex", "0");
   tab.setAttribute("aria-label", locked ? "Let the note close" : "Keep the note open");
   tab.append(element("span", "drawer-tab-mark"));
   tab.append(element("span", "drawer-tab-name", noteTitle(note?.body ?? "", 28)));
   grab(tab);
-  host.append(tab);
 
   /* ── The note ─────────────────────────────────────────────────────── */
-  const panel = element("section", "drawer-panel");
+  const panel = element("section", "drawer-panel drawer-moulded");
   const head = element("div", "drawer-head");
   /* ⚠️ WHEN, not what. The sliver beside it already carries the first line
    * and the paper below it opens with the same words — a title here was the
@@ -221,13 +217,13 @@ function render() {
   const tools = element("div", "drawer-tools");
   for (const [icon, label, on, run] of [
     ["pin", locked ? "Let it close" : "Keep it open", locked,
-      () => { locked = !locked; render(); if (!locked) want(false, 120); }],
+      () => { locked = !locked; freshen(); if (!locked) want(false, 120); }],
     ["copy", "Copy", false,
       () => { void call("copy_text", { text: note?.body ?? "" }).catch(() => {}); }],
     ["close", "Undock", false,
       () => { void call("pin_note", { id, pinned: false }).catch(() => {}); }],
   ] as const) {
-    const button = element("button", `drawer-do${on ? " is-on" : ""}`);
+    const button = element("button", `drawer-do drawer-${icon}${on ? " is-on" : ""}`);
     (button as HTMLButtonElement).type = "button";
     button.setAttribute("aria-label", label);
     button.dataset.tip = label;
@@ -240,52 +236,49 @@ function render() {
 
   if (!note) {
     panel.append(element("p", "drawer-gone", "This note is gone."));
-    host.append(panel);
+    host.append(tab, panel);
     return;
   }
 
-  if (editing) {
-    const box = document.createElement("textarea");
-    box.className = "drawer-field";
-    box.value = draft;
-    box.maxLength = 20_000;
-    box.setAttribute("aria-label", "Note");
-    box.onkeydown = event => {
-      // ⚠️ Ctrl+Enter, not Enter. A docked note is where a list goes, and the
-      // island's sheet is the same: Enter has to be a newline or the thing
-      // this is mostly used for takes a modifier on every line.
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        draft = box.value;
-        void save();
-      }
-      /* ⚠️ The blur handler goes FIRST. Escape re-renders, the re-render
-       * removes the textarea, removing it fires `blur` — and `blur` saves. So
-       * "discard" saved the very words it was discarding, every time. */
-      if (event.key === "Escape") {
-        event.preventDefault();
-        box.onblur = null;
-        editing = false;
-        draft = note?.body ?? "";
-        render();
-      }
-    };
-    box.oninput = () => { draft = box.value; };
-    box.onblur = () => { draft = box.value; void save(); };
-    panel.append(box);
-    host.append(panel);
-    box.focus();
-    box.setSelectionRange(draft.length, draft.length);
-    return;
-  }
+  /* ⚠️ Editable from the moment it opens. The note is the field — put the
+   * caret in a word and type. */
+  const box = element("div", "drawer-live note-body");
+  box.setAttribute("aria-label", "Note");
+  editable(box, note.body, () => {
+    draft = markersOf(box);
+    later();
+  });
+  box.addEventListener("focus", () => { repaint = false; });
+  box.addEventListener("blur", () => {
+    draft = markersOf(box);
+    void save().then(() => { if (repaint) render(); });
+  });
+  box.addEventListener("keydown", event => {
+    /* ⚠️ Escape lets go of the note rather than discarding it — there is
+     * nothing to discard any more, because it has been saving all along. It
+     * shuts the drawer, which is what Escape means everywhere else here. */
+    if (event.key === "Escape") {
+      event.preventDefault();
+      box.blur();
+      locked = false;
+      void swing(false);
+    }
+  });
+  panel.append(box);
+  live = box;
+  host.append(tab, panel);
+}
 
-  const read = element("button", "drawer-open");
-  (read as HTMLButtonElement).type = "button";
-  read.setAttribute("aria-label", "Edit this note");
-  read.append(paper(note.body));
-  read.onclick = () => { editing = true; draft = note?.body ?? ""; render(); };
-  panel.append(read);
-  host.append(panel);
+/** The few things that change without the note changing. ⚠️ Written into the
+ *  elements, never rendered: the caret is in the note. */
+function freshen() {
+  host.classList.toggle("is-locked", locked);
+  const pin = host.querySelector<HTMLElement>(".drawer-pin");
+  if (!pin) return;
+  pin.classList.toggle("is-on", locked);
+  const said = locked ? "Let it close" : "Keep it open";
+  pin.dataset.tip = said;
+  pin.setAttribute("aria-label", said);
 }
 
 /* ── Sliding it along the edge ────────────────────────────────────────
@@ -353,7 +346,10 @@ function grab(tab: HTMLElement) {
 
 document.documentElement.addEventListener("pointerenter", () => { want(true, 80); });
 document.documentElement.addEventListener("pointerleave", () => {
-  if (locked || editing) return;
+  /* ⚠️ Never while the caret is in it. Shutting the drawer under somebody who
+   * is typing in it would take the words off screen mid-sentence, and the
+   * pointer is nowhere near the note while they type. */
+  if (locked || dragging || typing()) return;
   /* ⚠️ A pause before it shuts, and a longer one than the pause before it
    * opens. A drawer that closes the instant the pointer clips its corner is
    * one you have to chase, and the cost of being wrong in this direction is a
@@ -393,12 +389,35 @@ async function boot() {
    * `save_note`, so this listener is what stops the two drifting apart. */
   await listen<Note[]>("notch:notes", event => {
     const next = event.payload.find(one => one.id === id) ?? null;
-    // Not while it is being typed into: the arriving list is what was saved
-    // before this edit started, and painting it would take the words away.
-    if (editing) { note = next; return; }
+    /* Not while it is being typed into: the arriving list is what was saved
+     * before this edit started, and painting it would take the words away.
+     * The repaint is owed until the caret leaves. */
+    if (typing()) { note = next; repaint = true; return; }
     note = next;
     render();
   });
+
+  /* ── Being dragged out of the island ──────────────────────────────────
+   * ⚠️ The drawer stays OPEN for the whole drag, and that is the point of it:
+   * dragging a note to the edge with nothing to see is dragging air. The real
+   * note slides out of the edge you are heading for and follows the pointer,
+   * so where it will land is where it already is. */
+  await listen<{ id: string; edge: string; y: number; dragging: boolean }>(
+    "notch:note-dock", event => {
+      if (event.payload.id !== id) return;
+      edge = event.payload.edge === "left" ? "left" : "right";
+      barTop = event.payload.y;
+      host.dataset.edge = edge;
+      dragging = event.payload.dragging;
+      clearTimeout(waiting);
+      if (dragging) {
+        if (!open) { void swing(true); return; }
+        void place();
+        return;
+      }
+      /* Let go: the sliver again, unless the pointer happens to be on it. */
+      void swing(false);
+    });
 
   /* The screen itself can change under a docked window — a monitor unplugged,
    * a resolution changed, the taskbar moved. */
@@ -421,7 +440,7 @@ if (!native) {
 
 if (native) {
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !editing) { locked = false; void swing(false); }
+    if (event.key === "Escape" && !typing()) { locked = false; void swing(false); }
   });
 }
 

@@ -550,6 +550,7 @@ pub fn run() {
             notes::remove_note,
             notes::pin_note,
             notes::dock_note,
+            notes::drag_pin,
             notes::move_pin,
             notes::tint_note,
             stars::get_stars,

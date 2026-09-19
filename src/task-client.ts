@@ -455,7 +455,8 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   }
   /* The drawer's own window calls; there is no window in a preview, so the
      page lays itself out at whatever size the browser gave it. */
-  if (command === "dock_note" || command === "move_pin") return undefined as T;
+  if (command === "dock_note" || command === "move_pin"
+    || command === "drag_pin") return undefined as T;
   if (command === "remove_note") {
     demoNotes = demoNotes.filter(n => n.id !== String(args.id));
     return structuredClone(demoNotes) as T;

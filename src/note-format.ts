@@ -31,6 +31,13 @@ export interface Block {
   spans: Span[];
   /** The number a `1.` line asked for, so a list starting at 3 starts at 3. */
   index?: number;
+  /** How many hashes a heading was written with, 1 to 3.
+   *
+   *  ⚠️ Kept although every heading DRAWS the same. The live editor writes
+   *  the note back out from what is on screen, and without this a `###` would
+   *  come back as a `#` the first time anybody edited the note — a silent
+   *  rewrite of somebody's text for no visible reason. */
+  level?: number;
 }
 
 /** Every marker, in one pass, longest first.
@@ -103,7 +110,10 @@ export function blocks(body: string): Block[] {
     if (!line.trim()) continue;
 
     const head = /^(#{1,3})\s+(.*)$/.exec(line);
-    if (head) { out.push({ kind: "head", spans: spans(head[2]) }); continue; }
+    if (head) {
+      out.push({ kind: "head", level: head[1].length, spans: spans(head[2]) });
+      continue;
+    }
 
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(line);
     if (bullet) { out.push({ kind: "bullet", spans: spans(bullet[1]) }); continue; }

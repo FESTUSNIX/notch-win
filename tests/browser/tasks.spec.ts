@@ -1594,7 +1594,7 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
      into was the smallest thing on screen, and opening a note meant watching
      its words jump out of the card into a box somewhere else. */
   await newNote(page);
-  const field = page.getByLabel("Note", {exact: true});
+  const field = page.locator(".note-sheet-live");
   await expect(field).toBeFocused();
   await expect(page.locator(".note-wall")).toHaveCount(0);
 
@@ -1602,45 +1602,75 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
      the note at full size — the shape you write a list in — and a sheet whose
      Enter throws you back to the wall is one you cannot write a second line
      in. */
-  await field.fill("Passport expires March");
-  await field.press("Enter");
-  await field.type("renew it in January");
-  await expect(field).toHaveValue("Passport expires March\nrenew it in January");
+  await page.keyboard.type("Passport expires March");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("renew it in January");
+  await expect(field).toContainText("Passport expires March");
+  await expect(field).toContainText("renew it in January");
 
   // ⚠️ And there is no save button: it writes itself down when you stop.
   await expect(page.locator(".note-state")).toHaveText("Saved");
 
-  // The island's own arrow is the way back, beside the screen's name.
+  // The island's own arrow is the way back.
   await page.locator("#island-back").click();
   await expect(cards).toHaveCount(6);
   await expect(cards.first()).toContainText("Passport expires March");
 
-  /* ⚠️ The markers are a FORMAT, not part of the text. The note is stored as
-     what you typed — greppable, and safe to paste somewhere else — and the
-     markers are read on the way out. */
+  /* ⚠️ A marker becomes what it MEANS, as it is typed. Without that the
+     editor is only styled for notes it did not write: you type `- milk`, get
+     the characters `- milk`, and it turns into a bullet the next time the note
+     is opened — text that rearranges itself while you are not looking is text
+     you stop trusting. */
   await newNote(page);
-  await field.fill("# Shopping\n- **milk** and bread\n- *maybe* eggs\n\n1. first\n2. second");
+  await page.keyboard.type("# Shopping");
+  await expect(field.locator("h4")).toHaveText("Shopping");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("- **milk** and bread");
+  await expect(field.locator("ul li strong")).toHaveText("milk");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("*maybe* eggs");
+  await expect(field.locator("ul li em")).toHaveText("maybe");
+  // Two items in ONE list, not two lists of one.
+  await expect(field.locator("ul")).toHaveCount(1);
+  await expect(field.locator("ul li")).toHaveCount(2);
+  // The markers themselves are nowhere on screen.
+  await expect(field).not.toContainText("**");
+  await expect(field).not.toContainText("# ");
+
+  /* And the note is STORED as the markers — greppable, and safe to paste
+     somewhere else. The wall draws it back from them. */
   await page.locator("#island-back").click();
   const shopping = cards.first();
   await expect(shopping.locator("h4")).toHaveText("Shopping");
   await expect(shopping.locator("ul li")).toHaveCount(2);
-  await expect(shopping.locator("ol li")).toHaveCount(2);
   await expect(shopping.locator("strong")).toHaveText("milk");
   await expect(shopping.locator("em")).toHaveText("maybe");
-  // The markers themselves are gone from what is drawn.
-  await expect(shopping).not.toContainText("**");
 
-  /* ⚠️ Bold wraps the SELECTION and leaves the caret inside the markers, or
-     pressing bold and typing produces `**` followed by unbolded words.
+  /* ⚠️ Bold wraps the SELECTION, in place. The old version rewrote the whole
+     body as a string and put the caret back by index, which is the right shape
+     for a textarea and the wrong one where the text is already drawn.
      ⚠️ In a NEW note, not by editing the one above — the searches further
      down are looking for words this would otherwise have overwritten. */
   await newNote(page);
-  await field.fill("plain words");
-  await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(6, 11));
+  await page.keyboard.type("plain words");
+  await field.evaluate((el: HTMLElement) => {
+    /* The runs are elements, so the offsets belong to the text INSIDE one. */
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const text = walk.nextNode()!;
+    const range = document.createRange();
+    range.setStart(text, 6);
+    range.setEnd(text, 11);
+    const chosen = window.getSelection()!;
+    chosen.removeAllRanges();
+    chosen.addRange(range);
+  });
   await page.getByLabel("Bold", {exact: true}).click();
-  await expect(field).toHaveValue("plain **words**");
+  /* ⚠️ `b` OR `strong`. The browser's own bold command writes `<b>`; the
+     renderer writes `<strong>`. Both mean the same thing on the way out, which
+     is the whole reason the serialiser reads a tag rather than a class. */
+  await expect(field.locator("b, strong")).toHaveText("words");
   await page.getByLabel("List", {exact: true}).click();
-  await expect(field).toHaveValue("- plain **words**");
+  await expect(field.locator("li").locator("b, strong")).toHaveText("words");
 
   /* A note can be given a colour, and the colour is a KEY — nothing a note
      carries ever reaches a stylesheet. */
@@ -1683,7 +1713,7 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
   /* ⚠️ A note is arbitrary text the user pasted from somewhere, and the one
      thing you must not do with that is hand it to a parser. */
   await newNote(page);
-  await field.fill('<img src=x onerror="alert(1)"> pasted');
+  await page.keyboard.type('<img src=x onerror="alert(1)"> pasted');
   await page.locator("#island-back").click();
   await expect(cards.first()).toContainText('<img src=x onerror="alert(1)"> pasted');
   await expect(page.locator(".note-wall img")).toHaveCount(0);
@@ -1699,10 +1729,42 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
   await expect(cards.first()).toHaveClass(/is-pinned/);
   await expect(cards.first().locator(".note-docked")).toHaveCount(1);
 
-  // Delete takes it back off the pile, and puts you back on it.
+  /* ⚠️ Dragging a note out DOCKS IT AS IT GOES. A drag with no preview is a
+     drag of nothing — the card cannot leave the island's window, so there is
+     nothing under the pointer and nothing to say where it will land. The real
+     drawer is the preview: it slides out of the edge you are heading for and
+     follows the pointer until you let go. */
+  const dragged = cards.nth(1);
+  const grip = (await dragged.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 120, grip.y + 60, {steps: 4});
+  await page.mouse.move(1270, 700, {steps: 6});
+  await page.mouse.up();
+  await expect(cards.nth(1)).toHaveClass(/is-pinned/);
+  // And the release does not also open the note it was dragging.
+  await expect(page.locator(".note-wall")).toHaveCount(1);
+
+  /* Dropped back on the island, it goes away again — a drag that ends where
+     it started should undo itself. */
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(1270, 700, {steps: 4});
+  await page.mouse.move(grip.x + 20, grip.y + 20, {steps: 4});
+  await page.mouse.up();
+  await expect(cards.nth(1)).not.toHaveClass(/is-pinned/);
+
+  /* ⚠️ Delete ASKS. A note is the only thing this app stores that is not a
+     cache of something else, and the button that throws one away sits 30px
+     from the one that copies it — so the first press arms it and only the
+     second does the deed. */
   const before = await cards.count();
   await cards.first().click();
-  await page.getByLabel("Delete", {exact: true}).click();
+  const bin = page.locator(".note-sheet-close");
+  await bin.click();
+  await expect(bin).toHaveClass(/is-armed/);
+  await expect(page.locator(".note-sheet")).toHaveCount(1);
+  await bin.click();
   await expect(page.locator(".note-wall")).toHaveCount(1);
   await expect(cards).toHaveCount(before - 1);
 });
@@ -1725,13 +1787,20 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   const panel = page.locator(".drawer-panel");
   await expect(panel).toHaveCSS("opacity", "0");
   await expect(panel).toHaveCSS("pointer-events", "none");
+  /* Shut, at the size the window actually is: 22 by 136. ⚠️ Worth a picture of
+     its own — the sliver is what is on screen for all but a few seconds a day,
+     and at this size a stray shadow or a second outline is most of it. */
+  await page.setViewportSize({width: 22, height: 136});
+  await page.screenshot({path: "test-results/docked-note-shut.png"});
+  await page.setViewportSize({width: 330, height: 340});
 
   // The pointer arriving is the whole gesture.
   await tab.hover();
   await expect(panel).toHaveCSS("opacity", "1");
-  await expect(page.locator(".note-body")).toContainText("ssh key for the pi");
-  // The same formatter as the wall: markers are read, not shown.
-  await expect(page.locator(".drawer-open")).not.toContainText("**");
+  const field = page.locator(".drawer-live");
+  await expect(field).toContainText("ssh key for the pi");
+  // The same renderer as the wall: markers are read, not shown.
+  await expect(field).not.toContainText("**");
 
   /* ⚠️ Our own drag, never `data-tauri-drag-region`. That one hands the
      gesture to Windows, which moves the window wherever the pointer goes — and
@@ -1739,21 +1808,38 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
      again. */
   await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(0);
 
+  // The sliver stops repeating the note the moment the note is on screen.
+  await expect(page.locator(".drawer-tab-name")).toHaveCSS("opacity", "0");
+
+  /* ⚠️ MOULDED into the edge, the way the island is moulded into the top of
+     the screen: flush against it, standing off it at top and bottom by its own
+     radius so the two fillets have somewhere to flare. A panel that stopped
+     short of the edge would be a floating card with a bar beside it. */
+  const shape = await page.evaluate(() => {
+    const panel = document.querySelector(".drawer-panel")!.getBoundingClientRect();
+    return {
+      gap: Math.abs(Math.round(window.innerWidth - panel.right)),
+      top: Math.round(panel.top),
+      ink: getComputedStyle(document.querySelector(".drawer-live")!).color,
+    };
+  });
+  expect(shape.gap).toBe(0);
+  expect(shape.top).toBe(18);
+  expect(shape.ink).toBe("rgb(228, 226, 222)");
+
   // A press on the sliver keeps it open, so it can be left there.
   await tab.click();
   await expect(page.locator("#drawer")).toHaveClass(/is-locked/);
   await expect(page.getByLabel("Let it close", {exact: true})).toHaveCount(1);
 
-  // Pressing the paper opens it for editing, with the markers back.
-  await page.locator(".drawer-open").click();
-  const field = page.getByLabel("Note", {exact: true});
-  await expect(field).toBeFocused();
-  await expect(field).toHaveValue(/ssh key for the pi/);
-
-  // Escape leaves it alone rather than saving.
-  await field.fill("changed my mind");
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".note-body")).toContainText("ssh key for the pi");
+  /* ⚠️ Editable where it is drawn, with no mode to enter. Pressing a note
+     to turn it into an editor was one press between a thought and writing it
+     down — and the press had no visible target, so the whole panel lit up,
+     which reads as selecting rather than as opening. */
+  await expect(field).toHaveAttribute("contenteditable", "true");
+  await field.click();
+  await page.keyboard.type(" (port 2222)");
+  await expect(field).toContainText("(port 2222)");
   await page.screenshot({path: "test-results/docked-note.png"});
 });
 
