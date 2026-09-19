@@ -15,7 +15,6 @@
  * the note can never disagree — which they would the moment two sides worked
  * out "near the edge" from two different rectangles.
  */
-import { listen } from "@tauri-apps/api/event";
 import { call, native } from "./task-client";
 import { element } from "./dom";
 import { noteTitle, notePreview, tintOf, type Note } from "./notes";
@@ -73,12 +72,29 @@ function say(what: string) {
   if (native) void call("log_line", { line: what }).catch(() => {});
 }
 
-if (native) {
-  say(`up, ${window.innerWidth}x${window.innerHeight}`);
-  let seen = 0;
-  void listen<{ id: string; x: number; y: number; edge: string; done: boolean }>(
-    "note:drag", event => {
-      const { id, x, y, edge, done } = event.payload;
+/* ⚠️ A FUNCTION on `window`, not an event listener, and that is measured
+ * rather than preferred. Events do not arrive at a window this app made at
+ * runtime: this page logged that it had booted and then never logged one of
+ * the sixty events a second being emitted at it, while the island — declared
+ * in `tauri.conf.json` — gets its events all day. `watch_drag` calls this
+ * through `eval`, which goes down WebView2's own script channel and has
+ * nothing to do with the event system. */
+declare global {
+  interface Window {
+    __noteDrag?: (at: { id: string; x: number; y: number; edge: string; done: boolean }) => void;
+  }
+}
+
+/* ⚠️ Defined whatever the host is. It is the page's contract with whoever is
+ * driving the drag — Rust in the app, the test in a browser — and hiding it
+ * behind a `native` check made it a contract only one of them could see. */
+let seen = 0;
+{
+  /* ⚠️ Not named `at`. That is the function three lines down that moves the
+   * ghost, and a parameter of the same name shadows it — the ghost then never
+   * moves and TypeScript says only that a payload is not callable. */
+  window.__noteDrag = sent => {
+      const { id, x, y, edge, done } = sent;
       if (done) {
         /* The drag is over and this window is about to be hidden. ⚠️ Reset,
          * because hiding keeps whatever was on screen — and the next drag
@@ -97,7 +113,11 @@ if (native) {
       host.dataset.ready = "yes";
       left.classList.toggle("is-near", edge === "left");
       right.classList.toggle("is-near", edge === "right");
-    });
+  };
+}
+
+if (native) {
+  say(`up, ${window.innerWidth}x${window.innerHeight}`);
 } else {
   /* The preview has no drag to follow, so it stages one: the zones as they
    * look when the pointer is in the left one, which is the state worth

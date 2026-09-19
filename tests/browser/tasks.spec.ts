@@ -1779,6 +1779,12 @@ test("notes: the note is the screen, and the pile stays findable", async ({page}
   await expect(cards).toHaveCount(before - 1);
 });
 
+declare global {
+  interface Window {
+    __noteDrag?: (at: {id: string; x: number; y: number; edge: string; done: boolean}) => void;
+  }
+}
+
 test("what you are dragging, and where it can go", async ({page}) => {
   /* The drop zones are a window of their own over the whole screen. ⚠️ They
      have to be: the island cannot paint past its own edge, and a drag OUT of
@@ -1812,6 +1818,27 @@ test("what you are dragging, and where it can go", async ({page}) => {
   }));
   expect(held.transform).toContain("matrix");
   expect(held.left).toBe("0px");
+
+  /* ⚠️ The pointer arrives as a FUNCTION CALL on `window`, not as an event,
+     and that is measured rather than preferred: events do not reach a window
+     this app makes at runtime. This page logged that it had booted and then
+     never logged one of the sixty events a second aimed at it, while the
+     island — declared in `tauri.conf.json` — gets its events all day. Rust
+     calls this through `eval`, down WebView2's own script channel. */
+  await page.evaluate(() => window.__noteDrag?.(
+    {id: "n2", x: 1200, y: 300, edge: "right", done: false}));
+  await expect(page.locator(".dropzone-right")).toHaveClass(/is-near/);
+  await expect(page.locator(".dropzone-left")).not.toHaveClass(/is-near/);
+  // The note it is holding comes with the pointer, because this window is made
+  // once and reused for every drag after it.
+  await expect(ghost.locator(".drag-ghost-title")).toHaveText(/Krakowie/);
+
+  /* And the last message of a drag puts it away. ⚠️ Hiding a window keeps
+     whatever it was showing, so without this the next drag opens with the last
+     one's ghost already in place. */
+  await page.evaluate(() => window.__noteDrag?.(
+    {id: "n2", x: 0, y: 0, edge: "", done: true}));
+  await expect(page.locator("#zones")).toHaveCSS("opacity", "0");
 
   await page.screenshot({path: "test-results/drag-zones.png"});
 });

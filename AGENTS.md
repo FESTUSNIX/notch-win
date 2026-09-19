@@ -4022,3 +4022,21 @@ The two halves were the same fault.
      flipped edges the moment it was dragged on a secondary monitor. Both
      drags — out of the island, and along the edge — now hand the question to
      the one poll in Rust that has physical coordinates.
+631. ⚠️⚠️ **Events do not arrive at a window this app made at RUNTIME.**
+     Measured, finally, rather than suspected: the drop-zone overlay logged
+     that it had booted and the docked drawer logged that it was up, and
+     neither ever logged one of the SIXTY events a second being emitted at
+     them — while the island, which is declared in `tauri.conf.json`, gets its
+     events all day. The ring hit this in another form and the fix there was to
+     stop pushing at all. The fix here is `eval`: the payload is serialised and
+     handed to the page as a function call on `window`, down WebView2's own
+     script channel, which has nothing to do with the event system. Everything
+     these two windows are told now goes that way — the pointer, the dock, the
+     hover and the note list.
+632. ⚠️ **And it is JSON, never a format string.** One of those payloads
+     carries a note's id and another could as easily carry its text: a page
+     handed `f({id:'x'});alert(1)//'})` is a page that runs it.
+633. ⚠️ **A page's contract with whatever drives it must not be behind a
+     `native` check.** `window.__noteDrag` was only defined in the app, so the
+     browser test could see the page but not drive it — which is the half of
+     the feature a test exists to hold.

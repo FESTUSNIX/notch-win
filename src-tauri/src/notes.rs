@@ -106,6 +106,15 @@ pub fn load(app: &AppHandle) {
 fn publish(app: &AppHandle, held: &[Note]) {
     crate::config::save_beside(FILE, &held.to_vec());
     let _ = app.emit("notch:notes", held.to_vec());
+    /* ⚠️ And every open drawer is told directly. Events do not reach a window
+     * this app made at runtime (see `push`), so a note edited on the wall
+     * would sit unchanged on the edge of the screen until something reopened
+     * it — two views of one store, quietly disagreeing. */
+    for note in held.iter().filter(|note| note.pinned) {
+        if let Some(window) = app.get_webview_window(&label(&note.id)) {
+            push(&window, "__noteList", &held.to_vec());
+        }
+    }
 }
 
 fn now() -> i64 {
@@ -281,15 +290,12 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
         /* ⚠️ And told to place itself again. It was hidden where it last was,
          * which after an undock-and-redock is the wrong edge or the wrong
          * monitor — and the page only places itself on boot. */
-        let _ = app.emit(
-            "notch:note-dock",
-            DockAt {
-                id: note.id.clone(),
-                edge: side_of(&note.edge),
-                y: note.y,
-                dragging: true,
-            },
-        );
+        tell_drawer(app, &DockAt {
+            id: note.id.clone(),
+            edge: side_of(&note.edge),
+            y: note.y,
+            dragging: true,
+        });
         return Ok(());
     }
     crate::log::note(&format!("note {}: making a drawer", note.id));
@@ -402,10 +408,15 @@ fn watch_pin(app: AppHandle, label: String) {
                 crate::win::harden(&window);
             }
             if was == Some(true) || on {
-                let _ = window.emit_to(
-                    label.as_str(),
-                    "note:hover",
-                    NoteHover {
+                /* ⚠️ Pushed, not emitted — see `push`. This window was made at
+                 * runtime and events do not reach it. The drawer coped because
+                 * its own `pointerenter` fires once Rust has made it
+                 * interactive, so the hover LOOKED fine; this makes the
+                 * message that says so actually arrive. */
+                push(
+                    &window,
+                    "__noteHover",
+                    &NoteHover {
                         hover: on,
                         y: (point.y as f64 - origin.y as f64) / scale,
                     },
@@ -413,6 +424,33 @@ fn watch_pin(app: AppHandle, label: String) {
             }
         }
     });
+}
+
+/// Tell one drawer where it is, whether or not events reach it.
+fn tell_drawer(app: &AppHandle, at: &DockAt) {
+    let Some(window) = app.get_webview_window(&label(&at.id)) else { return };
+    push(&window, "__noteDock", at);
+}
+
+/// Hand a message to a page that events do not reach.
+///
+/// ⚠️ **Events do not arrive at a window this app made at RUNTIME.** Measured,
+/// not assumed: the drop-zone overlay logged that it had booted, the docked
+/// drawer logged that it was up, and neither ever logged a single one of the
+/// sixty events a second being emitted at them — while the island, which is
+/// declared in `tauri.conf.json`, gets its events all day. The ring hit this
+/// too and the fix there was to stop pushing altogether.
+///
+/// So the payload is serialised and handed to the page as a function call.
+/// `eval` goes through WebView2's own script channel, which has nothing to do
+/// with the event system, and it arrives.
+///
+/// ⚠️ JSON, never a format string with the values dropped into it. One of
+/// these carries a note's id and another could easily carry its text; a page
+/// that is handed `f({id: 'x'});alert(1)//'})` is a page that runs it.
+fn push(window: &tauri::WebviewWindow, call: &str, payload: &impl serde::Serialize) {
+    let Ok(json) = serde_json::to_string(payload) else { return };
+    let _ = window.eval(&format!("window.{call} && window.{call}({json})"));
 }
 
 /// Where the pointer is on a docked note, in CSS pixels down its own window.
@@ -498,12 +536,12 @@ pub fn dock_note(app: AppHandle, id: String, edge: String, y: i32) {
         note.y = y;
         held.clone()
     };
-    /* ⚠️ `notch:notes` is NOT emitted. That one redraws every note everywhere,
-     * and an edge is of no interest to any of them — one per drag would
-     * repaint the island's whole wall for a window moving on another monitor.
-     * The drawer gets its own event, which only it listens to. */
+    /* ⚠️ `notch:notes` is NOT published. That one redraws every note
+     * everywhere, and an edge is of no interest to any of them — one per drag
+     * would repaint the island's whole wall for a window moving on another
+     * monitor. The drawer is told directly. */
     crate::config::save_beside(FILE, &snapshot);
-    let _ = app.emit("notch:note-dock", DockAt { id, edge: side, y, dragging: false });
+    tell_drawer(&app, &DockAt { id, edge: side, y, dragging: false });
 }
 
 /// Colour one note.
@@ -719,10 +757,10 @@ fn watch_drag(app: AppHandle, id: String) {
                 ""
             };
             last = edge.to_string();
-            let _ = window.emit_to(
-                DRAG_LABEL,
-                "note:drag",
-                DragAt {
+            push(
+                &window,
+                "__noteDrag",
+                &DragAt {
                     id: id.clone(),
                     x: (cx - origin.x) as f64 / scale,
                     y: (cy - origin.y) as f64 / scale,
@@ -743,15 +781,12 @@ fn watch_drag(app: AppHandle, id: String) {
                     crate::log::note(&format!("note drag: reached the {edge} edge"));
                     dock_for_drag(&app, &id, edge, cy);
                 } else {
-                    let _ = app.emit(
-                        "notch:note-dock",
-                        DockAt {
-                            id: id.clone(),
-                            edge: edge.to_string(),
-                            y: cy,
-                            dragging: true,
-                        },
-                    );
+                    tell_drawer(&app, &DockAt {
+                        id: id.clone(),
+                        edge: edge.to_string(),
+                        y: cy,
+                        dragging: true,
+                    });
                 }
                 /* ⚠️ The window is moved here, every tick, whether or not the
                  * event above ever arrives. The page draws the drawer; where
@@ -766,10 +801,10 @@ fn watch_drag(app: AppHandle, id: String) {
 
         crate::log::note(&format!("note drag: done, docked={docked} edge={last:?}"));
         if let Some(window) = app.get_webview_window(DRAG_LABEL) {
-            let _ = window.emit_to(
-                DRAG_LABEL,
-                "note:drag",
-                DragAt {
+            push(
+                &window,
+                "__noteDrag",
+                &DragAt {
                     id: id.clone(),
                     x: 0.0,
                     y: 0.0,
@@ -800,10 +835,9 @@ fn watch_drag(app: AppHandle, id: String) {
         }
         let Some((_, cy)) = crate::win::cursor() else { return };
         dock_note(app.clone(), id.clone(), last.clone(), cy);
-        let _ = app.emit(
-            "notch:note-dock",
-            DockAt { id: id.clone(), edge: side_of(&last), y: cy, dragging: false },
-        );
+        tell_drawer(&app, &DockAt {
+            id: id.clone(), edge: side_of(&last), y: cy, dragging: false,
+        });
     });
 }
 
@@ -842,10 +876,9 @@ fn dock_for_drag(app: &AppHandle, id: &str, edge: &str, y: i32) {
             crate::log::note(&format!("note {id} could not be docked: {error}"));
         }
     }
-    let _ = app.emit(
-        "notch:note-dock",
-        DockAt { id: id.to_string(), edge: side_of(edge), y, dragging: true },
-    );
+    tell_drawer(app, &DockAt {
+        id: id.to_string(), edge: side_of(edge), y, dragging: true,
+    });
 }
 
 /// A few bits of entropy for the id. ⚠️ Not `rand::random` on a `u64`: this is

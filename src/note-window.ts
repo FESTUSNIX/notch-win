@@ -23,7 +23,6 @@
  * There is one store; this is a second window onto it, not a second copy.
  */
 import { currentMonitor, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
 import { call, native } from "./task-client";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
@@ -34,6 +33,14 @@ import { noteTitle, noteWhen, tintOf, type Note } from "./notes";
 import "./tasks.css";
 
 document.body.className = "drawer-page";
+
+declare global {
+  interface Window {
+    __noteDock?: (at: { id: string; edge: string; y: number; dragging: boolean }) => void;
+    __noteList?: (all: Note[]) => void;
+    __noteHover?: (at: { hover: boolean; y: number }) => void;
+  }
+}
 
 const id = new URLSearchParams(location.search).get("id") ?? "";
 const host = document.getElementById("drawer")!;
@@ -502,10 +509,10 @@ grab(grip, false);
  * shape. The page's own enter and leave still run, and are what keep the
  * drawer open while the pointer moves about inside it. */
 if (native) {
-  void listen<{ hover: boolean; y: number }>("note:hover", event => {
-    hovering = event.payload.hover;
+  window.__noteHover = at => {
+    hovering = at.hover;
     settle();
-  });
+  };
 }
 document.documentElement.addEventListener("pointerenter", () => {
   hovering = true;
@@ -548,9 +555,11 @@ async function boot() {
   }
 
   /* One store, two windows. ⚠️ The island and this both write through
-   * `save_note`, so this listener is what stops the two drifting apart. */
-  await listen<Note[]>("notch:notes", event => {
-    const next = event.payload.find(one => one.id === id) ?? null;
+   * `save_note`, so this is what stops the two drifting apart — and it is
+   * pushed rather than listened for, because events do not reach a window this
+   * app made at runtime. `publish` calls it. */
+  window.__noteList = all => {
+    const next = all.find(one => one.id === id) ?? null;
     /* Not while it is being typed into: the arriving list is what was saved
      * before this edit started, and painting it would take the words away.
      * The repaint is owed until the caret leaves. */
@@ -558,16 +567,21 @@ async function boot() {
     note = next;
     render();
     paint();
-  });
+  };
 
   /* ── Being dragged out of the island ──────────────────────────────────
    * ⚠️ The drawer stays OPEN for the whole drag, and that is the point of it:
    * dragging a note to the edge with nothing to see is dragging air. The real
    * note slides out of the edge you are heading for and follows the pointer,
    * so where it will land is where it already is. */
+  /* ⚠️ A FUNCTION on `window`, not an event listener. Events do not arrive at
+   * a window this app made at runtime — this page logged that it was up and
+   * then never logged one of the sixty dock messages a second being emitted at
+   * it. `tell_drawer` calls this through `eval` instead, which goes down
+   * WebView2's own script channel. See the note on `push` in notes.rs. */
   let moves = 0;
-  await listen<{ id: string; edge: string; y: number; dragging: boolean }>(
-    "notch:note-dock", event => {
+  window.__noteDock = payload => {
+      const event = { payload };
       if (event.payload.id !== id) return;
       moves += 1;
       if (moves % 30 === 1) {
@@ -596,7 +610,7 @@ async function boot() {
         void measure().then(() => { void place(); });
       }
       settle();
-    });
+  };
 
   /* The screen itself can change under a docked window — a monitor unplugged,
    * a resolution changed, the taskbar moved. */
