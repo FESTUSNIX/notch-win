@@ -565,6 +565,12 @@ async function boot() {
      * The repaint is owed until the caret leaves. */
     if (typing()) { note = next; repaint = true; return; }
     note = next;
+    /* ⚠️ The edge is re-read from the note as well. It is stored on the note,
+     * so any list that arrives is also the answer to "which side am I on" —
+     * and a page that only learns that from the drag messages is a page that
+     * stays mirrored the wrong way if it ever misses one. */
+    edge = next?.edge === "left" ? "left" : "right";
+    host.dataset.edge = edge;
     render();
     paint();
   };
@@ -597,13 +603,21 @@ async function boot() {
        * note to an edge with nothing to see is dragging air, and a drawer that
        * folded itself halfway through the gesture moving it is worse. */
       locked = event.payload.dragging;
+      /* ⚠️ REPAINTED here rather than left to `settle`. Which way the notch
+       * faces is decided in `paint`, and `settle` returns early while the
+       * drawer is being dragged — deliberately, because sliding it along an
+       * edge is not a statement about whether it should be open. So the window
+       * moved to the other side of the screen and the shape stayed mirrored
+       * for the side it started on: a drawer that took the edge it was first
+       * docked at and never changed its mind. */
+      paint();
       /* ⚠️ The page does NOT move the window while the drag is running.
        * `slide_pin` does, from the same poll that decides the edge — because a
-       * page can only move itself when an event reaches it, and this drawer is
+       * page can only move itself when something reaches it, and this drawer is
        * often a webview that was hidden a moment ago. Two writers would fight
        * over the same pixels anyway.
        *
-       * On the LAST event the work area is re-read and the page takes the
+       * On the LAST message the work area is re-read and the page takes the
        * window back, which is also what puts it right if the drag ended on
        * another monitor. */
       if (!event.payload.dragging) {

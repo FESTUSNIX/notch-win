@@ -1832,6 +1832,9 @@ test("what you are dragging, and where it can go", async ({page}) => {
   // The note it is holding comes with the pointer, because this window is made
   // once and reused for every drag after it.
   await expect(ghost.locator(".drag-ghost-title")).toHaveText(/Krakowie/);
+  // ⚠️ The picture is taken HERE, while the zones are up. After the `done`
+  // below they are hidden, and a screenshot of that is a black rectangle.
+  await page.screenshot({path: "test-results/drag-zones.png"});
 
   /* And the last message of a drag puts it away. ⚠️ Hiding a window keeps
      whatever it was showing, so without this the next drag opens with the last
@@ -1839,8 +1842,6 @@ test("what you are dragging, and where it can go", async ({page}) => {
   await page.evaluate(() => window.__noteDrag?.(
     {id: "n2", x: 0, y: 0, edge: "", done: true}));
   await expect(page.locator("#zones")).toHaveCSS("opacity", "0");
-
-  await page.screenshot({path: "test-results/drag-zones.png"});
 });
 
 test("a docked note is a drawer welded to the edge of the screen", async ({page}) => {

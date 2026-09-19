@@ -1177,48 +1177,53 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   transition:opacity var(--duration-fast) var(--ease-smooth-out); }
 #zones[data-ready="yes"] { opacity:1; }
 
-/* The two edges, as places. ⚠️ A wash and a line rather than a filled panel:
-   this is drawn OVER whatever you were looking at, and a band of colour down
-   a sixth of the screen is a thing you have to see past to finish the gesture
-   it exists to help with. */
+/* The two edges, as places. ⚠️ NEUTRAL, with the accent used as a mark rather
+   than as a wash. This is drawn over whatever you were looking at and both
+   edges are offered at once; a sixth of the screen in a brand colour is a
+   thing you have to see past to finish the gesture it exists to help with.
+   What the accent says here is "this one", and it says it on one line. */
 .dropzone { position:fixed; top:0; bottom:0; width:clamp(120px, 16.6vw, 260px);
   display:flex; align-items:center; justify-content:center;
-  transition:background-color var(--duration-fast) var(--ease-smooth-out); }
-/* ⚠️ Faint until it is the answer. This is drawn OVER whatever you were
-   looking at: a sixth of the screen washed in the accent colour is a thing you
-   have to see past to finish the gesture it exists to help with, and both
-   edges are offered at once. */
+  transition:background var(--duration-fast) var(--ease-smooth-out); }
 .dropzone-left { left:0;
-  background:linear-gradient(90deg,
-    color-mix(in srgb, var(--accent) 7%, transparent), transparent); }
+  background:linear-gradient(90deg, rgba(255,255,255,.05), transparent 72%); }
 .dropzone-right { right:0;
-  background:linear-gradient(270deg,
-    color-mix(in srgb, var(--accent) 7%, transparent), transparent); }
+  background:linear-gradient(270deg, rgba(255,255,255,.05), transparent 72%); }
 .dropzone.is-near.dropzone-left { background:linear-gradient(90deg,
-  color-mix(in srgb, var(--accent) 20%, transparent), transparent); }
+  rgba(255,255,255,.10),
+  color-mix(in srgb, var(--accent) 6%, transparent) 30%, transparent 78%); }
 .dropzone.is-near.dropzone-right { background:linear-gradient(270deg,
-  color-mix(in srgb, var(--accent) 20%, transparent), transparent); }
+  rgba(255,255,255,.10),
+  color-mix(in srgb, var(--accent) 6%, transparent) 30%, transparent 78%); }
 
-/* The edge itself, which is where the note will actually land. */
-.dropzone-line { position:absolute; top:12%; bottom:12%; width:5px;
-  border-radius:4px; background:color-mix(in srgb, var(--accent) 55%, transparent);
+/* The edge itself, which is where the note will actually land. ⚠️ Thin. It is
+   a rule, not a rail: at nine pixels it read as a piece of chrome that had
+   appeared on the screen rather than as a line drawn on one. */
+.dropzone-line { position:absolute; top:20%; bottom:20%; width:2px;
+  border-radius:2px; background:rgba(255,255,255,.22);
   transition:width var(--duration-fast) var(--ease-smooth-out),
     background-color var(--duration-fast) var(--ease-smooth-out),
     top var(--duration-fast) var(--ease-smooth-out),
     bottom var(--duration-fast) var(--ease-smooth-out); }
 .dropzone-left .dropzone-line { left:0; }
 .dropzone-right .dropzone-line { right:0; }
-.dropzone.is-near .dropzone-line { width:9px; top:4%; bottom:4%;
+.dropzone.is-near .dropzone-line { width:4px; top:6%; bottom:6%;
   background:var(--accent); }
 
-.dropzone-say { font-size:12px; font-weight:600; letter-spacing:.2px;
-  padding:7px 13px; border-radius:10px; color:#fff; opacity:0;
-  background:rgba(0,0,0,.62);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+/* ⚠️ The label is neutral too, with the accent on one edge of it. A filled
+   accent chip in the middle of the screen is the brightest thing in the room
+   at the moment you are trying to look past it. */
+.dropzone-say { font-size:11.5px; font-weight:600; letter-spacing:.2px;
+  padding:6px 12px; border-radius:9px; color:#e8e7e4; opacity:0;
+  background:rgba(12,12,14,.8);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),
+    0 4px 12px -8px rgba(0,0,0,.8);
   transition:opacity var(--duration-quick) var(--ease-smooth-out),
     scale var(--duration-fast) var(--ease-bounce); }
-.dropzone.is-near .dropzone-say { opacity:1; scale:1; }
-.dropzone:not(.is-near) .dropzone-say { scale:.9; }
+.dropzone.is-near .dropzone-say { opacity:1; scale:1;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 4px 12px -8px rgba(0,0,0,.8); }
+.dropzone:not(.is-near) .dropzone-say { scale:.92; }
 
 /* ── What is under the pointer ───────────────────────────────────────────
    ⚠️ Anchored at its own top-left and moved with a transform, so the element
@@ -1229,11 +1234,13 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   padding:11px 13px; margin:14px 0 0 16px;
   border-radius:4px 4px 4px 14px;
   background-color:color-mix(in srgb, var(--tint) var(--tint-wash), var(--note-paper));
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),
-    0 18px 34px -14px rgba(0,0,0,.95);
+  /* ⚠️ A modest shadow. This is a small card being carried, not a dialog
+     lifted off the page, and a 34px spread under it reads as the second. */
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),
+    0 8px 18px -10px rgba(0,0,0,.85);
   /* A held card sits at a slight angle — the one piece of this that says
      "picked up" rather than "arranged". */
-  rotate:-2.5deg;
+  rotate:-2deg;
   will-change:transform; }
 .drag-ghost-title { font-size:12.5px; font-weight:650; color:#f2f1ee;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

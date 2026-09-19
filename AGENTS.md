@@ -4040,3 +4040,11 @@ The two halves were the same fault.
      `native` check.** `window.__noteDrag` was only defined in the app, so the
      browser test could see the page but not drive it — which is the half of
      the feature a test exists to hold.
+634. ⚠️ **The thing that decides which way a shape faces must be repainted by
+     whatever changes the side** — not left to a function that is allowed to
+     return early. `settle` skips its work while the drawer is being dragged,
+     deliberately, because sliding one along an edge says nothing about whether
+     it should be open; but painting the notch lived behind it. So the window
+     moved to the other side of the screen and the shape stayed mirrored for
+     the side it started on: a drawer that took the edge it was first docked at
+     and never changed its mind.
