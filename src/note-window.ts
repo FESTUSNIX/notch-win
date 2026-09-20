@@ -39,6 +39,7 @@ declare global {
     __noteDock?: (at: { id: string; edge: string; y: number; dragging: boolean }) => void;
     __noteList?: (all: Note[]) => void;
     __noteHover?: (at: { hover: boolean; y: number }) => void;
+    __noteFreeze?: (on: boolean) => void;
   }
 }
 
@@ -76,6 +77,10 @@ let draft = "";
 let barMiddle = 0;
 /** True while the sliver is being dragged along the edge. */
 let sliding = false;
+/** True while ANY note is being dragged. ⚠️ Every docked drawer shuts for the
+ *  duration: one opening under the pointer covers the ghost the drag is
+ *  showing you, which is the one thing on screen at that moment. */
+let frozen = false;
 
 /* ⚠️ The island's own spring, at the island's own numbers. The whole point of
  * this rewrite is that a docked note moves like the rest of the app rather
@@ -239,7 +244,11 @@ function paint() {
    * events away from the element holding one is not worth finding out about
    * halfway through a gesture. */
   panel.style.pointerEvents = shown > 0.55 ? "auto" : "none";
-  grip.style.pointerEvents = shown > 0.55 ? "auto" : "none";
+  /* ⚠️ Whichever handle is being DRAGGED keeps the pointer whatever the fade
+   * says. A drag shuts the drawer, and a grip that stopped accepting the
+   * pointer halfway through the gesture it is driving is a grip that drops
+   * the note in the middle of the screen. */
+  grip.style.pointerEvents = sliding || shown > 0.55 ? "auto" : "none";
   sliver.style.pointerEvents = sliding || shown <= 0.55 ? "auto" : "none";
 }
 
@@ -271,12 +280,10 @@ function typing(): boolean {
 
 /** Open or shut the drawer, from whatever is true right now. */
 function settle() {
-  /* ⚠️ Not while it is being moved. Sliding the drawer up the edge is not a
-   * statement about whether it should be open, and letting the pointer's
-   * comings and goings fold it mid-drag means the thing being dragged changes
-   * size under the hand doing it. */
-  if (sliding) return;
-  const open = locked || hovering || typing();
+  /* ⚠️ A drag shuts it and holds it shut. Sliding a drawer along an edge is
+   * not a statement about whether it should be open, and one that opened
+   * under the pointer would cover the ghost being dragged. */
+  const open = !frozen && !sliding && (locked || hovering || typing());
   fold.setTarget(open ? 1 : 0);
   /* ⚠️ On the way IN the whole window is reported as chrome before the shape
    * has grown into it, so the pointer cannot fall out of a drawer that is
@@ -508,12 +515,6 @@ grab(grip, false);
  * the cursor against the rects `report` sends and says when it is on the
  * shape. The page's own enter and leave still run, and are what keep the
  * drawer open while the pointer moves about inside it. */
-if (native) {
-  window.__noteHover = at => {
-    hovering = at.hover;
-    settle();
-  };
-}
 document.documentElement.addEventListener("pointerenter", () => {
   hovering = true;
   settle();
@@ -525,6 +526,83 @@ document.documentElement.addEventListener("pointerleave", () => {
   hovering = false;
   settle();
 });
+
+
+/* ── What Rust hands to this page ────────────────────────────────────────
+ *
+ * ⚠️ Installed at MODULE SCOPE, before anything is awaited, and that is the
+ * whole of a bug that took two builds to find. These lived at the end of
+ * `boot`, behind four awaits — reading the notes, measuring the monitor,
+ * placing the window, showing it — so anything slow or throwing in that chain
+ * left the drawer on screen with nothing listening. It logged that it was up
+ * and then never logged one of the sixty dock messages a second aimed at it.
+ * A page's contract with whoever drives it is not something to set up after
+ * the page has finished getting ready.
+ *
+ * ⚠️ And they are FUNCTIONS, not event listeners: events do not arrive at a
+ * window this app made at runtime. See `push` in notes.rs. */
+
+/** The whole list, whenever it changes. */
+window.__noteList = all => {
+  const next = all.find(one => one.id === id) ?? null;
+  /* Not while it is being typed into: the arriving list is what was saved
+   * before this edit started, and painting it would take the words away. The
+   * repaint is owed until the caret leaves. */
+  if (typing()) { note = next; repaint = true; return; }
+  note = next;
+  /* ⚠️ The edge is re-read from the note as well. It is stored on the note, so
+   * any list that arrives is also the answer to "which side am I on" — and a
+   * page that only learns that from the drag messages is a page that stays
+   * mirrored the wrong way if it ever misses one. */
+  edge = next?.edge === "left" ? "left" : "right";
+  host.dataset.edge = edge;
+  render();
+  paint();
+};
+
+/** Which edge, and how far down — sixty times a second while a note is being
+ *  dragged, and once when it lands. */
+let moves = 0;
+window.__noteDock = at => {
+  if (at.id !== id) return;
+  moves += 1;
+  if (moves % 45 === 1) {
+    void call("log_line", {
+      line: `dock #${moves} ${at.edge} y=${at.y} dragging=${at.dragging}`,
+    }).catch(() => {});
+  }
+  edge = at.edge === "left" ? "left" : "right";
+  barMiddle = at.y;
+  host.dataset.edge = edge;
+  /* ⚠️ REPAINTED here rather than left to `settle`. Which way the notch faces
+   * is decided in `paint`, and `settle` can decline to do anything at all —
+   * so the window moved to the other side of the screen and the shape stayed
+   * mirrored for the side it started on. */
+  paint();
+  /* ⚠️ The page does NOT move the window while the drag is running.
+   * `slide_pin` does, from the same poll that decides the edge. On the LAST
+   * message the page takes the window back, which is also what puts it right
+   * if the drag ended on another monitor. */
+  if (!at.dragging) void measure().then(() => { void place(); });
+  settle();
+};
+
+/** Shut, and stay shut, while any note is being dragged.
+ *
+ * ⚠️ Every docked note, not just the one being dragged. A drawer that opens
+ * under the pointer mid-drag covers the very thing the drag is showing you —
+ * and an open drawer is a 330px panel arriving over a 224px ghost. */
+window.__noteFreeze = on => {
+  frozen = on;
+  if (on) locked = false;
+  settle();
+};
+
+/** Whether the pointer is on the shape, from the watcher in Rust. */
+window.__noteHover = at => {
+  hovering = at.hover;
+  settle();
+};
 
 /* ── Boot ────────────────────────────────────────────────────────────── */
 
@@ -553,78 +631,6 @@ async function boot() {
      * nothing. */
     await win?.show();
   }
-
-  /* One store, two windows. ⚠️ The island and this both write through
-   * `save_note`, so this is what stops the two drifting apart — and it is
-   * pushed rather than listened for, because events do not reach a window this
-   * app made at runtime. `publish` calls it. */
-  window.__noteList = all => {
-    const next = all.find(one => one.id === id) ?? null;
-    /* Not while it is being typed into: the arriving list is what was saved
-     * before this edit started, and painting it would take the words away.
-     * The repaint is owed until the caret leaves. */
-    if (typing()) { note = next; repaint = true; return; }
-    note = next;
-    /* ⚠️ The edge is re-read from the note as well. It is stored on the note,
-     * so any list that arrives is also the answer to "which side am I on" —
-     * and a page that only learns that from the drag messages is a page that
-     * stays mirrored the wrong way if it ever misses one. */
-    edge = next?.edge === "left" ? "left" : "right";
-    host.dataset.edge = edge;
-    render();
-    paint();
-  };
-
-  /* ── Being dragged out of the island ──────────────────────────────────
-   * ⚠️ The drawer stays OPEN for the whole drag, and that is the point of it:
-   * dragging a note to the edge with nothing to see is dragging air. The real
-   * note slides out of the edge you are heading for and follows the pointer,
-   * so where it will land is where it already is. */
-  /* ⚠️ A FUNCTION on `window`, not an event listener. Events do not arrive at
-   * a window this app made at runtime — this page logged that it was up and
-   * then never logged one of the sixty dock messages a second being emitted at
-   * it. `tell_drawer` calls this through `eval` instead, which goes down
-   * WebView2's own script channel. See the note on `push` in notes.rs. */
-  let moves = 0;
-  window.__noteDock = payload => {
-      const event = { payload };
-      if (event.payload.id !== id) return;
-      moves += 1;
-      if (moves % 30 === 1) {
-        void call("log_line", {
-          line: `dock #${moves} ${event.payload.edge} y=${event.payload.y}`
-            + ` dragging=${event.payload.dragging}`,
-        }).catch(() => {});
-      }
-      edge = event.payload.edge === "left" ? "left" : "right";
-      barMiddle = event.payload.y;
-      host.dataset.edge = edge;
-      /* ⚠️ Held OPEN for the whole drag, and let go of at the end. Dragging a
-       * note to an edge with nothing to see is dragging air, and a drawer that
-       * folded itself halfway through the gesture moving it is worse. */
-      locked = event.payload.dragging;
-      /* ⚠️ REPAINTED here rather than left to `settle`. Which way the notch
-       * faces is decided in `paint`, and `settle` returns early while the
-       * drawer is being dragged — deliberately, because sliding it along an
-       * edge is not a statement about whether it should be open. So the window
-       * moved to the other side of the screen and the shape stayed mirrored
-       * for the side it started on: a drawer that took the edge it was first
-       * docked at and never changed its mind. */
-      paint();
-      /* ⚠️ The page does NOT move the window while the drag is running.
-       * `slide_pin` does, from the same poll that decides the edge — because a
-       * page can only move itself when something reaches it, and this drawer is
-       * often a webview that was hidden a moment ago. Two writers would fight
-       * over the same pixels anyway.
-       *
-       * On the LAST message the work area is re-read and the page takes the
-       * window back, which is also what puts it right if the drag ended on
-       * another monitor. */
-      if (!event.payload.dragging) {
-        void measure().then(() => { void place(); });
-      }
-      settle();
-  };
 
   /* The screen itself can change under a docked window — a monitor unplugged,
    * a resolution changed, the taskbar moved. */

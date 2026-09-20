@@ -554,7 +554,6 @@ pub fn run() {
             notes::remove_note,
             notes::pin_note,
             notes::dock_note,
-            notes::drag_pin,
             log::log_line,
             notes::note_drag_start,
             notes::note_drag_end,

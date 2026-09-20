@@ -426,6 +426,26 @@ fn watch_pin(app: AppHandle, label: String) {
     });
 }
 
+/// Shut every docked drawer, or let them all go again.
+///
+/// ⚠️ EVERY one, not just the note being dragged. A drawer that opens under
+/// the pointer mid-drag covers the ghost the drag is showing you — a 330px
+/// panel arriving over a 224px card — and the one being dragged is rarely the
+/// one in the way.
+fn freeze_drawers(app: &AppHandle, on: bool) {
+    let pinned: Vec<String> = app
+        .state::<Store>()
+        .0
+        .lock()
+        .map(|held| held.iter().filter(|n| n.pinned).map(|n| n.id.clone()).collect())
+        .unwrap_or_default();
+    for id in pinned {
+        if let Some(window) = app.get_webview_window(&label(&id)) {
+            push(&window, "__noteFreeze", &on);
+        }
+    }
+}
+
 /// Tell one drawer where it is, whether or not events reach it.
 fn tell_drawer(app: &AppHandle, at: &DockAt) {
     let Some(window) = app.get_webview_window(&label(&at.id)) else { return };
@@ -497,24 +517,6 @@ pub struct DockAt {
     /// true — the point of dragging a note to the edge is watching it land,
     /// and a sliver landing tells you nothing about which note it was.
     pub dragging: bool,
-}
-
-/// Follow the pointer while a note is being dragged out of the island.
-///
-/// ⚠️ Nothing is WRITTEN. This fires on every frame of a drag; `dock_note` is
-/// what saves, once, when the pointer goes up. A file written sixty times a
-/// second for a gesture that has not finished is the same mistake `place_note`
-/// was built to avoid.
-#[tauri::command]
-pub fn drag_pin(app: AppHandle, id: String, edge: String, y: i32) {
-    let side = side_of(&edge);
-    if let Ok(mut held) = app.state::<Store>().0.lock() {
-        if let Some(note) = held.iter_mut().find(|note| note.id == id) {
-            note.edge = side.clone();
-            note.y = y;
-        }
-    }
-    let _ = app.emit("notch:note-dock", DockAt { id, edge: side, y, dragging: true });
 }
 
 /// Remember which edge a note is docked to, and how far down it.
@@ -665,6 +667,7 @@ pub async fn note_drag_start(app: AppHandle, id: String) {
     if DRAGGING.swap(true, Ordering::SeqCst) {
         return;
     }
+    freeze_drawers(&app, true);
     /* ⚠️ The pointer is watched BEFORE the overlay is built. Making a webview
      * takes a few hundred milliseconds the first time, and a drag is a second
      * long — so building first spent a third of the gesture doing nothing, and
@@ -800,6 +803,7 @@ fn watch_drag(app: AppHandle, id: String) {
         }
 
         crate::log::note(&format!("note drag: done, docked={docked} edge={last:?}"));
+        freeze_drawers(&app, false);
         if let Some(window) = app.get_webview_window(DRAG_LABEL) {
             push(
                 &window,

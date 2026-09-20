@@ -4048,3 +4048,18 @@ The two halves were the same fault.
      moved to the other side of the screen and the shape stayed mirrored for
      the side it started on: a drawer that took the edge it was first docked at
      and never changed its mind.
+635. ⚠⚠ **A page's contract with whoever drives it must be installed at
+     MODULE SCOPE, before anything is awaited.** The drawer's handlers were set
+     at the end of `boot`, behind four awaits — reading the notes, measuring
+     the monitor, placing the window, showing it — so the window was on screen
+     with nothing listening, and it logged that it was up and then never logged
+     one of the sixty dock messages a second aimed at it. The overlay's
+     equivalent worked precisely because its assignment sits at the top of its
+     module. Two builds to find, and the fix is three lines moved.
+636. ⚠️ **A square card is as tall as the column is wide, the column is as
+     wide as the panel, and the panel SPRINGS to its width.** So the wall's
+     height chased it all the way down and back — 398px to 319 to 355 — while
+     the island was measuring that content to decide how tall to be. That is
+     the notes screen opening too tall and collapsing a moment later. A fixed
+     `grid-auto-rows` gives the wall a height of its own; `aspect-ratio` on a
+     card in an `auto-fill` grid cannot have one.

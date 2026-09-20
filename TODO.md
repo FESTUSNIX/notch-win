@@ -16,16 +16,6 @@
 
 - Ambient mode / music AFK mode. A mode where we can open up a big full-scren view of the music player with music, visualizations, lyrics and relaxing visuals. This could be a great way to enjoy music while working or relaxing.
 
-- ~~Currency converter extension for the command palette~~ — **done**.
-  `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
-  Frankfurter with exchangerate-api behind it, one table against the euro
-  cached on disk for six hours, and the crossing done in the page. The row
-  says what it worked from and WHICH DAY, because a daily rate on a Sunday is
-  Friday's number.
-  - [x] **A home currency**, in `Settings → Search → Money`, so `120 usd` and
-        `$120` have an answer on their own. Off by default — a converter that
-        guesses which country you are in is wrong the moment you travel.
-
 - **Five more for the palette**, in the order they would earn their place:
   1. ~~**Units**~~ — **done**. `70 kg to lb`, `12ft in m`, `220°F to C`,
      `1.5 GB in MiB`: length, mass, temperature, data, time, volume, area and
@@ -36,62 +26,17 @@
      `1789714959` (an epoch, as a date), `16:00 CET in warsaw`. Every one of
      those is a browser tab today, and the island already owns a calendar, a
      clock and the week's shape.
-  3. **Jump to a window** — type a title, get that window. `win.rs` already
-     enumerates every visible window with its title and pid, and
-     `focus_session` already raises one: this is a provider over machinery
-     that exists, and it is the thing alt-tab is worst at with twenty windows.
-  4. **What you copied** — the shelf already keeps it. Searching it from the
-     palette turns a screen you have to open into a line you can type, which
-     is the difference between a feature and a habit.
-  5. **Encode, hash, generate** — `b64 hello`, `url <text>`, `md5 <text>`,
-     `uuid`, `pw 20`. Pure, offline, and the exact set of things a developer
-     currently pastes into somebody else's website — which for a password or
-     a token is the part that should stop.
-  - Also considered and not chosen yet: a colour tool (`#0f61ff` → rgb/hsl,
-    and set the accent), and translation (needs a key, and the good ones are
-    not free).
-
-- **And eight more, ranked by what they would actually save.** The test each
-  one has to pass is the same: it is something done on this machine several
-  times a week, and the palette is a shorter road to it than what is used now.
-  A palette that answers everything is a palette nobody can predict, so an
-  idea that is merely clever is listed and not built.
-  1. **Start a timer by saying how long.** `20 min`, `1h30`, `7:30 alarm`.
-     The timer, its pill and its screen all exist; this is a parser and one
-     call. ⚠️ The grammar has to stay narrow — a bare number must not start
-     anything, because a bare number is also an amount, a year and a port.
-  2. **Switch the sound output.** `system.rs` already lists the devices and
+  3. **Switch the sound output.** `system.rs` already lists the devices and
      can set one; `→ headphones` in the palette is a daily gesture that is
      currently three clicks into a Windows flyout that moves between builds.
      Wi-Fi is the same shape if the enumeration lands.
-  3. **Move the focused window.** `left half`, `right half`, `centre`,
-     `other screen`. `win.rs` already enumerates windows and the island
-     already moves itself between displays. Windows' own Snap needs the mouse
-     or a chord you have to remember; this is a word.
   4. **The notes, from the palette.** Already promised further down this file
      under Notes — `searchNotes` folds accents and matches every word, so the
      provider is a wrapper. It belongs in this list too, because "the pile is
      findable without opening the screen" is what makes the pile worth having.
-  5. **Snippets, out of the notes that already exist.** A note whose first
-     line is `;;addr` becomes `addr` in the palette, and picking it copies the
-     rest. No new storage, no new editor, no sync — the feature is a naming
-     convention over a thing that is already written down and already backed
-     up with everything else.
-  6. **Numbers in other bases.** `0xff to dec`, `255 in binary`, `1010b hex`.
-     The same family as the unit converter and the same file could hold it:
-     pure, offline, and instant.
-  7. **Characters that are not on a Polish keyboard.** `arrow`, `dash`,
-     `shrug`, `degree` → copies `→`, `—`, `¯\_(ツ)_/¯`, `°`. A small table, and
-     the alternative is a website or a Windows dialog nobody can find twice.
-  8. **A QR of a link.** The one honest way to get a URL from this machine
+  5. **A QR of a link.** The one honest way to get a URL from this machine
      onto a phone. Offline, but it needs a drawing library — which is why it
      is last rather than second.
-
-  Rejected on purpose, so they are not proposed again: running shell commands
-  from the palette (a palette is a place you type half-finished words into,
-  and half a command is a real command), killing processes by name (same
-  reason, with a worse failure), and anything that reads a credential back out
-  of Credential Manager — tokens never come back to a WebView.
 
 - ~~Settings: too many words, too many switches in one pane~~ — **done**. The
   descriptions under every row are gone except where the consequence is
@@ -417,3 +362,13 @@ until the answer arrives as a `tool_result`.
   - [x] **What the ring picks is what opens.** Opening the island lands on
         the liveliest claim a frame later, which used to take the screen back
         — an agent working outranked the wedge somebody had just chosen.
+
+- ~~Currency converter extension for the command palette~~ — **done**.
+  `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
+  Frankfurter with exchangerate-api behind it, one table against the euro
+  cached on disk for six hours, and the crossing done in the page. The row
+  says what it worked from and WHICH DAY, because a daily rate on a Sunday is
+  Friday's number.
+  - [x] **A home currency**, in `Settings → Search → Money`, so `120 usd` and
+        `$120` have an answer on their own. Off by default — a converter that
+        guesses which country you are in is wrong the moment you travel.
