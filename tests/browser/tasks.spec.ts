@@ -1920,6 +1920,10 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
      X closes what it is on, and a word that argues with the shape it is drawn
      as loses. */
   await expect(page.getByLabel("Close", {exact: true})).toHaveCount(1);
+  /* ⚠️ And a separate one for shutting it. Collapsing the drawer back to its
+     sliver is what you want ten times a day; taking the note off the edge is
+     what you want once, and one button cannot be both. */
+  await expect(page.getByLabel("Collapse", {exact: true})).toHaveCount(1);
 
   /* ⚠️ Editable where it is drawn, with no mode to enter. Pressing a note to
      turn it into an editor was one press between a thought and writing it
@@ -1930,6 +1934,16 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await page.keyboard.type(" (port 2222)");
   await expect(field).toContainText("(port 2222)");
   await page.screenshot({path: "test-results/docked-note.png"});
+
+  /* Collapsing shuts it back to the sliver — and STAYS shut, though the press
+     that did it happened on the drawer and the pointer is still there. ⚠️
+     Without that, minimising does nothing you can see: the next thing `settle`
+     reads is "hovering", and it springs open under the finger that just closed
+     it. */
+  await page.getByLabel("Collapse", {exact: true}).click();
+  await expect.poll(async () =>
+    Math.round((await page.locator(".drawer-shape").boundingBox())!.width))
+    .toBe(22);
 });
 
 test("the shelf parks things and hands them back", async ({page}) => {

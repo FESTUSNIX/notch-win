@@ -77,6 +77,13 @@ let draft = "";
 let barMiddle = 0;
 /** True while the sliver is being dragged along the edge. */
 let sliding = false;
+/** Shut by hand, and staying shut until the pointer leaves.
+ *
+ * ⚠️ Without this, minimising does nothing you can see: the press that shut
+ * the drawer happened ON the drawer, so the pointer is still on it, and the
+ * next thing `settle` reads is "hovering" — it would spring straight back
+ * open under the finger that just closed it. */
+let dismissed = false;
 /** True while ANY note is being dragged. ⚠️ Every docked drawer shuts for the
  *  duration: one opening under the pointer covers the ghost the drag is
  *  showing you, which is the one thing on screen at that moment. */
@@ -283,7 +290,7 @@ function settle() {
   /* ⚠️ A drag shuts it and holds it shut. Sliding a drawer along an edge is
    * not a statement about whether it should be open, and one that opened
    * under the pointer would cover the ghost being dragged. */
-  const open = !frozen && !sliding && (locked || hovering || typing());
+  const open = !frozen && !sliding && !dismissed && (locked || hovering || typing());
   fold.setTarget(open ? 1 : 0);
   /* ⚠️ On the way IN the whole window is reported as chrome before the shape
    * has grown into it, so the pointer cannot fall out of a drawer that is
@@ -365,15 +372,19 @@ function render() {
   head.append(element("span", "drawer-title",
     note ? noteWhen(note.written, Date.now()) : ""));
   const tools = element("div", "drawer-tools");
+  /* ⚠️ MINIMISE and CLOSE are different things, and one button cannot be
+   * both. Shutting the drawer back to its sliver is what you want ten times a
+   * day; taking the note off the edge is what you want once. An X that did the
+   * second read as the first, so it did the wrong one every time. */
   for (const [icon, label, on, run] of [
     ["pin", locked ? "Let it close" : "Keep it open", locked,
       () => { locked = !locked; freshen(); settle(); }],
     ["copy", "Copy", false,
       () => { void call("copy_text", { text: note?.body ?? "" }).catch(() => {}); }],
-    /* ⚠️ "Close", not "Undock". It is an X, everything else in this app with
-     * an X closes what it is on, and a word that argues with the shape it is
-     * drawn as loses. Closing a docked note takes it off the edge; the note
-     * itself is on the wall, where it has been all along. */
+    ["back", "Collapse", false,
+      () => { locked = false; dismissed = true; freshen(); settle(); }],
+    /* ⚠️ And this one takes the note off the edge. The note itself is on the
+     * wall, where it has been all along. */
     ["close", "Close", false,
       () => { void call("pin_note", { id, pinned: false }).catch(() => {}); }],
   ] as const) {
@@ -539,6 +550,8 @@ document.documentElement.addEventListener("pointerleave", () => {
    * off screen mid-sentence because the pointer wandered is the one thing a
    * note that is also a window must not do. */
   hovering = false;
+  // Minimising lasts until you walk away; after that the drawer is a drawer.
+  dismissed = false;
   settle();
 });
 

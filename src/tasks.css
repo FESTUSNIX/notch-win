@@ -1162,6 +1162,11 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .drawer-do:hover { color:#fff; background:rgba(255,255,255,.10); }
 .drawer-do:active { scale:.9; transition-duration:90ms; }
 .drawer-do.is-on { color:var(--accent); }
+/* ⚠️ The collapse arrow points AT the edge, so it has to turn with the drawer.
+   One icon, rotated, rather than two that can disagree about which way is
+   out. */
+.drawer-back svg { transition:rotate var(--duration-quick) var(--ease-smooth-out); }
+#drawer[data-edge="right"] .drawer-back svg { rotate:180deg; }
 
 /* ⚠️ The note, editable where it is drawn. There is no "edit mode" and no box
    around the words: what makes this read as writing on paper is that nothing
@@ -1198,11 +1203,9 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 .dropzone-right { right:0;
   background:linear-gradient(270deg, rgba(255,255,255,.05), transparent 72%); }
 .dropzone.is-near.dropzone-left { background:linear-gradient(90deg,
-  rgba(255,255,255,.10),
-  color-mix(in srgb, var(--accent) 6%, transparent) 30%, transparent 78%); }
+  rgba(255,255,255,.11), transparent 74%); }
 .dropzone.is-near.dropzone-right { background:linear-gradient(270deg,
-  rgba(255,255,255,.10),
-  color-mix(in srgb, var(--accent) 6%, transparent) 30%, transparent 78%); }
+  rgba(255,255,255,.11), transparent 74%); }
 
 /* The edge itself, which is where the note will actually land. ⚠️ Thin. It is
    a rule, not a rail: at nine pixels it read as a piece of chrome that had
@@ -1215,8 +1218,12 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
     bottom var(--duration-fast) var(--ease-smooth-out); }
 .dropzone-left .dropzone-line { left:0; }
 .dropzone-right .dropzone-line { right:0; }
+/* ⚠️ NOT the raw accent. `#00ff88` at full saturation, on a dark overlay,
+   over whatever you were working on, is the brightest thing on the screen at
+   the moment you are trying to look past it — it shouts. Mixed towards white
+   it still reads as the accent and stops competing with the note. */
 .dropzone.is-near .dropzone-line { width:4px; top:6%; bottom:6%;
-  background:var(--accent); }
+  background:color-mix(in srgb, var(--accent) 42%, #e7efe9); }
 
 /* ⚠️ The label is neutral too, with the accent on one edge of it. A filled
    accent chip in the middle of the screen is the brightest thing in the room
@@ -1229,7 +1236,7 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
   transition:opacity var(--duration-quick) var(--ease-smooth-out),
     scale var(--duration-fast) var(--ease-bounce); }
 .dropzone.is-near .dropzone-say { opacity:1; scale:1;
-  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, rgba(255,255,255,.2)),
     0 4px 12px -8px rgba(0,0,0,.8); }
 .dropzone:not(.is-near) .dropzone-say { scale:.92; }
 

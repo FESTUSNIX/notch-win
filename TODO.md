@@ -16,7 +16,11 @@
 
 - Ambient mode / music AFK mode. A mode where we can open up a big full-scren view of the music player with music, visualizations, lyrics and relaxing visuals. This could be a great way to enjoy music while working or relaxing.
 
-- **Five more for the palette**, in the order they would earn their place:
+- Customization overhaul: make functionalities into widgets that we can add, remove, reorder etc. Make screen customizable, not only homescreen but also allow creating own custom screens with a DnD widget add support.
+
+- Screenshot handling: screenshot stacks, editing, sharing etc.
+
+- **Palette Extensions**, in the order they would earn their place:
   1. ~~**Units**~~ — **done**. `70 kg to lb`, `12ft in m`, `220°F to C`,
      `1.5 GB in MiB`: length, mass, temperature, data, time, volume, area and
      speed, no network, and both byte families because a drive and an
@@ -37,20 +41,6 @@
   5. **A QR of a link.** The one honest way to get a URL from this machine
      onto a phone. Offline, but it needs a drawing library — which is why it
      is last rather than second.
-
-- ~~Settings: too many words, too many switches in one pane~~ — **done**. The
-  descriptions under every row are gone except where the consequence is
-  invisible; the section headings are sentence case rather than tracked
-  uppercase; the pomodoro has a pane of its own and the call and the
-  notifications moved to The pill; the ring's sixteen rows are four lines of
-  chips.
-  - [ ] The screens list is still twelve rows, because it is a drag-to-reorder
-        list and that is the shape that makes order obvious. It is the longest
-        thing left in the pane.
-- [x] **The rail budget**: a screen earns a rail stop only if you would sit on
-      it for thirty seconds. **System is off it now**, with a chip in the
-      header beside the timer and the bell — it is a place you visit for one
-      thing and leave. Review is still there and is the remaining candidate.
 
 - ~~Quick note widget with history of all notes, search~~ — **done**. Two
   screens: the WALL is the index — colour, first words, when — and pressing one
@@ -372,3 +362,16 @@ until the answer arrives as a `tool_result`.
   - [x] **A home currency**, in `Settings → Search → Money`, so `120 usd` and
         `$120` have an answer on their own. Off by default — a converter that
         guesses which country you are in is wrong the moment you travel.
+- ~~Settings: too many words, too many switches in one pane~~ — **done**. The
+  descriptions under every row are gone except where the consequence is
+  invisible; the section headings are sentence case rather than tracked
+  uppercase; the pomodoro has a pane of its own and the call and the
+  notifications moved to The pill; the ring's sixteen rows are four lines of
+  chips.
+  - [ ] The screens list is still twelve rows, because it is a drag-to-reorder
+        list and that is the shape that makes order obvious. It is the longest
+        thing left in the pane.
+- [x] **The rail budget**: a screen earns a rail stop only if you would sit on
+      it for thirty seconds. **System is off it now**, with a chip in the
+      header beside the timer and the bell — it is a place you visit for one
+      thing and leave. Review is still there and is the remaining candidate.
