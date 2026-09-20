@@ -1939,9 +1939,13 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
      and a handle there would do nothing at all. The size is the NOTE's, so it
      survives the drawer closing, the app restarting and the note moving to the
      other edge — the same way its colour and its edge do. */
-  await expect(page.locator(".drawer-size")).toHaveCount(3);
+  await expect(page.locator(".drawer-size")).toHaveCount(5);
   await expect(page.locator(".drawer-size-in")).toHaveCSS("cursor", "ew-resize");
   await expect(page.locator(".drawer-size-top")).toHaveCSS("cursor", "ns-resize");
+  /* ⚠️ And the CORNERS, which are what anybody actually reaches for: one
+     gesture that moves the drawer in x and y together. */
+  await expect(page.locator(".drawer-size-in-top")).toHaveCSS("cursor", "nwse-resize");
+  await expect(page.locator(".drawer-size-in-bottom")).toHaveCSS("cursor", "nesw-resize");
   const wide = (await page.locator(".drawer-panel").boundingBox())!.width;
   const pull = (await page.locator(".drawer-size-in").boundingBox())!;
   // ⚠️ The delta is from where the press LANDED, not from the handle's left
@@ -1954,6 +1958,45 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await expect.poll(async () =>
     Math.round((await page.locator(".drawer-panel").boundingBox())!.width))
     .toBe(Math.round(wide) + 70);
+
+  /* A corner moves both at once, which is the gesture people already know
+     from every window on the machine. ⚠️ And the drawer SAYS it is being
+     resized: a cursor changing shape is sixteen pixels of feedback under the
+     hand doing the work, where you are least likely to be looking. */
+  const tall = (await page.locator(".drawer-panel").boundingBox())!.height;
+  const wider = (await page.locator(".drawer-panel").boundingBox())!.width;
+  const corner = (await page.locator(".drawer-size-in-bottom").boundingBox())!;
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(corner.x + corner.width / 2 - 40,
+    corner.y + corner.height / 2 + 30, {steps: 6});
+  await expect(page.locator("#drawer")).toHaveClass(/is-sizing/);
+  await expect(page.locator(".drawer-measure")).toHaveCSS("opacity", "1");
+  await expect(page.locator(".drawer-measure")).toHaveText(/\d+ × \d+/);
+  // ⚠️ And it stays OPEN. Resizing the open panel is the one gesture that must
+  // not collapse it — the thing being resized is the thing that would vanish.
+  await expect(page.locator(".drawer-panel")).toHaveCSS("opacity", "1");
+  await page.screenshot({path: "test-results/docked-note-resizing.png"});
+  await page.mouse.up();
+  await expect(page.locator("#drawer")).not.toHaveClass(/is-sizing/);
+  const now = (await page.locator(".drawer-panel").boundingBox())!;
+  expect(Math.round(now.width)).toBe(Math.round(wider) + 40);
+  expect(Math.round(now.height)).toBe(Math.round(tall) + 30);
+
+  /* ⚠️ A drag that changes ONLY the height has to move the panel too. Both
+     writes used to sit behind one test on the width, so a vertical pull grew
+     the shape and left the panel at its old height — and since the panel is
+     centred in the shape, the words stayed floating in the middle of a taller
+     drawer until something moved the width. */
+  const before = (await page.locator(".drawer-panel").boundingBox())!;
+  const foot = (await page.locator(".drawer-size-bottom").boundingBox())!;
+  await page.mouse.move(foot.x + foot.width / 2, foot.y + foot.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(foot.x + foot.width / 2, foot.y + foot.height / 2 + 24, {steps: 4});
+  await page.mouse.up();
+  const after = (await page.locator(".drawer-panel").boundingBox())!;
+  expect(Math.round(after.height)).toBe(Math.round(before.height) + 24);
+  expect(Math.round(after.width)).toBe(Math.round(before.width));
 
   /* Collapsing shuts it back to the sliver — and STAYS shut, though the press
      that did it happened on the drawer and the pointer is still there. ⚠️

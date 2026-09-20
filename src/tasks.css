@@ -1144,12 +1144,66 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 
    ⚠️ Only the three edges that are not against the screen. The fourth is the
    screen's, and a handle there would do nothing at all. */
+/* ⚠️ INSET past the flare, and this is not a taste — a `clip-path` clips
+   HIT TESTING as well as paint, and the notch's straight top and bottom edges
+   run at the flare's radius rather than at the box's. A handle laid on the
+   box's corner therefore sits outside the shape entirely: it has a cursor, it
+   has pointer-events, and `elementFromPoint` returns the window behind it.
+   Measured, not guessed — the corner handles were dead on arrival. */
 .drawer-size { position:absolute; z-index:3; }
-.drawer-size-in { top:18px; bottom:18px; width:9px; cursor:ew-resize; }
+.drawer-size-in { top:24px; bottom:24px; width:10px; cursor:ew-resize; }
 #drawer[data-edge="right"] .drawer-size-in { left:0; }
 #drawer[data-edge="left"] .drawer-size-in { right:0; }
-.drawer-size-top { left:0; right:0; top:0; height:9px; cursor:ns-resize; }
-.drawer-size-bottom { left:0; right:0; bottom:0; height:9px; cursor:ns-resize; }
+.drawer-size-top { left:24px; right:24px; top:16px; height:10px; cursor:ns-resize; }
+.drawer-size-bottom { left:24px; right:24px; bottom:16px; height:10px; cursor:ns-resize; }
+
+/* ⚠️ The CORNERS are the ones anybody actually reaches for, so they are
+   bigger than the edges and sit above them. Pulling one is both rules at once
+   — the drawer follows the pointer in x and y together, which is the gesture
+   people already know from every window on the machine. */
+.drawer-size-in-top, .drawer-size-in-bottom { width:24px; height:24px; z-index:4; }
+#drawer[data-edge="right"] .drawer-size-in-top { left:0; top:10px; cursor:nwse-resize; }
+#drawer[data-edge="right"] .drawer-size-in-bottom { left:0; bottom:10px; cursor:nesw-resize; }
+#drawer[data-edge="left"] .drawer-size-in-top { right:0; top:10px; cursor:nesw-resize; }
+#drawer[data-edge="left"] .drawer-size-in-bottom { right:0; bottom:10px; cursor:nwse-resize; }
+
+/* ── While it is being pulled ────────────────────────────────────────────
+   ⚠️ A cursor changing shape is sixteen pixels of feedback under the hand
+   doing the work, where you are least likely to be looking. The drawer says it
+   too: the edge being pulled lights up, and the size is written in the middle
+   of the panel where the words are. */
+.drawer-shape { transition:box-shadow var(--duration-quick) var(--ease-smooth-out); }
+#drawer.is-sizing .drawer-shape {
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent); }
+/* The edge under the hand, drawn only while it is. */
+#drawer.is-sizing .drawer-size::after { content:""; position:absolute;
+  border-radius:3px; background:color-mix(in srgb, var(--accent) 45%, #e7efe9); }
+#drawer.is-sizing .drawer-size:not([data-grip]) ::after { content:none; }
+#drawer.is-sizing[data-sizing="in"] .drawer-size-in::after { inset:0 3px; }
+/* ⚠️ A small mark on a corner, not a filled 24px square. The corner handle is
+   big because it has to be easy to hit; lighting all of it up puts a green
+   block on the drawer at the one moment you are looking at its shape. */
+#drawer.is-sizing[data-sizing="in-top"] .drawer-size-in-top::after,
+#drawer.is-sizing[data-sizing="in-bottom"] .drawer-size-in-bottom::after {
+  inset:7px; border-radius:50%; }
+#drawer.is-sizing[data-sizing="top"] .drawer-size-top::after,
+#drawer.is-sizing[data-sizing="bottom"] .drawer-size-bottom::after {
+  inset:3px 0; }
+
+/* The numbers. ⚠️ Centred on the PANEL rather than pinned to a corner: the
+   corner is where your hand is, and a readout under the pointer is a readout
+   you are covering up. */
+.drawer-measure { position:absolute; top:50%; left:50%; translate:-50% -50%;
+  z-index:5; pointer-events:none; opacity:0; scale:.94;
+  font-size:12px; font-weight:600; letter-spacing:.3px; color:#e8e7e4;
+  font-variant-numeric:tabular-nums;
+  padding:7px 13px; border-radius:11px;
+  background:rgba(12,12,14,.86);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, rgba(255,255,255,.18)),
+    0 6px 18px -10px rgba(0,0,0,.9);
+  transition:opacity var(--duration-quick) var(--ease-smooth-out),
+    scale var(--duration-fast) var(--ease-bounce); }
+#drawer.is-sizing .drawer-measure { opacity:1; scale:1; }
 
 .drawer-grip { position:absolute; top:50%; translate:0 -50%;
   width:18px; height:120px; display:flex; flex-direction:column;

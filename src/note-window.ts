@@ -91,6 +91,14 @@ let draft = "";
 let barMiddle = 0;
 /** True while the sliver is being dragged along the edge. */
 let sliding = false;
+/** True while an edge or corner is being pulled.
+ *
+ * ⚠️ NOT the same flag as `sliding`, though both mean "the whole window counts
+ * as chrome". Sliding a drawer along an edge shuts it — you are moving a
+ * sliver; resizing one must hold it OPEN, because the thing being resized is
+ * the open panel. Sharing a flag collapsed the drawer the instant a resize
+ * began, which is to say it hid the thing you had just grabbed. */
+let sizing = false;
 /** Shut by hand, and staying shut until the pointer leaves.
  *
  * ⚠️ Without this, minimising does nothing you can see: the press that shut
@@ -128,12 +136,16 @@ for (let i = 0; i < 3; i++) grip.append(element("span", "drawer-grip-dot"));
  * right-hand edge cannot be pulled further right, and a handle that looks like
  * it can is a handle that does nothing — so there are three: the inward side
  * for width, the top and bottom for height. */
-const sizers = ["in", "top", "bottom"].map(which => {
+const sizers = ["in", "top", "bottom", "in-top", "in-bottom"].map(which => {
   const one = element("div", `drawer-size drawer-size-${which}`);
   one.dataset.grip = which;
   return one;
 });
-shape.append(sliver, panel, grip, ...sizers);
+/** What the drawer is while it is being pulled: "330 × 340". ⚠️ Somewhere to
+ *  look other than the edge under your hand — a cursor changing shape is the
+ *  only thing that says "resizing" otherwise, and it is 16 pixels of it. */
+const measure$ = element("div", "drawer-measure");
+shape.append(sliver, panel, grip, ...sizers, measure$);
 host.append(shape);
 
 /** The window's own size in CSS pixels.
@@ -215,7 +227,7 @@ function report() {
   /* A little slack, like the island's: a folding drawer must not drop the
    * pointer mid-animation and re-collapse under the cursor. */
   const pad = 6;
-  const rects = sliding
+  const rects = sliding || sizing
     ? [{ x: 0, y: 0, width: size.w, height: size.h }]
     : [{
       x: box.x - pad, y: box.y - pad,
@@ -237,10 +249,12 @@ function paint() {
   /* ⚠️ Written only when it CHANGES. The panel is a fixed content track that
    * the growing shape reveals — sized every frame instead, every word in the
    * note would re-wrap sixty times a second while the drawer opened. */
-  if (panel.style.width !== `${panelW}px`) {
-    panel.style.width = `${panelW}px`;
-    panel.style.height = `${panelH}px`;
-  }
+  if (panel.style.width !== `${panelW}px`) panel.style.width = `${panelW}px`;
+  /* ⚠️ Its OWN test. Guarding both writes behind the width meant a drag that
+   * only changed the height never applied one: the panel kept its old height,
+   * and since it is centred in the shape the words stayed floating in the
+   * middle of a taller drawer until something moved the width. */
+  if (panel.style.height !== `${panelH}px`) panel.style.height = `${panelH}px`;
 
   shape.style.width = `${depth}px`;
   shape.style.height = `${length}px`;
@@ -321,7 +335,8 @@ function settle() {
   /* ⚠️ A drag shuts it and holds it shut. Sliding a drawer along an edge is
    * not a statement about whether it should be open, and one that opened
    * under the pointer would cover the ghost being dragged. */
-  const open = !frozen && !sliding && !dismissed && (locked || hovering || typing());
+  const open = sizing
+    || (!frozen && !sliding && !dismissed && (locked || hovering || typing()));
   fold.setTarget(open ? 1 : 0);
   /* ⚠️ On the way IN the whole window is reported as chrome before the shape
    * has grown into it, so the pointer cannot fall out of a drawer that is
@@ -574,6 +589,11 @@ grab(grip, false);
  * sliver, so growing it symmetrically would walk the top edge up while you drag
  * the bottom one down; the middle moves by half of whatever the height gained,
  * which keeps the edge you are holding under the pointer. */
+/** The drawer's size, in the corner, while it is being pulled. */
+function say() {
+  measure$.textContent = `${Math.round(panelW)} × ${Math.round(panelH)}`;
+}
+
 function resizable(handle: HTMLElement) {
   let from: { x: number; y: number; w: number; h: number; middle: number } | null = null;
   let frame = 0;
@@ -588,8 +608,12 @@ function resizable(handle: HTMLElement) {
      * area Rust is testing against goes stale on the first frame — and a
      * drawer that went click-through halfway through its own resize would drop
      * the edge being pulled. `sliding` says both things. */
-    sliding = true;
+    sizing = true;
+    host.classList.add("is-sizing");
+    host.dataset.sizing = handle.dataset.grip ?? "";
+    say();
     report();
+    settle();
     window.addEventListener("pointerup", done);
     window.addEventListener("pointercancel", done);
   });
@@ -597,22 +621,28 @@ function resizable(handle: HTMLElement) {
   handle.addEventListener("pointermove", event => {
     if (!from) return;
     const dpr = window.devicePixelRatio || 1;
-    const which = handle.dataset.grip;
+    /* ⚠️ A corner is both, not a third thing. `in-bottom` is the width rule
+     * and the height rule applied to the same gesture, which is why they are
+     * read out of the name rather than switched on. */
+    const which = handle.dataset.grip ?? "";
     const dx = event.screenX - from.x;
     const dy = event.screenY - from.y;
-    if (which === "in") {
+    if (which.includes("in")) {
       // Outward from the screen edge is wider, whichever edge that is.
       panelW = Math.min(MAX_W, Math.max(MIN_W,
         Math.round(from.w + (edge === "right" ? -dx : dx))));
-    } else {
-      const grew = which === "bottom" ? dy : -dy;
-      const next = Math.min(MAX_H, Math.max(MIN_H, Math.round(from.h + grew)));
+    }
+    const down = which.includes("bottom");
+    if (down || which.includes("top")) {
+      const next = Math.min(MAX_H, Math.max(MIN_H,
+        Math.round(from.h + (down ? dy : -dy))));
       // The middle moves by half of what the height gained, so the edge being
       // pulled stays under the pointer and the other one stays put.
       barMiddle = Math.round(from.middle
-        + ((next - from.h) / 2) * (which === "bottom" ? 1 : -1) * dpr);
+        + ((next - from.h) / 2) * (down ? 1 : -1) * dpr);
       panelH = next;
     }
+    say();
     paint();
     if (frame) return;
     frame = requestAnimationFrame(() => {
@@ -631,7 +661,9 @@ function resizable(handle: HTMLElement) {
     if (!from) return;
     from = null;
     handle.releasePointerCapture?.(event.pointerId);
-    sliding = false;
+    sizing = false;
+    host.classList.remove("is-sizing");
+    host.dataset.sizing = "";
     report();
     settle();
     void call("size_pin", { id, w: panelW, h: panelH }).catch(() => {});
@@ -748,6 +780,21 @@ window.__noteHover = at => {
   settle();
 };
 
+/** Paint this window in the accent the app is set to.
+ *
+ * ⚠️ Asked for, not inherited. Every window has its own document, and the
+ * default in `tasks.css` is the stock green — so a drawer, a drop zone and a
+ * ring all showed green while the island showed whatever the user chose. The
+ * ring already does this; these two had never been told. */
+async function accent() {
+  try {
+    const prefs = await call<{ accent?: string }>("get_prefs");
+    if (prefs?.accent) {
+      document.documentElement.style.setProperty("--accent", prefs.accent);
+    }
+  } catch { /* the stylesheet's own default stands */ }
+}
+
 /* ── Boot ────────────────────────────────────────────────────────────── */
 
 async function boot() {
@@ -762,6 +809,7 @@ async function boot() {
   paint();
 
   if (!native) return;
+  await accent();
   await measure();
   /* Never docked before: halfway down, where the pointer already goes. */
   barMiddle = note?.y && note.y > 0 ? note.y : Math.round(field.y + field.h / 2);

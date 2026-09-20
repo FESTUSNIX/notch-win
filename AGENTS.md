@@ -4091,3 +4091,15 @@ The two halves were the same fault.
      back, and that has to be the same place the resize happens — a second
      placement from the page races it with a size read before the resize
      landed.
+642. ⚠⚠ **A `clip-path` clips HIT TESTING, not just paint.** The notch's
+     straight top and bottom edges run at the flare's radius rather than at the
+     box's, so resize handles laid on the box's corners sat outside the shape
+     entirely — with a cursor, with pointer-events, and with
+     `elementFromPoint` returning the window behind them. They were dead on
+     arrival and looked completely correct. Anything placed on a clipped
+     surface has to be positioned against the SHAPE, not the element.
+643. ⚠️ **One flag cannot mean both "the whole window is chrome" and "shut
+     the drawer".** Sliding a note along its edge shuts it — you are moving a
+     sliver. Resizing must hold it OPEN, because the thing being resized is the
+     open panel. Sharing `sliding` collapsed the drawer the instant a resize
+     began, which is to say it hid the thing that had just been grabbed.

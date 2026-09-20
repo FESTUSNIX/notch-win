@@ -116,8 +116,21 @@ let seen = 0;
   };
 }
 
+/** Paint the zones in the accent the app is set to. ⚠️ Asked for, not
+ *  inherited: every window has its own document, and the default in
+ *  `tasks.css` is the stock green. */
+async function accent() {
+  try {
+    const prefs = await call<{ accent?: string }>("get_prefs");
+    if (prefs?.accent) {
+      document.documentElement.style.setProperty("--accent", prefs.accent);
+    }
+  } catch { /* the stylesheet's own default stands */ }
+}
+
 if (native) {
   say(`up, ${window.innerWidth}x${window.innerHeight}`);
+  void accent();
 } else {
   /* The preview has no drag to follow, so it stages one: the zones as they
    * look when the pointer is in the left one, which is the state worth
