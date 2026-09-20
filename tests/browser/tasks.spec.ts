@@ -1916,6 +1916,11 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await expect(page.locator("#drawer")).toHaveClass(/is-locked/);
   await expect(page.getByLabel("Let it close", {exact: true})).toHaveCount(1);
 
+  /* ⚠️ "Close", not "Undock". It is an X, everything else in this app with an
+     X closes what it is on, and a word that argues with the shape it is drawn
+     as loses. */
+  await expect(page.getByLabel("Close", {exact: true})).toHaveCount(1);
+
   /* ⚠️ Editable where it is drawn, with no mode to enter. Pressing a note to
      turn it into an editor was one press between a thought and writing it
      down — and the press had no visible target, so the whole panel lit up,

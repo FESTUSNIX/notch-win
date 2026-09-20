@@ -370,7 +370,11 @@ function render() {
       () => { locked = !locked; freshen(); settle(); }],
     ["copy", "Copy", false,
       () => { void call("copy_text", { text: note?.body ?? "" }).catch(() => {}); }],
-    ["close", "Undock", false,
+    /* ⚠️ "Close", not "Undock". It is an X, everything else in this app with
+     * an X closes what it is on, and a word that argues with the shape it is
+     * drawn as loses. Closing a docked note takes it off the edge; the note
+     * itself is on the wall, where it has been all along. */
+    ["close", "Close", false,
       () => { void call("pin_note", { id, pinned: false }).catch(() => {}); }],
   ] as const) {
     const button = element("button", `drawer-do drawer-${icon}${on ? " is-on" : ""}`);
@@ -462,10 +466,21 @@ function grab(tab: HTMLElement, tap = true) {
      * off it would have the pointer taken away mid-gesture. */
     sliding = true;
     report();
-    void call("note_drag_start", { id }).catch(() => {});
+    /* ⚠️ `moving`, because this note is already on an edge. Sliding it along
+     * that same edge shows no drop zones: a zone lighting up where the note
+     * already lives, telling you to dock it where it is docked, is a question
+     * nobody asked — and it is drawn over the note being moved. */
+    void call("note_drag_start", { id, moving: true }).catch(() => {});
+    /* ⚠️ The window hears the release too — see the same guard on the island's
+     * cards. A drawer that is redrawn mid-drag loses the element holding the
+     * capture, and with it the only `pointerup` anybody was waiting for. */
+    window.addEventListener("pointerup", drop);
+    window.addEventListener("pointercancel", drop);
   });
 
   const drop = (event: PointerEvent) => {
+    window.removeEventListener("pointerup", drop);
+    window.removeEventListener("pointercancel", drop);
     if (!from) return;
     from = null;
     tab.releasePointerCapture?.(event.pointerId);

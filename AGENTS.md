@@ -4063,3 +4063,19 @@ The two halves were the same fault.
      the notes screen opening too tall and collapsing a moment later. A fixed
      `grid-auto-rows` gives the wall a height of its own; `aspect-ratio` on a
      card in an `auto-fill` grid cannot have one.
+637. ⚠⚠ **A gesture ends when the BUTTON does, not when a page says so.**
+     Every other way out of a drag goes through a `pointerup` on a window — and
+     a window that has gone click-through, been hidden, or simply lost the
+     capture never sends one. The ghost then stays stuck to the pointer and the
+     docked sliver slides up and down the screen edge for the rest of the
+     session, because the poller driving both is still being told the drag is
+     on. The one thing that cannot be missed is whether the mouse button is
+     still down; there is a time limit behind that.
+638. ⚠️ **An element redrawn mid-drag takes its pointer capture with it**, and
+     with it the only `pointerup` anybody was waiting for. A card on the wall is
+     redrawn by anything that changes the wall. The window hears the release
+     too, and removes its own listener when it fires.
+639. ⚠️ **A drop zone lighting up where the note already lives is a question
+     nobody asked**, and it is drawn over the note being moved. Sliding a docked
+     note along the edge it is already on shows nothing at all; the overlay
+     appears the moment the pointer heads anywhere else.

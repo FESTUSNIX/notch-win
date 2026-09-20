@@ -579,6 +579,8 @@ export class NotesScreen {
     let from: { x: number; y: number } | null = null;
 
     const stop = () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
       if (!this.dragging) return;
       this.dragging = false;
       card.classList.remove("is-dragging");
@@ -615,7 +617,14 @@ export class NotesScreen {
        * island's own edge. `set_drop_zone` is the existing escape hatch, and a
        * file drag already uses it. */
       void call("set_drop_zone", { active: true }).catch(() => {});
-      void call("note_drag_start", { id: note.id }).catch(() => {});
+      void call("note_drag_start", { id: note.id, moving: false }).catch(() => {});
+      /* ⚠️ The WINDOW hears the release as well as the card. A card is redrawn
+       * by anything that changes the wall, and a card that leaves the document
+       * takes its pointer capture — and its `pointerup` — with it; the drag
+       * then never ended, the wall stayed frozen and the ghost stayed stuck to
+       * the pointer. Rust watches the mouse button for the same reason. */
+      window.addEventListener("pointerup", stop);
+      window.addEventListener("pointercancel", stop);
     });
 
     card.addEventListener("pointerup", event => {

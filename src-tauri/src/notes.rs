@@ -498,7 +498,11 @@ fn side_of(said: &str) -> String {
 /// together they reach the message loop in one pass and paint once.
 #[tauri::command]
 pub fn move_pin(app: AppHandle, id: String, x: i32, y: i32, w: u32, h: u32) {
-    let Some(window) = app.get_webview_window(&label(&id)) else { return };
+    let Some(window) = app.get_webview_window(&label(&id)) else {
+        crate::log::note(&format!("note {id}: asked to move, but has no window"));
+        return;
+    };
+    crate::log::note(&format!("note {id}: placed at {x},{y} {w}x{h}"));
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     let _ = window.set_size(tauri::PhysicalSize::new(w.max(1), h.max(1)));
 }
@@ -600,6 +604,12 @@ pub fn restore(app: &AppHandle) {
 
 const DRAG_LABEL: &str = "dragzone";
 static DRAGGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Whether this drag started on a note that was already docked.
+static MOVING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// ⚠️ Nothing may drag for longer than this. Every other way a gesture ends
+/// goes through a page, and a page that never says so leaves the ghost stuck
+/// to the pointer for the rest of the session.
+const DRAG_LIMIT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// How near an edge counts as "drop it here", in physical pixels.
 ///
@@ -659,15 +669,19 @@ fn drag_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     Some(window)
 }
 
-/// Begin the gesture: the overlay appears and the pointer starts being read.
+/// Begin the gesture: the pointer starts being read, and the overlay appears
+/// when there is something to say.
+///
+/// `moving` marks a note that is ALREADY docked being slid along its edge.
 #[tauri::command]
-pub async fn note_drag_start(app: AppHandle, id: String) {
+pub async fn note_drag_start(app: AppHandle, id: String, moving: bool) {
     use std::sync::atomic::Ordering;
     crate::log::note(&format!("note drag: start {id}"));
     if DRAGGING.swap(true, Ordering::SeqCst) {
         return;
     }
     freeze_drawers(&app, true);
+    MOVING.store(moving, Ordering::SeqCst);
     /* ⚠️ The pointer is watched BEFORE the overlay is built. Making a webview
      * takes a few hundred milliseconds the first time, and a drag is a second
      * long — so building first spent a third of the gesture doing nothing, and
@@ -687,8 +701,11 @@ pub async fn note_drag_start(app: AppHandle, id: String) {
             let _ = window.set_size(tauri::PhysicalSize::new(size.width, size.height));
         }
     }
-    let _ = window.show();
-    crate::log::note("note drag: the overlay is up");
+    /* ⚠️ NOT shown here. The poller shows it when it has something to say —
+     * a note being slid along the edge it already lives on needs no drop zone
+     * telling it to dock where it is docked, and that zone is drawn over the
+     * note being moved. */
+    crate::log::note("note drag: the overlay is ready");
 }
 
 /// End it. ⚠️ Where it lands is decided by the POLLER, from the last place the
@@ -706,7 +723,19 @@ fn watch_drag(app: AppHandle, id: String) {
         let mut docked = false;
         let mut last = String::new();
         let mut monitor: Option<(i32, i32)> = None;
-        crate::log::note("note drag: watching");
+        let moving = MOVING.load(Ordering::SeqCst);
+        /* Which edge it was on when this started, so sliding a docked note
+         * along its own edge does not put a drop zone on the screen. */
+        let home = app
+            .state::<Store>()
+            .0
+            .lock()
+            .ok()
+            .and_then(|held| held.iter().find(|n| n.id == id).map(|n| side_of(&n.edge)))
+            .unwrap_or_default();
+        let mut shown = false;
+        let began = std::time::Instant::now();
+        crate::log::note(&format!("note drag: watching, moving={moving} home={home}"));
         loop {
             /* ⚠️ Sampled BEFORE the flag is checked, so a drag shorter than one
              * tick still gets one reading and one decision. Checking first meant
@@ -760,19 +789,44 @@ fn watch_drag(app: AppHandle, id: String) {
                 ""
             };
             last = edge.to_string();
-            push(
-                &window,
-                "__noteDrag",
-                &DragAt {
-                    id: id.clone(),
-                    x: (cx - origin.x) as f64 / scale,
-                    y: (cy - origin.y) as f64 / scale,
-                    edge: edge.to_string(),
-                    done: false,
-                },
-            );
+            /* ⚠️ Nothing is shown while a docked note is being slid along the
+             * edge it is already on. A drop zone that lights up where the note
+             * already lives, telling you to dock it where it is docked, is a
+             * question nobody asked — and it is drawn over the note you are
+             * moving. The moment the pointer heads anywhere else, it appears. */
+            if !shown && (!moving || edge != home) {
+                shown = true;
+                let _ = window.show();
+                crate::log::note("note drag: the overlay is up");
+            }
+            if shown {
+                push(
+                    &window,
+                    "__noteDrag",
+                    &DragAt {
+                        id: id.clone(),
+                        x: (cx - origin.x) as f64 / scale,
+                        y: (cy - origin.y) as f64 / scale,
+                        edge: edge.to_string(),
+                        done: false,
+                    },
+                );
+            }
 
-            let carry_on = DRAGGING.load(Ordering::SeqCst);
+            /* ⚠️ The BUTTON ends the drag, not only the page. Every other way
+             * out goes through a pointerup on a window — and a window that has
+             * gone click-through, been hidden, or simply lost the capture never
+             * sends one, which left the ghost stuck to the pointer and the
+             * docked sliver sliding up and down the screen edge for as long as
+             * the app was open. The one thing that cannot be missed is whether
+             * the mouse button is still down. */
+            let held_down = crate::drag::left_button_down();
+            let carry_on = DRAGGING.load(Ordering::SeqCst)
+                && held_down
+                && began.elapsed() < DRAG_LIMIT;
+            if !held_down {
+                DRAGGING.store(false, Ordering::SeqCst);
+            }
             if !edge.is_empty() {
             /* ⚠️ The drawer is opened ONCE, the first time the pointer reaches
              * an edge — not on the first millimetre of the drag. Building a
