@@ -558,6 +558,7 @@ pub fn run() {
             notes::note_drag_start,
             notes::note_drag_end,
             notes::move_pin,
+            notes::size_pin,
             notes::tint_note,
             stars::get_stars,
             stars::set_star,

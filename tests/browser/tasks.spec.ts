@@ -1935,6 +1935,26 @@ test("a docked note is a drawer welded to the edge of the screen", async ({page}
   await expect(field).toContainText("(port 2222)");
   await page.screenshot({path: "test-results/docked-note.png"});
 
+  /* ⚠️ Three edges can be pulled, and only three: the fourth is the screen's,
+     and a handle there would do nothing at all. The size is the NOTE's, so it
+     survives the drawer closing, the app restarting and the note moving to the
+     other edge — the same way its colour and its edge do. */
+  await expect(page.locator(".drawer-size")).toHaveCount(3);
+  await expect(page.locator(".drawer-size-in")).toHaveCSS("cursor", "ew-resize");
+  await expect(page.locator(".drawer-size-top")).toHaveCSS("cursor", "ns-resize");
+  const wide = (await page.locator(".drawer-panel").boundingBox())!.width;
+  const pull = (await page.locator(".drawer-size-in").boundingBox())!;
+  // ⚠️ The delta is from where the press LANDED, not from the handle's left
+  // edge — half a handle's width is five pixels of quiet disagreement.
+  const held = pull.x + pull.width / 2;
+  await page.mouse.move(held, pull.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(held - 70, pull.y + 60, {steps: 6});
+  await page.mouse.up();
+  await expect.poll(async () =>
+    Math.round((await page.locator(".drawer-panel").boundingBox())!.width))
+    .toBe(Math.round(wide) + 70);
+
   /* Collapsing shuts it back to the sliver — and STAYS shut, though the press
      that did it happened on the drawer and the pointer is still there. ⚠️
      Without that, minimising does nothing you can see: the next thing `settle`

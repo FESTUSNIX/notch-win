@@ -1136,6 +1136,21 @@ html[data-motion=never] .bub-ring .arc { transition:none; }
 /* The handle on the open drawer, where the sliver was. ⚠️ Quiet until the
    pointer is on the note: it is furniture, and a permanent set of dots on a
    300px panel is one more thing to read every time you glance at it. */
+/* ── Pulling an edge ─────────────────────────────────────────────────────
+   ⚠️ Invisible, and wider than they look — which is to say they look like
+   nothing and feel like eight pixels. A drawer is a piece of furniture; a
+   visible resize gutter down the side of one is a control panel. The cursor is
+   the whole affordance, which is how every window on this machine does it.
+
+   ⚠️ Only the three edges that are not against the screen. The fourth is the
+   screen's, and a handle there would do nothing at all. */
+.drawer-size { position:absolute; z-index:3; }
+.drawer-size-in { top:18px; bottom:18px; width:9px; cursor:ew-resize; }
+#drawer[data-edge="right"] .drawer-size-in { left:0; }
+#drawer[data-edge="left"] .drawer-size-in { right:0; }
+.drawer-size-top { left:0; right:0; top:0; height:9px; cursor:ns-resize; }
+.drawer-size-bottom { left:0; right:0; bottom:0; height:9px; cursor:ns-resize; }
+
 .drawer-grip { position:absolute; top:50%; translate:0 -50%;
   width:18px; height:120px; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:4px;

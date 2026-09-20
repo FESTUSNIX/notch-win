@@ -456,7 +456,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   /* The drawer's own window calls; there is no window in a preview, so the
      page lays itself out at whatever size the browser gave it. */
   if (command === "dock_note" || command === "move_pin"
-    || command === "note_drag_end") return undefined as T;
+    || command === "size_pin" || command === "note_drag_end") return undefined as T;
   /* The preview has no second window to drag into, so the gesture is staged:
      the note pins itself the way a real drop at the right-hand edge would. */
   if (command === "note_drag_start") {

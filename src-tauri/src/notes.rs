@@ -58,15 +58,19 @@ pub struct Note {
     /// How far down the edge the sliver sits, in physical pixels. 0 means
     /// "never docked", and the drawer starts halfway down instead.
     pub y: i32,
-    /* ⚠️ Dead, and kept anyway. A docked note has no x, width or height of its
-     * own any more — the edge decides two of them and the drawer's own sizes
-     * decide the rest — but a note file written by an older build still
-     * carries them, and a field dropped from the struct is a field `serde`
-     * would have to be told to ignore. Cheaper to keep three integers than to
-     * find out later that one of them mattered. */
-    pub x: i32,
+    /// How big the OPEN drawer is, in logical pixels. 0/0 means "never
+     /// resized", and the default below is used instead.
+     ///
+     /// ⚠️ The drawer, not the window. The window is bigger than the drawer it
+     /// holds — the spring overshoots, and the overshoot needs somewhere to go
+     /// — so these two numbers are the panel and `WINDOW_SLACK` is the rest.
     pub w: u32,
     pub h: u32,
+    /* ⚠️ Dead, and kept anyway: a note file written by an older build still
+     * carries an x, and a field dropped from the struct is a field `serde`
+     * would have to be told to ignore. Cheaper to keep one integer than to
+     * find out later that it mattered. */
+    pub x: i32,
 
     /// One of the palette's colour keys, or empty for plain paper.
     ///
@@ -86,12 +90,40 @@ pub struct Note {
 /// that bargain, and `note-window.ts` draws the shape with the island's own
 /// `notchPath` and its own spring.
 ///
-/// ⚠️ BIGGER than the drawer it holds (330 by 340). The spring overshoots
-/// its target — that is what makes it read as a spring — and the overshoot
-/// needs somewhere to go, or the shape is sliced off square at the moment it is
+/// ⚠️ The window is BIGGER than the drawer it holds. The spring overshoots its
+/// target — that is what makes it read as a spring — and the overshoot needs
+/// somewhere to go, or the shape is sliced off square at the moment it is
 /// moving fastest.
-const WINDOW_W: f64 = 362.0;
-const WINDOW_H: f64 = 400.0;
+const SLACK_W: u32 = 32;
+const SLACK_H: u32 = 60;
+/// The drawer, before anybody has resized one.
+const PANEL_W: u32 = 330;
+const PANEL_H: u32 = 340;
+/// ⚠️ A floor that keeps the thing usable and a ceiling that keeps it a
+/// drawer. Below about this it cannot hold a line of the note; above it, it is
+/// a window that happens to touch an edge, and everything about the shape —
+/// the flares, the sliver, the spring — stops meaning anything.
+const MIN_W: u32 = 240;
+const MIN_H: u32 = 170;
+const MAX_W: u32 = 760;
+const MAX_H: u32 = 1100;
+
+/// The drawer's size for one note.
+fn drawer_size(note: &Note) -> (u32, u32) {
+    let w = if note.w == 0 { PANEL_W } else { note.w.clamp(MIN_W, MAX_W) };
+    let h = if note.h == 0 { PANEL_H } else { note.h.clamp(MIN_H, MAX_H) };
+    (w, h)
+}
+
+/// The window that has to hold a drawer that size.
+///
+/// ⚠️ The slack is a FRACTION as well as a floor. The spring overshoots by
+/// about a tenth, so a fixed 32px was right for the default drawer and half of
+/// what a 760px one needs — and the overshoot is clipped square exactly when
+/// the shape is moving fastest.
+fn window_for(w: u32, h: u32) -> (u32, u32) {
+    (w + (w / 10).max(SLACK_W), h + (h / 10).max(SLACK_H))
+}
 
 #[derive(Default)]
 pub struct Store(pub Mutex<Vec<Note>>);
@@ -299,6 +331,8 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
         return Ok(());
     }
     crate::log::note(&format!("note {}: making a drawer", note.id));
+    let (panel_w, panel_h) = drawer_size(note);
+    let (window_w, window_h) = window_for(panel_w, panel_h);
     /* ⚠️ The id rides in the QUERY. The page has to know which note it is
      * before it can ask for anything, and reading its own window label back is
      * a round trip on every load for something already known here. */
@@ -338,7 +372,7 @@ fn open_pin(app: &AppHandle, note: &Note) -> Result<(), String> {
          * so anything built here is a guess, and a guess that is shown is a
          * window seen in the wrong corner for the frame before it moves. */
         .visible(false)
-        .inner_size(WINDOW_W, WINDOW_H)
+        .inner_size(f64::from(window_w), f64::from(window_h))
         .build()
         .map_err(|e| e.to_string())?;
     /* ⚠️ One watcher per docked note, and it is what makes the window above
@@ -521,6 +555,46 @@ pub struct DockAt {
     /// true — the point of dragging a note to the edge is watching it land,
     /// and a sliver landing tells you nothing about which note it was.
     pub dragging: bool,
+}
+
+/// Resize one drawer, and the window that holds it.
+///
+/// ⚠️ The SIZE is stored on the note, so it survives the drawer being closed,
+/// the app being restarted and the note being dragged to the other edge — the
+/// same place its colour and its edge live. A size held only in a window is a
+/// size that lasts until the next time anything goes wrong.
+#[tauri::command]
+pub fn size_pin(app: AppHandle, id: String, w: u32, h: u32) {
+    let (w, h) = (w.clamp(MIN_W, MAX_W), h.clamp(MIN_H, MAX_H));
+    let snapshot = {
+        let state = app.state::<Store>();
+        let Ok(mut held) = state.0.lock() else { return };
+        let Some(note) = held.iter_mut().find(|note| note.id == id) else { return };
+        if note.w == w && note.h == h {
+            return;
+        }
+        note.w = w;
+        note.h = h;
+        held.clone()
+    };
+    /* ⚠️ Saved, not published. `publish` pushes the whole list at every open
+     * drawer, and a drawer redrawing itself on every frame of its own resize
+     * is the caret and the scroll position gone. */
+    crate::config::save_beside(FILE, &snapshot);
+
+    let Some(window) = app.get_webview_window(&label(&id)) else { return };
+    let (window_w, window_h) = window_for(w, h);
+    let _ = window.set_size(tauri::LogicalSize::new(
+        f64::from(window_w),
+        f64::from(window_h),
+    ));
+    /* The window grew or shrank from its top-left corner; put it back against
+     * its edge, centred where it was. */
+    if let Some(note) = snapshot.iter().find(|note| note.id == id) {
+        if let Some(work) = crate::win::work_area(&window) {
+            slide_pin(&app, &id, &side_of(&note.edge), note.y, &work);
+        }
+    }
 }
 
 /// Remember which edge a note is docked to, and how far down it.

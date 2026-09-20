@@ -58,8 +58,22 @@ const win = native ? getCurrentWindow() : null;
  * the moment it is moving fastest. */
 const BAR_W = 22;
 const BAR_H = 136;
+/** What the drawer opens to, before anybody has resized one. */
 const PANEL_W = 330;
 const PANEL_H = 340;
+/** ⚠️ The floor keeps it usable and the ceiling keeps it a DRAWER. Past about
+ *  this it is a window that happens to touch an edge, and the flares, the
+ *  sliver and the spring all stop meaning anything. Same numbers as
+ *  `size_pin`, which is the one that actually enforces them. */
+const MIN_W = 240;
+const MIN_H = 170;
+const MAX_W = 760;
+const MAX_H = 1100;
+
+/** This note's own open size. ⚠️ Read from the note, so it survives the drawer
+ *  being closed, the app restarting and the note moving to the other edge. */
+let panelW = PANEL_W;
+let panelH = PANEL_H;
 /** The flare where the shape meets the screen edge, and the radius on the side
  *  that does not. ⚠️ Both are clamped by `notchPath` when the shape is too
  *  small to hold them, which is a good part of why it is reused. */
@@ -110,7 +124,16 @@ const panel = element("section", "drawer-panel");
  * was. */
 const grip = element("div", "drawer-grip");
 for (let i = 0; i < 3; i++) grip.append(element("span", "drawer-grip-dot"));
-shape.append(sliver, panel, grip);
+/* ⚠️ Only the edges that are not against the screen. A drawer welded to the
+ * right-hand edge cannot be pulled further right, and a handle that looks like
+ * it can is a handle that does nothing — so there are three: the inward side
+ * for width, the top and bottom for height. */
+const sizers = ["in", "top", "bottom"].map(which => {
+  const one = element("div", `drawer-size drawer-size-${which}`);
+  one.dataset.grip = which;
+  return one;
+});
+shape.append(sliver, panel, grip, ...sizers);
 host.append(shape);
 
 /** The window's own size in CSS pixels.
@@ -209,8 +232,15 @@ function paint() {
   /* ⚠️ Clamped to the window. The spring overshoots, and a shape wider than
    * the window it is drawn in is a shape with a straight edge sliced through
    * it — which is the one thing the flares exist to avoid. */
-  const depth = Math.min(winW, BAR_W + (PANEL_W - BAR_W) * t);
-  const length = Math.min(winH, BAR_H + (PANEL_H - BAR_H) * t);
+  const depth = Math.min(winW, BAR_W + (panelW - BAR_W) * t);
+  const length = Math.min(winH, BAR_H + (panelH - BAR_H) * t);
+  /* ⚠️ Written only when it CHANGES. The panel is a fixed content track that
+   * the growing shape reveals — sized every frame instead, every word in the
+   * note would re-wrap sixty times a second while the drawer opened. */
+  if (panel.style.width !== `${panelW}px`) {
+    panel.style.width = `${panelW}px`;
+    panel.style.height = `${panelH}px`;
+  }
 
   shape.style.width = `${depth}px`;
   shape.style.height = `${length}px`;
@@ -256,6 +286,7 @@ function paint() {
    * pointer halfway through the gesture it is driving is a grip that drops
    * the note in the middle of the screen. */
   grip.style.pointerEvents = sliding || shown > 0.55 ? "auto" : "none";
+  for (const one of sizers) one.style.pointerEvents = shown > 0.9 ? "auto" : "none";
   sliver.style.pointerEvents = sliding || shown <= 0.55 ? "auto" : "none";
 }
 
@@ -533,6 +564,84 @@ function grab(tab: HTMLElement, tap = true) {
 grab(sliver);
 grab(grip, false);
 
+/* ── Pulling an edge ─────────────────────────────────────────────────────
+ *
+ * ⚠️ The size is the NOTE's, and it is written there — so it survives the
+ * drawer closing, the app restarting and the note being dragged to the other
+ * edge, the same way its colour and its edge do.
+ *
+ * ⚠️ And the height grows from the edge you PULL. The drawer is centred on its
+ * sliver, so growing it symmetrically would walk the top edge up while you drag
+ * the bottom one down; the middle moves by half of whatever the height gained,
+ * which keeps the edge you are holding under the pointer. */
+function resizable(handle: HTMLElement) {
+  let from: { x: number; y: number; w: number; h: number; middle: number } | null = null;
+  let frame = 0;
+
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    from = { x: event.screenX, y: event.screenY, w: panelW, h: panelH, middle: barMiddle };
+    handle.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    /* ⚠️ The whole window counts as chrome for the duration, and the drawer
+     * stops folding. The shape is changing size under the pointer, so the hit
+     * area Rust is testing against goes stale on the first frame — and a
+     * drawer that went click-through halfway through its own resize would drop
+     * the edge being pulled. `sliding` says both things. */
+    sliding = true;
+    report();
+    window.addEventListener("pointerup", done);
+    window.addEventListener("pointercancel", done);
+  });
+
+  handle.addEventListener("pointermove", event => {
+    if (!from) return;
+    const dpr = window.devicePixelRatio || 1;
+    const which = handle.dataset.grip;
+    const dx = event.screenX - from.x;
+    const dy = event.screenY - from.y;
+    if (which === "in") {
+      // Outward from the screen edge is wider, whichever edge that is.
+      panelW = Math.min(MAX_W, Math.max(MIN_W,
+        Math.round(from.w + (edge === "right" ? -dx : dx))));
+    } else {
+      const grew = which === "bottom" ? dy : -dy;
+      const next = Math.min(MAX_H, Math.max(MIN_H, Math.round(from.h + grew)));
+      // The middle moves by half of what the height gained, so the edge being
+      // pulled stays under the pointer and the other one stays put.
+      barMiddle = Math.round(from.middle
+        + ((next - from.h) / 2) * (which === "bottom" ? 1 : -1) * dpr);
+      panelH = next;
+    }
+    paint();
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      /* ⚠️ No `place()` beside this. `size_pin` puts the window back against
+       * its edge itself — it has to, because the window grows from its
+       * top-left corner — and a second placement from here would be racing it
+       * with a size it read before the resize landed. */
+      void call("size_pin", { id, w: panelW, h: panelH }).catch(() => {});
+    });
+  });
+
+  const done = (event: PointerEvent) => {
+    window.removeEventListener("pointerup", done);
+    window.removeEventListener("pointercancel", done);
+    if (!from) return;
+    from = null;
+    handle.releasePointerCapture?.(event.pointerId);
+    sliding = false;
+    report();
+    settle();
+    void call("size_pin", { id, w: panelW, h: panelH }).catch(() => {});
+    void call("dock_note", { id, edge, y: barMiddle }).catch(() => {});
+  };
+  handle.addEventListener("pointerup", done);
+  handle.addEventListener("pointercancel", done);
+}
+for (const one of sizers) resizable(one);
+
 /* ── The pointer ─────────────────────────────────────────────────────────
  *
  * ⚠️ From RUST, not from the page. The window ignores cursor events wherever
@@ -584,9 +693,16 @@ window.__noteList = all => {
    * mirrored the wrong way if it ever misses one. */
   edge = next?.edge === "left" ? "left" : "right";
   host.dataset.edge = edge;
+  sizeFrom(next);
   render();
   paint();
 };
+
+/** Take the open size off the note, with the defaults for one never resized. */
+function sizeFrom(one: Note | null) {
+  panelW = Math.min(MAX_W, Math.max(MIN_W, one?.w || PANEL_W));
+  panelH = Math.min(MAX_H, Math.max(MIN_H, one?.h || PANEL_H));
+}
 
 /** Which edge, and how far down — sixty times a second while a note is being
  *  dragged, and once when it lands. */
@@ -641,6 +757,7 @@ async function boot() {
   } catch { /* the window says so */ }
   edge = note?.edge === "left" ? "left" : "right";
   draft = note?.body ?? "";
+  sizeFrom(note);
   render();
   paint();
 
@@ -673,6 +790,7 @@ if (!native) {
     note = all.find(one => one.id === id) ?? all[0] ?? null;
     edge = note?.edge === "left" ? "left" : "right";
     draft = note?.body ?? "";
+    sizeFrom(note);
     render();
     paint();
   })();

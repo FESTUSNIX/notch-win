@@ -4079,3 +4079,15 @@ The two halves were the same fault.
      nobody asked**, and it is drawn over the note being moved. Sliding a docked
      note along the edge it is already on shows nothing at all; the overlay
      appears the moment the pointer heads anywhere else.
+640. ⚠️ **Anything that changes a window's shape mid-gesture invalidates the
+     hit area Rust is testing against.** A resize is the third gesture to hit
+     this after the two drags: the shape shrinks under the pointer, the pointer
+     falls outside the reported rect, the window goes click-through and the
+     edge being pulled is dropped. The whole window counts as chrome for the
+     duration — the same flag that stops it folding while it is being moved.
+641. ⚠️ **A window that grows does so from its TOP-LEFT corner**, which for a
+     drawer welded to the right-hand edge means it grows away from the screen
+     edge it is supposed to be welded to. Whatever resizes it has to put it
+     back, and that has to be the same place the resize happens — a second
+     placement from the page races it with a size read before the resize
+     landed.

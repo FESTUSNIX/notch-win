@@ -94,6 +94,14 @@
         because arriving is what opens it. The strip of dots down the bezel
         edge is the handle that exists when you can see the thing you want to
         move.
+  - [x] **Pull an edge to resize it.** The inward side for width, the top and
+        bottom for height — the fourth is the screen's, and a handle there
+        would do nothing. The size is stored ON the note, beside its colour and
+        its edge, so it survives the drawer closing, the app restarting and the
+        note being dragged to the other side. The height grows from the edge
+        you pull: the drawer is centred on its sliver, so the middle moves by
+        half of what the height gained and the edge under the pointer stays
+        under it.
   - [ ] One 100ms polling thread per docked note, which is the price of the
         arrangement above. Fine for the handful anybody docks; if it ever
         becomes twenty, they want one loop over a list rather than twenty
