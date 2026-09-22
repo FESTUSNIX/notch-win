@@ -137,6 +137,46 @@ The output is **committed**, so a checkout builds without the Swift repo
 present. Regenerate rather than hand-edit — the file is 16 KB of coordinates and
 carries a "do not hand-edit" header for that reason.
 
+### 4.3b Coin marks are generated too
+
+`public/coin/` is ~200 token logos produced from **@web3icons** (MIT) by
+`tools/generate-coin-marks.mjs`, alongside `src/coin-marks.ts` — the list of
+which symbols have one. Same bargain as the glyphs above: the output is
+**committed**, so a checkout builds without the dependency present, and the way
+to change it is to re-run the script against a newer version.
+
+```sh
+pnpm coin-marks
+```
+
+The `background` variant, which is a square plate in the token's colour with
+the mark knocked out of it — a coin disc once CSS rounds it. `branded` and
+`mono` are glyphs on nothing and would leave the app inventing a plate colour
+for every token, which is work this set has already done.
+
+⚠️ **CURATED, and the curation is the point.** The set carries about 1800
+tokens. Shipping all of them was 4.7 MB across 1788 files in a repo that tracks
+under 200, for a wallet that shows five rows — so the generator keeps the top
+**250 by market cap**, plus a **floor** of majors and quote currencies, and
+everything else falls to the monogram. Widen it by raising `RANK`, never by
+dropping a file in beside the generated ones.
+
+⚠️ **`marketCapRank` has holes, and BITCOIN's is `null`.** A cutoff on its own
+silently drops the one coin nobody would forgive, which is the whole argument
+for the floor list rather than a tidier one-line filter. A `CORE` name with no
+art **fails the build** — a floor that quietly gives way is worse than no floor.
+
+⚠️ **Art is found through the metadata's `filePath`, which is not always a
+token.** Toncoin is `network:ton` and Injective is `network:injective` — chains
+with a coin, filed under `networks/`. Reading the token directory alone is why
+the first pass had no mark for either, and neither is obscure.
+
+⚠️ **Files, not a module.** A board paints between one and six marks, so the
+rest have no business being parsed at boot. As files the webview fetches what is
+on screen and caches it; bundled, every byte is in `tasks.js` forever. This is
+also what keeps the ids inside them (`#BTC__a`) from colliding — each mark is
+its own document.
+
 ### 4.4 Motion is integrated, not eased
 
 The fold is a numerically integrated spring matching
@@ -4103,3 +4143,923 @@ The two halves were the same fault.
      sliver. Resizing must hold it OPEN, because the thing being resized is the
      open panel. Sharing `sliding` collapsed the drawer the instant a resize
      began, which is to say it hid the thing that had just been grabbed.
+644. ⚠️ **A spread copies the object and SHARES its arrays.**
+     `DEFAULT_BOARDS.map(one => ({ ...one }))` reads like a fresh copy and
+     hands out the same `widgets` array every time — so the first board built
+     from the default and then edited rewrote the default itself, and every
+     later read came back with somebody's changes already on it. Nothing
+     anywhere would have said so; a test that mutates a copy and then asks for
+     a second one is what caught it. Anything handed out as a starting point
+     copies to the depth it is mutated at.
+645. ⚠️ **A runtime import of a sibling breaks every `node --test` file that
+     touches the module, and the error names the IMPORTER.** Node strips types
+     and then resolves what is left, and its resolver does not add extensions
+     the way Vite does — so `screens.ts` gaining one line of
+     `import { screenOf } from "./boards"` failed `ring.test.mjs`, which has
+     nothing to do with boards, with a message about a path in a third file.
+     `import type` is erased and is always safe; a runtime one needs the
+     explicit `.ts` and the `allowImportingTsExtensions` that permits it.
+646. ⚠️ **A `spans` measurement only walks its own DIRECT children.** Moving
+     the board's cards one level down — into a `.board-row`, so the arrange
+     tray could be a second child — silently lost the rule that adds back what
+     a card clips, because the union then measured the ROW's box. Nothing
+     looked wrong until a card overflowed by a line. Anything that can overflow
+     has to be named in that query wherever it ends up nested.
+647. ⚠️ **`surface.pin()` is a TOGGLE, and holding the panel open has to
+     remember what it found.** Called blind at the start of a gesture it
+     unpinned an island the user had already pinned — so the one thing the call
+     was there to guarantee, that the panel survives the gesture, was the thing
+     it broke, and only for the people who had pinned it.
+648. ⚠️ **Two controls must not answer to one accessible name.** The arc's
+     toggle and the arrange tray's tick both said "Done arranging"; a screen
+     reader then offers the same words for two different buttons, and
+     `getByLabel` refuses outright — which surfaced as a click that never
+     landed and was reported as the arc's hit band intercepting it. The one
+     outside the mode ends it from outside; they are different sentences.
+649. ⚠️ **A wrapper added to make content unclickable must generate NO box.**
+     Wrapping each card's contents in a real flex box, to hang
+     `pointer-events: none` on while arranging, unstacked the calendar card —
+     the cards are flex rows, column stacks and grids, and a wrapper has to
+     reproduce each of them. `display: contents` generates no box at all, and
+     `pointer-events` is an INHERITED property, so it still reaches the
+     children through an element that draws nothing. One declaration, no
+     layout.
+650. ⚠️ **The island opens on the LIVELIEST CLAIM, not on Home.** Every board
+     test written against a fixture with an agent waiting measured an empty
+     board and read as the feature being broken. A test that wants a particular
+     screen has to ask for it, however sure it is of where the island starts.
+651. ⚠⚠ **A FIFTH control on the global arc breaks the collapsed pill.** Every
+     control lengthens the arc's line, and the line carries a transparent reach
+     band about 64px wide; at five the band comes to lie over the pill, so
+     pressing the pill hits the band instead. Nothing about it looks wrong —
+     the band is invisible and the pill is still drawn — and what it looks like
+     is an island that sometimes does not open. The arrange action moved to the
+     TOOLS arc, which is where "what this screen can do" belongs anyway. The
+     global arc is four, and four is not an accident.
+652. ⚠️ **A test that encodes an assumption has to be rewritten when the
+     assumption stops being true, not made to pass.** `tools.spec` asserted
+     "Home has nothing to do, so there is no arc at all" — true until Home
+     became a board, which is one thing a board can do that no other screen
+     can. The claim it was really testing (the arc follows the screen) is
+     unchanged; the empty screen is `agents` now, and that is what it says.
+653. ⚠⚠ **The panel's width was applied AFTER its content was measured**, so
+     every screen was measured at the PREVIOUS screen's width. For text that
+     cost a rewrapped line and nobody noticed for a year. For a wrapping flex
+     row it cost three lines instead of two: the panel took its maximum depth
+     to hold them, laid out in two, and carried 55px of slack under the last
+     row that nothing ever reclaimed. The comment above the assignment already
+     claimed it was set "because that is the size the content has to be
+     measured at" — the intent was right and the order was not.
+654. ⚠️ **`flex: 1` on a child of a flex COLUMN takes the slack in the wrong
+     axis.** The media scrubber said `flex: 1` while it lived in a horizontal
+     row between two timestamps, which was correct there; moved to a direct
+     child of the block it grew to fill the column, and a 4px rail rendered as
+     a 55px grey slab. The declaration did not change — its parent did.
+655. ⚠️ **Flex breaks lines on the BASES, before it shrinks anything.** Three
+     blocks whose ideal widths summed past the panel wrapped onto two lines
+     even though `flex-shrink: 1` and `min-width: 0` would have fitted them on
+     one — line breaking happens first and never consults the shrink. Basing
+     each block on the narrowest it reads well at, and letting `flex-grow`
+     spend the slack, is what makes "wrap only when there is really no room"
+     actually mean that.
+656. ⚠️ **A negative margin is reported by the parent as OVERFLOW, and the
+     island adds overflow to its depth.** The hover wash bled 6px out of each
+     block with `margin: -6px`; the row's `scrollHeight` exceeded its
+     `clientHeight` by exactly that, `natural()` added it to the panel, and
+     every board carried 6px of permanent slack under its last row. Padding the
+     block instead costs nothing and reports nothing.
+657. ⚠️ **`getBoundingClientRect` during a FLIP carries the animating
+     `translate`.** Deciding which slot a drag is over by comparing rects made
+     each answer depend on the one before it, and dragging quickly past two
+     blocks landed on the wrong index about a third of the time.
+     `offsetLeft`/`offsetTop` are layout positions and ignore transforms —
+     which is what a decision about where something BELONGS should be reading.
+658. ⚠️ **The only way out of a mode must not be able to scroll away.** The
+     arrange tray sat at the end of a board that had just learned to scroll, so
+     a board of five widgets pushed the × and the ✓ off the bottom and the only
+     way to stop arranging was to leave the screen. `position: sticky` rather
+     than a sibling outside the scroller — a sibling with `flex: 1` above it
+     would stretch to the panel's height and feed its own measurement back into
+     the panel's depth.
+659. ⚠️ **One widget's `justify-content: center` put its label 55px below
+     every other block's.** The blocks are stretched to one another's height by
+     the row, so centring inside that height moves the content down by half the
+     difference. On a row of panels nobody would have noticed; on a row of bare
+     blocks the aligned labels are the only thing saying where one block ends
+     and the next begins.
+660. ⚠️ **A glyph is positioned by its font's metrics, not by the box it is
+     in.** The remove badge drew U+2212 with `place-items: center` and it sat
+     visibly high in its 21px circle — the BOX was centred and the ink inside it
+     was not, so nothing about the centring could fix it. Two pixels of
+     background is centred by construction.
+661. ⚠️ **Every size a widget offers has to be reachable by moving ONE way.**
+     The calendar could be 2×1 or 3×2 and nothing between, so pulling its corner
+     straight down changed the distance to both by the same amount — and
+     because a tie goes to the smaller size, the block simply refused to grow.
+     A ladder with a rung missing reads as a control that does not work.
+662. ⚠️ **The only way out of a mode must not be able to scroll away** (see
+     658), **and it must not cover the thing you are aiming at either.** The
+     arrange tray, stuck to the bottom so it could not be lost, then sat over
+     the last row of the grid while blocks were being dropped there. It fades
+     and stops taking the pointer while a block is carried, and the grid keeps
+     a row's worth of clearance under itself.
+663. ⚠⚠ **A `\` line continuation written into a Rust string BY A SCRIPT can
+     arrive as a literal `\n` escape.** The URL then carried a real newline and
+     seventeen spaces inside a query parameter, and Open-Meteo answered with a
+     parse error naming a variable nobody had typed — `is_day` with trailing
+     whitespace. The app's own URL, written by hand, was fine; only the copy a
+     script produced was not. Anything a script writes into a string literal is
+     safer on one long line.
+664. ⚠️ **Ask the forecast what time IT thinks it is.** Finding "now" in an
+     hourly array means comparing against the PLACE's clock, and the machine's
+     is the wrong one the moment the place is elsewhere — by a whole day, for
+     somewhere twelve hours away. Open-Meteo returns `current.time` in local
+     terms for exactly this; deriving it from `Local::now()` was two guesses
+     stacked on each other.
+665. ⚠⚠ **A widget may hold NO local state — the shell rebuilds every block
+     about once a second.** The countdown's dial kept the minutes it was set to
+     in a local, so the ruler snapped back to 25 within a beat of letting go and
+     the button started the wrong timer. Anything a widget must remember between
+     redraws lives at module level (there is one of each widget per board by
+     construction) or in the screen that owns the thing. And a handler must READ
+     that value when it fires, not close over the one it was built with: a
+     closure can outlive a drag by a frame, which makes the button wrong exactly
+     once.
+666. ⚠️ **A control at the foot of a block is under the arrange tray.** The
+     tray is stuck to the bottom of the scroller so it cannot be lost — which
+     means it lies over the foot of every block that is not the last one on
+     screen. The variant pills were unclickable across most of the board and
+     nothing looked wrong; `elementFromPoint` named the tray. Controls that must
+     always work go in the block's own FLOW, at the top, which is the one part
+     nothing else is ever over.
+667. ⚠️ **A size ladder and a list of views are two different axes.** A
+     calendar showing the week, the month or what is next is the same data
+     answering three different questions; a calendar at 2×1 and 4×2 is one
+     answer with more room. Folding the choice into the size would mean
+     "bigger" silently meant "different" — and the reverse, that wanting the
+     month view forced the block to be large.
+668. ⚠️ **Where a variant and a size disagree, the SIZE wins.** A six-hour
+     strip in one cell is six columns four pixels wide and five day rows in one
+     row's height is five lines of nothing — neither is a smaller forecast, they
+     are both just broken. `weatherParts` is that decision on its own, pure and
+     tested, precisely because it is the one part of a widget that can be got
+     wrong without anybody seeing it.
+669. ⚠️ **A block must never render empty.** "Forecast" with no forecast yet
+     is a state every install passes through on its first poll, and a card that
+     draws nothing there reads as a failure rather than as a wait. It falls back
+     to the reading it does have.
+670. ⚠⚠ **THE FIRST SIZE LISTED IS THE DEFAULT.** Adding `[1, 1]` to the front
+     of Now playing's ladder — meaning only to offer it — silently made every
+     new one arrive as a one-cell cover instead of the row it had always been.
+     Two board tests caught it; nothing about the change looked like a change
+     of default. The same is true of `variants`, where the first entry is what
+     a widget is before anybody chooses.
+671. ⚠️ **A body writes to the `.home-body` WRAPPER, not to the block.** Now
+     playing's `cover` layout needs the block's own padding, radius and
+     overflow — the artwork IS the block — so `data-layout` written from the
+     body landed a level too deep and every rule keyed on it matched nothing.
+     Silently: the layout simply looked like the default. The board lifts a
+     body's chosen layout onto the block after calling it.
+672. ⚠️ **A pure helper that a test needs must live in the module with NO
+     runtime imports.** `mediaLayout` started beside the body it serves, and
+     `node --test` could not load the file at all — `widget-bodies.ts` reaches
+     for `./dom`, which Node's resolver will not find without an extension.
+     Decisions go in `widgets.ts`, drawing goes in `widget-bodies.ts`, and that
+     split is what makes either of them testable. Same trap as 645.
+673. ⚠️ **A fixed square in a tall block leaves the rest of it empty.** The
+     column layout put the cover at a set size at the top and stopped, so
+     making the block taller only made the hole bigger. The art takes the slack
+     (`flex: 1` plus `object-fit: cover`), which means a taller block is simply
+     a bigger cover — which is what anybody making one taller was asking for.
+674. ⚠⚠ **A panel that must not cover content goes BESIDE it, not over it.**
+     The arrange tray was tried three ways — in flow at the foot (scrolled
+     away), sticky at the foot (lay across the last row and swallowed the
+     controls on every block under it), and finally as a column beside the
+     board with the panel measured wide enough to hold it. Only the third is
+     "what you see is what you get". A sticky bar over live content is a bar
+     you have to scroll out from under.
+675. ⚠️ **An absolutely positioned layout paints over its own block's
+     controls.** Now playing's `cover` fills the block with artwork and lays a
+     scrim over it, both absolute — so the variant pills, which sit in the
+     flow, ended up underneath and there was no way to switch back out of the
+     layout you had just chosen. Any control that must survive a layout like
+     that needs its own stacking context and a ground to sit on.
+676. ⚠️ **A control laid out in a row does not fit a block the width of one
+     cell.** The ring and its transport side by side came to about 190px in a
+     131px block, so the buttons ran straight out of it and the widget read as
+     broken rather than as cramped. Anything that can be one cell wide has to
+     say what it does at one cell wide — here, stack.
+677. ⚠️ **"How many rows fit" depends on what else is in the block, not only
+     on its height.** The weather's day list showed three whatever else was
+     there, which in a block sized for four left a gap at the bottom and in a
+     block that also had a head and an hourly strip overflowed. The count is
+     read off what the same decision function already worked out.
+678. ⚠️ **Uppercase tracked eyebrows over every block are a tell, not a
+     style.** NOW PLAYING over a song, WEATHER over a temperature, SHELF over a
+     list of shelved files — a label naming what you are already looking at,
+     ten times on one board. They are gone except where the content genuinely
+     does not say it: the place a temperature is for, what a countdown is
+     counting, the day a task list belongs to.
+679. ⚠️ **A zero-length dash with a round linecap draws a DOT, not nothing.**
+     The pomodoro's segmented ring paints eight arcs by `stroke-dasharray`, and
+     a leg with no progress asks for a dash of 0 — which `stroke-linecap:
+     round` renders as a full-width circle at the start of the dash. Eight of
+     them made the ring read as a string of beads with the track missing.
+     `stroke-opacity: 0` on the empty case, because a cap cannot be made
+     conditional and the length genuinely is zero.
+680. ⚠️ **A list built once and updated in place still has to be REBUILT when
+     what it says changes.** The timer screen skips its rebuild unless a shape
+     key changes, and the key was made from the current run only. Pressing
+     Start on a row for a run that is not the current one therefore changed
+     nothing the key could see: the row kept its play icon and its "Start"
+     label for ever, while the time beside it ticked — the one cue that the
+     press had landed at all. The key now carries every run's id, liveness and
+     title. **A cache key has to name everything the thing it guards draws**,
+     and a panel drawn from a list draws the whole list.
+681. ⚠️ **A widget may hold NO state of its own.** The board rebuilds every
+     block on the shell's beat, so anything a block remembers between frames is
+     lost on the next one — the countdown's dial reset its minutes a second
+     after every drag. State goes in the model the block reads, and a gesture
+     reads the value at press time rather than at draw time. (Logged as 665
+     when it first bit; repeated here because the rebuilt timer met it again
+     from the other side: the screen keeps `listOpen` and `holding` precisely
+     because they are facts about the SCREEN, which is not rebuilt per beat.)
+682. ⚠️ **An empty list that seeds itself is not an empty list.** `Runs.settle`
+     keeps one pomodoro so the app always has something to start, which means
+     the "nothing counting" branch of the countdown widget is unreachable from
+     the UI — a test written against it asserted a lead of "Focus" and got
+     "Pomodoro". The branch stays as a guard (`clear()` really does empty the
+     list), but nothing may be *verified* through a state the product cannot
+     reach.
+683. ⚠️ **A `spans` element whose children are STRETCHED measures its own
+     height back.** `natural()` takes the union of the children's boxes, and a
+     flex row with `align-items: stretch` gives every column the container's
+     height — which is the island's. So the measurement read back whatever the
+     island already was, could only ever grow, and parked at the maximum depth
+     with a hand's width of nothing between the name field and the controls.
+     The fix is a grid with `align-content: start`: the single auto row stays at
+     its content height inside a container that has a definite one, and
+     `align-items: stretch` then gives both columns *that* height — so the
+     separator still runs the full depth and the footer still sits on the floor.
+     **Anything measured by the union of its children must not be sized by its
+     own parent.**
+684. ⚠️ **A negative returned by a pure function, negated again at the call
+     site.** `offsetFor` is the ruler's shift and already returns
+     `-minutes * PER`; the timer screen wrote `${-offsetFor(minutes)}`. A dial
+     set to 25 put zero 375px to the *right* of the marker with the rest of the
+     ruler off the end of the fade, and every drag moved the ruler away from the
+     hand. The tests covering `offsetFor` all passed — they test the function,
+     and the sign was wrong in the one line that uses it. **A direction belongs
+     in one place; a caller that re-states it is a second definition.**
+685. ⚠️ **An `<input>` is not stretched by its flex parent.** Its `size`
+     attribute is an intrinsic width that beats `align-self: stretch` *and* a
+     percentage alike: the name field came out 216px in a 314px column however
+     it was asked to fill it, and 64px once `size` was set to 1. A plain `div`
+     in the same position stretches correctly. **Wrap a form control when you
+     need the layout to size it** — a percentage against the wrapper's definite
+     width resolves, and nothing else here did.
+686. ⚠️ **A descendant selector catches the icons nested inside the thing it
+     meant.** `.tm-ring svg` was written for the ring's own circle and also
+     matched the phase glyph inside `.tm-face` — so that icon was taken out of
+     flow, laid against the face's box and rotated -90° with the ring, painting
+     across the top-left of the figure while `.tm-face-mark` measured 0×0. The
+     child combinator is the whole fix. **Any rule that absolutely positions or
+     rotates `svg` has to say which one.**
+687. ⚠️ **A panel that extends the island needs its own WIDTH, not a share of
+     one.** The timer's list was appended beside the face inside a screen whose
+     width was a single number in the table, so opening it took 215px out of the
+     face: the ring shrank, the ruler became a stub and the list read as
+     something bolted inside the screen rather than as one more column of it.
+     `widthOf` returns a second, wider cap while it is out — the arrangement the
+     player's queue already had, and the thing that makes the island grow to
+     hold the list instead of squeezing what is already there.
+688. ⚠️ **A `1fr` track is squeezed for the whole of a size spring.** With the
+     face sized by the leftover, opening the list pinched it to 139px and grew
+     it back over the next three hundred milliseconds, so the ring and the ruler
+     visibly pumped on the way. A fixed track holds still and the island arrives
+     around it, which is what is actually happening. **During an animated resize
+     the part that was already there should be the part that does not move.**
+689. ⚠️⚠️ **A constructor cannot read a closure over a `const` declared after
+     it.** `Runs.settle()` runs from `load()`, which runs from the constructor,
+     and it was given a catch-up that called `this.lengths()` — a closure
+     tasks.ts passes on the line *before* `const lengths`. The app died on boot
+     with "Cannot access 'lengths' before initialization", the island never laid
+     out at all, and it happened **only for someone whose pomodoro phase had
+     finished while the window was shut**, which is why nothing caught it until
+     a browser test reloaded into exactly that state. The fix is not to reorder
+     the two lines — the preferences arrive from Rust long after module init, so
+     the lengths are *wrong* at construction as well as unreadable. **Work that
+     needs settings belongs where the settings are known**, which here is the
+     shell's first tick a second later.
+690. ⚠️ **Catching up a timeline means advancing from when the phase ENDED, not
+     from now.** Handing `next` the current time turned a window shut for six
+     hours into a fresh five-minute break. Handing it the old `endsAt`
+     reconstructs where the run would have got to: a short absence lands
+     mid-break with the right time left, a long one falls through the break and
+     parks on the next round ready. Live, the two are the same second, which is
+     why the bug is invisible until the app has actually been closed.
+691. ⚠️ **A settle animation must not own the value.** The dial wrote the wound
+     minutes inside the 260ms ease that glides the ruler onto its mark, so for
+     that quarter second the number on screen was not the number Start would
+     use — wind to 35, press Start quickly, and 25 began. The ease is cosmetic;
+     the write happens on release, and the render it triggers is held off by the
+     flag the ease already sets. **Commit on the input, animate afterwards.**
+692. ⚠️ **Collapsing two engines into one collection loses the distinctions the
+     two engines carried by construction.** A pomodoro claimed the strip and a
+     plain timer parked in the bubble beside the notch — with one `Runs` list
+     and one `timerClaim`, every countdown got `kind: "focus"` and a plain timer
+     took the strip for twenty minutes: the date, the time and the module slot
+     all spent on a number you asked for yourself and can see the end of. The
+     strip's pick and the header chip's pick are two different questions and are
+     two functions now.
+693. ⚠️⚠️ **A suite that has not reported is not a suite that passed.** Fifteen
+     specs in `notices.spec.ts` drove the timer screen that last round's rework
+     deleted — `.tm-mode`, `.tm-clock`, `.tm-btn.is-lead`, `.tm-dot` — and sat
+     red through a whole further round of work, because the only full run had
+     been started in the background and was killed with the session before it
+     printed. Three real bugs were hiding behind them (689, 691, 692). **Finish
+     the run, read the output, and treat "I started it" as nothing at all.**
+694. ⚠️⚠️ **Two widgets owned the class `.home-ring`, and the later one won.**
+     Today's tally ring is a 40x40 progress circle; the countdown widget's ring
+     wrapper took the same name and sits earlier in the stylesheet, so it was
+     pinned to 40px wide — its face overflowed that box on both sides, its
+     figure printed across the arc, and the transport wrapped into a vertical
+     column of three buttons down the side of the block. Every one of those
+     reads as a broken layout and none of them is: it is one name used twice.
+     Renaming it `w-ring` fixed all three at once. **A part shared by nobody
+     takes the `w-` prefix its siblings use** (`w-lead`, `w-figure`, `w-line`);
+     a bare `home-` name is a name something else on a board may already hold.
+695. ⚠️ **Chasing a wrong width through the layout instead of reading the
+     cascade cost four rounds.** `align-self: stretch`, a definite parent, a
+     container query — each was a reasonable theory about an indefinite sizing
+     chain, and all of them were wrong because a later rule simply said
+     `width: 40px`. The thing that found it in one go was dumping every
+     `document.styleSheets` rule the element `matches()`, which is the same
+     move that found the input's intrinsic width two rounds earlier. **When a
+     computed size makes no sense, list the rules before theorising about
+     layout.**
+696. ⚠️ **Room for a panel BESIDE content has to be added to the cap, not
+     clamped inside it — the second time.** The arrange tray asked for
+     `Math.min(WIDTH.home, board + tray)`, and the default Home board already
+     asks for the full width, so the tray's 172px came out of the grid: every
+     block shrank the moment you started arranging. Same shape as the timer's
+     list one round earlier, and the fix is the same idea one level deeper — a
+     cap may now exceed the default full body up to `islandBodyMax`, because
+     "as wide as a screen may ask to be" and "as wide as the island may ever be"
+     are two different numbers and were one.
+697. ⚠️ **A window sized from the current content clips the next thing that is
+     bigger.** `windowSize()` measured `this.body`, but it only runs on
+     `place()` while the body changes with every screen — it happened to work
+     because the island starts at its widest. The moment a cap could exceed
+     that, the OS window became the limit, and a clip at the window edge looks
+     like a rendering fault rather than a layout one. It is sized for the
+     maximum now, which costs nothing: the window is click-through everywhere
+     outside the masks it reports.
+698. ⚠️ **A panel that extends the island must not also be a card.** The
+     arrange tray grew the island correctly and still read as bolted on, because
+     it was drawn as a rounded, tinted, blurred box with its own shadow — a
+     second surface floating inside the first. The point of extending is that
+     what was already there has not moved; a sheet laid over the screen says the
+     opposite whatever the measurements do. A hairline is the whole boundary,
+     and the body gives up its gutter so the hairline reaches the panel's own
+     edges. Third time this shape has come up — the timer list, the tray's
+     width, and now the tray's surface.
+699. ⚠️ **Two numbers for one column, in two files.** `TRAY_ROOM` in tasks.ts
+     is what the panel grows by; `.board-tray`'s box in tasks.css is what the
+     column takes. Restyling the tray moved the second without the first, and
+     the board silently lost the difference — which is the exact bug the tray
+     was rebuilt to fix, reintroduced by a change that looked purely cosmetic.
+     A comment on each naming the other is the only thing holding them together;
+     the browser test that asserts the board row is unchanged is what catches it.
+700. ⚠️⚠️ **A board block only redrew on the MINUTE.** The shell's full render
+     runs once a minute; the one-second interval ticks the timer screen, the
+     player and the pill in place and nothing else. So a countdown on a board
+     sat on the same number for up to sixty seconds while the identical run
+     ticked on the screen beside it — and it looked like a broken widget rather
+     than a missing call. The fix is NOT to render the board every second:
+     that would throw away a caret in Today's composer and restart every
+     transition on it. `tickBodies` writes the figure and the arc in place, the
+     rule the screen and the player already follow, and the board's `tick` does
+     nothing while it is being arranged.
+701. ⚠️ **A widget that shows "whatever is liveliest" changes what it is about
+     without being touched.** One countdown block picked the livest run, so a
+     pomodoro started on the timer screen quietly took over the timer you had
+     been watching, and two of them on one board showed the same run twice —
+     and `widgetsOf` drops the duplicate, so the second was simply missing.
+     Three blocks, one per kind, each about its own kind and each able to start
+     one of its own. **A block that cannot say what it is about is a block whose
+     content is an accident of what you did somewhere else.**
+702. ⚠️ **A second copy of a drawing drifts the moment it exists.** The timer
+     screen drew a segmented ring for a pomodoro and one unbroken circle for
+     the other kinds; the widget had its own simpler ring that was always a
+     plain arc. Same run, two pictures, and the ring is the ONE thing that says
+     which kind you are looking at. `run-ring.ts` is the single builder now, and
+     the stroke rules are written on `.tm-seg` / `.tm-arc` alone rather than
+     under `.tm-ring`, which is what lets a widget reuse them by supplying only
+     the positioning and its own `--ring-tone`.
+703. ⚠️ **A fixture missing a field looks exactly like the code ignoring it.**
+     Daylight drew its fallback even 6-to-18 day in every browser test because
+     `task-client.ts`'s weather stub carried only the four fields the pill uses
+     — `weather.rs` has sent `sunrise`, `sunset`, `isDay`, `high` and `low` for
+     a while. Nothing failed; the widget simply could not be told from a broken
+     one. **When a widget reads a field, check the fixture supplies it before
+     concluding anything about the widget.**
+704. ⚠️ **`-1`, not `0` or `null`, for "no time given".** `clockMinutes`
+     returns minutes past midnight, and midnight IS zero — a caller testing
+     truthiness would have treated a real midnight sunrise as a missing reading
+     and drawn the fallback day over a perfectly good one. Any encoder whose
+     valid range includes the falsy value needs a sentinel outside it.
+705. ⚠️⚠️ **A global `button:hover { background: … }` outranks a bare class AND
+     flattens it.** Two faults in one declaration: the SHORTHAND resets
+     `background-image`, so every raised button lost its sheen the moment it was
+     pointed at; and `button:hover` is (0,1,1) while `.tm-go` is (0,1,0), so the
+     one accent button on the timer screen turned GREY under the pointer — the
+     fill replaced by a translucent white. `background-color` fixes the first
+     and an explicit `:hover` on each coloured button fixes the second. **A
+     global hover may only tint things that have no ground of their own.**
+706. ⚠️ **`preserveAspectRatio="… slice"` on a wide short box shows a sliver of
+     the viewBox.** Daylight's arc is drawn in a 100×60 box; in a block three
+     cells wide and one tall, `slice` scales to cover the width and only the top
+     third of those 60 units is on screen. The sun was outside the frame for the
+     half hour either side of sunrise and sunset — which is exactly when anybody
+     would look at it. `none` stretches the curve to the block instead, which is
+     right for an arc and wrong for anything round, so the sun and moon moved
+     OUT of the svg and are positioned over it.
+707. ⚠️ **Arc length is not linear in angle.** "92% along the path" on a
+     half-ellipse is 106 units across a 100-unit box, not 96 — so a body placed
+     by a guessed fraction of `getTotalLength` sat off the block. Guessing it
+     was wrong twice. Sampling the path for the stretch that is actually inside
+     the frame is sixty-four calls, costs nothing, and cannot be wrong.
+708. ⚠️ **`locator.screenshot` waits for the element to hold still, and a
+     ticking widget never does.** The board's run blocks sweep their ring on a
+     one-second transition for as long as a run lasts, so every element
+     screenshot timed out — which reads as a broken page rather than as a
+     working clock. A clipped `page.screenshot` does not wait.
+709. ⚠️ **A `<button>` with a fixed height lays its text on the FIRST line
+     box.** "Clear all" sat against the top edge with all the padding under it,
+     which reads as a button somebody forgot rather than as a short one. Any
+     button given a height needs `place-items: center` — the glyph ones already
+     had it, which is why only the one with words in it was wrong.
+710. ⚠️ **Moving the pointer off the island to clear a hover FOLDS it.** Every
+     screenshot taken that way is a photograph of the collapsed pill, and the
+     shot looks like the screen failed to render. Park on the island's own
+     header instead: still inside, over nothing.
+711. ⚠️⚠️ **A test that reads the REAL clock reports the time of day, not the
+     code.** Daylight draws the sun or the moon from where "now" falls between
+     the fixture's sunrise and sunset, and the fixture's sunset was 19:34 — so
+     the spec asserting the sun passed every afternoon and failed every evening.
+     It was written at four o'clock, confirmed by running it alone twice, and
+     broke at 19:55 on the same machine with nothing changed. **"It passes when
+     run alone" is not the same as "it passes", and neither is true of anything
+     that reads `Date.now()` without pinning it.** The fixture now has `sky=day`
+     as well as `sky=night`, and both move the sun TIMES rather than the clock:
+     faking the hour would put every other fixture on the page in the future.
+     ⚠️ And the day spec must not then assert the unflagged times — hardcoding
+     `06:12` put the clock straight back in by the back door.
+712. ⚠️⚠️ **Serde writes a Rust field name STRAIGHT THROUGH unless told
+     otherwise, and the web layer gets `undefined`, not an error.** `Weather`
+     and `Coin` both lacked `#[serde(rename_all = "camelCase")]` while every
+     reader asked for `isDay`, `readAtMs` and `changePct` — so the night sky
+     never came on, nothing ever showed as stale, and the coin printed "—" for
+     its change, which is exactly what a coin that had not moved would look
+     like if the app were working. `Slot` and `Day` INSIDE `Weather` carried the
+     attribute, which is what made it invisible: the nested data was right.
+     **Check the parent struct, not just the one you are editing** — and a
+     field that reads `undefined` on one side of an IPC boundary is a spelling
+     mistake nothing will ever report.
+713. ⚠️ **A fixture that only covers the happy path is a fixture for half a
+     block.** Every widget here has an empty state that somebody sees on first
+     run and almost never again after — and it is the state most people are in.
+     The wallet's stub takes `?wallet=off` for exactly that reason, beside the
+     weather's `?sky=night` and the coin's `?coin=down`. **If a block has two
+     states, the fixture needs a flag for the second one**, or the one nobody
+     looks at is the one nobody has ever seen.
+714. ⚠️⚠️ **`error_for_status()` throws away the body and prints the URL.**
+     Both halves are wrong for an API that explains itself in the body. Binance
+     answers a bad signed request with `{code:-1021, msg:"Timestamp for this
+     request…"}` and a 400; `error_for_status()` discarded that and produced
+     "HTTP status client error (400 Bad Request) for url (…&signature=…)" —
+     which tells the user nothing AND puts a signed URL in front of them. The
+     scrub written to prevent exactly this covered the key and the secret and
+     not the signature, because the signature is not a stored secret and so was
+     not on the list. **Read the status and the body yourself whenever the
+     service has something to say**, and build the message from named fields
+     rather than from anything holding a URL.
+715. ⚠️ **Clock skew is a bug to remove, not a message to write.** Binance
+     rejects a signed request whose timestamp is outside `recvWindow` of ITS
+     clock, and a Windows box that has not synced recently is routinely a second
+     or two out — which surfaces as a 400 that reads exactly like a bad key.
+     Carrying a server-time offset (`GET /api/v3/time`, resync and retry once on
+     -1021) makes the whole class of problem go away. A message telling somebody
+     to check their clock is a message about a problem the app could have simply
+     not had.
+716. ⚠️⚠️ **`/api/v3/account` is the SPOT wallet and nothing else.** Coins in
+     Simple Earn or in Funding are not in it — and Binance puts most people's
+     holdings in Earn by default, so a wallet that read only spot showed ZERO to
+     somebody who plainly had money, with no error anywhere. Three sources now,
+     each best-effort so a key lacking one permission still shows the rest.
+     **"The obvious endpoint" is rarely the whole answer for an account.**
+717. ⚠️⚠️ **Zero was standing in for two different things: "worth nothing" and
+     "no pair to price it with".** Pricing only asked for `{asset}USDT`, so
+     anything Binance does not quote that way valued at 0 — and the dust filter
+     then dropped it, so the holding vanished without trace. That is most fiat
+     (`USDTPLN` exists; `PLNUSDT` does not) and a good many alts, which pair
+     only against BTC. Pricing tries direct, inverted, and through BTC/ETH/BNB,
+     and returns `Option` so the two cases stay apart: an unpriced holding is
+     listed with a dash, which somebody can see and ask about.
+718. ⚠️ **A number in the wrong currency looks exactly like a number in the
+     right one.** The wallet valued everything in USDT and printed it behind a
+     `$`, for somebody who thinks in PLN. The display currency is a setting now,
+     converted once at the end rather than per holding — and where there is no
+     symbol for it the block prints the code, because a PLN total behind a
+     dollar sign is the kind of wrong nobody checks.
+719. ⚠️⚠️ **A reveal rule keyed on the CONTAINER's class, while the attribute
+     is set on three different containers.** `.coin-spark[data-peek] .coin-dot`
+     was written when one chart had a scrub; two more got one — the coin's
+     `bold` variant and the wallet's balance — and both set `data-peek` on their
+     own element. The guide, the dot and the readout were built, positioned
+     correctly, and left at `opacity: 0` in two of the three. Nothing errored,
+     and on `bold` the head still changed, which is what hid it for a whole
+     round. **A selector naming one container is a promise there will only ever
+     be one** — key on the attribute and the part.
+720. ⚠️ **Binance has no balance history, and the endpoint that looks like one
+     is a trap.** `/sapi/v1/accountSnapshot` offers thirty daily points and is
+     wrong twice: it covers SPOT only, so for anybody whose coins sit in Earn it
+     draws a flat zero and then jumps the moment live readings take over; and at
+     2400 weight a call it cannot be polled beside anything else. A line the app
+     records itself always agrees with the number printed above it, which is the
+     only property that matters — at the cost of starting empty, which the block
+     has to SAY rather than drawing a flat line through one point.
+721. ⚠️ **A stored series must be in the unit it was measured in, not the unit
+     it is shown in.** The wallet's history is written in USDT and converted on
+     the way out. Converting on the way in would leave a file whose older half
+     meant a different currency from its newer half the first time somebody
+     changed the setting — with nothing to mark where.
+ 722. ⚠️ **A ticker is not a stable key, and a near-miss is worse than a
+      blank.** Binance renamed `RNDR` to `RENDER`; the icon set still files it
+      under the old one. `src/coin-icon.ts` is the one place that reconciles
+      the two, and every line of its alias table is a fact somebody can check —
+      never a guess at what three letters might mean. A monogram reads as "no
+      logo for this"; a confident logo for the wrong coin reads as your money
+      being somewhere it is not. The resolver returns `null` and the caller
+      draws the letters.
+ 723. ⚠️ **`BAL` is Balancer.** The wallet's head says "BAL" for *balance*, and
+      routing that through the coin lookup put a real token's logo on somebody's
+      total. `coinMonogram` exists to be called directly where the text is not
+      a coin — which is the only reason the monogram is still a separate
+      function now that it is otherwise a fallback.
+ 724. ⚠️ **Several plates are BLACK** — ether's and XRP's both are — so a mark
+      dropped straight onto the board is a hole rather than a coin. The hairline
+      over the disc is not decoration. It is a `::after`, not an inset shadow
+      on the box: an inset shadow paints under its own content, and an `<img>`
+      is content.
+ 725. ⚠️ **The row marker is a SLOT, sized whether or not it holds a logo.** A
+      wallet holds some coins the set knows and some it does not, in one list —
+      and the first version sized the fallback dot at 7px beside 17px logos,
+      which made every row after it look indented. The same trap as any icon
+      column: the space is the layout, the picture is the content.
+ 726. ⚠️ **The slice colour survives as a ring around the wallet's marks, and
+      it has to.** It is what ties a row to its band in the bar above it, and
+      the logo cannot do that job — the bar is every holding and the list is
+      the top two or five, so the colour is the only thing saying which band is
+      which.
+ 727. **Escapes in the package's SVG modules are undone in ONE pass.**
+      @web3icons ships each mark as a single-quoted JS string literal in its own
+      `.js` file, read here as text rather than imported — importing a module
+      per mark to read a string each is resolution doing what two lines of
+      parsing does. ⚠️ A chain of `.replace` per escape reads the same and is not:
+      undoing the doubled backslash last turns a literal backslash-then-n into a
+      newline, and doing it first turns every newline back into two characters.
+      The first version of this shipped a literal backslash-n into every
+      one of the 1788 files it then wrote, and every mark rendered as a disc of
+      stray text.
+ 728. ⚠️ **`marketCapRank` has holes, and Bitcoin's is `null`.** The coin
+      marks are curated by rank, and the first cut of that filter silently
+      dropped BTC — the metadata simply has no rank for it, and for `IMX`
+      either. A ranked cutoff needs a floor list beside it, and the floor has
+      to **fail the build** when a name on it has no art: a guarantee that
+      quietly gives way is worse than no guarantee. See §4.3b.
+ 729. ⚠️ **Not every coin's art is filed under `tokens/`.** @web3icons splits
+      tokens from networks, and a chain with a coin is a network — Toncoin is
+      `network:ton`, Injective is `network:injective`. Reading the token
+      directory alone left the picker with no mark for either, and neither is
+      obscure. The metadata's `filePath` says which directory to look in; use
+      it rather than guessing from the symbol.
+ 730. ⚠️ **TickTick cannot store a calendar event, and this was the whole
+      question behind work mode.** The app is on TickTick's **Open API v1**
+      (`api.ticktick.com/open/v1`), whose entire surface is projects and tasks
+      — `GET /project`, `POST /task`, `POST /task/{id}`, `.../complete`,
+      `DELETE`. There are no event endpoints, and that is not a gap in the
+      integration: TickTick's own calendar treats subscribed calendars as
+      read-only too, and what its drag-and-drop actually moves is a task's
+      `startDate`/`dueDate`. So the calendar's events are **Google's**
+      (`calendar.rs`) and the tasks are **TickTick's** (`tasks.rs`), and the
+      two are separate providers that happen to sit near each other on screen.
+      Do not go looking for a TickTick event API again.
+ 731. ⚠️ **`calendar.events` alone makes the agenda look EMPTY.** Writing
+      events needs that scope; listing the calendars to read them from needs
+      `calendar.readonly`, `calendar`, or `calendar.calendarlist.readonly` —
+      `events` grants nothing on `calendarList`. Ask for only the first and
+      the listing 403s, every per-calendar fetch is skipped, and what arrives
+      is a connected calendar with nothing in it, which reads as a quiet week.
+      `SCOPE` is therefore two scopes, space-separated; the consent-URL test
+      asserts the encoded space for the same reason it asserts there is no raw
+      one.
+ 732. ⚠️ **The scope change needs a RECONNECT, and nothing tells you.** A
+      refresh token carries the scopes it was issued with, so an existing
+      connection keeps working read-only and every write comes back 403 —
+      `prompt=consent` only re-prompts on a new authorization, not on a
+      refresh. Disconnect and Connect again in the editor after changing
+      `SCOPE`. (`calendar.events` is also a **sensitive** scope in Google's
+      terms: fine for a personal client in Testing, a verification requirement
+      if this is ever published.)
+ 733. ⚠️ **An event's `calendarId` is not its `calendar`.** The agenda kept
+      only the display NAME, which is not unique and is not a URL — so there
+      was nothing to address a PATCH to. `Event` now carries both, plus
+      `writable` off the calendar's `accessRole` (`owner`/`writer` only).
+      Most people subscribe to at least one calendar they cannot write, and
+      without the flag the grid offers a drag that Google answers with a 403 —
+      an event that moves and then jumps back, which reads as the app losing
+      the write rather than as the calendar being somebody else's.
+ 734. ⚠️ **A write is a PATCH, never a PUT.** A PUT replaces the whole event
+      resource, so attendees, reminders, the conference link and the
+      description would all be erased by dragging a meeting half an hour later.
+ 735. ⚠️ **Every write re-reads the whole agenda instead of patching the cached
+      one.** Moving one occurrence of a recurring series can make Google split
+      the series and hand back an event with a **different id** from the one
+      that was dragged; an optimistic patch of the snapshot then holds the old
+      occurrence and the new one at once, and nothing about that looks wrong
+      until somebody counts their meetings. The re-read holds the same gate the
+      poll does, so a poll already in flight cannot publish the pre-write
+      agenda over the top of it.
+ 736. ⚠️ **A `max-height` on `.cal-wkbody` does not make it scroll.** It is a
+      grid, so the row sizes to the shorter box and all seven columns squash to
+      fit — a whole day rendered at a third of its height, which reads as a
+      broken axis rather than as something that scrolls. The height has to
+      belong to an ancestor; `.cal-wkscroll` is that wrapper.
+ 737. ⚠️ **And the head has to be INSIDE that wrapper.** A head outside a box
+      that holds a scrollbar is some fifteen pixels wider than the body, so the
+      seven day names drift right across the columns they name, by more the
+      further along they are. `.cal-wkstick` puts them in the same box and
+      sticks them to the top, which is the only arrangement that cannot
+      disagree.
+ 738. ⚠️ **`preventDefault()` on `pointerdown` does not suppress the click.**
+      It stops selection and focus, nothing else. So a drag that ends on a
+      block still fires the block's own click and opens the detail panel for
+      the event just dropped — and calling `click()` by hand for the no-drag
+      case fires it twice, opening the panel and closing it again. A press that
+      stayed still is left alone; one that moved arms a one-shot capturing
+      `click` handler that eats the stray event.
+ 739. ⚠️ **The hour lines tile the column, so almost no press lands on the
+      column itself.** The create gesture tested `event.target === column`,
+      which made drawing work only in the few pixels between the lines and
+      nowhere else. `.cal-wkline` has to be an allowed target, and
+      `.cal-wknow` has to be `pointer-events: none` — it spans the full width
+      of today's column, and a press on it is a dead stripe across the one
+      column anybody is most likely to be drawing on.
+ 740. **Work mode asks for a panel WIDER than the full body, and that is
+      allowed.** `measure()` clamps a cap to `islandBodyMax` (2480), not to
+      `islandBodyLong` (1900) — the same headroom the board's arrange tray
+      uses, and for the same reason: room to work in has to be room **added**,
+      or the seven columns shrink to pay for it and every block on the grid
+      moves the moment the mode is turned on.
+ 741. ⚠️ **A screen that scrolls must put its scroll position in SCREEN
+      STATE, not leave it on the element.** The shell redraws the whole panel
+      on a dozen different events — a media tick, a poll, a machine reading —
+      and every redraw builds a fresh scroller, which starts at the top. The
+      week grid snapped back to midnight every few seconds whatever anybody was
+      doing, and it looked like a timer doing it on purpose. `scrollAt` is
+      written by the scroller's own `scroll` listener and restored
+      **synchronously** after the append; a restore in a frame callback is a
+      visible jump, which is the thing being fixed.
+ 742. **Work mode is gone; editing IS the week view.** Putting direct
+      manipulation behind a toggle meant the answer to "why can I not move
+      this" was a button somebody had to know about. A grid with an hour axis
+      is a thing you point at. The month view stays a reader because a month
+      cell has no time axis — there is nowhere for a drag to land — and the one
+      thing still behind a button is the task list, which costs the island a
+      third of its width.
+ 743. ⚠️ **The hour axis is PIECEWISE, so nothing may be positioned as a
+      percentage.** Quiet hours collapse (before 07:00, from 20:00), so "40%
+      down the column" does not name a time. `calendar-axis.ts` is the single
+      model — `yOf` and `hourAt` — and both the renderer and the gesture layer
+      read it. Two copies of that arithmetic is a block that jumps the moment
+      it is picked up.
+ 744. ⚠️ **An hour holding an event is NEVER collapsed**, whatever the default
+      says. Collapsing is a way to spend less height on nothing; the moment it
+      hides a meeting it has stopped doing that and started lying about the
+      week. A 06:30 run holds hour 6 open and the band closes around it.
+      `busyHours` treats the end as exclusive at the hour boundary, or every
+      one-hour meeting would hold an empty hour open and a 19:00 call would
+      open the whole evening.
+ 745. ⚠️ **The floor on a collapsed run is on the RUN, not the hour**, and the
+      two differ exactly where it matters. Per-hour, a seven-hour night at a
+      clickable size is a 90px slab — not collapsed in any useful sense — while
+      a size small enough to make that night thin leaves a lone collapsed hour
+      as a 6px line nobody can hit. `buildAxis` grows short runs to
+      `MIN_BAND`, which means **heights must be settled before any `top` is
+      assigned**: the version that did both in one pass had the bands in the
+      right place and every hour after them wrong.
+ 746. ⚠️ **TickTick's date format is not RFC 3339.** It wants
+      `2026-09-22T14:00:00+0200` — an offset with **no colon** — where the
+      frontend speaks RFC 3339, in which the colon is mandatory. Parse in,
+      reformat out with chrono's `%z`; this file already did it for
+      `complete_task`'s `endDate`. Sending the colon through is accepted and
+      then silently mis-stored, which is the worst of the three outcomes.
+ 747. ⚠️ **`isAllDay` must be set FALSE explicitly when scheduling a task.**
+      Everything the composer creates is all-day, and dropping one on a time
+      grid is precisely the moment that stops being true. Leave the flag alone
+      and TickTick ignores the times, the task lands back at the top of the
+      day, and the drop looks like it did nothing.
+ 748. **The calendar reads tasks THROUGH the Today screen, never from its own
+      snapshot.** Today owns the optimistic layer — the settle window, the
+      completion held on screen for a moment before it leaves — and a second
+      copy in the calendar would show a task Today had already ticked. Same
+      reason the composer files through `deps.create`. Note this also scopes
+      the grid to Today's chosen list, which is deliberate: two screens
+      disagreeing about which list is "today" is worse than both being narrow.
+ 749. ⚠️ **Dragging a task onto the grid is a POINTER drag, never HTML5
+      drag-and-drop.** The island is a transparent, non-activating window: the
+      native drag image is a screenshot of an element with no opaque
+      background, and `dragover` does not fire reliably across it. Everything
+      else here that drags — the board's arrange, the shelf's drop — is
+      pointer-based for the same reason. The drop target is hit-tested
+      **fresh** on every move rather than cached like the block-move gesture's
+      boxes, because the pointer is captured on the LIST and the grid can
+      scroll underneath it.
+ 750. ⚠️ **The gesture layer holds an opaque `ref`, not a `CalEvent`.** The
+      grid carries Google events and TickTick tasks, written back through
+      completely unrelated commands — but a drag only cares where something
+      ended up. `calendar-edit.ts` never looks inside a ref, which is why
+      adding tasks to the grid needed no gesture code at all. The one place
+      that knows the difference is the `move` hook.
+ 751. ⚠️ **A screen may not have a scroller inside `.screen-body`.** That
+      element is already `overflow-y: auto`, and the island's depth is capped at
+      `islandBodyDepth` — about **507 CSS px**. So a week grid carrying its own
+      440px scroller could not help overflowing the screen as well, and the
+      panel came up with **two scrollbars side by side**. One scrolling
+      ancestor: the screen body. The day names stay put by sticking to it, at
+      `top: -8px` with matching padding so the head covers the screen's own 8px
+      top padding — stuck at `0` the blocks are visible sliding through the gap
+      above them.
+ 752. **The reveal of a side panel is the ISLAND's spring, never a CSS
+      transition on the panel.** `.media-lyrics` established this and the task
+      list follows it: the panel is always in the DOM, `width: 0` when shut and
+      a fixed width when open, with **no transition on the width**. The island
+      is sized from its content and measures once per render, so a panel easing
+      itself open over 400ms is measured at the START of the ease and the
+      island keeps the shut size — which is the empty band `.media-lyrics`
+      describes, turned on its side. Snapping the panel and letting the width
+      spring do the work means `overflow: hidden` reveals the content as the
+      room arrives.
+      ⚠️ Corollaries: the grid track is `auto`, not a fixed second column, or a
+      shut panel holds an empty gutter open; the gap is a `margin` on the open
+      state, because a grid `gap` survives a zero-width track and leaves 10px of
+      nothing; and the panel is `inert` while shut, or a screen reader reads a
+      list that is not on screen and Tab lands in it.
+ 753. ⚠️ **#4f4f4f on black is about 2.4:1.** Most of this calendar's secondary
+      text was at or below that — hour labels, the quiet-hour bands, the task
+      panel's headings and hint — which is legible on a 2x design render and
+      genuinely invisible on the laptop this actually runs on. The floor for
+      secondary text here is now ~#8a8a8a (≈6.5:1), and a **control** that
+      looked like a divider (the collapsed-hour band) got #9a9a9a plus a
+      brighter hover: a thing you can click has to read as one.
+ 754. **The host element survives every render; only its children are
+      replaced.** So a listener on it — the scroll tracker — must be attached
+      **once**, behind a flag, not per draw. Wiring it in the render path would
+      stack a listener per redraw, which on this shell is dozens a minute.
+ 755. ⚠️ **A side panel that reveals must have a FIXED first track, and the
+      thing that animates is the GRID TRACK, not the panel.** This is written
+      down on `.media-body` and both halves of it were got wrong here first
+      time. With the first track as `minmax(0, 1fr)` it is sized by whatever is
+      left over, so every frame of the island's spring re-lays that column out
+      — seven day columns and every block on them creeping wider while the
+      panel travels. That is what "it opens inside" looks like. Fixed, nothing
+      inside it moves relative to anything else inside it; the island is
+      centred on its edge, so it slides left as one piece at exactly the rate
+      the panel opens. Both states must also be the same SHAPE — a length, then
+      a length — or the tracks cannot interpolate and the column jumps.
+ 756. ⚠️ **And the panel needs an inner box at its full width.**
+      `.cal-tasks` only clips; `.cal-tasks-in` holds the 180px. A panel that
+      is itself the animating width re-wraps its own text on every frame, which
+      is the same fault as a fractional track one level down. Exactly
+      `.media-queue` and `.media-queue-in`.
+      ⚠️ `overflow: hidden` makes a box a scroll container for its DESCENDANTS'
+      stickiness, not for its own — so the panel can clip AND stick to the
+      screen body at once. Putting the sticky on the inner box instead pins it
+      to a container that never scrolls, and it simply never moves.
+ 757. ⚠️ **The width arithmetic has a term that is easy to miss: the
+      SCROLLBAR.** The room is `islandBodyMax` (1187 CSS px) minus the screen's
+      15 a side minus ~10 for the vertical scrollbar the week always carries —
+      1147, not 1157. Leaving it out put the week track at 967 and clipped the
+      panel by exactly ten pixels, which shows up only as the task titles
+      sitting a shade too close to the bezel. Measure it against a rendered
+      page; do not derive it from the padding alone.
+ 758. **The week gives up its five pixels a column ONCE, not while you work.**
+      The ceiling cannot move — see `islandBodyMax`, which is sized to clear the
+      widest board plus its tray — so the list has to come out of the 1187
+      somewhere. Taking it permanently (a 957 track rather than the 1013 the
+      week could have had) is worse on paper and better in the hand than taking
+      it on open, which is the week resizing under the pointer.
+ 759. ⚠️ **`render()` calls `measure()` but never `capBody`, so a screen whose
+      width depends on its own state MUST re-apply the cap itself.** Without
+      it the island keeps whatever width it had and the new panel is simply
+      clipped by it — it opens, it is in the DOM, it has the right size, and
+      none of it is on screen. The queue and the timer's list each carry a
+      `width` callback for exactly this reason; the calendar's task list was
+      added without one and behaved precisely as described. The dep is
+      `width: () => { surface.capBody(cpx(widthOf(name))); surface.deliberately(); }`,
+      and it has to fire on **every** state change that moves the width — for
+      the calendar that is the list toggling *and* the view switching, because
+      month and week ask for different sizes.
+ 760. ⚠️ **A fixed grid track for a revealing panel may not be a number typed
+      into the stylesheet.** It has to be the room the island actually has in
+      the shut state, or the panel opens into space that is not there.
+      `screen-calendar.ts` owns the four numbers (both island widths, the panel
+      and its gap), `tasks.ts` imports them for its width table rather than
+      keeping a second copy, and the track is written as a custom property at
+      render time.
+      ⚠️ It is DERIVED from the width constant, not sampled from the DOM:
+      `render()` runs before `measure()`, so the host still carries the previous
+      width while the screen is drawing, and reading `clientWidth` there sizes
+      the week from whatever the island was a moment ago.
+      ⚠️ The scrollbar, by contrast, IS measured
+      (`offsetWidth - clientWidth`) — it is stable, it is not knowable from
+      the constants, and it cancels out of both sides of the sum, so the
+      arithmetic then fits exactly at any scrollbar width.
+ 761. ⚠️ **Ambient mode is its own window, and `win::harden` must stand aside
+      while it is up.** `harden()` re-asserts `HWND_TOPMOST` on the island every
+      time the hover mask flips, which would drag the island back above a
+      full-screen player the moment the pointer crossed the top of the screen.
+      `ambient::OPEN` gates that `SetWindowPos` for every window except the
+      ambient one; `ambient_open` sets it BEFORE showing and raises the player
+      with `win::to_top`, `ambient_close` clears it. Forgetting either side is a
+      z-order fight that looks like flicker, not like a bug.
+ 762. ⚠️ **The ambient window may not be listening yet when it is opened.** The
+      first `ambient_open` creates the webview, and the `ambient:open` event it
+      emits lands before `ambient.ts` has registered for it. The opening is
+      therefore also stored in `ambient::Pending` and pulled with
+      `ambient_pending` at boot; a `serial` stops the same opening from being
+      played twice when both routes arrive.
+ 763. ⚠️ **Close hides the stage, THEN the window.** A hidden webview keeps its
+      last painted frame, and the next open shows that frame — the player at
+      full size — for one compositor tick before the morph starts from the
+      island. `close()` shrinks the clip to the pill, sets `stage.hidden`, and
+      only then calls `ambient_close`.
+ 764. **The morph is a `clip-path` on a full-screen window, not a resizing
+      window.** Rects arrive from the island in ITS CSS pixels and
+      `ambient_open` converts them to the ambient window's through both
+      windows' `inner_position` and scale factors. It closes into
+      `pillRect()` — the COLLAPSED pill — not the island's current box, which
+      by then has folded.
+ 765. ⚠️ **The asset protocol is scoped to the chosen scene folder and nothing
+      else.** `tauri.conf.json` ships `"scope": []`; `ambient::allow` widens it
+      at runtime for exactly `config.ambient_folder`, at setup and on every
+      change. Do not add a static glob — `convertFileSrc` would then read any
+      file the webview is asked for.
+ 766. **Own videos loop through TWO `<video>` elements that cross-fade.** A
+      single element with `loop` shows a visible hitch at the seam on most
+      files; `loopVideo` starts the other element a second before the end and
+      fades between them. Stills go to `#still`.
+ 767. ⚠️ **The generated scenes' sky must be CONTINUOUS in time.**
+      `skyAt()` (`ambient-sky.ts`) blends light, warmth and cloud grey rather
+      than switching at thresholds, because the scene redraws every second and
+      any step in the sky reads as the picture glitching at sunset.
+      `tests/ambient-sky.test.mjs` walks a day minute by minute and bounds the
+      change per minute — keep it passing. The moon's phase is a disc CLIPPED
+      to the moon, not an even-odd path: even-odd leaks a sliver outside the
+      limb in the gibbous phases.
+ 768. **The island's hover state while music plays is the GLANCE, and only in
+      click mode.** "Peek" is already the pomodoro's bezel line. With "open on
+      hover" on, hovering opens the panel and a glance in front of it would be
+      a step nobody asked for. It is keyed on what the pill is SHOWING
+      (`best.kind === "media"`), not on whether anything plays.
+ 769. **The glance moves only the COLLAPSED end of the geometry lerp.** Its own
+      spring grows the pill; the fold still lerps from there to the panel, and
+      `show(true)` releases the glance while the fold carries the shape on, so
+      clicking a glance grows it into the panel without snapping back first.
+      Its content is built once and written in place every second, like the
+      pill.
+ 770. **While ambient mode is up the island is inert.** `ambient:state` →
+      `surface.setAmbient()` folds it and makes `hover()` return early — an
+      island opening underneath a full-screen player is invisible and still
+      takes the pointer.
+ 771. **The design tokens live in `src/tokens.css`, not in `tasks.css`.** Motion,
+      the tiles, the elevation recipe and the accent derivations were moved out
+      verbatim so ambient mode could have the island's objects without the
+      island's fourteen thousand lines. `tasks.css` `@import`s it first, which
+      keeps every override after it winning exactly as before. A new window that
+      wants the look imports `tokens.css` and writes `--accent` from prefs
+      itself — the token file deliberately has no accent of its own.
+ 772. ⚠️ **A lyric line may not change its box when it becomes current.** Ambient
+      mode's current line used to be bigger and bolder; a line that had fitted
+      got wider, re-wrapped onto two, and the column jumped under a centring
+      measured a frame earlier. Every line is now one size and one weight, and
+      emphasis is opacity, blur and `scale` — a transform, so it never reflows.
+      The REST of the lines are scaled down rather than the current one up, so
+      nothing can overflow the column's clip.
+      ⚠️ And the states are `is-now` / `is-next` / `is-past` / `is-near`, never
+      bare words: `.near` is also the scene's foreground canvas
+      (`position: absolute; inset: 0`), and a lyric line given that class sat on
+      top of the column at the full height of the box. It is the second time
+      that name has collided in this page.

@@ -25,6 +25,8 @@ export default defineConfig({
         ring: resolve(__dirname, "ring.html"),
         // What you are dragging, and where it can go, over the whole screen.
         dragzone: resolve(__dirname, "dragzone.html"),
+        // The player, full screen — see ambient.rs.
+        ambient: resolve(__dirname, "ambient.html"),
       },
     },
   },

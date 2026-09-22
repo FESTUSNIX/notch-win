@@ -132,9 +132,30 @@ export const FRAME = {
   islandLineShow: 21,
   islandPillLong: 470,
   islandPillThin: 74,
+  /** The GLANCE: what hovering the pill does while music plays and "open on
+   *  hover" is off. A size up from the pill — a bigger cover, the line being
+   *  sung, three buttons — not a small copy of the panel. About 1.6× the
+   *  pill's length and 3× its depth, which is where the prototype landed. */
+  islandGlanceLong: 760,
+  islandGlanceThin: 236,
+  islandGlanceCurl: 52,
   /** Wider than it is tall, on purpose: the island is read at a glance across,
    *  and a tall narrow panel wastes the one dimension a top edge has to give. */
   islandBodyLong: 1900,
+  /* ⚠️ The ceiling a CAP may reach, which is not the same number as the full
+     body. `islandBodyLong` is what a screen gets when it asks for nothing; this
+     is as far as one may go when it asks for more — and only the arrange tray
+     does, because it is room ADDED beside a board rather than taken out of it.
+     Capped at all because the island is chrome welded to a screen edge, and one
+     that keeps growing stops reading as chrome.
+
+     ⚠️ It has to clear the WIDEST thing that can ask: a six-cell board (912)
+     plus the arrange tray showing one block's settings (262) is 1174 CSS px.
+     Set below that, the ceiling silently takes the difference out of the board
+     — which is the exact bug adding to the cap was meant to fix, arriving one
+     level up. Anything new that adds a column beside the board has to be
+     checked against this number. */
+  islandBodyMax: 2480,
   /** What the island narrows to while the palette is up. The full body is
    *  ~910 CSS px, which is right for a screen of content and much too wide for
    *  a list of one-line results — at that width it reads as a window someone
@@ -145,7 +166,7 @@ export const FRAME = {
    *  of a row or two — and a list that arrives already scrolled reads as cut
    *  off rather than as long. This is ~470 CSS px, which fits every screen's
    *  natural content while still being a fraction of a 1080p display. */
-  islandBodyDepth: 980,
+  islandBodyDepth: 1060,
   /* ── The tool tab ──────────────────────────────────────────────
    * What the open screen can DO, hanging off the island rather than sitting in
    * its header.

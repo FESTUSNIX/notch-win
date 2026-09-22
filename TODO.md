@@ -1,385 +1,225 @@
 # TODO
 
-## Decisions this must not quietly undo
+Checklist only. The _why_ behind anything here is in `AGENTS.md` (numbered log of
+silent failures) or in the comment above the code.
 
-- The bezel shape. Everything is welded to a screen edge and keeps the fillet.
-- One settings window. Anything new that is a preference goes in `prefs.rs` and
-  gets a control there — not a popover somewhere else.
-- The accent is one variable. No new hardcoded colour; derive with `color-mix`.
+## Rules — don't quietly undo
+
+- Bezel shape: welded to a screen edge, keeps the fillet.
+- One settings window. A preference goes in `prefs.rs` and gets a control there.
+- One accent variable. No new hardcoded colour — derive with `color-mix`.
 - Tokens never reach a WebView, a log, or an error message.
-- `AGENTS.md` is the log of things that failed silently. Every trap this pass
-  turns up gets a numbered entry.
+- Every trap found gets a numbered `AGENTS.md` entry.
 
-## My ideas for the next features
+## Next
 
-- New: Money managing features for the whole app. We must think what would be helpful for the user to manage their money, and how to integrate it into the app. This could include budgeting tools, expense tracking, subscription management, and financial insights.
+- [ ] **Widgets / boards** — customization overhaul
+  - [x] Functionality → widget: add, remove, reorder (5 widgets: Now playing,
+        Calendar, Today, Clock, Countdown)
+  - [x] Home is board #1 — same model, keeps the screen name `home`
+  - [x] Custom boards; drag a card between and within boards
+  - [x] Boards sit alongside screens in rail / ring / palette / settings
+  - [x] Board cap as a field in `prefs.rs`, set to `4`
+  - [x] No per-widget settings in v1
+  - [x] Arrange ON the board, not in settings — the grid on the island's arc
+        opens a tray of widget tiles; drag to add, reorder or take off, × / ✓
+  - [x] Widgets are real controls, shrunk: media scrubber, countdown transport
+  - [x] 10 widgets: media, calendar, today, clock, countdown, weather, agents,
+        notes, shelf, machine
+  - [x] Blocks, not cards — space and an aligned label separate them; only the
+        weather draws a surface. Each speaks in one of the app's six tones
+  - [x] The board scrolls, and the tray is a COLUMN beside it — the panel
+        grows sideways to hold it, so nothing on the board is ever covered
+  - [x] No uppercase eyebrow labels; glass surfaces on the blocks and the tray
+  - [x] Resizable blocks — a 6-column grid, a list of allowed sizes per widget,
+        a corner to pull. Stored as cells, so a board lays out the same on any
+        monitor; old files (a list of bare names) still read
+  - [x] Weather data extended: hourly, 6-day, H/L, sunrise/sunset, is_day —
+        one Open-Meteo call, verified live
+  - [x] Widget VARIANTS — stored per placement, picked from pills in arrange
+        mode. Calendar: week / month / agenda. Weather: now / forecast / both.
+        Countdown: ring / numbers. The dial went back to the screen — a block
+        that could set a timer but not show the list it joined was a second,
+        worse copy of the same control
+  - [x] Size-aware layouts — where a variant and a size disagree, the size wins
+  - [x] Now playing: Row / Column / Cover. The column's art takes the slack so
+        a taller block is a bigger cover, not a hole; the cover is the artwork
+        with the words over it and the transport on hover (good at 1×1)
+  - [x] Weather: Now / Hourly / Daily / Everything — "forecast" was two
+        answers wearing one name. Day rows carry a high/low range bar scaled
+        across the whole week
+  - [x] The tray widens the ISLAND rather than taking the room out of the
+        board — a cap may exceed the default full body now, up to
+        `islandBodyMax`. Same rule the timer's list follows, and it is drawn
+        the same way: a hairline separator, not a card
+  - [x] The countdown widget was clamped to 40px by a name it shared with
+        Today's tally ring; it is `w-ring` now, sized off the block's cells,
+        and its transport drops to one key at a single cell
+  - [x] Daylight widget: the sun on the arc it is actually crossing, the moon
+        with its phase after dark, a wash that changes through the day. Two
+        arcs, not one — daylight and darkness are different lengths. No API:
+        the sun times are in the weather reading and the phase is arithmetic
+  - [x] Three run widgets — pomodoro, timer, stopwatch — each about its own
+        kind, each able to start one. The ring is `run-ring.ts`, the same
+        builder the screen draws from, so a pomodoro is eight segments on a
+        board exactly as it is on the screen
+  - [x] A board block ticks in place every second. The shell's full render runs
+        on the minute, so a countdown on a board held one number for up to
+        sixty seconds
+  - [ ] Weather has no per-condition artwork yet — the block is tinted by sky
+        and time of day, but the glyphs are the pill's line icons
+  - [x] Crypto — a coin's price, 24h change and a 30-day line from Binance's
+        PUBLIC endpoints (no key). Three views; `bold` is the chart full-bleed
+        with a scrub that moves the price, the percentage and the date
+  - [x] Wallet — the connected Binance account's balance as a proportion bar.
+        Read-only keys, stored in Credential Manager, never returned to a
+        WebView. The only private endpoint the app knows is `GET /account`
+  - [x] Widget settings live in the tray, opened from a gear on each block —
+        view, and the ground it is drawn on. The pills inside blocks are gone
+  - [x] The wallet reads spot, Funding and Simple Earn, prices through four
+        routes, and is shown in a currency you pick
+  - [x] The balance is a LINE the app records itself — Binance has no history —
+        with a scrub, the holdings as a proportion bar and list underneath
+  - [ ] The history starts the day the app does, so the span reads "14h" until
+        it has been running a while. Nothing seeds it
+  - [ ] Margin and Futures balances are still not counted — different
+        endpoints again, and a key that can see them can usually trade them
+  - [ ] No timeframe switcher on the coin — `crypto.rs` fetches one interval,
+        thirty daily closes
+  - [ ] The board can outgrow the island's depth cap and scroll, so the last
+        row is cut. Nothing tells you it is scrollable
+  - [ ] Today says "0 to do" over three rows of overdue tasks — the count and
+        the list are answering different questions
+  - [x] Per-board icons — a shortlist of sixteen in the settings window, and a
+        new board takes the first glyph nobody is using rather than `home`
+  - [ ] No board in the palette's "new" verbs — you make one in Settings
+  - [ ] Weather has no hourly row and no H/L — `weather.rs` reports one
+        observation, and inventing the rest would be a forecast we don't have
+  - [ ] Agents shows what Codex reports it is doing; Claude's is inferred, so
+        that line falls back to a session count
+- [x] **Timer** — three kinds, many of each
+  - [x] Stopwatch as a third kind, counting up. Pomodoro / Timer / Stopwatch
+        are one face with one ring, not three layouts behind a mode switch
+  - [x] The ring says which kind it is: segmented for a pomodoro (one arc per
+        leg of the cycle), one unbroken circle for the other two
+  - [x] Several of each. `Runs` is the collection; the old two single-engine
+        keys migrate in, read once and left where they are
+  - [x] The list extends from the side, the way `.media-lyrics` does — pick a
+        run, start or pause it in place, remove it, clear the lot. The one on
+        screen is lit; every row ticks
+  - [x] `+` top right makes another of whatever kind is on screen
+  - [x] One button for start / pause / resume; the dial and the name field
+        live here, since setting a timer needs a ruler and somewhere to say
+        what it is for
+  - [x] Laid out on the Figma frame (Akcesfonia, node 79:6): a 392px face
+        column and a 255px list column, 647 with both — the frame's proportions
+        with more room round the 200px circle and a wider list than the frame's 175. Every length in the `tm-` block is off that frame; `TIMER_FACE` /
+        `TIMER_LIST` in tasks.ts are the same two numbers
+  - [x] List rows off the frame: a tinted disc with a bright glyph, not a
+        saturated fill with dark ink on it
+  - [x] The list widens the ISLAND rather than taking the room out of the face
+        — a second cap in `widthOf`, the way the player's queue has one
+  - [ ] No SKIP on the screen. The design frame gives the foot three controls
+        and cutting a break short is only reachable from the countdown widget's
+        transport. If it comes back it goes beside the gear, and only while a
+        pomodoro is counting
+  - [ ] The ruler is 314px, so about ten minutes either side of the marker.
+        Fine for a kitchen timer, a long drag for anything over an hour
+  - [ ] Switching to a timer grows the panel by the ruler's 48px. Reserving the
+        row on every kind would cost a stopwatch 48px of nothing, so it jumps
+  - [ ] No sound per run — the finish chime is one setting for all of them
+  - [ ] A finished run is cleared rather than kept, so there is no history of
+        what was worked on. Today would own that if it arrives
+- [ ] **Money** — budgeting, expenses, subscriptions, insights. Shape TBD.
+- [x] **Ambient mode** — the player full screen, grown out of the island
+  - [x] Generated rooms (City window, Cabin) that follow the real sun, moon and
+        weather, with Time / Weather overrides; the cover colour wash
+  - [x] Your own folder of videos and stills (settings, or the scene menu)
+  - [x] Centre and side layouts; controls step back after three seconds
+  - [x] The glance — a size up from the pill on hover, in click mode
+  - [x] On the island's design system: `tokens.css`, the player's own keys
+  - [x] Lyrics never re-wrap when a line becomes current (AGENTS 772)
+  - [ ] Unsynced lyrics still fall back to the title
+  - [ ] No lyric timing nudge; LRCLIB is often a second out
+  - [ ] Opens on the island's monitor only
+- [ ] **Screenshots** — stacks, editing, sharing.
+- [ ] **Palette extensions**, in order of worth:
+  - [x] Units — `70 kg to lb`, `1.5 GB in MiB`; both byte families
+  - [ ] Dates/times — `in 3 weeks`, `days until 24 dec`, epoch, `16:00 CET in warsaw`
+  - [ ] Sound output — `→ headphones`; `system.rs` already lists and sets
+  - [ ] Notes from the palette (`searchNotes` exists; wrapper only)
+  - [ ] QR of a link — needs a drawing library, hence last
 
-- Ambient mode / music AFK mode. A mode where we can open up a big full-scren view of the music player with music, visualizations, lyrics and relaxing visuals. This could be a great way to enjoy music while working or relaxing.
+- [x] **Calendar work mode**: add events on click, drag, move them around. Add a separate UI (button toggle) which expands the calendar weekly view and allows CRUD. In this mode we also should show list of tasks (from the Today screen) which would be visible in an expanded panel on the right (expands the island like lyrics or widget list blocks). The tasks could be draggable from the list onto the calendar itself and they would have an additional checkbox on the event to mark them as done. All of this is already in TickTick - check if we can use that functionality or we must extend our own
+- [ ] **Tabbed notes**: allow stacking different notes in one embed (notch), add tabs on top of the note which allow us switching between them.
 
-- Customization overhaul: make functionalities into widgets that we can add, remove, reorder etc. Make screen customizable, not only homescreen but also allow creating own custom screens with a DnD widget add support.
+- [ ] **Connect tasks with calendar/events and pomodoro/timer**: right now we have multiple separate functionalities which are pretty similar or complement each other. eg. events could be tasks (for example we set a task which is "wash car" and we also could have it as an event in the calendar). The calendar makes it easier to view and plan everything in time. Then on tasks we have a "focus" mode which turns on timer and focus on the task - it could be integrated with pomodoro/stopwatch/timer. We need to connect all of these functionalities so that we don't get 10 different solutions for one problem
 
-- Screenshot handling: screenshot stacks, editing, sharing etc.
+## Open
 
-- **Palette Extensions**, in the order they would earn their place:
-  1. ~~**Units**~~ — **done**. `70 kg to lb`, `12ft in m`, `220°F to C`,
-     `1.5 GB in MiB`: length, mass, temperature, data, time, volume, area and
-     speed, no network, and both byte families because a drive and an
-     operating system mean different things by "GB". Temperature carries an
-     offset — scaled as a ratio, 20°C comes out as 36°F.
-  2. **Dates and times** — `in 3 weeks`, `days until 24 dec`,
-     `1789714959` (an epoch, as a date), `16:00 CET in warsaw`. Every one of
-     those is a browser tab today, and the island already owns a calendar, a
-     clock and the week's shape.
-  3. **Switch the sound output.** `system.rs` already lists the devices and
-     can set one; `→ headphones` in the palette is a daily gesture that is
-     currently three clicks into a Windows flyout that moves between builds.
-     Wi-Fi is the same shape if the enumeration lands.
-  4. **The notes, from the palette.** Already promised further down this file
-     under Notes — `searchNotes` folds accents and matches every word, so the
-     provider is a wrapper. It belongs in this list too, because "the pile is
-     findable without opening the screen" is what makes the pile worth having.
-  5. **A QR of a link.** The one honest way to get a URL from this machine
-     onto a phone. Offline, but it needs a drawing library — which is why it
-     is last rather than second.
+**Agents**
 
-- ~~Quick note widget with history of all notes, search~~ — **done**. Two
-  screens: the WALL is the index — colour, first words, when — and pressing one
-  opens THE NOTE, a full sheet that is both how you read it and how you write
-  it. Search folds accents and matches every word anywhere. Palette: "Write a
-  note".
-  - [x] **The editor is the screen.** What was here before was a two-row
-        composer above the wall, so the one surface you could type into was the
-        smallest thing on it and opening a note meant watching its words jump
-        out of the card into a box somewhere else. There is no save button: the
-        sheet writes itself down when you stop typing, and leaving the screen
-        writes it too.
-  - [x] **And it shows the note, not its source.** Bold is bold while you type
-        it and a list has bullets; typing `- ` or `**` turns into what it means
-        as you type it, and what gets STORED is still the markers — greppable,
-        pasteable, readable in Notepad. The docked drawer is the same editor:
-        the caret goes straight into the words, with no mode to enter first.
-  - [ ] A marker typed into the MIDDLE of an existing line stays as characters
-        until the note is next opened. The rules fire at the end of a block,
-        because that is the one caret position that survives the block being
-        redrawn.
-  - [ ] The round trip normalises: `_italic_` comes back as `*italic*`, a fence
-        loses its language and a mark inside a mark loses the inner one. The
-        parser cannot express any of those, so a view built from it cannot
-        either — and it only ever happens to a note somebody actually edited.
-  - [x] **Delete asks twice.** A note is the only thing this app stores that is
-        not a cache of something else, and the button that throws one away sits
-        30px from the one that copies it. The first press arms it; it disarms
-        itself after four seconds.
-  - [ ] No global shortcut of its own — the palette command is the fast path.
-        One would mean a seventh key and a seventh row in Settings.
-  - [x] **Dock a note to the edge of the screen**, by pressing the pin or by
-        dragging the card out of the island. It is a sliver at the side with
-        the note's first words turned on their side, and the whole note when
-        the pointer arrives — press the sliver to keep it open, drag it to
-        slide it along the edge or across to the other one. Which edge and how
-        far down are remembered; docked notes come back when the app restarts.
-  - [x] **The island's shape and the island's spring**, literally: the drawer
-        is cut by `notchPath` — the same path the island cuts itself out of the
-        bezel with — and driven by `Spring` at the island's own numbers. So it
-        flares back OUT to the screen edge at each end instead of sitting
-        against it as a rounded box, and it arrives with the same overshoot
-        everything else in the app does.
-  - [x] **The window never resizes.** It is bigger than the open drawer at all
-        times, transparent, and click-through everywhere it is not painted —
-        `watch_pin` in notes.rs is a short copy of `hover.rs` for that. A
-        window that grows on hover can only jump; there is no resizing one at
-        sixty frames a second across a process boundary.
-  - [x] **A grip on the open drawer.** Moving it means grabbing the sliver —
-        and the sliver is under the note the moment the pointer arrives,
-        because arriving is what opens it. The strip of dots down the bezel
-        edge is the handle that exists when you can see the thing you want to
-        move.
-  - [x] **Pull an edge to resize it.** The inward side for width, the top and
-        bottom for height — the fourth is the screen's, and a handle there
-        would do nothing. The size is stored ON the note, beside its colour and
-        its edge, so it survives the drawer closing, the app restarting and the
-        note being dragged to the other side. The height grows from the edge
-        you pull: the drawer is centred on its sliver, so the middle moves by
-        half of what the height gained and the edge under the pointer stays
-        under it.
-  - [ ] One 100ms polling thread per docked note, which is the price of the
-        arrangement above. Fine for the handful anybody docks; if it ever
-        becomes twenty, they want one loop over a list rather than twenty
-        loops.
-  - [x] **Dragging one out has something to drag.** A window of its own covers
-        the screen, holding a small card of the note under the pointer and a
-        lit zone down each edge; reach one and the drawer opens there and
-        follows you, let go anywhere else and the note goes back to the wall.
-        The island cannot paint past its own edge, so none of this could be
-        drawn where the gesture starts — and the overlay ignores cursor events,
-        so the pointer is read in Rust and sent to it.
-  - [ ] The drawer docks to the CURRENT monitor, which in practice is the
-        primary one — the window is built before it has been placed, so there
-        is nothing to ask which screen it is on. Dragging it to another
-        monitor is the missing half.
-  - [ ] Notes are not searchable _from the palette_ yet, only from the screen.
-  - [x] **A colour per note** — six, chosen on the sheet, shown as a band down
-        the card's leading edge and as the sliver's own colour. Stored as a
-        KEY, never a colour, so nothing a note carries can reach a stylesheet.
-  - [x] Simple formatting — `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
-        `-` and `1.` lists, `>` quotes, `#` headings, ``` fences. Stored as the
-        text you typed; parsed on the way out.
-  - [ ] No nesting: `**a *b* c**` renders the outer marker only. Every attempt
-        at one grows a state machine, and a note is not a document.
+- [ ] Permission prompts aren't a state — indistinguishable from a slow tool call
+- [ ] Nothing kept when a session ends (no "18 min, 40 calls"). Same history Today wants
+- [ ] Codex windows found by title — wrong one if two editors share a folder
+- [ ] Claude's plan limit blank (endpoint needs the token → must be read in Rust)
+- [ ] Cost in money not computed — price table goes stale silently
+- [ ] Overview not orderable/filterable
+- [ ] Usage panel is at the island height budget on a 760px screen
 
-- ~~Improve (today): overhaul the Today screen~~ — **done**. The chips are
-  raised rather than washed in their list's colour (the dot carries it); the
-  heading no longer names the list the rail below is already wearing lit; the
-  overdue chip is text and a hairline rather than a filled amber pill.
-  - **One thing to do next**: the first row that can actually be ticked wears
-    an accent edge. A list is a set of things you could do; a queue is one
-    thing you are about to do.
-  - **What you have finished**, beside what is left. A day that only counts
-    down can only get worse.
-  - **The day emptying** sweeps the rail once — the reward for finishing is
-    that the list is empty, which is a quiet thing.
-  - [ ] No streak, and it is the obvious next one: "three days clear" is the
-        strongest thing this screen could say and it needs history the app
-        does not keep yet. The Review screen is where that would come from.
+**Notes**
 
----
+- [ ] A marker typed mid-line stays literal until reopen (rules fire at block end)
+- [ ] Round trip normalises: `_i_`→`*i*`, fences lose their language, nested marks
+- [ ] No nesting: `**a *b* c**` renders the outer marker only
+- [ ] One 100ms thread per docked note — fine for a handful, not for twenty
+- [ ] Docks to the current (primary) monitor; can't drag to another
+- [ ] Not searchable from the palette
+- [ ] No global shortcut of its own
 
----
+**Notifications**
 
-## 7. Agent states were inverted — DONE
+- [ ] Reply/snooze impossible — `UserNotification` can't be activated from outside
+- [ ] 1.5s poll; instant needs a background-task registration a desktop app can't make
+- [ ] ~1 app in 50 has no logo anywhere → letter tile
 
-⚠️ **The two states a session can be in were exactly the wrong way round**,
-and each looked plausible on its own.
+**Media**
 
-- A turn ending in prose — the work came back, no question — was reported as
-  _waiting_. True of the file, false of you: it pulsed amber and held the pill
-  until the terminal was closed. It is **done** now, which is idle.
-- A QUESTION was reported as _working_. `AskUserQuestion` arrives as a
-  `tool_use` block exactly like `Bash`, so the mid-flight check swallowed the
-  one moment that genuinely wanted you — no pulse, no notification. It is
-  **waiting** now.
+- [ ] Unsynced lyrics ignored — a static block would be honest, not drawn
+- [ ] Nothing on the collapsed strip, on purpose (same rule as notification text)
+- [ ] Mixer skips pid 0 (Windows system sounds) — no process, no icon
 
-Verified against a real transcript rather than argued: the question is an
-assistant record whose only block is that tool call, and nothing follows it
-until the answer arrives as a `tool_result`.
+**Ring**
 
-- [ ] Permission prompts are still not detected. Blocking on "allow this
-      command?" looks like a tool call with a result that has not arrived —
-      indistinguishable, from the transcript alone, from a `cargo build` that
-      is still running. It needs a time threshold or a hook.
+- [ ] Wedge order comes from the settings list, not a drag
+- [ ] Ticks can stay silent until the first mouse pick of the session (AGENTS 574)
 
----
+**Elsewhere**
+
+- [ ] Island context-awareness follows on _every_ open; escape would be a grace period
+- [ ] Settings' screens list is still 12 rows (drag-to-reorder needs the shape)
+- [ ] No Today streak — needs history the app doesn't keep. Review screen would own it
 
 ## Done
 
-- Fix: Arcs and screen rail/switcher are visible when the command palette is open. The command palette should be a separate layer that doesn't show the global island UI
-- Fix (system): Unnecessary padding bottom on device and bluetooth cards.
-- Fix (command palette): When closing the command palette, expanded island shows up before folding. Fix that.
-- Feature: reordering screens/tabs, hiding them, and a colour each — eight
-  preset tones plus a custom picker, right-click to clear back to the accent.
-
-- ~~Style (shelf): cards with a plinth, title, format and size~~ — done, and the
-  plinth now carries the file's **real** preview. ⚠️ The shell's thumbnail, by
-  shelf ID — not Tauri's asset protocol, which would have handed the WebView
-  the disk. Asked once per file per modification time, and a file the shell
-  has nothing for keeps its glyph.
-- ~~Feature: In call mode with controls~~ — **done**. The microphone is the
-  signal: an app with an active capture session is in a call, which is the same
-  fact Windows draws its own microphone glyph for. Collapsed, the strip keeps
-  the clock and gains mute + hang up; expanded, it is the call with its own
-  screen. Zoom, Teams, Meet, WhatsApp — and Discord and Slack, which the table
-  gave away for free.
-- ~~Notifications shelf~~ — **done, basic**. Windows' own centre, mirrored on a
-  Notices screen with a bell in the header. ⚠️ A MIRROR: dismissing one here
-  dismisses it there, and nothing is kept on disk. The header shows a count and
-  never a word of content.
-  Cards with the app's own logo, the title, the app and two lines of body — the
-  shape the notification had when it flew past. Dismiss, clear all, and pressing
-  a card opens the app it came from.
-  - [ ] ⚠️ **Reply and snooze are not possible.** A notification cannot be
-        activated from outside — `UserNotification` has no method for it — so
-        the only handle is the app's AUMID, which opens Slack and never the
-        thread. Those actions live in the notification's own buttons, which
-        Windows does not expose.
-  - [ ] The poll is 1.5s now, not 4. Instant would need `NotificationChanged`,
-        which is documented as needing a background-task registration a desktop
-        app cannot make.
-  - [ ] One app in fifty still has no logo anywhere (WinRT, the AUMID registry
-        key, the Start Menu) and falls back to a letter tile.
-- ~~Fix: Upcoming event stuck on the island~~ — **done**
-
-- ~~Pomodoro widget~~ — **done**, and then rebuilt as two faces on one screen,
-  and then as two ENGINES behind them: a pomodoro and a timer run side by
-  side. One state meant starting a timer silently threw away a run four rounds
-  in. The tab you are not on wears a dot when its countdown is live.
-
-- ~~Improve: context awareness for the notch~~ — **done**. Opening it lands on
-  whatever is happening rather than wherever you last were: the pill has
-  already picked the most live claim, and the island follows it. ⚠️ Above 40
-  only — a call, an agent waiting, a meeting about to start, a countdown — and
-  never for a toast, which outranks everything and is a message rather than a
-  place. `Settings → Island → Opening` switches it off.
-  - [ ] It follows on EVERY open, so walking to Notes and reopening goes back
-        to the call. That is the feature; if it grates, the escape is a grace
-        period after a deliberate screen change rather than a new setting.
-
-- ~~Feature (media): live lyrics sync using LRCLIB~~ — **done**. Its own panel
-  under the player and the queue, opened from the button beside the output
-  picker and closed by default; the island grows for it. The whole file is in
-  the DOM and the window travels over it, fading and blurring out from the
-  line being sung — so it can be scrolled to read ahead, and a line change
-  reads as movement rather than as a caption being replaced. The change itself
-  is a timer aimed at the next line's own second, not a poll. ⚠️ LRCLIB's
-  `/api/get` is a fingerprint (artist + track + album + duration) and answers
-  404 on a near miss, which is the behaviour to want — nothing beats another
-  recording's words against this one's clock. No key, no account, cached by
-  the same fingerprint on both sides.
-  - [ ] Unsynced files are ignored. LRCLIB serves plain words too, and pacing
-        them by dividing the track's length by the line count is an invention
-        that is wrong from the second line on. A block of static text would be
-        honest and is not drawn yet.
-  - [ ] Nothing on the collapsed strip. A line of lyric is the most tempting
-        thing to put there and the one most likely to be read over somebody's
-        shoulder — the same argument that keeps a notification's words off it.
-
-- ~~Improve (agents): more statistics, and states worth looking at~~ — **done**.
-  A card was a glyph for its state, a name and two grey numbers, repeated three
-  times down the screen.
-  - **Whose agent it is**, as the mark: Claude's burst rather than a fourth
-    drawing of the state. The state moved to a badge beside the name.
-  - **What it has been doing**, as a checklist — the last four tool calls,
-    ticked as their results come back, the one in flight lit. What an agent is
-    doing is a list, not a sentence.
-  - **What it cost**, as a shape: a bar of the output share beside the figures.
-  - [ ] Nothing is kept once a session ends, so there is no "this run took
-        18 minutes and 40 calls" — the transcript has it and the app reads
-        only the tail. That is the same history the Today streak wants.
-  - [x] **Codex is read too**, out of `~/.codex/sessions` — a second reader,
-        because the two formats share nothing. Codex states what Claude's has
-        to infer: when a turn starts and ends, which model answered, the
-        session's running total, and what is left of the plan.
-  - [x] **Whose agent, and which model**, on the card and on the strip.
-  - [x] **A stage for the live ones**, paged with dots, and one quiet line
-        each for the dormant. Four identical cards was the complaint.
-  - [ ] Codex sessions cannot be reached by pid — they have none — so the
-        window is found by its title. It picks the wrong window if two
-        editors have the same folder open.
-  - [ ] A permission prompt is still not a state. Codex has
-        `tools.request_permissions` in an exec call, which is close, but an
-        exec that is merely slow looks identical from outside.
-  - [x] **The usage is kept.** `usage.json` — one bucket per day per agent
-        per model per project, four months of them, seeded once from the runs
-        so the chart is not empty for a fortnight. The panel cuts today three
-        ways (agent, model, project), draws the week behind it, and shows
-        what is left of the plan where the agent reports it.
-  - [ ] Only Codex reports a plan limit, so Claude's half of that row is
-        blank. Anthropic's own usage endpoint is behind the token this app
-        deliberately never hands to a WebView, so it would have to be read
-        in Rust and reported like everything else here.
-  - [ ] Cost in money is not computed. It needs a price per model per
-        provider, which is a table that goes stale silently — the worst kind
-        of number to put on a screen that is otherwise all measurements.
-  - [x] **The real marks**, from each vendor's own VS Code extension rather
-        than drawn by hand. The first Claude one was a compass rose.
-  - [x] **Two layouts, two intents.** The strip expands into the SESSION —
-        one at reading size, with room — and the rail opens the OVERVIEW: a
-        card per session in a grid, so five sessions is four across rather
-        than five rows deep.
-  - [ ] The overview is not orderable or filterable. With a dozen sessions
-        the grid is the right shape but "only the ones that want me" would
-        be better than reading twelve cards.
-  - [x] **Each agent in its own colour**, on the mark only — the state keeps
-        the pip, the word and the wash.
-  - [x] **The week is a chart**, a line over an area, with the points over
-        their own days.
-  - [x] **Bigger type, no eyebrows.** Uppercase at .08em tracking was doing
-        the work of six different headings.
-  - [ ] The usage panel is within a few pixels of the island's height budget
-        on a 760px screen. Anything added to it has to come out of something
-        else until the island can scroll a screen without it reading as cut
-        off.
-
-- ~~Feature (media): volume mixer, per app~~ — **done**, on the System screen:
-  a row per app with a rail and a mute, sorted by what is making a sound now.
-  ⚠️ `eRender` sessions, read on OPEN and never polled — it is a COM walk of
-  every session on the machine. A write goes to every session of that process,
-  because a browser opens one per renderer.
-  - [x] The app's own icon on each row, from the shell — the same extractor
-        the palette and the call strip use, so there is one leaky-handle path
-        rather than three.
-  - [ ] Pid 0 — Windows' own system sounds — is left out: it has no process to
-        name and no icon, and a row that cannot say what it is is a slider
-        nobody dares move.
-
-- ~~A shortcut that opens a ring around the mouse~~ — **done**, `Ctrl+Alt+R`.
-  Every screen at a direction, the palette in the middle, picking one opens the
-  island on it. ⚠️ Eight at most: past that, aiming stops being faster than
-  reading.
-  - [x] **Hold and let go to pick.** Press, flick the wrist, let go — one
-        gesture, no click. A tap still opens it and leaves it up, which is what
-        somebody reading the labels is doing. 200ms is the line.
-  - [x] **Verbs as well as screens**, and they are what stops it being a
-        navigation menu: add a task, write a note (both with the caret where it
-        belongs), shelve the clipboard, start a pomodoro. Chosen in
-        `Settings → Island → The ring`, eight at most.
-  - [ ] The chosen list is ordered by the settings list rather than dragged. A
-        ring whose wedges move about is one where aiming stops working, so the
-        order has to come from somewhere fixed — but "somewhere fixed" is
-        currently "the order this list happens to be written in".
-  - [x] **Hold and let go actually works.** Windows repeats a held key and
-        every repeat was another press, so holding it toggled the ring shut.
-  - [x] **One label, under the ring**, instead of eight around it — long
-        names ran over their own wedges. Frosted by default, with a solid
-        style for a busy background, a tick per wedge crossed and a lower one
-        on the pick.
-  - [ ] The ticks come from the ring's own page, which a global shortcut does
-        not activate — they may stay silent until the first mouse pick of
-        the session. See AGENTS 574.
-  - [x] **The release is watched here now**, with `GetAsyncKeyState`: the
-        plugin's own `Released` never arrives on this machine, which is why
-        the gesture had never worked — and why the auto-repeat guard locked
-        the ring out of opening at all. See AGENTS 581.
-  - [x] **Tap for one thing, hold for the ring.** A tap opens the command
-        palette (or whatever is set in Settings → Island) and never draws the
-        menu; the ring is what holding past 0.25s gets you. Both the delay and
-        what a tap does are preferences.
-  - [x] **The pick carries the pointer** rather than trusting the page to have
-        seen it move — see AGENTS 590.
-  - [ ] The whole gesture is now logged. If it misbehaves again, the log says
-        which step: `Settings → General → Open log`.
-  - [x] **Two global shortcuts, not seven.** `Alt+W` tapped is the palette and
-        held is the ring; `Ctrl+Alt+H` still hides everything. The five that
-        went — open the island, add a task, shelve the clipboard, next display
-        and the palette's own key — are all a wedge or a palette row away.
-  - [x] **Overshooting is forgiven.** Past the ring's edge the angle alone
-        decides, out to 250px, and a wedge holds until the pointer is a fifth
-        of a wedge into the next one.
-  - [x] **A tap acts at once.** It was waiting for an event loop that a
-        press-and-release does not wake, so the palette opened on the next
-        keystroke instead.
-  - [x] **What the ring picks is what opens.** Opening the island lands on
-        the liveliest claim a frame later, which used to take the screen back
-        — an agent working outranked the wedge somebody had just chosen.
-
-- ~~Currency converter extension for the command palette~~ — **done**.
-  `120 usd to pln`, `$120 zl`, `eur to gbp`. ECB daily rates through
-  Frankfurter with exchangerate-api behind it, one table against the euro
-  cached on disk for six hours, and the crossing done in the page. The row
-  says what it worked from and WHICH DAY, because a daily rate on a Sunday is
-  Friday's number.
-  - [x] **A home currency**, in `Settings → Search → Money`, so `120 usd` and
-        `$120` have an answer on their own. Off by default — a converter that
-        guesses which country you are in is wrong the moment you travel.
-- ~~Settings: too many words, too many switches in one pane~~ — **done**. The
-  descriptions under every row are gone except where the consequence is
-  invisible; the section headings are sentence case rather than tracked
-  uppercase; the pomodoro has a pane of its own and the call and the
-  notifications moved to The pill; the ring's sixteen rows are four lines of
-  chips.
-  - [ ] The screens list is still twelve rows, because it is a drag-to-reorder
-        list and that is the shape that makes order obvious. It is the longest
-        thing left in the pane.
-- [x] **The rail budget**: a screen earns a rail stop only if you would sit on
-      it for thirty seconds. **System is off it now**, with a chip in the
-      header beside the timer and the bell — it is a place you visit for one
-      thing and leave. Review is still there and is the remaining candidate.
+- [x] Notes v1 — wall + sheet, live WYSIWYG editor (stores markers), colour per note,
+      arm-then-confirm delete, dock to edge (island shape + spring), drag-out with a
+      ghost and lit zones, pull an edge or corner to resize (size stored on the note)
+- [x] Agents — per-agent mark and colour, tool checklist, cost bar, Codex reader,
+      `usage.json` (4 months, 3 cuts + week chart), session vs overview layouts
+- [x] Agent states were inverted: prose-end = idle, `AskUserQuestion` = waiting
+- [x] Ring — `Alt+W` tap = palette, hold = ring; verbs as well as screens; hold-and-release
+      via `GetAsyncKeyState`; overshoot forgiven; one label under the ring
+- [x] Notifications shelf — mirror of Windows' centre, dismiss/clear/open
+- [x] Live lyrics via LRCLIB — own panel, window travels over the whole file
+- [x] Volume mixer per app, with shell icons
+- [x] Call mode — mic as the signal; mute + hang up collapsed, full call expanded
+- [x] Pomodoro + timer as two engines behind two faces — replaced by `Runs`
+- [x] Currency converter (+ optional home currency), units converter
+- [x] Island context awareness on open (above 40 only, never a toast)
+- [x] Today overhaul — one thing next, finished count, rail sweep on empty
+- [x] Screens: reorder, hide, a colour each. System off the rail (header chip)
+- [x] Settings decluttered — descriptions out, sentence case, ring as chips
+- [x] Shelf cards carry the file's real shell thumbnail
+- [x] Fixes: arcs/rail hidden behind the palette, island fold on palette close,
+      device/bluetooth card padding, event stuck on the island

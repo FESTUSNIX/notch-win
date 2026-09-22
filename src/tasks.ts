@@ -7,17 +7,20 @@
 import { IslandSurface } from "./island-surface";
 import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
-import { SCREENS } from "./screens";
+import { SCREENS, withBoards } from "./screens";
 import { cpx } from "./layout";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
-import { pick, renderActivity, renderResting, type Activity, type ScreenName } from "./island-activity";
+import { pick, renderActivity, renderResting, type Activity, type FixedScreen, type ScreenName } from "./island-activity";
 import { choose, decay, readings, type HoldState, type ModuleContext, type ModuleReading } from "./pill-modules";
 import { clockText } from "./tween";
 import { setMotion } from "./motion-pref";
 import { nextEvent, startOf } from "./screen-calendar";
 import { TodayScreen } from "./screen-today";
-import { HomeScreen } from "./screen-home";
+import { BoardScreen } from "./screen-board";
+import { boardOf, defaults as defaultBoards, isBoard, normalise as normaliseBoards, screenOf, type Board, type BoardWidget } from "./boards";
+import { boardWidthCss, cellsAcross, widgetsOf } from "./widgets";
+import type { CoinReading, WalletReading, WidgetDeps } from "./widget-bodies";
 /* ⚠️ Still here, without a screen of its own. The player was in THREE
  * places — the collapsed pill, the Home column, and a whole tab — and the tab
  * was the only one of the three that duplicated what Spotify, a browser and
@@ -32,11 +35,12 @@ import { MediaScreen, MediaSource } from "./screen-media";
 import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
 import { TimerScreen } from "./screen-timer";
-import { DEFAULT_LENGTHS, ROUNDS, Timer, phaseName, roundOf, spokenEnd, type Countdown } from "./timer";
+import { DEFAULT_LENGTHS, phaseName, spokenEnd, type Countdown } from "./timer";
+import { Runs, counted, figureMs, running as runGoing, runName, type Run } from "./runs";
 import { setClicks } from "./click";
 import { timerText } from "./focus-timer";
 import { NotesScreen } from "./screen-notes";
-import { CalendarScreen } from "./screen-calendar";
+import { CALENDAR_WEEK_DPX, CALENDAR_WEEK_TASKS_DPX, CalendarScreen } from "./screen-calendar";
 import { SystemScreen } from "./screen-system";
 import { AgentsScreen } from "./screen-agents";
 import * as snooze from "./snooze";
@@ -57,8 +61,13 @@ import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
 
 /* The screens. ⚠️ ONE list, in `screens.ts`, shared with the settings window
- * and the ring — it was two hand-kept copies until the ring made it three. */
-const TABS = SCREENS;
+ * and the ring — it was two hand-kept copies until the ring made it three.
+ *
+ * ⚠️ A FUNCTION now, because the list is no longer fixed: a board is a screen,
+ * boards are made at runtime, and everything that walks the screens has to walk
+ * the ones that exist rather than the ones that shipped. Read it, never hold it
+ * — a board added in settings has to be on the rail the moment it is written. */
+const tabs = () => withBoards(boards);
 
 /* ── The player's two widths ────────────────────────────────────────
  * ⚠️ Derived from the grid in tasks.css, never chosen. `.media-body` is a
@@ -70,8 +79,58 @@ const TABS = SCREENS;
  * an animation bug rather than a number: the player stops being centred in the
  * shape, or the queue is clipped by the bezel on the way in. */
 const dpx = (css: number) => Math.round(css * 117 / 56);
+/** The column the arrange tray takes, in CSS pixels.
+ *
+ * ⚠️ Must match `.board-tray`'s own BOX in `tasks.css` — its content plus the
+ * gutters it owns plus its hairline — and the two have to move together. The
+ * panel grows by exactly this much while a board is being arranged, so the grid
+ * keeps the width it had and nothing on it moves; a tray taking one pixel more
+ * than the panel grew by is a tray covering the board again. */
+const TRAY_ROOM = 194;
+/** …and what it takes while one block's SETTINGS are open instead of the list.
+ *
+ * ⚠️ Wider, because the panel is a column of labelled rows rather than a column
+ * of names — and the point of putting it here rather than over the board is
+ * that it does not have to fit in a space it was not given. Same contract as
+ * `TRAY_ROOM`: it must equal `.board-tray.is-tuning`'s own box in tasks.css. */
+const TRAY_TUNE = 262;
 const PLAYER_ONLY = dpx(500 + 2 * 15);
+/* The timer's two, derived from `.timer-body` in tasks.css the same way.
+ *
+ * ⚠️ The face column is a FIXED 392 whether the list is out or not — 352px of
+ * content inside 20px gutters — and the list adds its own 215 on top. The
+ * version this replaced had one width for both, so opening the list took the
+ * room out of the face: the ring shrank, the ruler became a stub, and the list
+ * read as something bolted inside the screen rather than as part of it. */
+const TIMER_FACE = 20 + 352 + 20;
+const TIMER_LIST = 18 + 239 + 18;
+const TIMER_ONLY = dpx(TIMER_FACE);
+const TIMER_AND_LIST = dpx(TIMER_FACE + TIMER_LIST);
 const PLAYER_AND_QUEUE = dpx(500 + 2 * 15 + 14 + 260);
+/** The calendar in work mode.
+ *
+ * ⚠️ ABOVE `islandBodyLong`, which is allowed — `measure()` clamps to
+ * `islandBodyMax` (2480), not to the default body. This is the same headroom
+ * the board's arrange tray uses, and for the same reason: room to work in has
+ * to be room ADDED, or the seven columns shrink to pay for it and every block
+ * on the grid moves the moment the mode is turned on. */
+/* ⚠️ These two and the three lengths in `.cal-worktop` are ONE SET, the same
+ * way the player's four numbers are. The island's body is `967 + 2 × 15` with
+ * the list shut and `+ 10 + 180` with it open; out of step, either the week is
+ * clipped by the bezel or the panel is. */
+const CALENDAR_WORK = CALENDAR_WEEK_DPX;
+/** The week with the task list beside it.
+ *
+ * ⚠️ `islandBodyMax` exactly — the HARD CEILING, and there is no more to ask
+ * for. A cap above it is silently the same as the cap at it, which looks from
+ * a test exactly like the width not changing at all. That ceiling is why the
+ * week's own track is 967 rather than the 1013 it could have had: the list has
+ * to come out of the 1187 somewhere, and the choice is between the week losing
+ * five pixels a column ALWAYS or losing them only while the list is open — and
+ * the second is the one that makes the week resize under the pointer, which is
+ * the thing being fixed. It gives up the room once, up front, and then never
+ * moves. */
+const CALENDAR_WORK_TASKS = CALENDAR_WEEK_TASKS_DPX;
 
 /** How wide each screen wants to be, in DESIGN pixels — `cpx()` converts.
  *
@@ -87,17 +146,18 @@ const PLAYER_AND_QUEUE = dpx(500 + 2 * 15 + 14 + 260);
  *
  * 1900 design px is the full body (~909 CSS px); anything smaller is a choice
  * about content, not about the shape. */
-const WIDTH: Record<ScreenName, number> = {
+const WIDTH: Record<FixedScreen, number> = {
   home: 1900,      // three cards side by side
   /* A line about the call and a row of round buttons under it. ⚠️ Narrow on
    * purpose: everything on this screen is a control, so the panel is as wide
    * as the controls and no wider — a full-width island with six buttons
    * huddled in the middle reads as a window somebody left open. */
   call: 1180,
-  /* ⚠️ Wide enough for the DIAL to be a ruler rather than a stub: at 1040
-   * design px only about eight minutes of it were visible either side of the
-   * marker, which is a control you have to drag four times to cross. */
-  timer: 1500,
+  /* ⚠️ NARROW, and it is the narrowest screen here on purpose. Everything on
+   * it is one object — a circle, the name under it and a row of controls — and
+   * the circle is nearly half the column. Spread across the old 1500 the ring
+   * was a small thing adrift in a lot of empty panel. See `TIMER_ONLY`. */
+  timer: TIMER_ONLY,
   /* ⚠️ NARROW, and narrower than anything else here. A notification is a
    * glance, not a document: at the notes screen's width the title, the app and
    * the time sit so far apart that the eye has to travel between three things
@@ -130,7 +190,34 @@ const WIDTH: Record<ScreenName, number> = {
  * at all. */
 function widthOf(name: ScreenName): number {
   if (name === "media" && player.open) return PLAYER_AND_QUEUE;
-  return WIDTH[name];
+  if (name === "timer" && timerScreen.listOpen) return TIMER_AND_LIST;
+  if (name === "calendar" && calendar.view === "week") {
+    return calendar.tasksOpen ? CALENDAR_WORK_TASKS : CALENDAR_WORK;
+  }
+  /* ⚠️ A board is measured from its WIDGETS, not from a table. It has no entry
+   * in one — it did not exist when the table was written — and a board of two
+   * cards on a panel sized for three is exactly what the table exists to stop
+   * everywhere else. Capped at the full body, which is what Home asks for. */
+  const board = boardOf(boards, name);
+  if (board) {
+    const want = boardWidthCss(cellsAcross(widgetsOf(board.widgets)));
+    /* ⚠️ ADDED to the board's own width, not a floor under it. The tray is a
+     * column beside the grid now, so the panel has to grow by exactly what the
+     * tray takes — a floor would have let the grid shrink to make room, which
+     * is every block on the board moving the moment you start arranging it. */
+    const mine = arranging?.board === board.id;
+    const tray = mine
+      ? (boardScreens.get(board.id)?.tuned ? TRAY_TUNE : TRAY_ROOM)
+      : 0;
+    /* ⚠️ The board is capped at the full body; the TRAY is added on top of
+     * that cap, not squeezed inside it. Clamping the sum to `WIDTH.home` meant
+     * a six-cell board — which the default Home is — had no room left to give,
+     * so the tray was carved out of the grid and every block moved as soon as
+     * you started arranging. `islandBodyMax` is what lets the island itself
+     * grow instead; see `measure`. */
+    return Math.min(WIDTH.home, dpx(want)) + (tray ? dpx(tray) : 0);
+  }
+  return WIDTH[name as FixedScreen] ?? WIDTH.home;
 }
 
 const app = document.getElementById("task-app")!;
@@ -138,6 +225,7 @@ app.innerHTML = `<div id="notch-shell">
   <svg id="island-defs" aria-hidden="true" width="0" height="0"><defs><clipPath id="island-clip" clipPathUnits="userSpaceOnUse"><path id="island-clip-path"/></clipPath></defs></svg>
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
+    <div id="island-glance" inert></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
@@ -168,7 +256,7 @@ app.innerHTML = `<div id="notch-shell">
         </div>
       </header>
       <div class="screens">
-        <section class="screen active" data-screen="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
+        <section class="screen active" data-screen="home" data-board="home" role="tabpanel" aria-label="Home"><div class="screen-body home-grid spans" id="home-body"></div></section>
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
         <section class="screen" data-screen="timer" role="tabpanel" aria-label="Timer" hidden><div class="screen-body timer-body spans" id="timer-body"></div></section>
         <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
@@ -216,9 +304,15 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  /** ⚠️ RAW, straight off disk — `normalise` in `boards.ts` is what makes it
+   *  safe to render, and an empty list means "the built-in board" rather than
+   *  "no boards". Typed loosely for the same reason: this is whatever is in
+   *  the file, not whatever the app last wrote. */
+  boards: Board[];
+  /** How many boards there may be. Read, never assumed — see `prefs.rs`. */
+  boardCap: number;
   noticeMode: boolean;
   timerSound: string;
-  timerMode: string;
   pomodoroPill: string;
   ringStops: string[];
   followLive: boolean;
@@ -239,9 +333,9 @@ interface Prefs {
 
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false, openOnHover: true, foldDelayMs: 450,
-  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
+  motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {}, boards: [], boardCap: 4,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
-  timerSound: "Notification.Reminder", timerMode: "pomodoro", homeCurrency: "",
+  timerSound: "Notification.Reminder", homeCurrency: "",
   pomodoroPill: "bar", ringStops: [], followLive: true,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
@@ -331,6 +425,22 @@ const surface = new IslandSurface(open => {
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
 const media = new MediaSource(() => render());
 const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
+  /* ⚠️ **Re-applies the cap, and nothing else does.** `render()` calls
+   * `measure()` but never `capBody`, so a screen whose width depends on its own
+   * state has to say so the moment that state changes — otherwise the island
+   * keeps the width it had and the panel is simply clipped by it. The queue and
+   * the timer's list each carry this for the same reason; the task list was
+   * added without one, and it opened into a body that had not grown.
+   *
+   * ⚠️ `deliberately()` because it was asked for. Opening the list is a size
+   * change somebody pressed a button for, which is the case the spring is
+   * tuned for. */
+  width: () => { surface.capBody(cpx(widthOf("calendar"))); surface.deliberately(); },
+  /* ⚠️ Read THROUGH the Today screen, which owns the optimistic layer — a
+   * second snapshot here would show a task Today had already ticked. */
+  tasks: () => today.upNext(40),
+  taskColor: task => today.colorOf(task),
+  finishTask: task => today.finish(task),
   create: (title, day, list) => {
     void today.createOn(title, day, list).then(why => { if (why) say("Could not add", why); });
   },
@@ -355,12 +465,13 @@ function announce(finished: Countdown) {
    * reach you inside another window; the shell can. */
   void call("notify_now", { title: said.title, body: said.body }).catch(() => {});
 }
-/* ⚠️ TWO countdowns, running side by side. One engine meant that starting
- * a timer silently threw away a pomodoro four rounds in — no warning, nothing
- * to undo — and the collapsed island has room for both anyway: the pomodoro
- * takes the strip, the timer is the circle beside it. */
-const timer = new Timer("pomodoro", () => render(), announce, () => lengths());
-const countdown = new Timer("plain", () => render(), announce, () => lengths());
+/* ⚠️ ONE LIST, where there used to be two instances. The old pair ran side by
+ * side because a single engine meant starting a timer threw away a pomodoro
+ * four rounds in — right reasoning, too small an answer: the moment there can
+ * be two of a kind, "two instances" stops being a model. `runs.ts` owns what
+ * exists and which one is being looked at; `timer.ts` still owns what a
+ * countdown IS. */
+const runs = new Runs(() => render(), () => lengths(), (_run, finished) => announce(finished));
 const lengths = () => ({
   work: prefs.pomodoroWork || DEFAULT_LENGTHS.work,
   rest: prefs.pomodoroBreak || DEFAULT_LENGTHS.rest,
@@ -387,6 +498,7 @@ const palette = new Palette(surface, () => {
   (what, why) => say(`${what} failed`, why.replace(/^invoke error: /i, "").slice(0, 120)));
 const player = new MediaScreen(get("media-body"), {
   source: media,
+  ambient: () => openAmbient(),
   /* ⚠️ Asked for, so it springs. The queue opening is the clearest case there
    * is of a size change you pressed a button for. */
   width: () => { surface.capBody(cpx(widthOf("media"))); surface.deliberately(); },
@@ -405,10 +517,8 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
-const timerScreen = new TimerScreen(get("timer-body"), { pomodoro: timer, plain: countdown }, {
+const timerScreen = new TimerScreen(get("timer-body"), runs, {
   lengths: () => lengths(),
-  mode: () => (prefs.timerMode === "timer" ? "timer" : "pomodoro"),
-  setMode: mode => { prefs.timerMode = mode; savePrefs(); render(); },
   /* ⚠️ Writes the SAME preference the settings window writes. One stored
    * value with two controls is not the thing the one-settings-window rule
    * forbids; two places that each remember their own answer is. */
@@ -421,9 +531,217 @@ const timerScreen = new TimerScreen(get("timer-body"), { pomodoro: timer, plain:
   },
   focus: active => { void surface.input(active); },
   changed: () => render(),
+  settings: () => { void today.action("open_task_editor"); },
+  /* ⚠️ Asked for, so it springs. The list opening is the same kind of size
+   * change as the player's queue: one you pressed a button for. */
+  width: () => { surface.capBody(cpx(widthOf("timer"))); surface.deliberately(); },
 });
 const review = new ReviewScreen(get("review-body"), { today, calendar });
-const home = new HomeScreen(get("home-body"), { today, media, calendar, open: name => show(name) });
+/* ── The boards ───────────────────────────────────────────────────────────
+ * Home is the first of them. It is not a screen that happens to look like a
+ * board; it is the board with the id `home`, and the only thing special about
+ * it is the screen name it keeps — see `screenOf` in `boards.ts`. */
+let boards: Board[] = defaultBoards();
+
+/** Everything the widgets read. ⚠️ Built ONCE and shared by every board: the
+ *  preferences that can change under it are read through functions, so a board
+ *  never holds a stale copy of one. */
+const widgetDeps: WidgetDeps = {
+  today, media, calendar, runs, lengths: () => lengths(),
+  open: (name: ScreenName) => show(name),
+  mondayFirst: () => prefs.weekStartsMonday,
+  clock24: () => clock24,
+  fahrenheit: () => prefs.fahrenheit,
+  /* ⚠️ The SAME reading the pill's weather module uses — one request, one
+   * cache, one answer. A widget that fetched its own would disagree with the
+   * strip above it for as long as the two polls were out of step. */
+  weather: () => weather,
+  /* ⚠️ One reading, polled in Rust, like the weather. A widget that fetched
+   * its own price would be a second request a minute to a public API that
+   * counts them, and two blocks showing the same coin would disagree for as
+   * long as their polls were out of step. */
+  crypto: () => coin,
+  /* ⚠️ One reading, polled in Rust beside the price. The secret that fetches it
+   * never reaches this side of the app — see `WalletReading`. */
+  wallet: () => wallet,
+  /* ⚠️ The SAME poll the pill reads, for the same reason as the weather: two
+   * readers of one number cannot disagree, and a block that polled the machine
+   * itself would be a second walk of every process on it. */
+  machine: () => machine,
+  /* ⚠️ Read through the SCREENS that own these lists, not through a second
+   * copy. A widget is a view of a screen; the moment it keeps its own array
+   * there are two answers to "what is on the shelf" and only one of them is
+   * the one the shelf screen shows. */
+  agents: () => agentsScreen.sessions,
+  notes: () => notes.notes,
+  shelf: () => shelf.items,
+  changed: () => render(),
+};
+
+/** One screen per board, by board id. */
+const boardScreens = new Map<string, BoardScreen>();
+
+/** The board being arranged, and what it looked like before.
+ *
+ * ⚠️ The SNAPSHOT is the point. Arranging is a run of small irreversible
+ * edits — take three cards off, put two back in a different order — and
+ * without something to go back to, the only way out of a mistake is to
+ * remember what was there. The × puts this back; the ✓ keeps what is on
+ * screen. */
+let arranging: { board: string; was: BoardWidget[]; wasPinned: boolean } | null = null;
+
+/** Whether a board can be arranged from here. ⚠️ Only the one you are ON:
+ *  the tray edits the board it is drawn on, so offering the action on the
+ *  Notes screen would be a control with no object. */
+function boardHere(): Board | undefined {
+  return boardOf(boards, screen);
+}
+
+function startArranging() {
+  const board = boardHere();
+  if (!board || arranging) return;
+  /* ⚠️ HELD OPEN for the duration. The panel folds when the pointer leaves it,
+   * and a drag that wanders past the tray's own edge — which is most of them —
+   * takes the pointer off the island for a frame. Losing the panel mid-gesture
+   * would lose the arrangement with it.
+   *
+   * ⚠️ `pin()` is a TOGGLE, so what it was before has to be remembered: called
+   * blind on a board somebody had already pinned, it would UNPIN the island the
+   * moment they started arranging it — which is the one thing this is here to
+   * prevent. */
+  arranging = {
+    board: board.id,
+    // ⚠️ A DEEP copy: the entries carry a size, and a shallow one would hand
+    // the snapshot the very objects a resize is about to write through.
+    was: board.widgets.map(one => ({ ...one })),
+    wasPinned: surface.isPinned,
+  };
+  boardScreens.get(board.id)?.setEditing(true);
+  if (!surface.isPinned) surface.pin();
+  // The tray needs room the board on its own may not have asked for.
+  fitBoard();
+  render();
+}
+
+function stopArranging(keep: boolean) {
+  const held = arranging;
+  if (!held) return;
+  arranging = null;
+  if (!keep) {
+    boards = boards.map(one => (one.id === held.board
+      ? { ...one, widgets: held.was.map(w => ({ ...w })) } : one));
+    writeBoards();
+  }
+  for (const one of boardScreens.values()) one.setEditing(false);
+  // Back to however it was found — see the note in `startArranging`.
+  if (!held.wasPinned && surface.isPinned) surface.pin();
+  syncBoards();
+  // The tray is going, so the floor it asked for goes with it.
+  fitBoard();
+  render();
+}
+
+/** Re-apply the panel width for the board on screen.
+ *
+ * ⚠️ `deliberately()` with it, so the change SPRINGS rather than snapping.
+ * Dragging a card onto a board is as deliberate an act as opening the player's
+ * queue, which is the other place that says this. */
+function fitBoard() {
+  if (!boardHere()) return;
+  surface.capBody(cpx(widthOf(screen)));
+  surface.deliberately();
+}
+
+/** Write the boards back to the preferences.
+ *
+ * ⚠️ Through `prefs`, so the settings window sees the same list — the two
+ * windows are one stored value with two editors, which is the arrangement the
+ * one-settings-window rule asks for. The opposite, each remembering its own,
+ * is what it forbids. */
+function writeBoards() {
+  prefs.boards = boards;
+  savePrefs();
+}
+
+/** Make the DOM and the screen objects match `boards`.
+ *
+ * ⚠️ Sections are ADDED and REMOVED here rather than written into the markup,
+ * which is what makes a board a screen at all. Home's section is in the markup
+ * because it is the one that has to exist before anything has been read off
+ * disk — the island paints a frame before the preferences arrive. */
+function syncBoards() {
+  const want = new Set(boards.map(one => one.id));
+  for (const id of [...boardScreens.keys()]) {
+    if (want.has(id)) continue;
+    boardScreens.delete(id);
+    document.querySelector(`.screen[data-board="${id}"]`)?.remove();
+  }
+  for (const board of boards) {
+    const held = boardScreens.get(board.id);
+    if (held) {
+      held.setBoard(board);
+      held.setEditing(arranging?.board === board.id);
+      continue;
+    }
+    let body = board.id === "home" ? get("home-body") : null;
+    if (!body) {
+      const section = element("section", "screen");
+      section.dataset.screen = screenOf(board);
+      section.dataset.board = board.id;
+      section.setAttribute("role", "tabpanel");
+      section.setAttribute("aria-label", board.name);
+      section.hidden = true;
+      body = element("div", "screen-body home-grid spans");
+      section.append(body);
+      screens.append(section);
+    }
+    const id = board.id;
+    boardScreens.set(id, new BoardScreen(body, board, widgetDeps, {
+      arrange: widgets => {
+        boards = boards.map(one => (one.id === id ? { ...one, widgets } : one));
+        writeBoards();
+        syncBoards();
+        /* ⚠️ The PANEL follows the board. Its width is derived from what is on
+         * it — see `widthOf` — and nothing else re-applies that: `capBody` is
+         * called when a screen is shown and when the palette hands the width
+         * back, neither of which happens while you are standing on the board
+         * rearranging it. Dragging a card in left the island at the width it
+         * had when it opened until you closed and reopened it. */
+        fitBoard();
+        render();
+      },
+      done: keep => stopArranging(keep),
+      /* ⚠️ `fitBoard`, which re-caps the panel AND asks it to spring. Opening a
+       * settings panel is as deliberate an act as opening the player's queue,
+       * and the island growing for it is the thing that says the panel is part
+       * of the island rather than laid over it. */
+      tuned: () => { fitBoard(); render(); },
+    }));
+  }
+  /* ⚠️ The label on an EXISTING section follows a rename. The section is only
+   * built once, so a board renamed in settings would otherwise keep announcing
+   * its old name to a screen reader for the life of the window. */
+  for (const board of boards) {
+    document.querySelector(`.screen[data-board="${board.id}"]`)
+      ?.setAttribute("aria-label", board.name);
+  }
+  /* ⚠️ And if the board you were STANDING ON has just been deleted, Home. Its
+   * section went with it two loops up, so the island would otherwise be showing
+   * a screen that is not in the document — no content, no error, and the rail
+   * highlighting a stop that no longer exists. */
+  if (!boardScreens.has(boardIdOf(screen)) && isBoard(screen)) show("home");
+}
+
+/** The board id a screen name carries, or "" for a screen that is not one. */
+function boardIdOf(name: ScreenName): string {
+  return boardOf(boards, name)?.id ?? "";
+}
+
+/* ⚠️ Once at BOOT, before anything has been read off disk. `boardScreens` is
+ * empty until this runs and `render()` walks it — so without this the island
+ * paints an empty Home for as long as the preferences take to arrive, which on
+ * a cold start is the first thing anybody sees. */
+syncBoards();
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────
  * A rail at the bottom rather than a strip under the header: the header
@@ -454,15 +772,19 @@ let lit = new Set<ScreenName>();
  * makes every index after it jump — so the player leaves a gap in the order
  * rather than closing it up. */
 function stops(): RailStop[] {
+  /* ⚠️ Read ONCE. `tabs()` builds a list, and the sort below would otherwise
+   * call it twice per comparison. */
+  const all = tabs();
   /* ⚠️ The saved order is applied as a SORT KEY, not by rebuilding the list
    * from it. A screen the preferences have never heard of — one added since
-   * they were written — keeps its built-in place at the end rather than
-   * vanishing, which is what filtering `railOrder` through `TABS` would do. */
+   * they were written, or a board made this morning — keeps its built-in place
+   * at the end rather than vanishing, which is what filtering `railOrder`
+   * through the screen list would do. */
    const rank = (name: ScreenName) => {
      const at = prefs.railOrder.indexOf(name);
-     return at < 0 ? TABS.findIndex(tab => tab.name === name) + TABS.length : at;
+     return at < 0 ? all.findIndex(tab => tab.name === name) + all.length : at;
    };
-  return TABS.map(tab => ({
+  return all.map(tab => ({
     name: tab.name,
     icon: tab.icon,
     label: tab.label,
@@ -521,12 +843,17 @@ function show(name: ScreenName, live = false) {
    * is no save button on it — it writes itself down as you stop typing — so
    * the one path that can outrun the timer is leaving the screen inside it. */
   if (from === "notes" && name !== "notes") notes.leave();
+  /* ⚠️ Walking off a board you are arranging KEEPS the arrangement. Every
+   * edit has already been written — the tray is not a form with a save button
+   * — so discarding here would throw away work the screen has been showing as
+   * done. The × is the way to go back, and it is on screen the whole time. */
+  if (arranging && arranging.board !== boardOf(boards, name)?.id) stopArranging(true);
   if (name === "review") void review.load().then(() => render());
   /* The direction the selection travelled, so the new screen arrives from the
    * side it sits on. ⚠️ Taken from the TAB ORDER, not from the order screens
    * were opened in — the rail is what you are looking at while this happens. */
-  const was = TABS.findIndex(tab => tab.name === from);
-  const now = TABS.findIndex(tab => tab.name === name);
+  const was = tabs().findIndex(tab => tab.name === from);
+  const now = tabs().findIndex(tab => tab.name === name);
   const moving = !live && from !== name && was >= 0 && now >= 0;
   screens.style.setProperty("--dir", String(moving && now < was ? -1 : 1));
 
@@ -556,7 +883,7 @@ function show(name: ScreenName, live = false) {
     // The first paint is not an arrival: nothing was left to come from.
     if (active) section.classList.toggle("is-first", !moving && !live);
   }
-  get("island-where").textContent = TABS.find(tab => tab.name === name)?.label ?? "";
+  get("island-where").textContent = tabs().find(tab => tab.name === name)?.label ?? "";
   paintBack();
   /* ⚠️ The width lands BEFORE the render. The panel measures its content at
    * the end of `render()`, and measuring a screen at the previous screen's
@@ -606,6 +933,8 @@ function paintMediaTab() {
  *  screen was opened and correct every time after. */
 let machine: ModuleContext["machine"] = null;
 let weather: ModuleContext["weather"] = null;
+let coin: CoinReading | null = null;
+let wallet: WalletReading | null = null;
 /** When the current rotation started. Reset when the set of things worth
  *  saying changes, so a new arrival is seen rather than waited for. */
 let rotationFrom = Date.now();
@@ -719,9 +1048,59 @@ function noticeClaim(): Activity | null {
  * see is one you forget to start again, which is the failure the whole thing
  * exists to avoid; it says "paused" rather than hiding.
  */
+/** The run the STRIP should speak for.
+ *
+ * ⚠️ A POMODORO first, then anything else running, then anything paused. The
+ * strip has one slot and several runs can be live at once; a pomodoro is the
+ * one with a shape to be part-way through, which is the only one where the
+ * strip can say something the figure alone cannot.
+ *
+ * ⚠️ NEVER a plain timer — it has a circle of its own beside the notch. The
+ * strip is the date, the time and the module slot, and spending all three for
+ * twenty minutes on a number you asked for yourself and can see the end of is
+ * exactly what the bubble exists to avoid. A pomodoro is the other case: you
+ * did not choose its length and it has a cycle to be part-way through. The two
+ * engines this replaced kept them apart by construction; one collection has to
+ * say so. */
+function stripRun(): Run | null {
+  const mine = runs.list.filter(one => one.kind !== "timer");
+  const live = mine.filter(runGoing);
+  return live.find(one => one.kind === "pomodoro")
+    ?? live[0]
+    ?? mine.find(one => one.kind === "pomodoro" && one.count)
+    ?? null;
+}
+
+/** …and the run the HEADER CHIP speaks for, which is any of them.
+ *
+ * ⚠️ Wider than the strip's on purpose. The chip is a readout beside the other
+ * header chips rather than a claim on the notch, so a plain timer belongs in it
+ * — and while the panel is open the chip is the only place a countdown of any
+ * kind can be. */
+function leading(): Run | null {
+  const live = runs.list.filter(runGoing);
+  return live.find(one => one.kind === "pomodoro")
+    ?? live[0]
+    ?? runs.list.find(one => one.kind !== "stopwatch" && one.count)
+    ?? null;
+}
+
 function timerClaim(): Activity | null {
-  const state = timer.state;
-  if (!state) return null;
+  const run = stripRun();
+  const state = run && run.kind !== "stopwatch" ? run.count : null;
+  /* A stopwatch claims the strip too, and says the one thing it knows.
+   * ⚠️ No phase, no progress and no ring: it has no target, so every one of
+   * those would be a shape it does not have. */
+  if (run?.kind === "stopwatch") {
+    return {
+      priority: 42, screen: "timer", kind: "focus", icon: "clock",
+      label: run.title || "Stopwatch",
+      value: runGoing(run) ? "" : "paused",
+      time: timerText(Math.round(counted(run) / 1000)),
+      held: !runGoing(run),
+    };
+  }
+  if (!state || !run) return null;
   const held = state.endsAt === null;
   /* ⚠️ The BAR mode is the quiet one, and it is the default. A 21px
    * countdown on the strip is the brightest thing on the screen for
@@ -743,18 +1122,25 @@ function timerClaim(): Activity | null {
     /* ⚠️ The NAME, when there is one. "Focus" you already knew — you
      * started it; "Ship the call screen" is the thing you look down at the
      * strip to be reminded of. The phase is the fallback, not the headline. */
-    label: state.name || phaseName(state),
-    value: [state.name ? phaseName(state) : "",
+    label: run.title || state.name || phaseName(state),
+    value: [run.title || state.name ? phaseName(state) : "",
       state.ready ? "ready" : held ? "paused" : ""]
       .filter(Boolean).join(" · "),
     /* ⚠️ Its own slot. The countdown used to be the tail of the grey second
      * line — ten and a half pixels, after the phase and a middle dot — which
      * is the one number on the strip you are actually looking for, printed
      * smaller than anything else on it. */
-    time: timerText(timer.seconds()),
+    time: timerText(Math.round(figureMs(run, lengths()) / 1000)),
     held,
-    progress: timer.through(),
+    progress: runThrough(run),
   };
+}
+
+/** How far through the run's current phase, for the pill's ring. */
+function runThrough(run: Run): number {
+  if (run.kind === "stopwatch" || !run.count) return 0;
+  const whole = run.count.whole || 1;
+  return Math.max(0, Math.min(1, 1 - Math.max(0, figureMs(run, lengths())) / whole));
 }
 
 /** The plain timer, as a circle beside the notch.
@@ -765,14 +1151,19 @@ function timerClaim(): Activity | null {
  * for a minute at a time, which is what a countdown looks like when it has
  * stopped. Padded, so neither row changes width under the other. */
 function paintBubble() {
-  const state = countdown.state;
-  if (!state) {
+  /* ⚠️ The livest TIMER, not the livest run: the strip already carries the
+   * pomodoro, and the bubble beside the notch is the other one. A stopwatch
+   * has no target, so it has nothing to draw an arc from. */
+  const run = runs.list.find(one => one.kind === "timer" && runGoing(one))
+    ?? runs.list.find(one => one.kind === "timer" && one.count);
+  const state = run?.count;
+  if (!run || !state) {
     surface.setCountdown(null);
     return;
   }
-  const seconds = countdown.seconds();
+  const seconds = Math.round(figureMs(run, lengths()) / 1000);
   surface.setCountdown({
-    through: countdown.through(),
+    through: runThrough(run),
     minutes: String(Math.floor(seconds / 60)).padStart(2, "0"),
     seconds: String(seconds % 60).padStart(2, "0"),
     final: seconds < 60,
@@ -829,7 +1220,7 @@ function paintBack() {
     return;
   }
   if (!sent) return;
-  const label = TABS.find(tab => tab.name === cameFrom)?.label ?? "Home";
+  const label = tabs().find(tab => tab.name === cameFrom)?.label ?? "Home";
   back.setAttribute("aria-label", `Back to ${label}`);
   back.setAttribute("data-tip", `Back to ${label}`);
   if (!back.dataset.icon) paintIcon(back, "back");
@@ -881,24 +1272,16 @@ function chipParts(chip: HTMLElement, second: string): { mark: HTMLElement; text
  * when this was unconditional. */
 let headDrawn = "";
 
-/** Which countdown the header speaks for.
- *
- * ⚠️ The POMODORO wins when both are running, and it is not arbitrary: the
- * plain timer has a circle of its own beside the notch, so the chip is the
- * only place a pomodoro can be while the panel is open. */
-function leading(): Timer {
-  return timer.state ? timer : countdown;
-}
-
 function paintHead() {
   const lead = leading();
-  const running = lead.state;
+  const live = runs.list.filter(runGoing);
+  const seconds = lead ? Math.round(figureMs(lead, lengths()) / 1000) : 0;
   const waiting = noticeSource.count;
   const key = [
-    running ? `${running.phase}:${lead.seconds()}:${running.endsAt === null}` : "",
+    lead ? `${lead.id}:${seconds}:${runGoing(lead)}` : "",
     screen,
-    // Both, so the chip repaints when the OTHER one starts or stops.
-    !!timer.state, !!countdown.state,
+    // How many, so the chip repaints when another one starts or stops.
+    live.length,
     waiting,
   ].join("|");
   if (key === headDrawn) return;
@@ -914,21 +1297,24 @@ function paintHead() {
   const chip = get<HTMLButtonElement>("head-timer");
   chip.hidden = false;
   const { mark, text } = chipParts(chip, "head-text");
-  paintIcon(mark, running?.phase === "rest" || running?.phase === "long" ? "coffee" : "timer");
-  chip.dataset.phase = running?.phase ?? "";
-  chip.classList.toggle("is-held", !!running && running.endsAt === null);
-  chip.classList.toggle("is-idle", !running);
-  /* Both are counting. ⚠️ The chip has room for ONE, so the other has to be
-   * admitted somehow or it is running invisibly behind the screen that owns
-   * it — which is the whole complaint that made them two engines. */
-  chip.classList.toggle("is-both", !!timer.state && !!countdown.state);
-  if (running) {
-    const left = timerText(lead.seconds());
-    const also = timer.state && countdown.state
-      ? ` — and a ${lead === timer ? "timer" : "pomodoro"} as well` : "";
+  const phase = lead && lead.kind !== "stopwatch" ? lead.count?.phase : undefined;
+  paintIcon(mark, lead?.kind === "stopwatch" ? "clock"
+    : phase === "rest" || phase === "long" ? "coffee" : "timer");
+  chip.dataset.phase = phase ?? "";
+  chip.classList.toggle("is-held", !!lead && !runGoing(lead));
+  chip.classList.toggle("is-idle", !lead);
+  /* More than one is counting. ⚠️ The chip has room for ONE, so the others
+   * have to be admitted somehow or they are running invisibly behind the screen
+   * that owns them — which is the whole complaint that made them two engines in
+   * the first place, and is worse now that there can be five. */
+  chip.classList.toggle("is-both", live.length > 1);
+  if (lead) {
+    const left = timerText(seconds);
+    const also = live.length > 1 ? ` — and ${live.length - 1} more` : "";
+    const what = lead.title || runName(lead);
     text.textContent = left;
-    chip.setAttribute("aria-label", `${phaseName(running)} — ${left} left${also}`);
-    chip.setAttribute("data-tip", `${phaseName(running)} — ${left} left${also}`);
+    chip.setAttribute("aria-label", `${what} — ${left}${also}`);
+    chip.setAttribute("data-tip", `${what} — ${left}${also}`);
   } else {
     text.textContent = "";
     chip.setAttribute("aria-label", "Timer");
@@ -968,6 +1354,74 @@ function paintHead() {
   }
 }
 
+/* ── Ambient mode ──────────────────────────────────────────────────────────
+ * The player, full screen, in its own window (ambient.rs). The island hands
+ * over two rectangles: where it is now, which the player grows out of, and
+ * where the collapsed pill will be, which it shrinks back into.
+ */
+function openAmbient() {
+  if (!native || !media.media.active) return;
+  void call("ambient_open", { from: surface.islandRect(), pill: surface.pillRect() })
+    .catch(e => say("Ambient mode failed", String(e).replace(/^invoke error: /i, "").slice(0, 120)));
+}
+
+/* ── The glance ────────────────────────────────────────────────────────────
+ * What hovering the pill shows while music plays in click mode: a bigger
+ * cover, the line being sung, three buttons and a way into ambient mode.
+ * ⚠️ Built ONCE and written in place, like the pill. It is repainted every
+ * second for the lyric and the progress line, and a rebuild would restart
+ * the cover image and drop a press halfway through.
+ */
+const glanceLayer = get("island-glance");
+const glance = (() => {
+  const cover = element("img", "glance-art") as HTMLImageElement;
+  cover.alt = "";
+  const title = element("b", "glance-title");
+  const artist = element("span", "glance-artist");
+  const words = element("i", "glance-words");
+  const button = (icon: TaskIcon, label: string, run: () => void, cls = "glance-btn") => {
+    const b = element("button", cls) as HTMLButtonElement;
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    paintIcon(b, icon);
+    b.addEventListener("click", event => { event.stopPropagation(); run(); });
+    return b;
+  };
+  const prev = button("previous", "Previous", () => media.control("previous"));
+  const play = button("pause", "Pause", () => media.control("playpause"), "glance-btn glance-play");
+  const next = button("next", "Next", () => media.control("next"));
+  const line = element("span", "glance-line");
+  const wide = button("ambient", "Ambient mode", () => openAmbient(), "glance-btn glance-open");
+  const text = element("div", "glance-text");
+  const controls = element("div", "glance-ctl");
+  controls.append(prev, play, next, line, wide);
+  text.append(title, artist, words, controls);
+  glanceLayer.append(cover, text);
+  /* A press on the glance itself does what a press on the pill does — opens
+   * the panel. The buttons above stop their own presses reaching here. */
+  glanceLayer.addEventListener("click", () => { if (!surface.open) surface.toggle(); });
+  return { cover, title, artist, words, play, prev, next, line, wide };
+})();
+
+function paintGlance() {
+  const m = media.media;
+  if (glance.cover.src !== (m.artwork || "")) {
+    if (m.artwork) glance.cover.src = m.artwork; else glance.cover.removeAttribute("src");
+  }
+  glance.title.textContent = m.title;
+  glance.artist.textContent = m.artist;
+  /* The line being sung, or the album when there are no synced words — an
+   * empty line would leave a gap that reads as something failing to load. */
+  glance.words.textContent = player.lineNow() || m.album;
+  paintIcon(glance.play, m.playing ? "pause" : "play");
+  glance.play.setAttribute("aria-label", m.playing ? "Pause" : "Play");
+  glance.play.disabled = !m.canPlayPause;
+  glance.prev.disabled = !m.canPrevious;
+  glance.next.disabled = !m.canNext;
+  glance.line.hidden = m.duration <= 0;
+  glance.line.style.setProperty("--p", `${m.duration > 0 ? (media.position() / m.duration) * 100 : 0}%`);
+}
+
 /** Draw the collapsed pill: the live claim if there is one, the resting three
  *  slots otherwise. Split because at rest the pill is not one claim with its
  *  parts blank — it is three independent things sharing a strip. */
@@ -975,11 +1429,17 @@ function paintPill(live = claims()) {
   paintBubble();
   /* Full screen takes the island away, which is right for everything except
    * the thing you started because you were about to stop looking. */
-  const pom = timer.state;
-  surface.setPeek(pom
-    ? { through: timer.through(), phase: pom.phase, held: pom.endsAt === null }
+  const lead = stripRun();
+  const pom = lead && lead.kind === "pomodoro" ? lead.count : null;
+  surface.setPeek(pom && lead
+    ? { through: runThrough(lead), phase: pom.phase, held: pom.endsAt === null }
     : null);
   const best = pick(live);
+  /* The glance is for music only. ⚠️ Keyed on what the pill is SHOWING, not
+   * on whether anything is playing: a pill showing a call that swelled into a
+   * track on hover would be answering a question nobody asked. */
+  surface.setGlanceable(!!best && best.priority > 0 && best.kind === "media" && media.media.active);
+  paintGlance();
   if (best && best.priority > 0) {
     /* ⚠️ A call keeps the clock, so the shell hands it over — it owns the
      * 12/24-hour preference and the tick, and a screen formatting its own
@@ -1015,7 +1475,11 @@ function render() {
   shelf.render();
   notes.render();
   review.render();
-  home.render();
+  /* ⚠️ A board with a card in the hand is SKIPPED, not redrawn. The row is
+   * laid out with transforms measured once at the start of the gesture, and
+   * the shell renders every second — rebuilding under the pointer throws those
+   * away, restarts every live card and drops the capture. */
+  for (const board of boardScreens.values()) if (!board.arranging) board.render();
   player.render();
   callScreen.render();
   notices.render();
@@ -1043,7 +1507,32 @@ function render() {
    * The header is the same on every screen — tabs, pin, settings, close — and
    * putting a control that changes with the screen among four that never do is
    * what made these read as orphans wherever they were put. */
-  surface.setTools(tools[screen]?.().tools ?? []);
+  /* ⚠️ Arranging is a SCREEN TOOL, not a global one, and the first attempt
+   * had it as a fifth control on the global arc. That arc is struck off the
+   * island's near corner and every control on it lengthens the line — with a
+   * fifth, the arc's own transparent reach band comes to lie over the
+   * collapsed pill, and pressing the pill hits the band instead. It is
+   * invisible, so nothing about it looks wrong; what it looks like is a pill
+   * that sometimes does not open. See AGENTS.
+   *
+   * ⚠️ And it belongs here anyway: this arc is what the screen you are on can
+   * do, and arranging is the one thing a board can do that no other screen
+   * can. The tools map is keyed by screen NAME, which a board cannot be — its
+   * name is made at runtime — so it is asked for separately. */
+  const here = boardHere();
+  surface.setTools([
+    ...(here ? [{
+      id: "arrange", icon: "grid" as const,
+      /* ⚠️ NOT "Done arranging" — that is the tray's own tick, and two
+       * controls answering to one name is a screen reader offering the same
+       * words twice for two different buttons. This one ENDS the mode from
+       * outside it; the tick ends it from within. */
+      label: arranging ? "Finish arranging" : "Arrange the widgets",
+      pressed: !!arranging,
+      run: () => (arranging ? stopArranging(true) : startArranging()),
+    }] : []),
+    ...(tools[screen]?.().tools ?? []),
+  ]);
   /* ⚠️ Rebuilt every render rather than once at boot, and the pin is why: a
    * button that says whether the island is held open has to be rebuilt with
    * the answer. The list is four items long, so this is cheaper than a
@@ -1142,60 +1631,71 @@ palette.add(query => {
       id: `timer:${count}`,
       icon: "timer",
       title: `Set a timer for ${count} minute${count === 1 ? "" : "s"}`,
-      run: () => { countdown.start(count); },
+      run: () => {
+        const run = runs.add("timer");
+        runs.setMinutes(run.id, count);
+        runs.toggle(run.id);
+      },
       // One id per number would evict forty real entries in an afternoon.
       volatile: true,
     });
   }
-  /* ⚠️ Two sets of verbs, and both name which one they mean. With one
-   * engine "Pause the timer" was unambiguous; with two running side by side a
-   * command that did not say which is a command you cannot use. */
-  const pom = timer.state;
-  if (!pom) {
+
+  /* ⚠️ The verbs name the RUN, not the kind. With one pomodoro and one timer
+   * "Pause the timer" was unambiguous; with a list of them a command that does
+   * not say which is a command you cannot use — so anything counting gets its
+   * own row, named after itself. */
+  for (const run of runs.list.filter(runGoing)) {
     out.push({
-      id: "timer:pomodoro",
-      icon: "focus",
-      title: "Start a pomodoro",
-      note: `${lengths().work} minutes, then a break`,
-      run: () => { timer.start(); },
-    });
-  } else {
-    out.push({
-      id: "timer:toggle",
-      icon: pom.phase === "work" ? "focus" : "coffee",
-      title: pom.endsAt === null
-        ? (pom.ready ? `Start round ${roundOf(pom)} of ${ROUNDS}` : "Carry on the pomodoro")
-        : `Pause the ${phaseName(pom).toLowerCase()}`,
-      run: () => timer.toggle(),
-    });
-    out.push({
-      id: "timer:stop",
-      icon: "close",
-      title: "Stop the pomodoro",
-      note: `${roundOf(pom)} of ${ROUNDS} — the run is thrown away`,
-      run: () => timer.stop(),
+      id: `run:${run.id}:toggle`,
+      icon: run.kind === "stopwatch" ? "clock"
+        : run.count?.phase === "rest" || run.count?.phase === "long" ? "coffee" : "focus",
+      title: `Pause ${runName(run).toLowerCase()}`,
+      note: timerText(Math.round(figureMs(run, lengths()) / 1000)),
+      run: () => runs.toggle(run.id),
     });
   }
-  const plain = countdown.state;
-  if (plain) {
+  /* Paused, and therefore forgettable — which is the failure the whole thing
+   * exists to avoid. ⚠️ Only ones that have BEGUN: a list of five untouched
+   * timers offering "carry on" is five rows of nothing. */
+  for (const run of runs.list.filter(one => !runGoing(one)
+    && (one.count || counted(one) > 0))) {
     out.push({
-      id: "countdown:toggle",
-      icon: "timer",
-      title: plain.endsAt === null ? "Carry on the timer" : "Pause the timer",
-      note: timerText(countdown.seconds()),
-      run: () => countdown.toggle(),
-    });
-    out.push({
-      id: "countdown:stop",
-      icon: "close",
-      title: "Stop the timer",
-      run: () => countdown.stop(),
+      id: `run:${run.id}:resume`,
+      icon: "play",
+      title: `Carry on ${runName(run).toLowerCase()}`,
+      note: timerText(Math.round(figureMs(run, lengths()) / 1000)),
+      run: () => runs.toggle(run.id),
     });
   }
+  /* ⚠️ One verb per KIND for starting a new one, rather than one per run.
+   * "Start a pomodoro" is what somebody types; which of their three it becomes
+   * is the list's business. */
+  out.push({
+    id: "run:new:pomodoro",
+    icon: "focus",
+    title: "Start a pomodoro",
+    note: `${lengths().work} minutes, then a break`,
+    run: () => {
+      const held = runs.of("pomodoro").find(one => !one.count);
+      const run = held ?? runs.add("pomodoro");
+      runs.pick(run.id);
+      runs.toggle(run.id);
+    },
+  });
+  out.push({
+    id: "run:new:stopwatch",
+    icon: "clock",
+    title: "Start a stopwatch",
+    run: () => {
+      const run = runs.add("stopwatch");
+      runs.toggle(run.id);
+    },
+  });
   return out;
 });
 
-palette.add(() => TABS.map(tab => ({
+palette.add(() => tabs().map(tab => ({
   id: `go:${tab.name}`,
   title: tab.label,
   keywords: "go screen open",
@@ -1736,8 +2236,15 @@ function applyPrefs(next: Prefs) {
     flat: next.railFlat,
   });
   today.setView(next.taskView === "all" ? "all" : "day");
-  home.setWeekStart(next.weekStartsMonday);
+  /* ⚠️ No `setWeekStart` for the boards. A widget reads the preference through
+   * `widgetDeps.mondayFirst()` at draw time, so there is nothing to push — and
+   * nothing that can be pushed to one board and not another. */
   calendar.setWeekStart(next.weekStartsMonday);
+  /* ⚠️ BEFORE the render below, and before the rail is asked for its stops. A
+   * board that has just been made has no section until this runs, and `show()`
+   * would land on a screen that is not in the document. */
+  boards = normaliseBoards(next.boards);
+  syncBoards();
   /* ⚠️ Both. The pill reads `prefs` through `moduleContext()`, so a muted
    * module or a moved threshold needs `paintPill`; the week strip and the
    * calendar grid are drawn by their screens, so they need a render. A
@@ -1806,8 +2313,12 @@ get("head-bell").addEventListener("click", () => show("notices"));
 get("head-system").addEventListener("click", () => show("system"));
 
 get("head-timer").addEventListener("click", () => {
-  const want = timer.state ? "pomodoro" : countdown.state ? "timer" : null;
-  if (want && prefs.timerMode !== want) { prefs.timerMode = want; savePrefs(); }
+  /* ⚠️ The screen opens on the run the CHIP is showing, not on whatever it
+   * was last left on. The chip is the only thing on the strip that says a
+   * countdown is running; pressing it and being taken to a different one is a
+   * control that points somewhere else. */
+  const lead = leading();
+  if (lead) runs.pick(lead.id);
   show("timer");
 });
 
@@ -1823,10 +2334,14 @@ surface.onCountdown(
     surface.pinFor(4000);
   },
   () => {
-    // ⚠️ The PLAIN one. The circle is the plain timer; `timer` is now the
-    // pomodoro, and pausing the wrong countdown is a silent failure that
-    // looks exactly like a button that does nothing.
-    countdown.toggle();
+    /* ⚠️ The one the CIRCLE is drawing, found the same way `paintBubble` finds
+     * it. The circle is a plain timer — the strip carries the pomodoro — and
+     * pausing a different countdown from the one under the pointer is a silent
+     * failure that looks exactly like a button that does nothing. */
+    const run = runs.list.find(one => one.kind === "timer" && runGoing(one))
+      ?? runs.list.find(one => one.kind === "timer" && one.count);
+    if (!run) return;
+    runs.toggle(run.id);
     paintBubble();
     paintHead();
   },
@@ -1929,9 +2444,45 @@ function scrollableUnder(target: EventTarget | null, within: HTMLElement): boole
   return false;
 }
 
+/** A SIDEWAYS scroller under the pointer, if there is one.
+ *
+ * ⚠️ A separate walk from the one above, and the reason is that a mouse has no
+ * horizontal wheel. The rule above answers "does this thing want the scroll",
+ * which for a vertical list the wheel matches axis-for-axis; a row that scrolls
+ * sideways is a row the wheel can only reach by being TURNED, so the caller has
+ * to do the turning. Without this the arrange tray could not be scrolled at all
+ * — a vertical wheel over it changed screens, and a trackpad's horizontal one
+ * changed screens too, which is the same gesture doing the opposite of what it
+ * says on every other surface in the app. */
+function sideScrollerUnder(target: EventTarget | null, within: HTMLElement): HTMLElement | null {
+  let node = target instanceof HTMLElement ? target : null;
+  while (node && node !== within.parentElement) {
+    const overflow = getComputedStyle(node).overflowX;
+    if ((overflow === "auto" || overflow === "scroll") && node.scrollWidth > node.clientWidth + 1) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
 get("island-expanded").addEventListener("wheel", event => {
   const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
   if (!horizontal && scrollableUnder(event.target, get("island-expanded"))) return;
+  /* ⚠️ A sideways scroller takes the wheel WHICHEVER WAY it was turned, and
+   * that is the whole point: a mouse has no horizontal wheel, so a row that can
+   * only be reached by `deltaX` cannot be reached by most people at all. The
+   * larger of the two deltas moves it. */
+  const sideways = sideScrollerUnder(event.target, get("island-expanded"));
+  if (sideways) {
+    const by = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    const was = sideways.scrollLeft;
+    sideways.scrollLeft = was + by;
+    /* Only swallow it if it MOVED something. At either end the row has nothing
+     * left to give and the wheel should go back to being the screen switcher,
+     * rather than dying quietly against a wall. */
+    if (sideways.scrollLeft !== was) { event.preventDefault(); return; }
+  }
   event.preventDefault();
   const delta = horizontal ? event.deltaX : event.deltaY;
   const now = Date.now();
@@ -2018,6 +2569,9 @@ async function boot() {
   if (native) {
     // Which display it landed on, said by the pill itself.
     await listen<string>("island:moved", event => say("Moved to", event.payload));
+    /* Ambient mode is up or down. While it is up the island is covered, and
+     * must neither open nor glance under a player that is not looking at it. */
+    await listen<boolean>("ambient:state", event => surface.setAmbient(event.payload));
 
     /* The shelf shortcut deliberately does not open the island: the point is
      * to park something without leaving what you are in. The pill is the
@@ -2070,7 +2624,12 @@ async function boot() {
         return;
       }
       if (verb === "timer") {
-        if (!timer.state) timer.start();
+        /* ⚠️ Picks up an UNSTARTED pomodoro rather than always making one. A
+         * wedge pressed twice should not leave two behind. */
+        const held = runs.of("pomodoro").find(one => !one.count);
+        const run = held ?? runs.add("pomodoro");
+        runs.pick(run.id);
+        if (!runGoing(run)) runs.toggle(run.id);
         render();
         return;
       }
@@ -2139,10 +2698,26 @@ async function boot() {
   try {
     weather = await call<typeof weather>("get_weather");
   } catch { /* no place configured, or the first poll has not landed */ }
+  try {
+    coin = await call<CoinReading | null>("get_crypto");
+  } catch { /* no symbol configured, or the first poll has not landed */ }
+  try {
+    wallet = await call<WalletReading | null>("get_wallet");
+  } catch { /* nothing connected, or the first poll has not landed */ }
   if (native) {
     await listen<typeof weather>("notch:weather", event => {
       weather = event.payload;
       paintPill();
+    });
+    /* ⚠️ `render()`, not `paintPill()`. The coin is not on the strip — it is a
+     * board block, and the board is rebuilt by the shell's render. */
+    await listen<CoinReading | null>("notch:crypto", event => {
+      coin = event.payload;
+      render();
+    });
+    await listen<WalletReading | null>("notch:wallet", event => {
+      wallet = event.payload;
+      render();
     });
     await listen("notch:sessions", () => paintPill());
   }
@@ -2316,6 +2891,8 @@ async function boot() {
      * bar sat wherever the last event left it. In place, never a redraw — the
      * queue can be scrolled and the search field can hold a caret. */
     player.tick();
+    // The glance's lyric and progress line, in place.
+    paintGlance();
     /* The countdowns, once a second. ⚠️ `tick` returns whether a phase ENDED,
      * which needs the whole shell redrawn — the chip alone would leave the
      * rail and the palette holding a timer that has finished.
@@ -2324,9 +2901,19 @@ async function boot() {
      * circuits, so a pomodoro that ends in the same second as a timer would
      * have left the timer unticked — and unticked means unfinished: no sound,
      * no toast, and a countdown sitting at 00:00 until the next second. */
-    const rolled = timer.tick();
-    const alsoRolled = countdown.tick();
-    if (rolled || alsoRolled) render(); else paintHead();
+    /* ⚠️ Every run in one pass, and `tick` says whether any PHASE ended —
+     * which needs the whole shell redrawn, because the chip alone would leave
+     * the rail and the palette holding a countdown that has finished. The old
+     * pair had to be ticked separately and before either answer was used,
+     * since `a || b` short-circuits; one list cannot make that mistake. */
+    if (runs.tick()) render(); else { timerScreen.tick(); paintHead(); }
+    /* ⚠️ The board on screen too, every second. Its blocks carry countdowns,
+     * and the shell's full render runs on the MINUTE — so a timer on a board
+     * held one number for up to a minute while the same run ticked on the timer
+     * screen beside it. `tick` writes in place and does nothing while the board
+     * is being arranged, so neither a drag nor a caret is disturbed. */
+    const here = boardOf(boards, screen);
+    if (here) boardScreens.get(here.id)?.tick();
     paintPill();
   }, 1000);
   window.setInterval(() => { today.tick(); render(); }, 60000);

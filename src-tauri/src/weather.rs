@@ -30,7 +30,14 @@ const POLL: Duration = Duration::from_secs(30 * 60);
 /// ⚠️ A failed request must not clear a good reading. A sleeping laptop, a
 /// captive portal or a flaky VPN would otherwise blank the pill, and a blank
 /// is indistinguishable from "no place configured".
+/// ⚠️ `camelCase`, and it was missing. Serde writes a Rust field name straight
+/// through unless told otherwise, so `is_day` and `read_at_ms` arrived in the
+/// web layer under those names while every reader asked for `isDay` and
+/// `readAtMs` — which is `undefined`, not an error. The night sky never came on
+/// and nothing ever looked stale, silently, for as long as both have existed.
+/// `Slot` and `Day` below have always carried this; the parent did not.
 #[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Weather {
     /// Empty when no place is configured, which is the "module off" signal.
     pub place: String,
@@ -41,6 +48,48 @@ pub struct Weather {
     pub icon: String,
     /// Unix milliseconds of the reading, so the web layer can dim a stale one.
     pub read_at_ms: i64,
+
+    /* ── Everything the widgets want and the pill does not ───────────────
+     * ⚠️ All of it OPTIONAL or empty-by-default. The pill has shown one line
+     * for a year and must keep working when a reply arrives without these;
+     * the widgets that want a forecast check for one and say so when it is
+     * missing, which is a state they have to handle anyway on the first poll
+     * after a cold start. */
+    /// Whether the sun is up where the reading was taken.
+    pub is_day: bool,
+    /// Today's high and low, as the forecast has them.
+    pub high: Option<i32>,
+    pub low: Option<i32>,
+    /// Local `HH:MM` for each, so nothing downstream parses a date.
+    pub sunrise: String,
+    pub sunset: String,
+    /// The next few hours, from the one now.
+    pub hours: Vec<Slot>,
+    /// The next few days, starting with today.
+    pub days: Vec<Day>,
+}
+
+/// One hour of the forecast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Slot {
+    /// Local `HH:MM`. ⚠️ Formatted HERE rather than handed over as an ISO
+    /// string: the hour a forecast is for is the PLACE's hour, and a browser
+    /// asked to format it would use the machine's timezone instead.
+    pub at: String,
+    pub celsius: i32,
+    pub icon: String,
+}
+
+/// One day of the forecast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Day {
+    /// `2026-09-21`, for the web layer to name in the user's own language.
+    pub date: String,
+    pub icon: String,
+    pub high: i32,
+    pub low: i32,
 }
 
 #[derive(Default)]
@@ -97,11 +146,55 @@ struct GeoReply {
 struct Current {
     temperature_2m: f64,
     weather_code: i32,
+    /// The moment this reading is for, in the PLACE's own clock
+    /// (`2026-09-21T18:15`). ⚠️ Asked for rather than derived: finding "now"
+    /// in the hourly array means comparing against the place's hour, and the
+    /// machine's clock is the wrong one the moment the place is elsewhere.
+    #[serde(default)]
+    time: String,
+    /// 1 while the sun is up. ⚠️ Open-Meteo's own answer rather than a
+    /// comparison against sunrise: it knows the place's timezone and we would
+    /// be doing arithmetic on strings to get the same number.
+    #[serde(default)]
+    is_day: i32,
+}
+
+#[derive(Deserialize, Default)]
+struct Hourly {
+    #[serde(default)]
+    time: Vec<String>,
+    #[serde(default)]
+    temperature_2m: Vec<f64>,
+    #[serde(default)]
+    weather_code: Vec<i32>,
+}
+
+#[derive(Deserialize, Default)]
+struct Daily {
+    #[serde(default)]
+    time: Vec<String>,
+    #[serde(default)]
+    weather_code: Vec<i32>,
+    #[serde(default)]
+    temperature_2m_max: Vec<f64>,
+    #[serde(default)]
+    temperature_2m_min: Vec<f64>,
+    #[serde(default)]
+    sunrise: Vec<String>,
+    #[serde(default)]
+    sunset: Vec<String>,
 }
 
 #[derive(Deserialize)]
 struct Forecast {
     current: Current,
+    /// ⚠️ `default` on both, so a reply missing them is a reading with no
+    /// forecast rather than a parse failure that loses the temperature too.
+    /// The hourly and daily blocks are the part most likely to change shape.
+    #[serde(default)]
+    hourly: Hourly,
+    #[serde(default)]
+    daily: Daily,
 }
 
 /// WMO 4677, as the pill can say it.
@@ -121,6 +214,19 @@ fn describe(code: i32) -> (&'static str, &'static str) {
         71 | 73 | 75 | 77 | 85 | 86 => ("Snow", "wxSnow"),
         95 | 96 | 99 => ("Storm", "wxStorm"),
         _ => ("—", "wxCloud"),
+    }
+}
+
+/// `HH:MM` out of an Open-Meteo local timestamp (`2026-09-21T14:00`).
+///
+/// ⚠️ A SLICE, not a parse. The value is already in the place's own timezone
+/// — that is what `timezone=auto` is for — so turning it into a moment and
+/// formatting it again would only give the machine's timezone a chance to get
+/// involved. Anything that does not look like one comes back empty.
+fn clock_of(stamp: &str) -> String {
+    match stamp.split_once('T') {
+        Some((_, time)) if time.len() >= 5 => time[..5].to_string(),
+        _ => String::new(),
     }
 }
 
@@ -203,9 +309,18 @@ async fn refresh(app: &AppHandle) -> Result<Option<Weather>, String> {
         Err(message) => return Err(message),
     };
 
+    /* ⚠️ ONE request for all of it. The hourly and daily blocks cost nothing
+     * extra — Open-Meteo answers them from the same model run — and a second
+     * call would be a second cache, a second failure mode and two readings that
+     * can disagree about what the weather is. `forecast_days=6` is today plus
+     * five, which is what the widest forecast block has room for. */
     let url = format!(
         "https://api.open-meteo.com/v1/forecast\
-         ?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&timezone=auto"
+         ?latitude={lat}&longitude={lon}\
+         &current=temperature_2m,weather_code,is_day\
+         &hourly=temperature_2m,weather_code\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset\
+         &forecast_days=6&timezone=auto"
     );
     let forecast: Forecast = reqwest::get(&url)
         .await
@@ -215,12 +330,72 @@ async fn refresh(app: &AppHandle) -> Result<Option<Weather>, String> {
         .map_err(|_| "The forecast answered with something unexpected.".to_string())?;
 
     let (summary, icon) = describe(forecast.current.weather_code);
+
+    /* The hour the reading is for, as an index into the hourly arrays.
+     *
+     * ⚠️ Found by matching the PLACE's clock rather than by assuming the first
+     * entry is now: `forecast_days` starts the array at midnight local, so at
+     * six in the evening "the next six hours" begins eighteen entries in. A
+     * reply whose shape surprises us falls back to an empty forecast, which
+     * every widget already draws. */
+    let now_hour = forecast.current.time.as_str();
+    let from = forecast
+        .hourly
+        .time
+        .iter()
+        .position(|at| at.as_str() >= now_hour)
+        .unwrap_or(0);
+    let hours: Vec<Slot> = forecast
+        .hourly
+        .time
+        .iter()
+        .enumerate()
+        .skip(from)
+        .take(8)
+        .filter_map(|(at, when)| {
+            let celsius = forecast.hourly.temperature_2m.get(at)?;
+            let code = forecast.hourly.weather_code.get(at).copied().unwrap_or(-1);
+            Some(Slot {
+                at: clock_of(when),
+                celsius: celsius.round() as i32,
+                icon: describe(code).1.to_string(),
+            })
+        })
+        .collect();
+
+    let days: Vec<Day> = forecast
+        .daily
+        .time
+        .iter()
+        .enumerate()
+        .take(6)
+        .filter_map(|(at, date)| {
+            Some(Day {
+                date: date.clone(),
+                icon: describe(
+                    forecast.daily.weather_code.get(at).copied().unwrap_or(-1),
+                )
+                .1
+                .to_string(),
+                high: forecast.daily.temperature_2m_max.get(at)?.round() as i32,
+                low: forecast.daily.temperature_2m_min.get(at)?.round() as i32,
+            })
+        })
+        .collect();
+
     let reading = Weather {
         place,
         celsius: forecast.current.temperature_2m.round() as i32,
         summary: summary.to_string(),
         icon: icon.to_string(),
         read_at_ms: chrono::Utc::now().timestamp_millis(),
+        is_day: forecast.current.is_day != 0,
+        high: days.first().map(|one| one.high),
+        low: days.first().map(|one| one.low),
+        sunrise: forecast.daily.sunrise.first().map(|at| clock_of(at)).unwrap_or_default(),
+        sunset: forecast.daily.sunset.first().map(|at| clock_of(at)).unwrap_or_default(),
+        hours,
+        days,
     };
     if let Ok(mut held) = app.state::<Latest>().0.lock() {
         *held = Some(reading.clone());
@@ -273,8 +448,13 @@ mod tests {
     fn reads_a_real_forecast() {
         let body = tokio::runtime::Runtime::new().unwrap().block_on(async {
             reqwest::get(
-                "https://api.open-meteo.com/v1/forecast?latitude=50.06&longitude=19.94\
-                 &current=temperature_2m,weather_code&timezone=auto",
+                /* ⚠️ ONE LINE, however long. The app's own URL is built with
+                 * `\` line continuations and that is fine there; written by a
+                 * script into this file they arrived as literal `\n` escapes,
+                 * so the request carried a newline and seventeen spaces inside
+                 * `is_day` — and Open-Meteo answered with a parse error about a
+                 * variable name nobody had typed. A long line cannot do that. */
+                "https://api.open-meteo.com/v1/forecast?latitude=50.06&longitude=19.94&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&forecast_days=6&timezone=auto",
             )
             .await
             .unwrap()
@@ -284,5 +464,13 @@ mod tests {
         });
         println!("{body}");
         assert!(body.contains("temperature_2m"));
+        /* ⚠️ The blocks the widgets need, so a shape change at Open-Meteo is a
+         * failing test rather than a forecast block that quietly draws nothing.
+         * Every one of these is `serde(default)` on our side precisely because
+         * it CAN go missing — which means nothing else would ever notice. */
+        assert!(body.contains("\"hourly\""));
+        assert!(body.contains("\"daily\""));
+        assert!(body.contains("sunset"));
+        assert!(body.contains("is_day"));
     }
 }

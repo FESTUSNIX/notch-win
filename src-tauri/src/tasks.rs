@@ -460,6 +460,68 @@ pub async fn create_task(
     Ok(())
 }
 
+/// Put a task at a time, which is what dropping one on the week grid means.
+///
+/// ⚠️ **TickTick's date format is not RFC 3339.** It wants
+/// `2026-09-22T14:00:00+0200` — an offset with **no colon in it** — and the
+/// frontend speaks RFC 3339, where the colon is mandatory. Parsed in and
+/// reformatted out; the same `%z` this file already uses for
+/// `complete_task`'s `endDate`. Sending the colon through is accepted by the
+/// API and then silently mis-stored, which is the worst of the three outcomes.
+///
+/// ⚠️ `isAllDay` is set FALSE explicitly rather than left alone. A task
+/// created by the composer is all-day, and dropping one on a time grid is
+/// exactly the moment that stops being true — without this the task keeps its
+/// all-day flag, TickTick ignores the times, and it lands back at the top of
+/// the day looking like the drop did nothing.
+///
+/// ⚠️ And `id` + `projectId` go in the BODY, not just the URL. That is
+/// TickTick's contract for an update, the same as `rename_task`.
+#[tauri::command]
+pub async fn schedule_task(
+    app: AppHandle,
+    window: WebviewWindow,
+    project_id: String,
+    task_id: String,
+    start: String,
+    end: String,
+    time_zone: String,
+) -> Result<(), String> {
+    allow(&window, true)?;
+    id(&project_id)?;
+    id(&task_id)?;
+    let ticktick = |value: &str| -> Result<String, String> {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .map_err(|_| "Invalid task time.".to_string())
+            .map(|when| when.format("%Y-%m-%dT%H:%M:%S%z").to_string())
+    };
+    let from = ticktick(&start)?;
+    let to = ticktick(&end)?;
+    if time_zone.trim().is_empty() {
+        return Err("A task needs a time zone.".into());
+    }
+    let state = app.state::<TaskState>();
+    let _guard = state.gate.lock().await;
+    let token = token()?;
+    request(
+        &state,
+        &token,
+        Method::POST,
+        &format!("task/{task_id}"),
+        Some(json!({
+            "id": task_id,
+            "projectId": project_id,
+            "startDate": from,
+            "dueDate": to,
+            "isAllDay": false,
+            "timeZone": time_zone
+        })),
+    )
+    .await?;
+    after_write(&app, &state).await;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn rename_task(
     app: AppHandle,

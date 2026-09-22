@@ -79,7 +79,12 @@ export function done(state: Shape, now = Date.now()): boolean {
   return !!state && state.endsAt !== null && now >= state.endsAt;
 }
 
-const minutes = (count: number) => Math.max(1, Math.round(count)) * 60_000;
+/** Minutes as milliseconds, never less than one. ⚠️ Exported now that the run
+ *  LIST starts countdowns as well — two copies of "what a minute is worth"
+ *  would be a timer set to eleven minutes on one screen and thirteen on
+ *  another, which is the same reason the dial's numbers live in one module. */
+export const minutesOf = (count: number) => Math.max(1, Math.round(count)) * 60_000;
+const minutes = minutesOf;
 
 /** What follows a phase that has just run out.
  *

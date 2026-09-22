@@ -14,6 +14,7 @@ use windows::Win32::Security::Credentials::{
 pub const TICKTICK: &str = "codenotch-win/ticktick";
 pub const GOOGLE: &str = "codenotch-win/google-oauth";
 pub const SPOTIFY: &str = "codenotch-win/spotify-oauth";
+pub const BINANCE: &str = "codenotch-win/binance";
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -24,6 +25,7 @@ fn label(target: &str) -> &'static str {
     match target {
         GOOGLE => "Google Calendar",
         SPOTIFY => "Spotify",
+        BINANCE => "Binance",
         _ => "TickTick",
     }
 }

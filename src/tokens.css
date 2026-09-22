@@ -1,0 +1,148 @@
+/* The design tokens every window shares: motion, the translucent tiles, the
+   elevation recipe and everything the accent implies.
+
+   ⚠️ Tokens only — no rules. `tasks.css` imports this for the island, the
+   notes and the drop zone; `ambient.css` imports it for ambient mode, which
+   must not pull in the island's fourteen thousand lines to get twenty
+   variables. A value here is a value everywhere, which is the point: the
+   ambient player's buttons are the player's buttons, not a lookalike.
+
+   `--accent` itself is NOT here. Each window writes it from prefs at boot;
+   the default lives beside whoever needs one. */
+
+/* ── Motion tokens (transitions.dev) ─────────────────────────────────────
+   One scale for the whole surface. Every duration and easing below is chosen
+   by what the motion *does*, not by what number looked right in isolation:
+   a thing opening is slower than the same thing closing, hover-in is quicker
+   than hover-out, and anything that moves once a minute all day gets the
+   gentlest treatment on the scale. */
+:root {
+	--duration-stagger: 40ms;
+	--duration-micro: 80ms;
+	--duration-quick: 150ms;
+	--duration-fast: 250ms;
+	--duration-medium: 350ms;
+	--duration-slow: 400ms;
+	--duration-very-slow: 500ms;
+
+	--ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+	--ease-in-out: ease-in-out;
+	--ease-out: ease-out;
+	--ease-linear: linear;
+	--ease-bounce: cubic-bezier(0.32, 1.22, 0.36, 1);
+	--ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+
+	--distance-micro: 4px;
+	--distance-small: 6px;
+	--distance-base: 8px;
+	--distance-medium: 12px;
+	--distance-large: 30px;
+
+	--scale-large: 0.96;
+	--scale-medium: 0.97;
+	--scale-small: 0.98;
+	--scale-tiny: 0.99;
+
+	--blur-small: 2px;
+	--blur-medium: 3px;
+	--blur-large: 8px;
+
+	/* Number pop-in, tuned for a clock rather than for a balance: the stock
+     8px/500ms rise is a lot of travel for one digit that moves once a minute
+     and sits in the corner of your eye the rest of the time. */
+	--digit-dur: var(--duration-slow);
+	--digit-distance: var(--distance-small);
+	--digit-blur: var(--blur-small);
+	--digit-ease: var(--ease-bounce);
+}
+
+/* ── The iOS pass ────────────────────────────────────────────────────────
+   Control Centre's grammar: content lives in translucent rounded tiles on a
+   dark ground, separated by gaps rather than hairlines, with generous radii and
+   controls big enough to hit without aiming.
+
+   ⚠️ "Frosted" is painted, not blurred. `backdrop-filter` on a child of #island
+   would sample the island's own opaque black, not the desktop behind the
+   window — the island is what the transparency stops at. Translucent white over
+   black is what iOS-on-dark actually looks like anyway. */
+:root {
+	--tile: rgba(255, 255, 255, 0.055);
+	--tile-hi: rgba(255, 255, 255, 0.1);
+	--tile-on: rgba(255, 255, 255, 0.16);
+	--hair: rgba(255, 255, 255, 0.07);
+	--r-tile: 18px;
+	--r-row: 12px;
+	--r-pip: 999px;
+	/* The gap at the sides and the bottom of every screen. */
+	--screen-pad: 15px;
+}
+
+/* ── Elevation ─────────────────────────────────────────────────
+   The iOS pass above gave the surface its translucent tiles; this gives them
+   thickness. Four parts, and all four carry weight:
+
+     --hairline  an INSET ring, so the edge exists without a border eating a
+                 pixel off the box and re-flowing everything inside it
+     --gloss     one lit line along the TOP edge — this is the whole of what
+                 gives the light a direction. Without it the object is evenly
+                 lit from nowhere and reads as a sticker
+     --sheen     a faint fall-off down the face, painted as a background-IMAGE
+                 so it layers over a colour rather than replacing it
+     --lift-*    TWO shadows: one tight contact shadow that reads as thickness,
+                 one wide soft one that reads as distance
+
+   ⚠️ Drop either shadow and it flattens. The tight one alone is a sticker;
+   the wide one alone is a shape floating with nothing under it.
+
+   ⚠️ Every value is white or black at low alpha, never a literal grey — so
+   re-tinting the accent or darkening the ground costs one variable rather than
+   a sweep through the file. */
+:root {
+	--hairline: inset 0 0 0 1px var(--hair);
+	--gloss: inset 0 1px 0 rgba(255, 255, 255, 0.075);
+	--sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 58%);
+	--lift-1: 0 1px 2px rgba(0, 0, 0, 0.55), 0 4px 12px -5px rgba(0, 0, 0, 0.65);
+	--lift-2: 0 2px 5px rgba(0, 0, 0, 0.6), 0 12px 30px -10px rgba(0, 0, 0, 0.8);
+	--lift-3: 0 3px 8px rgba(0, 0, 0, 0.65), 0 26px 60px -18px rgba(0, 0, 0, 0.9);
+
+	/* ⚠️ Deliberately faint, and it was three times this at first. A coloured
+     glow is the one part of the recipe that stops reading as *light* and starts
+     reading as a halo stuck to the object — at .5 alpha the accent button had a
+     green corona a third of its own width. It is here to say "this one is
+     live", not to be seen on its own. */
+	/* ── Everything the accent implies ─────────────────────────────────
+     ⚠️ One variable has to BE one variable. The accent was settable from the
+     settings window while thirty-two places in this sheet still said
+     `#00ff88`, `#22ff9a` or `rgba(0,255,136,…)` — so a purple accent bought a
+     purple tab strip and left green hovers, a green today-cell on Home and a
+     green focus ring, which reads as a half-finished theme rather than as a
+     colour that did not take.
+
+     ⚠️ Derived with `color-mix`, never as a second stored colour. A hover
+     colour the user also has to pick is two settings for one decision, and the
+     pair can be set to disagree. */
+	--accent-hi: color-mix(in srgb, var(--accent) 86%, #fff);
+	/* Ink ON a filled accent. A very dark tint of the accent itself rather than
+     black: on a mid-tone accent pure black is a hole, and this keeps the
+     button reading as one object. */
+	--on-accent: color-mix(in srgb, var(--accent) 16%, #05070a);
+	--glow-accent: 0 4px 14px -10px color-mix(in srgb, var(--accent) 34%, transparent);
+	--glow-accent-hover: 0 6px 18px -10px color-mix(in srgb, var(--accent) 42%, transparent);
+
+	/* ── Colour with a job ───────────────────────────────────────
+     The surface was monochrome plus one green, which meant everything that
+     mattered was the same green. Each of these already has a referent, so the
+     colour is something you read rather than something you look at. */
+	--good: #30d158; /* connected, healthy, nothing to do */
+	--warn: #ff9f0a; /* an agent waiting, a task overdue */
+	/* Whose agent it is, in its own colour. ⚠️ Both taken from the vendors'
+     own files rather than picked: the terracotta is the fill in Anthropic's
+     `claude-logo.svg`, and OpenAI ships its mark in black and white only —
+     white is the one for a dark surface. The STATE keeps the pip, the word
+     and the card's wash; this is the other fact, and it never changes. */
+	--mark-claude: #d97757;
+	--mark-codex: #f0efeb;
+	--hot: #ff6961; /* a disk at 97%, a CPU pinned */
+	--cool: #5ac8fa; /* the calendar, meetings */
+	--calm: #a78bfa; /* media */
+}

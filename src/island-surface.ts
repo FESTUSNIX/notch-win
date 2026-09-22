@@ -73,6 +73,24 @@ export class IslandSurface {
    * The old comment was right about the second case and paid for it in the
    * first. `sizing()` picks. */
   private grow = new Spring(cpx(FRAME.islandMinDepth), 0.34, 0.9);
+  /* ── The glance ──────────────────────────────────────────────────────
+   * A third size between the pill and the panel, for hovering while music
+   * plays. ⚠️ Only in CLICK MODE — when "open on hover" is on, hovering
+   * already opens the whole panel, and a glance in front of it would be a
+   * step nobody asked for. ⚠️ Called a glance because "peek" is taken: that is
+   * the pomodoro's line on the bezel while the island is hidden.
+   *
+   * A spring of its own, and it only ever moves the COLLAPSED end of the
+   * geometry — the panel still opens from wherever the pill has got to, so
+   * clicking a glance grows it into the panel without a jump. */
+  private glance = new Spring(0, 0.36, 0.8);
+  private glanceable = false;
+  private glanceOn = false;
+  private glanceTimer = 0;
+  /** Ambient mode is up: the island is covered, and must neither open nor
+   *  glance under a player that is not even looking at it. */
+  private ambient = false;
+  private glanceLayer = document.getElementById("island-glance");
   private widen = new Spring(cpx(FRAME.islandBodyLong), 0.34, 0.9);
   /** Set for one measure by `resize()`: the next size change was asked for. */
   private deliberate = false;
@@ -195,9 +213,14 @@ export class IslandSurface {
    * flare at each end, which is what the element actually measures along its
    * edge. The same relationship `shapeLength()` describes for the usage notch. */
   private geometry(t: number) {
-    const curl = lerp(cpx(FRAME.islandPillThin) / 2, cpx(FRAME.islandCurl), t);
-    const body = lerp(cpx(FRAME.islandPillLong), this.widen.value, t);
-    const depth = lerp(cpx(FRAME.islandPillThin), this.grow.value, t);
+    /* The collapsed end of the lerp is the pill GROWN by the glance. */
+    const gl = Math.max(0, this.glance.value);
+    const restCurl = lerp(cpx(FRAME.islandPillThin) / 2, cpx(FRAME.islandGlanceCurl), gl);
+    const restLong = lerp(cpx(FRAME.islandPillLong), cpx(FRAME.islandGlanceLong), gl);
+    const restThin = lerp(cpx(FRAME.islandPillThin), cpx(FRAME.islandGlanceThin), gl);
+    const curl = lerp(restCurl, cpx(FRAME.islandCurl), t);
+    const body = lerp(restLong, this.widen.value, t);
+    const depth = lerp(restThin, this.grow.value, t);
     const length = body + 2 * curl;
     const vertical = isVertical(this.edge);
     return {
@@ -219,7 +242,13 @@ export class IslandSurface {
      * island in the window along its own axis, so room added on one side only
      * would move the island rather than make space beside it. */
     const reach = cpx(FRAME.islandArcReach);
-    const length = this.body + 2 * cpx(FRAME.islandCurl) + 2 * reach;
+    /* ⚠️ The MAXIMUM body, not the current one. The window is sized once per
+     * `place()` and the body changes with every screen, so a window cut to
+     * whatever the island happened to be would clip the next wider screen — and
+     * the clip is at the OS window edge, which looks like a rendering fault
+     * rather than a layout one. It costs nothing: the window is click-through
+     * everywhere outside the masks this reports. */
+     const length = cpx(FRAME.islandBodyMax) + 2 * cpx(FRAME.islandCurl) + 2 * reach;
     const depth = cpx(FRAME.islandBodyDepth) + reach;
     return isVertical(this.edge)
       ? { width: depth, height: length }
@@ -272,7 +301,13 @@ export class IslandSurface {
          * the grid, so the tallest one's list can overflow it by a row — and
          * the union of the boxes then measures the panel eight pixels short,
          * which is a clipped last row rather than a visible one. */
-        const boxes = [...kids, ...el.querySelectorAll<HTMLElement>(".sheet")]
+        /* ⚠️ `.home-sec` as well, and it is not decoration: a board's cards
+         * are no longer the screen body's own children — they sit inside
+         * `.board-row`, with the arrange tray as a second child — so the union
+         * would measure the ROW's box and lose exactly the overflow the rule
+         * above exists to catch. Naming the cards keeps the measurement on the
+         * things that can overflow, wherever they are nested. */
+        const boxes = [...kids, ...el.querySelectorAll<HTMLElement>(".sheet, .home-sec")]
           .map(child => {
             const box = child.getBoundingClientRect();
             const hidden = Math.max(0, child.scrollHeight - child.clientHeight);
@@ -311,9 +346,31 @@ export class IslandSurface {
       }
       return el.offsetHeight;
     };
+    /* ⚠️ A cap may go ABOVE the full body, up to the hard ceiling — it is not
+     * only a way to make the panel narrower. Clamping it to `full` is what made
+     * the arrange tray read as an add-on: a board already asking for the full
+     * width could not grow to hold the tray, so the tray's 172px came out of
+     * the grid and every block on the board shrank the moment you started
+     * arranging it. Room for a panel beside the content has to be room ADDED,
+     * which is the same rule the timer's list follows. */
     this.body = this.cap && !isVertical(this.edge)
-      ? Math.min(this.full, this.cap)
+      ? Math.min(cpx(FRAME.islandBodyMax), this.cap)
       : this.full;
+    /* ⚠️ The BODY AXIS is written before the content is measured, and this is
+     * load-bearing now that a board's row can WRAP. The comment below says the
+     * layers are set to the target "because that is the size the content has to
+     * be measured at" — which was true of the intent and not of the order: both
+     * assignments happened after the measurement, so every screen was measured
+     * at the PREVIOUS screen's width. Text merely rewrapped by a line; a
+     * wrapping flex row measured at a narrower width came back three lines tall,
+     * the panel took its maximum depth to hold them, and then it laid out in two
+     * — leaving 55px of slack under the last row that nothing ever reclaimed.
+     *
+     * ⚠️ Only the body axis. The depth is what this function is working out; it
+     * cannot be applied before it is known. */
+    const across = isVertical(this.edge);
+    if (across) this.expanded.style.height = `${this.body}px`;
+    else this.expanded.style.width = `${this.body}px`;
     const screen = this.expanded.querySelector<HTMLElement>(".screen.active");
     const content = screen ? [...screen.children].reduce((n, el) => n + natural(el as HTMLElement), 0) : 0;
     const available = isVertical(this.edge) ? this.shell.clientWidth : this.shell.clientHeight;
@@ -333,7 +390,7 @@ export class IslandSurface {
      * measured at — and then overwritten by `paint()` on every animated frame.
      * The two are not in conflict: this one is the question ("how tall is this
      * screen at its real width?"), that one is the answer arriving. */
-    const vertical = isVertical(this.edge);
+    const vertical = across;
     this.expanded.style.width = `${vertical ? this.depth : this.body}px`;
     this.expanded.style.height = `${vertical ? this.body : this.depth}px`;
     /* ⚠️ Snapped while closed, sprung while open. A size change the island is
@@ -395,6 +452,15 @@ export class IslandSurface {
       return;
     }
     clearTimeout(this.timer);
+    if (this.ambient) return;
+    /* The glance: in click mode, while music plays. ⚠️ An intent delay each
+     * way — in, so the pill does not swell every time the pointer crosses the
+     * top of the screen on its way somewhere; out, so grazing its edge while
+     * reaching for a button does not fold it under the pointer. */
+    if (!this.openOnHover && this.glanceable && !this.open) {
+      clearTimeout(this.glanceTimer);
+      this.glanceTimer = window.setTimeout(() => this.setGlance(value), value ? 140 : 320);
+    }
     if (!value) {
       this.suppressed = false;
       /* ⚠️ In CLICK MODE, leaving does not fold. That is the whole of the
@@ -460,6 +526,53 @@ export class IslandSurface {
     this.measure();
   }
 
+  /** Whether hovering may show the glance. The shell decides — it knows what
+   *  the pill is showing; this only knows the shape. */
+  setGlanceable(on: boolean) {
+    this.glanceable = on;
+    if (!on) this.setGlance(false);
+  }
+
+  private setGlance(on: boolean) {
+    clearTimeout(this.glanceTimer);
+    if (this.glanceOn === on) return;
+    this.glanceOn = on;
+    const target = on ? 1 : 0;
+    this.glance.setTarget(target);
+    this.glanceLayer?.toggleAttribute("inert", !on);
+    if (still()) { this.glance.snap(target); this.paint(); return; }
+    if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
+  }
+
+  /** Ambient mode opened or closed. */
+  setAmbient(on: boolean) {
+    this.ambient = on;
+    if (on) { this.setGlance(false); this.show(false); }
+  }
+
+  /** Where the collapsed pill sits, in this window's CSS pixels — what ambient
+   *  mode shrinks back into when it closes. ⚠️ The COLLAPSED size, not the
+   *  island's current box: by the time the player closes, the island will long
+   *  since have folded, and shrinking into a glance-sized hole would leave the
+   *  player landing on a shape that is no longer there. */
+  pillRect() {
+    const long = cpx(FRAME.islandPillLong) + cpx(FRAME.islandPillThin);
+    const thin = cpx(FRAME.islandPillThin);
+    const sw = this.shell.clientWidth, sh = this.shell.clientHeight;
+    const origin = box(this.shell);
+    const vertical = isVertical(this.edge);
+    const width = vertical ? thin : long, height = vertical ? long : thin;
+    const x = vertical ? (this.edge === "left" ? 0 : sw - width) : (sw - width) / 2;
+    const y = vertical ? (sh - height) / 2 : (this.edge === "top" ? 0 : sh - height);
+    return { x: origin.x + x, y: origin.y + y, width, height };
+  }
+
+  /** The island's box as it is right now — what ambient mode grows OUT of. */
+  islandRect() {
+    const r = box(this.island);
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }
+
   /** How long the panel waits after the pointer leaves, in ms. */
   setFoldDelay(ms: number) { this.foldDelay = ms; }
 
@@ -479,6 +592,10 @@ export class IslandSurface {
     if (!value && (this.pinned || this.editing)) return;
     if (this.open === value) return;
     this.open = value;
+    /* Opening from a glance: the glance's own spring goes back to zero while
+     * the fold carries the shape on to the panel, so the panel grows from the
+     * glance's size rather than snapping back to the pill first. */
+    if (value) this.setGlance(false);
     this.expanded.inert = !value;
     this.shell.classList.toggle("is-open", value);
     this.island.setAttribute("aria-expanded", String(value));
@@ -567,6 +684,7 @@ export class IslandSurface {
   private tick(now: number) {
     const dt = this.last ? Math.min((now - this.last) / 1000, 0.05) : 0.016;
     this.fold.step(dt);
+    this.glance.step(dt);
     this.grow.step(dt);
     this.widen.step(dt);
     this.tools.step(dt);
@@ -576,7 +694,7 @@ export class IslandSurface {
     this.paint();
     // ⚠️ All three, not just the fold: a size change can outlast the opening,
     // and stopping on the fold alone leaves the panel frozen mid-resize.
-    if (!this.fold.settled || !this.grow.settled || !this.widen.settled
+    if (!this.fold.settled || !this.grow.settled || !this.widen.settled || !this.glance.settled
       || !this.tools.settled || !this.global.settled || !this.rail.settled) {
       this.frame = requestAnimationFrame(t => this.tick(t));
     } else {
@@ -657,10 +775,25 @@ export class IslandSurface {
 
     this.paintArcs(g, x, y);
 
+    /* The glance layer sits where the collapsed one does, at the glance's
+     * own size, and the two cross-fade on the glance's spring — the pill's
+     * text is gone before the glance's arrives, the same rule as below. */
+    const gl = Math.max(0, Math.min(1, this.glance.value));
+    if (this.glanceLayer) {
+      const gw = vertical ? cpx(FRAME.islandGlanceThin) : cpx(FRAME.islandGlanceLong);
+      const gh = vertical ? cpx(FRAME.islandGlanceLong) : cpx(FRAME.islandGlanceThin);
+      this.glanceLayer.style.width = `${gw}px`;
+      this.glanceLayer.style.height = `${gh}px`;
+      place(this.glanceLayer, gw, gh);
+      const seen = Math.max(0, (gl - 0.5) / 0.5) * Math.max(0, 1 - shown / 0.3);
+      this.glanceLayer.style.opacity = String(seen);
+      this.glanceLayer.style.visibility = seen > 0 ? "visible" : "hidden";
+    }
     // Cross-fade. The collapsed layer is gone before the expanded one arrives,
     // so the two are never legible at once over each other.
-    this.collapsed.style.opacity = String(Math.max(0, 1 - shown / 0.38));
-    this.collapsed.style.visibility = shown < 0.38 ? "visible" : "hidden";
+    const pillSeen = Math.max(0, 1 - shown / 0.38) * Math.max(0, 1 - gl / 0.4);
+    this.collapsed.style.opacity = String(pillSeen);
+    this.collapsed.style.visibility = pillSeen > 0 ? "visible" : "hidden";
     const reveal = Math.max(0, (shown - 0.42) / 0.58);
     this.expanded.style.opacity = String(reveal);
     this.expanded.style.visibility = reveal > 0 ? "visible" : "hidden";

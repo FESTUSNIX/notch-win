@@ -25,6 +25,99 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const FILE: &str = "prefs.json";
 
+/// One widget on a board, and how many grid cells it takes.
+///
+/// ⚠️ `w` and `h` are CELLS, never pixels. A board arranged on one monitor has
+/// to lay out the same way on another, and the only thing that survives the
+/// panel changing width is a count of cells.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BoardWidget {
+    pub kind: String,
+    /// ⚠️ Zero means "whatever the widget asks for". That is what a bare name
+    /// from an older file becomes, and what a widget carries until somebody
+    /// resizes it — the island knows the sizes, this file does not.
+    pub w: u32,
+    pub h: u32,
+    /// Which of the widget's views to draw — a calendar's week, month or
+    /// agenda.
+    ///
+    /// ⚠️ A NAME the island resolves, not an index. Variants are declared in
+    /// `widgets.ts` and a number would mean a list that can never be reordered
+    /// without silently changing what every board already shows. Empty is "the
+    /// widget's default", which is also what most of them store.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub variant: String,
+    /// What the block is drawn on: `none`, `flat`, `raised` or `glass`.
+    /// ⚠️ `default`, so a board written before grounds existed still reads.
+    #[serde(default)]
+    pub style: String,
+}
+
+impl Default for BoardWidget {
+    fn default() -> Self {
+        Self { kind: String::new(), w: 0, h: 0, variant: String::new(), style: String::new() }
+    }
+}
+
+/// A widget as it may appear on disk: a bare name, or a name with a size.
+///
+/// ⚠️ `untagged`, and it is what makes the old files readable. Boards were a
+/// list of strings before widgets could be resized; a plain `Vec<BoardWidget>`
+/// would fail to parse one of those, and because every field here is
+/// `serde(default)` the failure would take the WHOLE preferences file back to
+/// its defaults — somebody's boards, colours and shortcuts gone to add a
+/// number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StoredWidget {
+    Named(String),
+    Sized(BoardWidget),
+}
+
+impl From<StoredWidget> for BoardWidget {
+    fn from(held: StoredWidget) -> Self {
+        match held {
+            StoredWidget::Named(kind) => BoardWidget {
+                kind, w: 0, h: 0, variant: String::new(), style: String::new(),
+            },
+            StoredWidget::Sized(one) => one,
+        }
+    }
+}
+
+/// One board: a screen made of widget blocks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Board {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    /// ⚠️ Read as either shape and always WRITTEN as the sized one, so a file
+    /// converts itself the first time the island saves.
+    #[serde(deserialize_with = "widgets_either")]
+    pub widgets: Vec<BoardWidget>,
+}
+
+fn widgets_either<'de, D>(input: D) -> Result<Vec<BoardWidget>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let held = Vec::<StoredWidget>::deserialize(input)?;
+    Ok(held.into_iter().map(BoardWidget::from).collect())
+}
+
+impl Default for Board {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: "Board".into(),
+            icon: "home".into(),
+            widgets: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
@@ -87,6 +180,26 @@ pub struct Prefs {
     /// palette somebody has to maintain alongside the screens.
     pub rail_colours: BTreeMap<String, String>,
 
+    /* ── Boards ─────────────────────────────────────────── */
+    /// The boards, in the order they sit among the screens. Home is the first
+    /// of them and is not special here — it is an ordinary entry with the id
+    /// `home`, which the island maps to the screen name it has always had.
+    ///
+    /// ⚠️ EMPTY IS THE DEFAULT, and it means "the built-in board", not "no
+    /// boards". Writing the default list here would freeze it: a build that
+    /// added a widget to Home would leave every existing preferences file on
+    /// the old three, because a file that has been written once is never
+    /// missing the field again. The island fills an empty list in — see
+    /// `normalise` in `boards.ts`.
+    pub boards: Vec<Board>,
+    /// How many boards there may be.
+    ///
+    /// ⚠️ A NUMBER that is read rather than a constant that is compared
+    /// against, so that a build, a licence or a plan could set it without the
+    /// island learning a second rule. Four is what one row of rail stops can
+    /// carry without the rail becoming the strip it replaced.
+    pub board_cap: u32,
+
     /* ── In a call ───────────────────────────────────────── */
     /// Whether the microphone is watched at all. Off, nothing polls and the
     /// call screen never appears.
@@ -123,8 +236,6 @@ pub struct Prefs {
     /// an alias Windows does not know plays the system DEFAULT ding rather
     /// than nothing, which is a wrong noise instead of a silent failure.
     pub timer_sound: String,
-    /// `timer` or `pomodoro` — which face the screen opens on.
-    pub timer_mode: String,
     /// How a running pomodoro shows on the collapsed strip: `bar` is a quiet
     /// line along the bottom with the time under the pointer, `time` is the
     /// countdown itself. ⚠️ `bar` is the default on purpose — a 21px
@@ -220,12 +331,13 @@ impl Default for Prefs {
             rail_order: Vec::new(),
             rail_hidden: Vec::new(),
             rail_colours: BTreeMap::new(),
+            boards: Vec::new(),
+            board_cap: 4,
             notice_mode: true,
             pomodoro_work: 25,
             pomodoro_break: 5,
             pomodoro_long: 15,
             timer_sound: "Notification.Reminder".into(),
-            timer_mode: "pomodoro".into(),
             pomodoro_pill: "bar".into(),
             ring_stops: Vec::new(),
             ring_glass: true,
@@ -302,10 +414,6 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
             prefs.timer_sound
         } else {
             Prefs::default().timer_sound
-        },
-        timer_mode: match prefs.timer_mode.as_str() {
-            "timer" => prefs.timer_mode,
-            _ => "pomodoro".into(),
         },
         pomodoro_pill: match prefs.pomodoro_pill.as_str() {
             "time" => prefs.pomodoro_pill,

@@ -26,6 +26,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionMediaProperties as Properties,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
+use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
 use windows::Storage::Streams::DataReader;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
@@ -59,6 +60,11 @@ pub struct Media {
     /// is about to do.
     pub shuffle: Option<bool>,
     pub can_shuffle: bool,
+    /// `none`, `track` or `list` — or absent when the player does not report
+    /// one. ⚠️ Three-plus-one states for the reason `shuffle` gives: a browser
+    /// tab that says nothing about repeat is not a player with repeat OFF.
+    pub repeat: Option<String>,
+    pub can_repeat: bool,
 }
 
 #[derive(Default)]
@@ -160,6 +166,21 @@ fn read(session: &Session, previous: &Media) -> Media {
         Err(_) => (None, false),
     };
 
+    let (repeat, can_repeat) = match &info {
+        Ok(i) => match i.AutoRepeatMode().and_then(|r| r.Value()) {
+            Ok(mode) => (
+                Some(match mode {
+                    RepeatMode::Track => "track",
+                    RepeatMode::List => "list",
+                    _ => "none",
+                }.to_string()),
+                i.Controls().and_then(|c| c.IsRepeatEnabled()).unwrap_or(false),
+            ),
+            Err(_) => (None, false),
+        },
+        Err(_) => (None, false),
+    };
+
     let (playing, can_next, can_previous, can_play_pause, can_seek) = match &info {
         Ok(i) => (
             matches!(i.PlaybackStatus(), Ok(PlaybackStatus::Playing)),
@@ -203,6 +224,8 @@ fn read(session: &Session, previous: &Media) -> Media {
         can_seek,
         shuffle,
         can_shuffle,
+        repeat,
+        can_repeat,
     }
 }
 
@@ -245,6 +268,10 @@ pub fn spawn(app: AppHandle) {
                     *state.view.lock().unwrap() = next.clone();
                 }
                 let _ = app.emit_to("tasks", "media:changed", &next);
+                /* ⚠️ And to the ambient window, which is a separate webview and
+                 * hears nothing sent to "tasks". It may not exist yet; an emit
+                 * to a label with no window is simply dropped. */
+                let _ = app.emit_to(crate::ambient::LABEL, "media:changed", &next);
             }
             std::thread::sleep(Duration::from_secs(1));
         }
@@ -317,6 +344,22 @@ pub async fn media_command(action: String) -> Result<(), String> {
                         .and_then(|r| r.Value())
                         .unwrap_or(false);
                     session.TryChangeShuffleActiveAsync(!on).and_then(block)
+                }
+                /* ⚠️ Read back and cycled, never assumed — the same reason as
+                 * shuffle. Off → the whole list → this track → off, which is
+                 * the order every player that has the button uses. */
+                "repeat" => {
+                    let now = session
+                        .GetPlaybackInfo()
+                        .and_then(|i| i.AutoRepeatMode())
+                        .and_then(|r| r.Value())
+                        .unwrap_or(RepeatMode::None);
+                    let next = match now {
+                        RepeatMode::None => RepeatMode::List,
+                        RepeatMode::List => RepeatMode::Track,
+                        _ => RepeatMode::None,
+                    };
+                    session.TryChangeAutoRepeatModeAsync(next).and_then(block)
                 }
                 _ => return Err("Unknown media action.".into()),
             }

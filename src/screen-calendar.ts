@@ -11,6 +11,10 @@ import { call, native } from "./task-client";
 import { isQuiet } from "./snooze";
 import { isoWeek, localDay, weekStart } from "./task-model";
 import { still } from "./motion-pref";
+import { atHour, pointOver, rememberBlocks, wireTaskDrag, wireWeekEditing, type Placed } from "./calendar-edit";
+import type { Task } from "./task-model";
+import { buildAxis, busyHours, quietHours, QUIET_BEFORE } from "./calendar-axis.ts";
+import { cpx } from "./layout";
 import type { Activity } from "./island-activity";
 
 export interface CalEvent {
@@ -22,7 +26,13 @@ export interface CalEvent {
   location: string;
   meetingUrl: string;
   calendar: string;
+  /** The calendar's id, which is what a write is addressed to. */
+  calendarId: string;
   color: string;
+  /** Whether this app may move or delete it — see `Event::writable` in Rust.
+   *  A subscribed calendar (holidays, a shared diary) answers a write with a
+   *  403, so the grid refuses the drag rather than letting it snap back. */
+  writable: boolean;
   response: string;
 }
 
@@ -118,13 +128,78 @@ export function nextEvent(events: CalEvent[], now = new Date()): CalEvent | null
  *  differ only in whether there is a grid is one view and a toggle. */
 export type CalendarView = "month" | "week";
 
-/** How tall one hour of the week grid is.
+/** How tall an hour the week grid actually shows is.
  *
- * ⚠️ Must match `.cal-wkbody`'s `calc(var(--cal-hours) * 22px)` in tasks.css.
- * It is here because the code has to know how many PIXELS a meeting comes to
- * before deciding whether a second line of type fits in it — a decision made
- * in hours puts two lines into a block that cannot hold one. */
-const HOUR_PX = 22;
+ * ⚠️ Taller than the old 22, and not for looks. At 22 a quarter-hour block is
+ * five pixels — there is nothing there to grab, and the 7px resize grip would
+ * cover the whole of it. 40 gives a half-hour meeting 20px, which is a target.
+ *
+ * ⚠️ Nothing in CSS needs to match this any more. The axis is piecewise, so
+ * every hour, line and block is positioned in pixels the code worked out —
+ * where the old grid split a percentage between CSS and TypeScript and the two
+ * had to be kept in step by hand. */
+const WEEK_HOUR_PX = 40;
+
+/** How tall a COLLAPSED hour is.
+ *
+ * ⚠️ Small, because a run of seven of them is the whole point — the night has
+ * to come to a strip rather than to a slab. `buildAxis` grows a SHORT run back
+ * up to a clickable band, so this can be as thin as it needs to be without
+ * leaving a lone collapsed hour unhittable.
+ *
+ * ⚠️ Not zero: a band still has to read as "there is time here that is folded
+ * away" rather than as a gap where the grid stops. */
+const SHUT_HOUR_PX = 6;
+
+/** The shortest a block may be drawn. ⚠️ A floor on the pixels, not on the
+ *  maths: a fifteen-minute stand-up is 10px of a 40px hour, with no room for a
+ *  title and nothing to press. */
+const MIN_BLOCK_PX = 22;
+
+/* ── How wide this screen asks the island to be ──────────────────────────
+ * ⚠️ These four live HERE, together, because they are one set: the island's
+ * body is the week plus the screen's padding, and with the list open it is
+ * that plus the panel and its gap. `tasks.ts` imports them for its width
+ * table rather than keeping its own copy, which is how they got out of step
+ * the first time.
+ */
+
+/** The island's body in DESIGN px with the list shut. */
+export const CALENDAR_WEEK_DPX = 2083;
+/** ...and with it open. ⚠️ `islandBodyMax` exactly — the hard ceiling, and
+ *  there is no more to ask for. A cap above it is silently the same as the cap
+ *  at it, which from a test looks exactly like the width not changing. */
+export const CALENDAR_WEEK_TASKS_DPX = 2480;
+/** The task panel, in CSS px, and the gap before it. */
+export const TASK_PANEL_W = 180;
+export const TASK_PANEL_GAP = 10;
+
+/** How long a task is when it lands on the grid, in hours.
+ *
+ * ⚠️ Half an hour, and it is a guess this app has to make: a task has no
+ * duration in TickTick, only a moment. The alternative is asking, and a dialog
+ * in the middle of a drag is worse than a length somebody can change by
+ * dragging the block's edge — which is the gesture they are already using. */
+const DROP_SPAN = 0.5;
+
+/** The screen body's own padding, one side. ⚠️ Must match `--screen-pad` in
+ *  tasks.css — the week's width is measured off the island's body, and the
+ *  padding is the part of it the content never gets. */
+const SCREEN_PAD = 15;
+
+/** Where the grid opens, the first time. ⚠️ Not 00:00 — the quiet hours are
+ *  collapsed, so the top of the axis is the middle of the night folded into a
+ *  band, and starting there means scrolling past it every time. */
+const START_AT_HOUR = 8;
+
+/** What a block on the grid stands for.
+ *
+ * ⚠️ A UNION, because the week now carries two completely unrelated things
+ * that look alike on it: a Google event and a TickTick task. The gesture layer
+ * passes one of these back untouched — it never looks inside — so the only
+ * place that has to know the difference is the hook that writes the change.
+ */
+type GridRef = { kind: "event"; event: CalEvent } | { kind: "task"; task: Task };
 
 export class CalendarScreen {
   feed: CalendarFeed = emptyCalendar();
@@ -135,6 +210,61 @@ export class CalendarScreen {
   /** Whether the week runs Monday to Sunday. ⚠️ A preference, pushed in by
    *  the shell rather than read here: `prefs` lives in tasks.ts, and a screen
    *  that fetched its own would need the event listener as well. */
+  /** An event being drawn, before it has a name.
+   *
+   * ⚠️ Held on the SCREEN rather than as a loose element, so the five-minute
+   * poll landing mid-compose redraws the composer instead of throwing away
+   * what somebody was in the middle of typing. */
+  private draft: { day: string; start: number; end: number } | null = null;
+
+  /** Writes Google has not confirmed yet, laid over the feed at render time.
+   *
+   * ⚠️ Optimistic, because a write is a round trip PLUS a full re-read, and a
+   * block that sits still for a second after being dropped reads as a drag
+   * that did not take. Cleared wholesale when a feed arrives — that feed is
+   * the answer to the write, and an entry outliving it would pin a block to a
+   * time the server has already disagreed with. */
+  private settling = new Map<string, { start: string; end: string }>();
+
+  /** What went wrong with the last gesture, if anything. */
+  private actionError = "";
+
+  /** Deleted here, not yet gone from Google. ⚠️ Separate from `settling`
+   *  because it is a different shape of lie: one says "this is somewhere
+   *  else", the other says "this is not there at all". */
+  private removing = new Set<string>();
+
+  /** Whether the task list is beside the grid.
+   *
+   * ⚠️ The ONE thing on this screen still behind a button. The grid itself is
+   * always editable now — a week view with an hour axis is a thing you point
+   * at, and putting that behind a toggle meant the answer to "why can I not
+   * move this" was a control somebody had to know about. The list is
+   * different: it makes the island a third wider, which is a cost worth
+   * paying only while you are actually planning. */
+  tasksOpen = false;
+
+  /** Which runs of quiet hours the user has opened: "early", "late".
+   *
+   * ⚠️ Held here rather than persisted. Opening the small hours is something
+   * somebody does to look at one thing, and a grid that remembered it a week
+   * later would be a grid that had quietly got taller with no explanation. */
+  private opened = new Set<string>();
+
+  /** Where the week grid is scrolled to, in px.
+   *
+   * ⚠️ The whole reason the mode was unusable. The shell redraws the screen on
+   * any of a dozen events — a media tick, a poll, a machine reading — and each
+   * redraw builds a fresh scroller, which starts at the top. Without this the
+   * grid snapped back to midnight every few seconds whatever anybody was
+   * doing. */
+  private scrollAt = 0;
+
+  /** Whether the host's scroll listener is on. ⚠️ The host element survives
+   *  every render — only its children are replaced — so the listener must be
+   *  attached once rather than per draw. */
+  private watchingScroll = false;
+
   private mondayFirst = true;
 
   setWeekStart(mondayFirst: boolean) {
@@ -154,17 +284,43 @@ export class CalendarScreen {
       create: (title: string, day: string, list: string) => void;
       /** The lists a task can go into, and which one Today is filing to. */
       lists: () => { id: string; name: string; chosen: boolean }[];
+      /* ── The task side ──────────────────────────────────────────────────
+       * ⚠️ Read THROUGH Today, never from a second snapshot of its own. Today
+       * owns the optimistic layer — the settle window, the completion that is
+       * held on screen for a moment before it leaves — and a calendar holding
+       * its own copy would show a task Today had already ticked. The same
+       * reason the composer files through `create` rather than calling
+       * `create_task` itself. */
+      tasks: () => Task[];
+      taskColor: (task: Task) => string;
+      finishTask: (task: Task) => void;
+      /** Re-apply the island's width cap.
+       *
+       * ⚠️ Called whenever something on this screen changes how wide it wants
+       * to be. `render()` measures but does not re-cap, so without this the
+       * list opens into a body that never grew and is clipped by it. */
+      width: () => void;
       /** ⚠️ Lift `WS_EX_NOACTIVATE`, or a field here cannot be typed into.
        *  The island never takes focus — that is the whole point of it — so a
        *  `focus()` on its own puts the caret in the DOM and leaves the
        *  keystrokes going to whatever application is actually in front. It is
        *  the same round trip Today's composer makes; see `set_task_input`. */
       focus: (active: boolean) => Promise<void>;
-    } = { create: () => {}, lists: () => [], focus: async () => {} },
+    } = {
+      create: () => {}, lists: () => [], focus: async () => {},
+      tasks: () => [], taskColor: () => "", finishTask: () => {}, width: () => {},
+    },
   ) {}
 
   async boot() {
-    if (native) await listen<CalendarFeed>("calendar:changed", e => { this.feed = e.payload; this.changed(); });
+    if (native) await listen<CalendarFeed>("calendar:changed", e => {
+      this.feed = e.payload;
+      /* ⚠️ EVERY optimistic move drops here, not just one that matches. A
+       * write triggers a full re-read, so this feed is the answer to it. */
+      this.settling.clear();
+      this.removing.clear();
+      this.changed();
+    });
     try { this.feed = await call<CalendarFeed>("get_calendar"); } catch { /* not connected */ }
     this.changed();
   }
@@ -267,6 +423,17 @@ export class CalendarScreen {
       join.onclick = () => this.open(event.meetingUrl);
       actions.append(join);
     }
+    /* ⚠️ Only in work mode, and only where Google would accept it. A Delete
+     * that is always on the panel is one press away from removing a meeting
+     * somebody is reading the details of. */
+    if (this.view === "week" && event.writable && !event.allDay) {
+      const drop = element("button", "cal-panel-drop");
+      (drop as HTMLButtonElement).type = "button";
+      paintIcon(drop, "close");
+      drop.append(element("span", "", "Delete"));
+      drop.onclick = () => this.commitDelete(event);
+      actions.append(drop);
+    }
     const inGoogle = element("button", "cal-panel-open");
     (inGoogle as HTMLButtonElement).type = "button";
     inGoogle.append(element("span", "", "Open in Google Calendar"));
@@ -291,12 +458,262 @@ export class CalendarScreen {
   tools() {
     return {
       tools: [
+        { icon: "list" as const,
+          label: this.tasksOpen ? "Hide today's tasks" : "Show today's tasks",
+          /* ⚠️ Turning the list on switches to the week. There is nowhere to
+           * drop a task on a month grid, so a list beside one would be a
+           * drag that can only ever fail. */
+          run: () => {
+            this.tasksOpen = !this.tasksOpen;
+            if (this.tasksOpen) this.view = "week";
+            this.deps.width();
+            this.changed();
+          } },
         { icon: "clock" as const, label: "Refresh the calendar",
           run: () => { void call("refresh_calendar").catch(() => {}); } },
         { icon: "open" as const, label: "Open Google Calendar",
           run: () => this.open("https://calendar.google.com/calendar/r") },
       ],
     };
+  }
+
+  /** Turn work mode on or off.
+   *
+   * ⚠️ Leaving it CLEARS the draft. A half-typed event left behind would come
+   * back the next time somebody opened the mode, hours later, with no memory
+   * of having started it — and the block it is holding would be sitting on a
+   * week that has since moved on. */
+  /** ⚠️ There is no longer a "work mode". Editing IS the week view: a grid
+   *  with an hour axis is a grid you can point at, and putting that behind a
+   *  toggle meant the answer to "why can I not move this" was a button
+   *  somebody had to know about. The month view stays a reader because a
+   *  month cell has no time axis — there is nowhere for a drag to land. */
+  private leaveWeek() {
+    this.draft = null;
+    this.actionError = "";
+    /* ⚠️ The list goes with it. A month grid has nowhere to drop a task, so a
+     * list left open beside one is a panel whose only affordance cannot work —
+     * and the tool would be offering to "hide" something not on screen. */
+    this.tasksOpen = false;
+  }
+
+  /** Today's tasks that have no time yet, ready to be dropped on one.
+   *
+   * ⚠️ Only the ones WITHOUT a time. A task already on the grid is on the
+   * grid; listing it here as well would be the same task in two places, and
+   * dragging the copy would look like scheduling a second one. */
+  private taskList(waiting: Task[]): HTMLElement {
+    const box = element("aside", "cal-tasks");
+    /* ⚠️ Hidden from the accessibility tree AND from tabbing while shut. The
+     * panel is still in the DOM at full width behind a zero-width column —
+     * that is what makes the reveal an animation — and without this a screen
+     * reader would read a list that is not on screen, and Tab would land in
+     * it. */
+    box.inert = !this.tasksOpen;
+    /* ⚠️ The INNER box is the one with a width. The animating thing is the
+     * grid track outside it; this stays 180px so nothing in it re-wraps while
+     * the column travels. See `.media-queue-in`. */
+    const panel = element("div", "cal-tasks-in");
+    /* The inner box keeps its full width whatever the track is doing. */
+    panel.style.width = `${TASK_PANEL_W}px`;
+    box.append(panel);
+    const head = element("div", "cal-tasks-head");
+    head.append(element("span", "cal-tasks-title", "Today"));
+    head.append(element("span", "cal-tasks-count", String(waiting.length)));
+    panel.append(head);
+
+    if (!waiting.length) {
+      /* ⚠️ Says what it means rather than "No tasks". An empty list here is
+       * either a day with nothing on it or a day already planned, and those
+       * are opposite things to be told. */
+      panel.append(element("p", "cal-tasks-none",
+        this.deps.tasks().length ? "Everything today has a time." : "Nothing due today."));
+    } else {
+      const list = element("div", "cal-tasks-list");
+      for (const task of waiting) {
+        const row = element("div", "cal-task");
+        row.dataset.taskRow = task.id;
+        row.style.setProperty("--cal", this.deps.taskColor(task) || "var(--good)");
+        const tick = element("button", "cal-tick");
+        (tick as HTMLButtonElement).type = "button";
+        tick.dataset.noDrag = "";
+        tick.setAttribute("aria-label", `Mark "${task.title}" done`);
+        tick.onclick = () => this.deps.finishTask(task);
+        row.append(tick, element("span", "cal-task-title", task.title));
+        row.dataset.tip = `${task.title} — drag onto the week`;
+        list.append(row);
+      }
+      panel.append(list);
+      /* ⚠️ Says how to use it, once, under the list. Dragging between two
+       * regions of a panel is not a thing anybody guesses at. */
+      panel.append(element("p", "cal-tasks-hint", "Drag onto the week to schedule"));
+    }
+
+    /* ── Adding one ────────────────────────────────────────────────────────
+     * ⚠️ Files through `deps.create`, which is Today's optimistic layer — the
+     * same door the month view's composer uses. A second creation path would
+     * be a task that appears on one screen and not the other until TickTick
+     * answers, which is the note on the constructor.
+     *
+     * ⚠️ Dated TODAY rather than left undated. This list is the day's work;
+     * something typed into it that arrived with no date would file itself into
+     * the inbox and never appear here again. */
+    const add = element("div", "cal-tasks-add");
+    const field = document.createElement("input");
+    field.type = "text";
+    field.className = "cal-tasks-field";
+    field.placeholder = "Add a task";
+    field.maxLength = 1000;
+    /* ⚠️ Not "New task name" — the month view's composer already answers to
+     * that and both can be in the DOM at once. */
+    field.setAttribute("aria-label", "Add a task for today");
+    const commit = () => {
+      const value = field.value.trim();
+      if (!value) return;
+      this.deps.create(value, localDay(new Date()), this.intoList);
+      field.value = "";
+      /* ⚠️ The caret STAYS, and the field is not closed. Planning a day is
+       * typing several things in a row, and a composer that shuts after each
+       * one turns four tasks into four round trips through the keyboard. */
+    };
+    field.onkeydown = key => {
+      if (key.key === "Enter") { key.preventDefault(); commit(); }
+      if (key.key === "Escape") {
+        key.preventDefault();
+        field.value = "";
+        field.blur();
+        void this.deps.focus(false).catch(() => {});
+      }
+    };
+    /* ⚠️ The island never takes focus, so the keystrokes go to whatever is in
+     * front until this round trip lifts `WS_EX_NOACTIVATE`. The same one
+     * Today's composer and the draft field make. */
+    field.onfocus = () => { void this.deps.focus(true).catch(() => {}); };
+    field.onblur = () => { void this.deps.focus(false).catch(() => {}); };
+    add.append(field);
+    panel.append(add);
+    return box;
+  }
+
+  /** When an event actually is, once anything optimistic is laid over it. */
+  private timesOf(event: CalEvent): { begin: Date; finish: Date } {
+    const pending = this.settling.get(event.id);
+    if (pending) return { begin: new Date(pending.start), finish: new Date(pending.end) };
+    return { begin: startOf(event), finish: endOf(event) };
+  }
+
+  /* ── Writing ───────────────────────────────────────────────────────────
+   * ⚠️ Every one of these shows the change FIRST and sends it second. The
+   * write is a round trip plus a full re-read of every calendar, and a block
+   * that waits for that before moving reads as a drag that did not take. The
+   * feed that comes back is what clears the optimism — see `boot`.
+   *
+   * ⚠️ And every one of them puts the change BACK on failure. An optimistic
+   * update that is not undone is worse than no optimism at all: the grid would
+   * show a meeting at a time Google never agreed to, and keep showing it until
+   * the next poll five minutes later.
+   */
+
+  /** Commit the event being drawn. */
+  private commitDraft(title: string) {
+    const draft = this.draft;
+    if (!draft) return;
+    this.draft = null;
+    void this.deps.focus(false);
+    const start = atHour(draft.day, draft.start);
+    const end = atHour(draft.day, draft.end);
+    this.changed();
+    void call("create_event", {
+      title: title.trim(),
+      start: start.toISOString(),
+      end: end.toISOString(),
+    }).catch(problem => {
+      this.actionError = String(problem);
+      this.changed();
+    });
+  }
+
+  private cancelDraft() {
+    this.draft = null;
+    void this.deps.focus(false);
+    this.changed();
+  }
+
+  /** Move or resize one event. */
+  private commitMove(event: CalEvent, start: Date, end: Date) {
+    const before = this.settling.get(event.id);
+    this.settling.set(event.id, { start: start.toISOString(), end: end.toISOString() });
+    this.actionError = "";
+    this.changed();
+    void call("move_event", {
+      calendarId: event.calendarId,
+      eventId: event.id,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    }).catch(problem => {
+      /* ⚠️ Restores what was there rather than clearing, because a failed move
+       * of an event that was ALREADY settling from an earlier one must fall
+       * back to that, not all the way to the server's copy. */
+      if (before) this.settling.set(event.id, before); else this.settling.delete(event.id);
+      this.actionError = String(problem);
+      this.changed();
+    });
+  }
+
+  /** Put a task at a time — a drop from the list, or a drag of one already
+   *  on the grid.
+   *
+   * ⚠️ Written through TickTick, not Google. A task on this grid is still a
+   * task; what a drop changes is its `startDate` and `dueDate`. The two kinds
+   * of block look alike on purpose and are stored nowhere near each other.
+   *
+   * ⚠️ No optimistic layer here, unlike an event. Today owns the one this app
+   * has, and a second one in the calendar would be two places deciding what a
+   * task looks like before the server answers — which is exactly the problem
+   * the comment on `deps.tasks` describes. TickTick's own refresh is quick
+   * and the block lands on the next snapshot. */
+  private scheduleTask(task: Task, start: Date, end: Date) {
+    this.actionError = "";
+    this.changed();
+    void call("schedule_task", {
+      projectId: task.projectId,
+      taskId: task.id,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }).catch(problem => {
+      this.actionError = String(problem);
+      this.changed();
+    });
+  }
+
+  /** Tasks that are on the grid, and tasks that are waiting to be.
+   *
+   * ⚠️ Split on whether the task has a REAL time, which is not the same as
+   * having a date. Everything Today shows has a due date — that is what makes
+   * it today's — and an all-day task has 00:00 in its `startDate` with
+   * `isAllDay` set. Laying those on an hour axis would stack the whole list
+   * at midnight and call it a schedule. */
+  private splitTasks(): { placed: Task[]; waiting: Task[] } {
+    const placed: Task[] = [];
+    const waiting: Task[] = [];
+    for (const task of this.deps.tasks()) {
+      if (task.startDate && !task.isAllDay) placed.push(task); else waiting.push(task);
+    }
+    return { placed, waiting };
+  }
+
+  private commitDelete(event: CalEvent) {
+    this.removing.add(event.id);
+    this.chosen = null;
+    this.actionError = "";
+    this.changed();
+    void call("delete_event", { calendarId: event.calendarId, eventId: event.id })
+      .catch(problem => {
+        this.removing.delete(event.id);
+        this.actionError = String(problem);
+        this.changed();
+      });
   }
 
   private viewSwitch(): HTMLElement {
@@ -306,7 +723,18 @@ export class CalendarScreen {
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-pressed", String(this.view === name));
       button.prepend(taskIcon(icon));
-      button.onclick = () => { this.view = name; this.changed(); };
+      button.onclick = () => {
+        /* ⚠️ The width changes with the view as well — month is the narrow
+         * one, and leaving the week also shuts the list. */
+        if (name !== "week") this.leaveWeek();
+        /* ⚠️ The two views scroll different things — a week of hours and a
+         * month of days — so a position carried between them is meaningless
+         * and usually lands somewhere arbitrary. */
+        if (name !== this.view) this.scrollAt = 0;
+        this.view = name;
+        this.deps.width();
+        this.changed();
+      };
       bar.append(button);
     }
     return bar;
@@ -679,7 +1107,33 @@ export class CalendarScreen {
   private renderWeek(now: Date) {
     const today = localDay(now);
     const first = weekStart(now, this.mondayFirst);
-    const days: { key: string; date: Date; events: CalEvent[] }[] = [];
+
+    /* ⚠️ Every event resolved through `timesOf` ONCE, here, and the rest of
+     * this method reads the result. An optimistic move can change which DAY an
+     * event is on, so bucketing off `startOf` while drawing off the pending
+     * time would leave a dragged block in Tuesday's column showing Wednesday's
+     * hour. */
+    const placed = this.feed.events
+      .filter(e => !this.removing.has(e.id))
+      .map(e => ({ event: e, ...this.timesOf(e) }));
+
+    /* ⚠️ Tasks with a real TIME, laid on the same axis as the events. A task
+     * that is merely due today has 00:00 in its `startDate`, and putting those
+     * here would stack the whole list at midnight and call it a schedule —
+     * they stay in the list beside the grid until somebody drops one. */
+    const { placed: timedTasks, waiting } = this.splitTasks();
+    const tasks = timedTasks.map(task => {
+      const begin = new Date(task.startDate!);
+      const due = task.dueDate ? new Date(task.dueDate) : begin;
+      /* ⚠️ A floor of half an hour on a task's length. TickTick is happy with
+       * a task whose start and due are the same instant — that is what "at
+       * 3pm" means there — and a zero-length block is nothing to see or grab. */
+      const finish = due.getTime() > begin.getTime() + 60_000
+        ? due : new Date(begin.getTime() + 30 * 60_000);
+      return { task, begin, finish };
+    });
+
+    const days: { key: string; date: Date; events: typeof placed; tasks: typeof tasks }[] = [];
     for (let offset = 0; offset < 7; offset++) {
       const date = new Date(first);
       date.setDate(first.getDate() + offset);
@@ -687,26 +1141,42 @@ export class CalendarScreen {
       days.push({
         key,
         date,
-        events: this.feed.events.filter(e =>
-          (e.allDay ? e.start.slice(0, 10) : localDay(startOf(e))) === key),
+        events: placed.filter(one =>
+          (one.event.allDay ? one.event.start.slice(0, 10) : localDay(one.begin)) === key),
+        tasks: tasks.filter(one => localDay(one.begin) === key),
       });
     }
 
-    const timed = days.flatMap(d => d.events.filter(e => !e.allDay));
-    const hours = timed.flatMap(e => [startOf(e).getHours(), endOf(e).getHours() + 1]);
-    /* 8 to 19 with nothing on, which is the shape of a working day — and it
-     * widens to whatever is actually booked rather than the other way round. */
-    const from = Math.max(0, Math.min(8, ...hours));
-    const to = Math.min(24, Math.max(19, ...hours));
-    const span = Math.max(1, to - from);
+    /* ── The axis ──────────────────────────────────────────────────────────
+     * ⚠️ All 24 hours, but not all the same height. Cropping the axis to what
+     * is booked — which is what this did when it was read-only — means an
+     * event cannot be drawn at 07:00 if 07:00 is not on the grid, and the axis
+     * would jump under the pointer the moment one was. Collapsing instead
+     * keeps every hour reachable and still spends the height on the ones
+     * anybody uses.
+     *
+     * ⚠️ An hour holding an event is never collapsed, whatever the default
+     * says — see `quietHours`. Collapsing is a way to spend less room on
+     * nothing; the moment it hides a meeting it has started lying. */
+    const hoursOf = (one: { begin: Date; finish: Date }) => ({
+      start: one.begin.getHours() + one.begin.getMinutes() / 60,
+      end: one.finish.getHours() + one.finish.getMinutes() / 60,
+    });
+    /* ⚠️ Tasks count as busy too. A task dropped at 21:00 has to hold its hour
+     * open exactly as a meeting does, or the drop would fold the thing that
+     * was just dropped into a collapsed band. */
+    const spans = [
+      ...days.flatMap(d => d.events.filter(one => !one.event.allDay).map(hoursOf)),
+      ...days.flatMap(d => d.tasks.map(hoursOf)),
+    ];
+    const axis = buildAxis(quietHours(busyHours(spans), this.opened), WEEK_HOUR_PX, SHUT_HOUR_PX);
 
-    const week = element("div", "cal-weekgrid");
-    week.style.setProperty("--cal-hours", String(span));
+    const week = element("div", "cal-weekgrid is-work");
+    week.style.setProperty("--cal-height", `${axis.height}px`);
 
     /* ── The head: one column per day, plus the axis gutter ───────────── */
     const head = element("div", "cal-wkhead");
-    head.append(element("span", "cal-wkaxis-top",
-      `WK. ${isoWeek(first)}`));
+    head.append(element("span", "cal-wkaxis-top", `WK. ${isoWeek(first)}`));
     for (const day of days) {
       const cell = element("div", "cal-wkday"
         + (day.key === today ? " is-today" : "")
@@ -717,68 +1187,95 @@ export class CalendarScreen {
       );
       head.append(cell);
     }
-    week.append(head);
 
     /* ── All-day events, above the axis ────────────────────────────────
      * ⚠️ A band of their own. An all-day event has no start time, so laying it
      * on an hour axis means inventing one — and a birthday drawn across
      * 00:00–23:59 swamps every meeting in the column. */
-    const allDay = days.some(d => d.events.some(e => e.allDay));
-    if (allDay) {
+    let allDayBand: HTMLElement | null = null;
+    if (days.some(d => d.events.some(one => one.event.allDay))) {
       const band = element("div", "cal-wkall");
       band.append(element("span", "cal-wkall-label", "All day"));
       for (const day of days) {
         const cell = element("div", "cal-wkall-cell");
-        for (const event of day.events.filter(e => e.allDay)) {
+        for (const { event } of day.events.filter(one => one.event.allDay)) {
           const chip = element("span", "cal-chip");
           chip.style.setProperty("--cal", event.color || "var(--cool)");
           chip.append(element("span", "cal-chip-title", event.title));
           chip.dataset.tip = event.title;
-          band.append(cell);
           cell.append(chip);
         }
-        if (!cell.parentElement) band.append(cell);
+        band.append(cell);
       }
-      week.append(band);
+      allDayBand = band;
     }
 
     /* ── The body: an hour axis and seven columns over it ─────────────── */
     const body = element("div", "cal-wkbody");
-    const axis = element("div", "cal-wkaxis");
-    for (let h = from; h < to; h++) {
-      axis.append(element("span", "", `${String(h).padStart(2, "0")}`));
-    }
-    body.append(axis);
+    body.style.height = `${axis.height}px`;
 
-    for (const day of days) {
+    /* ⚠️ The gutter's labels are POSITIONED, not flowed. They used to be flex
+     * children sharing the height equally, which only works while every hour
+     * is the same size — with a collapsed band in the middle every label after
+     * it names the wrong line. */
+    const gutter = element("div", "cal-wkaxis");
+    for (const row of axis.rows) {
+      const mark = element("span", "cal-wkhour" + (row.open ? "" : " is-shut"),
+        String(row.hour).padStart(2, "0"));
+      mark.style.top = `${row.top}px`;
+      /* A collapsed hour has no room for its own number; the band says the
+       * range instead. */
+      if (!row.open) mark.textContent = "";
+      gutter.append(mark);
+    }
+    body.append(gutter);
+
+    const columns: HTMLElement[] = [];
+    const drawn: Placed[] = [];
+    for (const [index, day] of days.entries()) {
       const column = element("div", "cal-wkcol"
         + (day.key === today ? " is-today" : "")
         + (day.key < today ? " is-past" : ""));
-      for (let h = from; h < to; h++) column.append(element("i", "cal-wkline"));
+      columns.push(column);
+      for (const row of axis.rows) {
+        const line = element("i", "cal-wkline" + (row.open ? "" : " is-shut"));
+        line.style.top = `${row.top}px`;
+        line.style.height = `${row.px}px`;
+        column.append(line);
+      }
 
-      for (const event of day.events.filter(e => !e.allDay)) {
-        const begin = startOf(event);
-        const end = endOf(event);
+      for (const { event, begin, finish: end } of day.events.filter(one => !one.event.allDay)) {
         const startHour = begin.getHours() + begin.getMinutes() / 60;
         const endHour = Math.max(startHour + 0.25, end.getHours() + end.getMinutes() / 60);
+        drawn.push({
+          id: event.id,
+          ref: { kind: "event", event } as GridRef,
+          locked: event.writable ? "" : `${event.title} · ${event.calendar} is read-only`,
+          start: startHour, end: endHour, column: index,
+        });
         const block = element("button", `cal-block${event.response === "declined" ? " declined" : ""}`
           + (this.chosen === event.id ? " is-open" : ""));
         (block as HTMLButtonElement).type = "button";
         block.style.setProperty("--cal", event.color || "var(--cool)");
-        block.style.top = `${((startHour - from) / span) * 100}%`;
-        /* ⚠️ A floor on the height, not just on the maths. A fifteen-minute
-         * stand-up is 2% of a twelve-hour axis — four pixels, with no room for
-         * a title and nothing to press. */
-        block.style.height = `max(${HOUR_PX}px, ${((endHour - startHour) / span) * 100}%)`;
+        /* ⚠️ PIXELS off the axis, not a percentage of a span. The axis is
+         * piecewise now — a percentage cannot say "34px an hour here and 14
+         * there", and an event either side of a collapsed band would be laid
+         * out as though the band were full height. */
+        const top = axis.yOf(startHour);
+        const tall = Math.max(MIN_BLOCK_PX, axis.yOf(endHour) - top);
+        block.style.top = `${top}px`;
+        block.style.height = `${tall}px`;
+        /* ⚠️ The id on the ELEMENT, because the gesture layer finds its blocks
+         * by querying the body it was handed — it never sees this loop. */
+        block.dataset.calId = event.id;
+        if (this.settling.has(event.id)) block.classList.add("is-settling");
         block.dataset.tip = `${timeLabel(event)} · ${event.title}`;
         block.append(element("span", "cal-block-title", event.title));
-        /* ⚠️ Gated on PIXELS, not on hours. An hour is 22px here, and two lines
-         * of type need about 34 — so "an hour is long enough for a time" put a
-         * second line into a block that could not hold the first, and the title
-         * was clipped away leaving a block labelled only with its start time. */
-        if ((endHour - startHour) * HOUR_PX >= 34) {
-          block.append(element("span", "cal-block-time", timeLabel(event)));
-        }
+        /* ⚠️ Gated on the block's REAL height in pixels. Two lines of type need
+         * about 34 — so "an hour is long enough for a time" put a second line
+         * into a block that could not hold the first, and the title was
+         * clipped away leaving a block labelled only with its start time. */
+        if (tall >= 34) block.append(element("span", "cal-block-time", timeLabel(event)));
         block.onclick = () => {
           this.chosen = this.chosen === event.id ? null : event.id;
           this.changed();
@@ -786,20 +1283,255 @@ export class CalendarScreen {
         column.append(block);
       }
 
-      /* Now, as a line across today's column. ⚠️ Only when it is inside the
-       * axis: at seven in the morning it would otherwise be pinned to the top
-       * of the grid, claiming eight o'clock. */
-      const nowHour = now.getHours() + now.getMinutes() / 60;
-      if (day.key === today && nowHour >= from && nowHour <= to) {
+      /* ── Tasks, on the same grid and deliberately not identical ────────
+       * ⚠️ A checkbox and a flatter surface. They sit on the same axis as the
+       * meetings because that is the whole point of dropping one here — but a
+       * task is something you will do and a meeting is something that will
+       * happen to you, and a grid where the two are indistinguishable is a
+       * grid that cannot answer "how much of Thursday is already spoken
+       * for". */
+      for (const { task, begin, finish } of day.tasks) {
+        const startHour = begin.getHours() + begin.getMinutes() / 60;
+        const endHour = Math.max(startHour + 0.25, finish.getHours() + finish.getMinutes() / 60);
+        const done = task.status === 2;
+        const block = element("div", "cal-block is-task" + (done ? " is-done" : ""));
+        block.style.setProperty("--cal", this.deps.taskColor(task) || "var(--good)");
+        const top = axis.yOf(startHour);
+        const tall = Math.max(MIN_BLOCK_PX, axis.yOf(endHour) - top);
+        block.style.top = `${top}px`;
+        block.style.height = `${tall}px`;
+        block.dataset.calId = `task:${task.id}`;
+        drawn.push({
+          id: `task:${task.id}`,
+          ref: { kind: "task", task } as GridRef,
+          /* A finished task is a record, not a plan. */
+          locked: done ? `${task.title} · already done` : "",
+          start: startHour, end: endHour, column: index,
+        });
+
+        const tick = element("button", "cal-tick");
+        (tick as HTMLButtonElement).type = "button";
+        tick.dataset.noDrag = "";
+        tick.setAttribute("aria-label", done ? "Done" : `Mark "${task.title}" done`);
+        tick.setAttribute("aria-pressed", String(done));
+        if (done) paintIcon(tick, "check");
+        /* ⚠️ The press is stopped from reaching the block. The block is a drag
+         * handle; without this, ticking a task picks it up instead. */
+        tick.addEventListener("pointerdown", stop => stop.stopPropagation());
+        tick.onclick = stop => {
+          stop.stopPropagation();
+          if (!done) this.deps.finishTask(task);
+        };
+        const line = element("span", "cal-block-title", task.title);
+        block.append(tick, line);
+        if (tall >= 34) {
+          block.append(element("span", "cal-block-time",
+            begin.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+        }
+        block.dataset.tip = task.title;
+        column.append(block);
+      }
+
+      /* Now, as a line across today's column. */
+      if (day.key === today) {
         const mark = element("i", "cal-wknow");
-        mark.style.top = `${((nowHour - from) / span) * 100}%`;
+        mark.style.top = `${axis.yOf(now.getHours() + now.getMinutes() / 60)}px`;
         column.append(mark);
       }
       body.append(column);
     }
-    week.append(body);
-    this.host.append(week);
+
+    /* ── The bands that offer their hours back ─────────────────────────────
+     * ⚠️ Laid over the whole width INCLUDING the gutter, which is why they are
+     * children of the body rather than of a column: a strip that stopped at
+     * the first column would read as something belonging to Monday. */
+    for (const band of axis.bands()) {
+      const strip = element("button", "cal-wkband");
+      (strip as HTMLButtonElement).type = "button";
+      strip.style.top = `${band.top}px`;
+      strip.style.height = `${band.px}px`;
+      const run = band.from < QUIET_BEFORE ? "early" : "late";
+      strip.append(element("span", "cal-wkband-label",
+        `${String(band.from).padStart(2, "0")}:00 – ${String(band.to % 24).padStart(2, "0")}:00`));
+      strip.dataset.tip = "Show these hours";
+      strip.onclick = () => {
+        this.opened.add(run);
+        this.changed();
+      };
+      body.append(strip);
+    }
+
+    /* ⚠️ The head goes INSIDE the scroller, stuck to the top, rather than
+     * staying a sibling above it. A head outside the scroller is a box that
+     * never holds a scrollbar sitting over one that does, so it is some
+     * fifteen pixels wider — and seven day names drift off the seven columns
+     * they name, by more the further right they are. Inside, the two are the
+     * same box and cannot disagree; sticky is what stops it scrolling away. */
+    const scroller = element("div", "cal-wkscroll");
+    const stuck = element("div", "cal-wkstick");
+    stuck.append(head);
+    if (allDayBand) stuck.append(allDayBand);
+    /* An opened run can be shut again from the same place it was opened. */
+    if (this.opened.size) {
+      const shut = element("button", "cal-wkreset");
+      (shut as HTMLButtonElement).type = "button";
+      shut.append(element("span", "", "Hide quiet hours"));
+      shut.onclick = () => { this.opened.clear(); this.changed(); };
+      stuck.append(shut);
+    }
+    scroller.append(stuck, body);
+    week.append(scroller);
+
+    /* ── The event being drawn ────────────────────────────────────────────
+     * ⚠️ Rendered from screen state like everything else, so a poll landing
+     * mid-compose redraws it rather than destroying it. */
+    if (this.draft) {
+      const at = days.findIndex(d => d.key === this.draft!.day);
+      if (at >= 0) {
+        const { start, end } = this.draft;
+        const box = element("div", "cal-block cal-draft");
+        const top = axis.yOf(start);
+        box.style.top = `${top}px`;
+        box.style.height = `${Math.max(MIN_BLOCK_PX, axis.yOf(end) - top)}px`;
+        const field = element("input", "cal-draft-field") as HTMLInputElement;
+        field.type = "text";
+        field.placeholder = "New event";
+        field.maxLength = 200;
+        field.onkeydown = key => {
+          if (key.key === "Enter") { key.preventDefault(); this.commitDraft(field.value); }
+          if (key.key === "Escape") { key.preventDefault(); this.cancelDraft(); }
+        };
+        /* ⚠️ Blur COMMITS rather than cancelling, and only when something was
+         * typed. Clicking away from a half-written event and losing it is the
+         * more annoying of the two mistakes; Escape is the one that throws it
+         * away, and it says so. */
+        field.onblur = () => {
+          if (!this.draft) return;
+          if (field.value.trim()) this.commitDraft(field.value); else this.cancelDraft();
+        };
+        box.append(field);
+        columns[at].append(box);
+        /* ⚠️ The island never takes focus, so a bare `focus()` puts the caret
+         * in the DOM and leaves the keystrokes going to whatever is actually
+         * in front. The same round trip Today's composer makes. */
+        void this.deps.focus(true).then(() => field.focus());
+      }
+    }
+
+    /* ── The list beside the grid ─────────────────────────────────────────
+     * ⚠️ A SIBLING of the grid in a row, not something floated over it: a
+     * panel that covered the week would hide the Thursday somebody is trying
+     * to drop onto.
+     *
+     * ⚠️ ALWAYS in the DOM, at zero width when shut — the same bargain
+     * `.media-lyrics` makes, and for the same reason. The island is sized
+     * from its content and its width is a spring; a panel that is added on
+     * open arrives before the room for it does, which is the appearing this
+     * replaces. Held at width zero, the island's own spring is the animation
+     * and `overflow: hidden` reveals the panel as the room arrives. */
+    const row = element("div", "cal-worktop" + (this.tasksOpen ? " has-tasks" : ""));
+    /* ── How wide the week is, and why it is written from here ─────────────
+     * ⚠️ A FIXED length, which is what makes the reveal work at all — see
+     * `.cal-worktop`. But NOT a number typed into the stylesheet: it has to be
+     * the room the island actually has with the list shut, or the panel opens
+     * into space that is not there and is clipped by the bezel.
+     *
+     * ⚠️ Derived from the same constant the width table caps the island to,
+     * not sampled from the DOM. `render()` runs BEFORE `measure()`, so the
+     * host still has the previous width while this is drawing — reading it
+     * here would size the week from whatever the island was a moment ago.
+     *
+     * ⚠️ The scrollbar, though, IS measured. It is a stable number this code
+     * cannot know (it depends on the platform and on `scrollbar-width`), it
+     * does not change between renders, and leaving it out of the arithmetic
+     * clipped the panel by exactly its width — which shows up only as the task
+     * titles sitting slightly too close to the edge. */
+    const bar = Math.max(0, this.host.offsetWidth - this.host.clientWidth);
+    const weekWide = cpx(CALENDAR_WEEK_DPX) - 2 * SCREEN_PAD - bar;
+    row.style.setProperty("--cal-week-w", `${Math.max(420, Math.round(weekWide))}px`);
+    row.style.setProperty("--cal-tasks-w", `${TASK_PANEL_W}px`);
+    row.style.setProperty("--cal-tasks-gap", `${TASK_PANEL_GAP}px`);
+    row.append(week, this.taskList(waiting));
+    this.host.append(row);
+
+    /* ── Where the grid is scrolled to ────────────────────────────────────
+     * ⚠️ The SCREEN BODY is the scroller, not a box inside it. `.screen-body`
+     * is already `overflow-y: auto`, and the island's depth is capped at
+     * ~507 CSS px — so a grid with its own 440px scroller inside it always
+     * overflowed the screen as well, and the panel came up with **two**
+     * scrollbars side by side. One scrolling ancestor, and the day names stay
+     * put by sticking to it.
+     *
+     * ⚠️ RESTORED on every render. The shell redraws the whole screen on any
+     * of a dozen events — a media tick, a poll, a machine reading — and
+     * `replaceChildren` empties the host, which drops its scroll to zero. The
+     * grid snapped back to midnight every few seconds whatever anybody was
+     * doing.
+     *
+     * ⚠️ Set SYNCHRONOUSLY, not in a frame callback. The content is in the
+     * document and has its height from the axis, so the host is already
+     * scrollable — and a restore a frame later is itself a visible jump. */
+    this.host.scrollTop = this.scrollAt || Math.max(0, axis.yOf(START_AT_HOUR) - 8);
+    /* ⚠️ Attached ONCE, because the host outlives every render. Wiring it here
+     * each time would stack a listener per redraw — dozens a minute. */
+    if (!this.watchingScroll) {
+      this.watchingScroll = true;
+      this.host.addEventListener("scroll",
+        () => { this.scrollAt = this.host.scrollTop; }, { passive: true });
+    }
+
+    if (this.tasksOpen) {
+      /* ⚠️ Only while the list is open. The rows are in the DOM at zero width
+       * when it is shut, and a drag started on something nobody can see is a
+       * gesture that can only confuse. Also why the panel is `inert`.
+       *
+       * ⚠️ Rows are wired AFTER the grid exists, because the drop needs the
+       * columns to hit-test against. */
+      for (const row of this.host.querySelectorAll<HTMLElement>("[data-task-row]")) {
+        const task = waiting.find(one => one.id === row.dataset.taskRow);
+        if (!task) continue;
+        wireTaskDrag(row, task, task.title, {
+          at: (x, y) => pointOver(columns, axis, x, y),
+          span: DROP_SPAN,
+          drop: (ref, column, hour) => {
+            const day = days[column]?.key;
+            if (!day) return;
+            /* ⚠️ Clamped so a drop near midnight cannot produce an end past
+             * the end of the day, which TickTick stores as the next morning
+             * and the grid then draws on tomorrow. */
+            const from = Math.min(24 - DROP_SPAN, hour);
+            this.scheduleTask(ref as Task, atHour(day, from), atHour(day, from + DROP_SPAN));
+          },
+        });
+      }
+    }
+
+    rememberBlocks(drawn);
+    wireWeekEditing(body, columns, axis, days.map(d => d.key), {
+      create: (start, end) => {
+        this.draft = {
+          day: localDay(start),
+          start: start.getHours() + start.getMinutes() / 60,
+          end: end.getHours() + end.getMinutes() / 60,
+        };
+        this.actionError = "";
+        this.changed();
+      },
+      /* ⚠️ One gesture, two stores. The grid does not care which it is
+       * dragging; this is the only place that has to. */
+      move: (ref, start, end) => {
+        const what = ref as GridRef;
+        if (what.kind === "event") this.commitMove(what.event, start, end);
+        else this.scheduleTask(what.task, start, end);
+      },
+      say: message => {
+        if (this.actionError === message) return;
+        this.actionError = message;
+        this.changed();
+      },
+    });
   }
+
 
   render() {
     this.host.replaceChildren();
@@ -822,8 +1554,9 @@ export class CalendarScreen {
     if (this.view === "week") this.renderWeek(now);
     else this.renderMonth(now);
 
-    if (this.error || this.feed.error) {
-      this.host.append(element("p", "screen-error", this.error || this.feed.error || ""));
+    if (this.actionError || this.error || this.feed.error) {
+      this.host.append(element("p", "screen-error",
+        this.actionError || this.error || this.feed.error || ""));
     }
     if (this.chosen) {
       const open = this.feed.events.find(e => e.id === this.chosen);

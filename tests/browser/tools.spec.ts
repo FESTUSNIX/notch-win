@@ -230,7 +230,14 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
   await page.mouse.move(one.x, one.y);
   await expect(tools.getByRole("button", {name: "Show what is next"})).toBeVisible();
 
+  /* ⚠️ Home is a BOARD now, and a board has exactly one thing it can do that
+   * no other screen can: be arranged. So this used to be the screen with no
+   * arc and is now the screen with one control on it. The claim being tested
+   * — the arc follows the screen — is unchanged; what changed is which screen
+   * is empty. */
   await goTo(page, "home");
+  await expect(tools.locator(".arc-act")).toHaveCount(1);
+  await goTo(page, "agents");
   await expect(tools).toBeHidden();
 
   /* ⚠️ And the header does not keep a copy. The row used to live beside the

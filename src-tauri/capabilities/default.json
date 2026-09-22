@@ -6,7 +6,8 @@
     "notch",
     "settings",
     "tasks",
-    "task-editor"
+    "task-editor",
+    "ambient"
   ],
   "permissions": [
     "core:default",

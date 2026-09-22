@@ -86,6 +86,16 @@ pub fn harden(window: &WebviewWindow) {
         };
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next as isize);
 
+        /* ⚠️ Not while ambient mode is up. This runs whenever the pointer
+         * crosses the island's edge, and re-asserting topmost here would lift
+         * the island and the usage notch back ABOVE a full-screen player —
+         * which is on top precisely because it was made topmost last. The
+         * style bits above still apply; only the re-ordering is held. */
+        if crate::ambient::OPEN.load(std::sync::atomic::Ordering::SeqCst)
+            && window.label() != crate::ambient::LABEL
+        {
+            return;
+        }
         // Topmost is set through SetWindowPos rather than the style bit —
         // the bit alone does not re-order an existing window.
         let _ = SetWindowPos(
@@ -97,6 +107,17 @@ pub fn harden(window: &WebviewWindow) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
+    }
+}
+
+/// Put a window at the very top of the topmost band, and let it take focus.
+///
+/// ⚠️ Unlike `harden`, this ACTIVATES — it is for the one window that is meant
+/// to be interacted with over everything else (ambient mode), not for chrome.
+pub fn to_top(window: &WebviewWindow) {
+    let Some(hwnd) = hwnd_of(window) else { return };
+    unsafe {
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     }
 }
 

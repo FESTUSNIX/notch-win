@@ -130,9 +130,12 @@ test("the island morphs from one pill into one panel, and the tabs switch screen
   await expect(page.locator("#day-date")).toHaveText(/\w/);
   await expect(page.locator(".day-meta")).not.toContainText("00b7");
   await goTo(page, "home");
-  // Home is the default: three sections on one row, one per other screen.
+  // Home is the default: three blocks on one row, one per other screen.
   await expect(page.locator(".home-sec")).toHaveCount(3);
-  await expect(page.locator(".home-month")).toBeVisible();
+  /* ⚠️ The month is the calendar block's LEAD now, not a caption of its own.
+   * Every block begins with the same small uppercase line in the same place —
+   * that repetition is what lets them sit on a bare row with no panels. */
+  await expect(page.locator('.home-cal .w-lead')).toBeVisible();
   await goTo(page, "calendar");
   // The month grid and the agenda beside it — one view, not two.
   await expect(page.locator(".cal-grid")).toBeVisible();
@@ -699,7 +702,10 @@ test("Home gathers the other three onto one row, and opens into them", async ({p
    * any more — it cost a third of the section to say "1/1", which the resting
    * pill already says and the Today screen says properly. */
   await expect(page.locator(".home-tally")).toHaveCount(0);
-  await expect(page.locator(".home-task")).toHaveCount(4);
+  /* ⚠️ THREE, not four. The block leads with a figure saying how many are
+   * left, and the rows under it are the next few rather than the whole day —
+   * a count and three rows says more in the same space than four rows did. */
+  await expect(page.locator(".home-task")).toHaveCount(3);
   const late = page.locator(".home-task").filter({hasText: "Book a haircut"});
   // click(), not check(): the row is disabled the instant it is completed, and
   // check() waits for a checkbox it can still toggle.
@@ -2362,7 +2368,9 @@ test("every screen ends the same way, and a card that lights up goes somewhere",
   await expect(page.locator(".home-cal")).toHaveClass(/can-open/);
 
   // And the whole card opens it, not just the 15px arrow in its corner.
-  await page.locator(".home-cal .home-strip").click();
+  /* ⚠️ `.home-days`, not `.home-strip`. The month used to be a caption inside
+   * a strip wrapper; it is the block's own LEAD now, and the wrapper is gone. */
+  await page.locator(".home-cal .home-days").click();
   await expect(page.locator('[data-tab="calendar"]')).toHaveAttribute("aria-selected", "true");
 });
 

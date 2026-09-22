@@ -31,6 +31,16 @@ pub struct Config {
     /// module is off and nothing is ever requested -- see weather.rs on why
     /// this is typed rather than resolved from the IP address.
     pub weather_place: String,
+    /// The Binance symbol the board follows, e.g. `BTCUSDT`. Empty is off —
+    /// ⚠️ nothing is fetched until somebody names one, the same opt-in the
+    /// weather makes, and for the same reason.
+    #[serde(default)]
+    pub crypto_symbol: String,
+    /// What the wallet is DISPLAYED in — `USDT`, `PLN`, `EUR`, anything
+    /// Binance quotes. ⚠️ Display only: everything is valued in USDT, because
+    /// that is what Binance prices in, and converted once at the end.
+    #[serde(default)]
+    pub wallet_quote: String,
     /// Resolved once from `weather_place` and kept, so the ordinary case is one
     /// request every half hour to one host rather than two.
     pub weather_lat: Option<f64>,
@@ -64,6 +74,11 @@ pub struct Config {
     pub shortcut_hide: String,
     /// The ring of screens around the pointer.
     pub shortcut_ring: String,
+    /// A folder of the user's own ambient scenes — videos and stills. Empty
+    /// means the generated scenes only. ⚠️ The asset protocol is allowed to
+    /// serve THIS folder and nothing else; see `ambient::allow`.
+    #[serde(default)]
+    pub ambient_folder: String,
 }
 
 impl Default for Config {
@@ -78,6 +93,8 @@ impl Default for Config {
             task_visible: true,
             clock_24h: true,
             weather_place: String::new(),
+            crypto_symbol: String::new(),
+            wallet_quote: String::new(),
             weather_lat: None,
             weather_lon: None,
             monitor: None,
@@ -86,6 +103,7 @@ impl Default for Config {
             chrome_hidden: false,
             shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
             shortcut_ring: crate::shortcuts::DEFAULT_RING.into(),
+            ambient_folder: String::new(),
         }
     }
 }

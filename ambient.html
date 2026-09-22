@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ambient</title></head>
+<body>
+<!-- Every glyph is `data-glyph`, painted at boot from the app's own icon set
+     (task-icons.ts) — the same Hugeicons the island draws, never a hand-drawn
+     lookalike. -->
+<div class="stage" id="stage" data-layout="centre" hidden>
+  <div class="scene" id="scene">
+    <canvas class="far" id="far" aria-hidden="true"></canvas>
+    <canvas class="near" id="near" aria-hidden="true"></canvas>
+    <div class="own" id="own" aria-hidden="true">
+      <video class="own-v" id="vA" muted playsinline preload="auto"></video>
+      <video class="own-v" id="vB" muted playsinline preload="auto"></video>
+      <img class="own-i" id="still" alt="">
+    </div>
+    <div class="shade"></div>
+
+    <div class="amb" id="amb">
+      <!-- Top right: the only controls that are always one move away. -->
+      <div class="corner chrome">
+        <button class="amb-tool" type="button" data-act="layout" data-glyph="layout" aria-label="Switch layout"></button>
+        <button class="amb-tool" type="button" data-act="menu" data-glyph="image" aria-label="Scene" aria-haspopup="dialog" aria-expanded="false"></button>
+        <button class="amb-tool" type="button" data-act="size" data-glyph="textSize" aria-label="Lyrics size"></button>
+        <button class="amb-tool" type="button" data-act="close" data-glyph="close" aria-label="Leave ambient mode"></button>
+      </div>
+
+      <!-- SIDE: the cover, its title and the words. -->
+      <div class="side">
+        <div class="side-left">
+          <img class="cover" data-bind="cover" alt="">
+          <h2 data-bind="title"></h2>
+          <p data-bind="artist"></p>
+          <input class="pos chrome" type="range" min="0" max="100" step="0.1" value="0" aria-label="Position">
+          <div class="xport chrome">
+            <button class="amb-key" type="button" data-act="previous" data-glyph="previous" aria-label="Previous"></button>
+            <button class="amb-key is-main" type="button" data-act="playpause" data-glyph="pause" aria-label="Pause"></button>
+            <button class="amb-key" type="button" data-act="next" data-glyph="next" aria-label="Next"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTRE: three lines in the middle, the rest along the bottom. -->
+      <div class="centre">
+        <div class="c-bottom">
+          <div class="c-now">
+            <img data-bind="cover" alt="">
+            <div class="c-now-t"><b data-bind="title"></b><span data-bind="artist"></span></div>
+          </div>
+          <div class="c-mid chrome">
+            <div class="c-scrub"><span class="t-now" data-bind="now">0:00</span><input class="pos" type="range" min="0" max="100" step="0.1" value="0" aria-label="Position"><span class="t-left" data-bind="left">-0:00</span></div>
+            <div class="xport">
+              <button class="amb-key is-mode" type="button" data-act="shuffle" data-glyph="shuffle" aria-pressed="false" aria-label="Shuffle"></button>
+              <button class="amb-key" type="button" data-act="previous" data-glyph="previous" aria-label="Previous"></button>
+              <button class="amb-key is-main" type="button" data-act="playpause" data-glyph="pause" aria-label="Pause"></button>
+              <button class="amb-key" type="button" data-act="next" data-glyph="next" aria-label="Next"></button>
+              <button class="amb-key is-mode" type="button" data-act="repeat" data-glyph="repeat" data-mode="none" aria-pressed="false" aria-label="Repeat: off"></button>
+            </div>
+          </div>
+          <div class="c-right chrome">
+            <label class="vol" id="volWrap" hidden>
+              <span data-glyph="volume" aria-hidden="true"></span>
+              <input class="pos" id="vol" type="range" min="0" max="100" value="50" aria-label="Volume of the playing app">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="lyr" id="lyr"><div class="lines" id="lines"></div></div>
+      <p class="quiet" id="quiet"></p>
+    </div>
+  </div>
+
+  <div class="menu" id="menu" role="dialog" aria-label="Scene" hidden>
+    <p class="menu-h">Scene</p>
+    <div class="menu-scenes" id="menuScenes"></div>
+    <div class="menu-sky" id="menuSky">
+      <p class="menu-h">Time of day</p>
+      <div class="chips" id="chipsSky"></div>
+      <p class="menu-h">Weather</p>
+      <div class="chips" id="chipsWeather"></div>
+    </div>
+    <button class="menu-folder" type="button" data-act="folder" id="folderBtn"><span data-glyph="folder" aria-hidden="true"></span><span id="folderLabel">Add your own folder…</span></button>
+  </div>
+</div>
+<script type="module" src="/src/ambient.ts"></script>
+</body>
+</html>

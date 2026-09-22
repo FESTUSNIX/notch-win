@@ -11,7 +11,7 @@ import {
   ArrowUpRight01Icon, InboxIcon, Analytics01Icon, AlarmClockIcon, Search01Icon,
   SourceCodeIcon, Image01Icon, Pdf01Icon, Zip01Icon, Txt01Icon, Doc01Icon,
   Xls01Icon, Ppt01Icon, Mp301Icon, ComputerTerminal01Icon, Rocket01Icon, StarIcon,
-  KeyboardIcon,
+  KeyboardIcon, ArrowExpand01Icon, RepeatIcon, RepeatOne01Icon, LayoutTwoColumnIcon, TextFontIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
   Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon, ShuffleIcon,
 } from "@hugeicons/core-free-icons";
@@ -96,6 +96,11 @@ const CODEX_MARK: [string, Record<string, string>][] = [
 ];
 
 const icons = {
+  ambient: ArrowExpand01Icon,
+  /* Ambient mode's own. ⚠️ Repeat is two glyphs, not one with a "1" drawn
+     over it: the one-track loop is a different mark in the set, and a digit
+     laid on a stroke icon at 20px is a smudge. */
+  repeat: RepeatIcon, repeatOne: RepeatOne01Icon, layout: LayoutTwoColumnIcon, textSize: TextFontIcon,
   pause: PauseIcon, play: PlayIcon, stop: StopIcon, check: Tick02Icon, list: ListViewIcon,
   pin: PinIcon, settings: Settings01Icon, close: Cancel01Icon, down: ArrowDown01Icon,
   plus: PlusSignIcon, focus: FocusIcon,

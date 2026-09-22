@@ -15,7 +15,23 @@ import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";
 import type { CallControl } from "./call-format";
 
-export type ScreenName =
+/** A board somebody built, by its id.
+ *
+ * ⚠️ Boards are made at runtime, so they cannot be members of the union below
+ * — but every screen name in the app is still one type, because a board IS a
+ * screen: it takes a rail stop, a ring wedge and a palette row exactly like
+ * the built-in ones. The prefix is the whole discriminator; `isBoard` is the
+ * only place that knows it.
+ *
+ * ⚠️ HOME IS NOT ONE OF THESE. It is board number one in the model and keeps
+ * the name `home` as a screen, because it is where the island opens, where a
+ * vanished screen sends you and what a preferences file written a year ago
+ * calls it. See `screenOf` in `boards.ts` — that mapping is the one place the
+ * exception lives. */
+export type BoardName = `board:${string}`;
+
+/** The screens that ship with the app. */
+export type FixedScreen =
   | "home" | "today" | "agents" | "shelf"
   | "calendar" | "system" | "review"
   /** ⚠️ Real, and like the player its stop is only on the rail while there
@@ -31,6 +47,8 @@ export type ScreenName =
    *  that is not there. */
   | "media"
   | "notes";
+
+export type ScreenName = FixedScreen | BoardName;
 
 /** What the resting pill shows: the date, the time, and at most one module. */
 export interface Resting {

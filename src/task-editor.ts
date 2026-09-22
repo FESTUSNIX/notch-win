@@ -27,7 +27,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { call, native, preview, watchTasks } from "./task-client";
 import { emptySnapshot } from "./task-model";
 import { element } from "./dom";
-import { SCREENS } from "./screens";
+import { withBoards } from "./screens";
+import {
+  BOARD_ICONS, freshId, normalise as normaliseBoards, DEFAULT_BOARD_CAP, type Board,
+} from "./boards";
+/* ⚠️ `widgets.ts` is DATA — every import in it is a type, so this pulls no
+ * screen into the settings bundle. See the note at the top of it. */
+import { widgetsOf } from "./widgets";
 import { taskIcon, type TaskIcon } from "./task-icons";
 import { ringChoices } from "./ring-geometry";
 import "./tasks.css";
@@ -50,9 +56,10 @@ interface Prefs {
   railOrder: string[];
   railHidden: string[];
   railColours: Record<string, string>;
+  boards: Board[];
+  boardCap: number;
   noticeMode: boolean;
   timerSound: string;
-  timerMode: string;
   pomodoroPill: string;
   ringStops: string[];
   ringGlass: boolean;
@@ -220,6 +227,10 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Always show them", "", check("rail-always"))}
       ${row("Show them all", "Every screen at once, instead of one to drag between.", check("rail-flat"))}
     </div></div>
+    <div><p class="set-label">Boards</p>
+    <p class="set-why">A board is a row of cards, and Home is one of them. To change what is on one, open it and press the grid on the island’s arc.</p>
+    <div id="boards"></div>
+    <button type="button" class="set-add" id="board-add">New board</button></div>
     <div><p class="set-label">Screens</p>
     <p class="set-why">Drag to reorder. Switched off, a screen leaves the rail and stays in the palette.</p>
     <div class="set-group" id="rail-screens">
@@ -312,10 +323,24 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Redirect URI", "Spotify matches this character for character, port included.",
         `<code class="set-code" id="spotify-redirect">…</code><button type="button" class="set-btn" id="spotify-copy">Copy</button>`)}
     </div></div>
+    <div><p class="set-label">Ambient mode</p><div class="set-group">
+      ${row("Your scenes", "Videos and stills from one folder, offered beside the generated rooms. Nothing outside it is ever read.",
+        `<span class="set-value" id="ambient-folder" style="min-width:0;text-align:right">…</span><button type="button" class="set-btn is-accent" id="ambient-pick">Choose folder…</button><button type="button" class="set-btn" id="ambient-clear">Clear</button>`, "stack")}
+    </div></div>
     <div><p class="set-label">Weather</p><div class="set-group">
       ${row("Place", "Left empty, nothing is ever requested.",
         `<input id="weather-place" autocomplete="off" spellcheck="false" maxlength="120" placeholder="Kraków"><button type="button" class="set-btn is-accent" id="weather-set">Use this place</button><button type="button" class="set-btn" id="weather-clear">Turn off</button>`, "stack")}
       ${row("Now", "", `<span class="set-value" id="weather-state" style="min-width:0;text-align:right">…</span>`)}
+    </div></div>
+    <div><p class="set-label">Crypto</p><div class="set-group">
+      ${row("Symbol", "A Binance pair, like BTCUSDT. Left empty, nothing is ever requested.",
+        `<input id="crypto-symbol" autocomplete="off" spellcheck="false" maxlength="20" placeholder="BTCUSDT"><button type="button" class="set-btn is-accent" id="crypto-set">Follow this</button><button type="button" class="set-btn" id="crypto-clear">Turn off</button>`, "stack")}
+      ${row("Now", "", `<span class="set-value" id="crypto-state" style="min-width:0;text-align:right">…</span>`)}
+      ${row("Wallet", "Read-only API keys only. Make one in Binance under API Management with just <b>Enable Reading</b> ticked, and restrict it to this machine's IP. Codenotch never calls an endpoint that can trade or withdraw.",
+        `<input id="binance-key" autocomplete="off" spellcheck="false" maxlength="128" placeholder="API key"><input id="binance-secret" type="password" autocomplete="off" spellcheck="false" maxlength="128" placeholder="Secret"><button type="button" class="set-btn is-accent" id="binance-connect">Connect</button><button type="button" class="set-btn" id="binance-disconnect">Disconnect</button>`, "stack")}
+      ${row("Show in", "A currency Binance quotes — PLN, EUR, USDT. Everything is valued in USDT and converted once.",
+        `<input id="wallet-quote" autocomplete="off" spellcheck="false" maxlength="8" placeholder="USDT"><button type="button" class="set-btn" id="wallet-quote-set">Use this</button>`, "stack")}
+      ${row("Balance", "", `<span class="set-value" id="binance-state" style="min-width:0;text-align:right">…</span>`)}
     </div></div>`,
 };
 
@@ -401,10 +426,10 @@ for (const spec of PANES) {
 let prefs: Prefs = {
   accent: "#00ff88", weekStartsMonday: true, fahrenheit: false,
   openOnHover: true, foldDelayMs: 450, motion: "system", panelWidth: 0,
-  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {},
+  railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {}, boards: [], boardCap: DEFAULT_BOARD_CAP,
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
-  timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  timerSound: "Notification.Reminder",
   pomodoroPill: "bar", ringStops: [], ringGlass: true, followLive: true,
   ringHoldMs: 250, ringTap: "@search", homeCurrency: "",
   indexApps: true, notifyRuns: true,
@@ -646,11 +671,40 @@ for (const [id, key] of [
  * the END rather than disappearing. A file written before a screen existed
  * must not hide it. */
 function screenOrder(): { name: string; label: string }[] {
+  /* ⚠️ Boards are in this list too, and have to be: a board is a screen — it
+   * takes a rail stop, a colour and a switch exactly like a built-in one, and
+   * all three come free the moment it is here. `withBoards` is the same splice
+   * the island's rail and the ring read, so the three cannot disagree. */
+  const all = [...withBoards(theBoards())];
   const rank = (name: string) => {
     const at = prefs.railOrder.indexOf(name);
-    return at < 0 ? SCREENS.findIndex(s => s.name === name) + SCREENS.length : at;
+    return at < 0 ? all.findIndex(s => s.name === name) + all.length : at;
   };
-  return [...SCREENS].sort((a, b) => rank(a.name) - rank(b.name));
+  return all.sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+/* ── Boards ──────────────────────────────────────────────────────────────
+ * A board is a row of widget cards. Home is the first of them and is not a
+ * special case here either — it can be rearranged like any other; the only
+ * thing it cannot do is be deleted, because it is where the island opens.
+ *
+ * ⚠️ Read through `theBoards()`, never `prefs.boards` directly. An empty list
+ * on disk means "the built-in board", not "no boards" — see `normalise`. */
+function theBoards(): Board[] {
+  return normaliseBoards(prefs.boards);
+}
+
+/** Write the boards back, and redraw everything that shows them.
+ *
+ * ⚠️ The SCREENS list too. A board renamed, added or deleted changes a row in
+ * the list below it, and redrawing only the board editor leaves a stale name
+ * sitting in a list four rows further down the same pane. */
+function setBoards(next: Board[]) {
+  prefs.boards = next;
+  savePrefs();
+  paintBoards();
+  paintScreens();
+  paintRing();
 }
 
 /** Ready-made colours, so picking nine that go together is not a design job.
@@ -689,7 +743,7 @@ function paintTap() {
     select.append(option);
   };
   add("@search", "Command palette");
-  for (const stop of ringChoices(SCREENS)) add(stop.id, stop.label);
+  for (const stop of ringChoices(withBoards(theBoards()))) add(stop.id, stop.label);
   select.value = prefs.ringTap || "@search";
   select.onchange = () => {
     prefs.ringTap = select.value;
@@ -713,7 +767,7 @@ function paintRing() {
   const host = get("ring-stops");
   host.replaceChildren();
   const chosen = prefs.ringStops;
-  const all = ringChoices(SCREENS);
+  const all = ringChoices(withBoards(theBoards()));
 
   const make = (stops: typeof all, title: string) => {
     if (!stops.length) return;
@@ -841,6 +895,163 @@ function paintScreens() {
     row.append(grip, text, tones, dye, box);
     host.append(row);
   }
+}
+
+/** The board editor: one card per board, its widgets as chips inside it.
+ *
+ * ⚠️ Rebuilt whole on every change rather than patched. The lists are four
+ * rows of five chips; a diffing renderer here would be more code than the
+ * thing it renders, and every bug in it would look like a board that forgot
+ * what was on it. */
+function paintBoards() {
+  const host = get("boards");
+  const boards = theBoards();
+  host.replaceChildren();
+
+  for (const board of boards) {
+    const card = element("div", "board-card");
+    card.dataset.board = board.id;
+
+    const head = element("div", "board-head");
+
+    /* ── Which glyph it wears ────────────────────────────────────────────
+     * ⚠️ Every board used to be drawn with `home`, so a second one was a rail
+     * stop, a ring wedge and a palette row identical to the first — the only
+     * thing telling them apart was a name the rail does not always have room
+     * for. The picker is a popover rather than sixteen buttons in the card:
+     * this is a row you glance at, and a grid of glyphs on every card is more
+     * of the settings window spent on boards than on everything else.
+     *
+     * ⚠️ HOME TOO. It is a board like any other and there is no reason it
+     * cannot be a star — the exception `screenOf` makes is about its screen
+     * NAME, not about what it looks like. */
+    const pick = element("button", "board-icon");
+    (pick as HTMLButtonElement).type = "button";
+    pick.setAttribute("aria-label", `Icon for ${board.name}`);
+    pick.setAttribute("aria-expanded", "false");
+    pick.dataset.tip = "Icon";
+    pick.append(taskIcon(board.icon));
+
+    const sheet = element("div", "board-icons");
+    sheet.hidden = true;
+    for (const one of BOARD_ICONS) {
+      const choice = element("button", `board-icon-one${one === board.icon ? " is-on" : ""}`);
+      (choice as HTMLButtonElement).type = "button";
+      choice.setAttribute("aria-label", one);
+      choice.setAttribute("aria-pressed", String(one === board.icon));
+      choice.append(taskIcon(one));
+      choice.onclick = () => {
+        setBoards(boards.map(held => (held.id === board.id ? { ...held, icon: one } : held)));
+      };
+      sheet.append(choice);
+    }
+    pick.onclick = () => {
+      const open = sheet.hidden;
+      /* ⚠️ Shuts every OTHER one first. Two open sheets on two cards is two
+       * answers to one question, and the second one you open is over the card
+       * below it — which is where the first one's rows are. */
+      host.querySelectorAll<HTMLElement>(".board-icons").forEach(el => { el.hidden = true; });
+      host.querySelectorAll(".board-icon").forEach(el => el.setAttribute("aria-expanded", "false"));
+      sheet.hidden = !open;
+      pick.setAttribute("aria-expanded", String(open));
+    };
+    head.append(pick);
+
+    /* The name is an INPUT, not a label with a rename button. Renaming a board
+     * is the commonest thing anybody does to one after making it, and a button
+     * that swaps a label for a field is two presses for one edit. */
+    const name = document.createElement("input");
+    name.type = "text";
+    name.className = "board-name";
+    name.value = board.name;
+    name.maxLength = 24;
+    name.setAttribute("aria-label", `Name of ${board.name}`);
+    name.onchange = () => {
+      const said = name.value.trim();
+      /* ⚠️ An empty name is REFUSED, not stored. A board with no name is a
+       * blank rail stop and a blank palette row — unreachable except by
+       * counting positions. */
+      if (!said) { name.value = board.name; return; }
+      setBoards(boards.map(one => (one.id === board.id ? { ...one, name: said } : one)));
+    };
+    head.append(name);
+
+    if (board.id !== "home") {
+      const drop = element("button", "board-drop");
+      (drop as HTMLButtonElement).type = "button";
+      drop.textContent = "Remove";
+      drop.setAttribute("aria-label", `Remove ${board.name}`);
+      /* ⚠️ Asks twice, like deleting a note. A board is minutes of arranging
+       * and there is no undo; the second press disarms itself after 4s. */
+      let armed = 0;
+      drop.onclick = () => {
+        if (!armed) {
+          armed = window.setTimeout(() => {
+            armed = 0;
+            drop.textContent = "Remove";
+            drop.classList.remove("is-armed");
+          }, 4000);
+          drop.textContent = "Sure?";
+          drop.classList.add("is-armed");
+          return;
+        }
+        clearTimeout(armed);
+        setBoards(boards.filter(one => one.id !== board.id));
+      };
+      head.append(drop);
+    } else {
+      head.append(element("small", "board-why", "Where the island opens"));
+    }
+    card.append(head, sheet);
+
+    /* ── What is on it ──────────────────────────────────────────────────
+     * ⚠️ READ ONLY, and that is the decision rather than an omission. Adding,
+     * moving and removing a card happens ON the board — you press the grid on
+     * the island's arc and drag the things themselves, against the layout they
+     * will actually have. A second editor here would be a list of chips
+     * standing in for cards, which is the thing that replaced. What settings
+     * still owns is the BOARDS: making one, naming it, throwing it away. */
+    const rail = element("div", "board-widgets");
+    const on = widgetsOf(board.widgets);
+    for (const placed of on) {
+      const chip = element("div", "board-chip");
+      chip.title = placed.def.about;
+      const mark = element("span", "board-chip-mark");
+      mark.append(taskIcon(placed.def.icon));
+      chip.append(mark, element("span", "board-chip-name", placed.def.label));
+      /* ⚠️ The SIZE too, because settings is where you see a board's shape
+       * without opening it — and a widget that is two cells wide is a different
+       * thing on a board from the same widget at one. */
+      chip.append(element("span", "board-chip-size", `${placed.w}×${placed.h}`));
+      rail.append(chip);
+    }
+    if (!on.length) rail.append(element("span", "board-none", "Nothing on it yet"));
+    card.append(rail);
+
+    host.append(card);
+  }
+
+  /* ── How many more there may be ────────────────────────────────────────
+   * ⚠️ The CAP IS READ, never compared against a constant here. It is a number
+   * in `prefs.rs` so that a build or a plan could set it without this file
+   * learning a second rule — and the button says what the limit is rather than
+   * simply refusing, which is the difference between a rule and a fault. */
+  const cap = Math.max(1, prefs.boardCap || DEFAULT_BOARD_CAP);
+  const add = get<HTMLButtonElement>("board-add");
+  add.disabled = boards.length >= cap;
+  add.textContent = add.disabled ? `${cap} boards is the limit` : "New board";
+  add.onclick = () => {
+    if (boards.length >= cap) return;
+    const id = freshId(boards);
+    /* ⚠️ The first glyph nobody is using, not `home`. Two boards wearing one
+     * icon is the state this picker exists to fix, and making every new board
+     * start there would mean everybody meets the bug before they find the
+     * cure. Falls back to `grid` once all sixteen are taken, which needs more
+     * boards than the cap allows. */
+    const taken = new Set(boards.map(one => one.icon));
+    const icon = BOARD_ICONS.find(one => !taken.has(one)) ?? "grid";
+    setBoards([...boards, { id, name: `Board ${boards.length + 1}`, icon, widgets: [] }]);
+  };
 }
 
 /* ── Reordering ──────────────────────────────────────────────────────
@@ -1263,6 +1474,105 @@ get("weather-set").onclick = async () => {
     say("");
   } catch (error) { say(String(error), "error"); }
 };
+/* ⚠️ The SYMBOL, not a balance. See the note at the top of `crypto.rs`: a
+ * wallet needs a key this app would then be holding, and its credentials go in
+ * Windows Credential Manager through the native editor. */
+interface Coin { symbol: string; name: string; price: number; changePct: number }
+
+function sayCoin(reading: Coin | null) {
+  const said = get("crypto-state");
+  said.textContent = reading && reading.symbol
+    ? `${reading.name} ${reading.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+    : "Off";
+  if (reading?.symbol) get<HTMLInputElement>("crypto-symbol").value = reading.symbol;
+}
+
+get("crypto-set").onclick = async () => {
+  get("crypto-state").textContent = "…";
+  try {
+    sayCoin(await call<Coin>("set_crypto_symbol",
+      { symbol: get<HTMLInputElement>("crypto-symbol").value }));
+  } catch (error) {
+    /* ⚠️ The MESSAGE, which for a bad pair is "No such symbol: DOGEMOON".
+     * "Failed" would leave somebody retyping a symbol that does not exist. */
+    get("crypto-state").textContent = String(error).replace(/^.*?: /, "");
+  }
+};
+/* ── Binance ──────────────────────────────────────────────────────────────
+ * ⚠️ The secret goes ONE WAY. It is sent once, stored in Windows Credential
+ * Manager by Rust, and never read back — `binance_connected` answers with a
+ * boolean, because a command that returned the key would be putting it in a
+ * WebView, which is the one place it must not be.
+ *
+ * ⚠️ And it is cleared from the FIELD the moment it is sent. A password input
+ * that still holds the secret is a secret sitting in the DOM of a window that
+ * stays open all day. */
+interface Wallet { connected: boolean; total: number; quote: string }
+
+function sayWallet(held: Wallet | null) {
+  const said = get("binance-state");
+  said.textContent = held?.connected
+    ? `${held.quote} ${held.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+    : "Not connected";
+}
+
+get("binance-connect").onclick = async () => {
+  const key = get<HTMLInputElement>("binance-key");
+  const secret = get<HTMLInputElement>("binance-secret");
+  get("binance-state").textContent = "…";
+  try {
+    const held = await call<Wallet>("connect_binance",
+      { key: key.value, secret: secret.value });
+    secret.value = "";
+    sayWallet(held);
+  } catch (error) {
+    secret.value = "";
+    /* ⚠️ The message, which for a bad key is our own sentence about what to
+     * check — see `crypto.rs`. Never the raw error: a signed request carries
+     * its signature in the query string. */
+    get("binance-state").textContent = String(error).replace(/^.*?: /, "");
+  }
+};
+get("wallet-quote-set").onclick = async () => {
+  get("binance-state").textContent = "…";
+  try {
+    sayWallet(await call<Wallet>("set_wallet_quote",
+      { quote: get<HTMLInputElement>("wallet-quote").value }));
+  } catch (error) {
+    get("binance-state").textContent = String(error).replace(/^.*?: /, "");
+  }
+};
+get("binance-disconnect").onclick = async () => {
+  get<HTMLInputElement>("binance-key").value = "";
+  get<HTMLInputElement>("binance-secret").value = "";
+  if (await run("disconnect_binance", {})) sayWallet(null);
+};
+
+get("crypto-clear").onclick = async () => {
+  get<HTMLInputElement>("crypto-symbol").value = "";
+  if (await run("set_crypto_symbol", { symbol: "" })) sayCoin(null);
+};
+
+/* ── Ambient mode's own folder ─────────────────────────────────────── */
+interface Scenes { folder: string; files: unknown[] }
+function sayScenes(s: Scenes | null) {
+  const n = s?.files.length ?? 0;
+  get("ambient-folder").textContent = s?.folder
+    ? `${s.folder} · ${n} scene${n === 1 ? "" : "s"}`
+    : "None — the generated rooms only";
+  (get("ambient-clear") as HTMLButtonElement).disabled = !s?.folder;
+}
+get("ambient-pick").onclick = async () => {
+  try {
+    // The system's own folder picker; null when it was cancelled.
+    const picked = await call<Scenes | null>("ambient_pick_folder");
+    if (picked) sayScenes(picked);
+  } catch (error) { say(String(error), "error"); }
+};
+get("ambient-clear").onclick = async () => {
+  try { sayScenes(await call<Scenes>("ambient_set_folder", { folder: "" })); } catch (error) { say(String(error), "error"); }
+};
+
 get("weather-clear").onclick = async () => {
   get<HTMLInputElement>("weather-place").value = "";
   if (await run("set_weather_place", { place: "" })) sayWeather(null);
@@ -1296,6 +1606,7 @@ function paintPrefs() {
   get<HTMLInputElement>("ring-hold").value = String(prefs.ringHoldMs);
   get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;
   paintTap();
+  paintBoards();
   paintScreens();
   paintRing();
   get<HTMLInputElement>("notify-runs").checked = prefs.notifyRuns;
@@ -1343,6 +1654,24 @@ async function boot() {
   await Promise.all([paintDisplays(), paintProviders(), paintGoogle(), paintSpotify(),
     paintKeys(), paintSnoozed(), paintEverything()]);
   try { sayWeather(await call<Weather>("get_weather")); } catch { sayWeather(null); }
+  try { sayScenes(await call<Scenes>("ambient_scenes")); } catch { sayScenes(null); }
+  try { sayCoin(await call<Coin>("get_crypto")); } catch { sayCoin(null); }
+  try {
+    /* ⚠️ Two questions, because they have two answers: whether a key is stored
+     * at all, and what it last reported. A key that is saved but has not polled
+     * yet must not read as "not connected". */
+    const held = await call<Wallet | null>("get_wallet");
+    if (held) {
+      sayWallet(held);
+      get<HTMLInputElement>("wallet-quote").value = held.quote;
+    }
+    else {
+      sayWallet(null);
+      if (await call<boolean>("binance_connected")) {
+        get("binance-state").textContent = "Connected, reading…";
+      }
+    }
+  } catch { sayWallet(null); }
 
   if (preview) say("Interactive preview · nothing here is saved.");
 }

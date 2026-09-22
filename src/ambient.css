@@ -1,0 +1,361 @@
+/* Ambient mode: the player, full screen.
+ *
+ * ⚠️ The same design system as the island, not a lookalike of it. Tokens come
+ * from `tokens.css` — the tile, the sheen, the hairline, the gloss, the lift,
+ * the motion scale and everything the accent implies — and the controls are the
+ * player's own objects: round `media-key`s for the transport, rounded-square
+ * `media-side` tools, the rail for the scrub, the segmented chip for a choice.
+ * The one difference is the ground. On the island the tiles sit on opaque
+ * black; here they sit on a photograph, so every surface carries a dark glass
+ * UNDER the tile (`--amb-glass` + a real backdrop blur, which works here
+ * because this window's backdrop is the scene, not the island's black).
+ *
+ * ⚠️ One rule runs through all of it: the screen holds the music and the
+ * room, and anything that reads like an interface is `.chrome` — gone three
+ * seconds after the pointer stops.
+ */
+@import "./tokens.css";
+
+:root {
+  color-scheme: dark;
+  /* The fallback until prefs arrive. ⚠️ The same stock green as the island's —
+     ambient.ts writes the real one from `get_prefs` before the stage is shown. */
+  --accent: #00ff88;
+  --sys: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --display: 'Segoe UI Variable Display', var(--sys);
+  /* The glass under every control. Black at low alpha, like every other value
+     in the elevation recipe — never a literal grey. */
+  --amb-glass: rgba(10, 12, 16, 0.34);
+  --amb-blur: blur(18px) saturate(1.35);
+  /* Controls are the island's sizes, grown a little with the screen and capped:
+     a 40px key is right on a laptop and lost on a 4K monitor across a room. */
+  --amb-tool: clamp(38px, 2.3cqw, 48px);
+  --amb-key: clamp(44px, 2.8cqw, 58px);
+  --amb-main: clamp(56px, 3.6cqw, 74px);
+}
+/* ⚠️ Transparent all the way down. The window opens as a pill-sized hole
+ * onto the scene and grows; everything outside that hole has to be the
+ * desktop until the player has covered it. */
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input { font: inherit; }
+[hidden] { display: none !important; }
+
+.stage {
+  position: fixed; inset: 0;
+  container-type: inline-size;
+  color: #fff; font-family: var(--sys);
+  user-select: none;
+}
+.stage.is-idle { cursor: none; }
+
+.scene {
+  position: absolute; inset: 0;
+  background: #05070a;
+  /* The clip is written inline — from the island's rectangle to the whole
+     window and back — and this is the island's own spring curve. */
+  transition: clip-path 760ms var(--ease-bounce);
+}
+.stage.is-closing .scene { transition: clip-path 600ms var(--ease-bounce) 140ms; }
+
+.far, .near { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Everything through the glass is slightly out of focus, which is both what a
+   view out of a window looks like and why it can be drawn at a third size. */
+.far { filter: blur(0.14cqw); transform: scale(1.02); }
+.stage[data-scene="city"] .far { filter: blur(0.42cqw) saturate(1.1); transform: scale(1.04); }
+.stage[data-scene="artwork"] .far { filter: blur(3.4cqw) saturate(1.12); transform: scale(1.18); }
+
+/* Your own scene: a video crossfaded at its loop point, or a still that drifts. */
+.own { position: absolute; inset: 0; display: none; }
+.stage.is-own .own { display: block; }
+.stage.is-own .far, .stage.is-own .near { display: none; }
+.own-v, .own-i { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1100ms var(--ease-in-out); }
+.own-v.on, .own-i.on { opacity: 1; }
+/* A still is not allowed to be still: a very slow drift, so it reads as a room
+   rather than as a wallpaper. */
+.own-i.on { animation: drift 70s ease-in-out infinite alternate; }
+@keyframes drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
+
+.shade { position: absolute; inset: 0; pointer-events: none; transition: background var(--duration-very-slow) var(--ease-smooth-out); }
+.stage[data-layout="side"] .shade {
+  background:
+    linear-gradient(to right, rgba(4, 5, 8, 0.62) 0%, rgba(4, 5, 8, 0.25) 30%, transparent 48%, transparent 58%, rgba(4, 5, 8, 0.42) 100%),
+    linear-gradient(to bottom, rgba(4, 5, 8, 0.3), transparent 22%, transparent 78%, rgba(4, 5, 8, 0.38));
+}
+.stage[data-layout="centre"] .shade {
+  background:
+    radial-gradient(60% 34% at 50% 38%, rgba(4, 5, 8, 0.38), transparent 100%),
+    linear-gradient(to bottom, rgba(4, 5, 8, 0.35), transparent 18%, transparent 62%, rgba(4, 5, 8, 0.72));
+}
+
+/* ── The layer that arrives after the room does ──────────────────────── */
+.amb {
+  position: absolute; inset: 0;
+  opacity: 0; transform: translateY(var(--distance-large));
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+  pointer-events: none;
+}
+.stage.is-open .amb {
+  opacity: 1; transform: none; pointer-events: auto;
+  transition: opacity 480ms var(--ease-smooth-out) 340ms, transform 700ms var(--ease-bounce) 300ms;
+}
+/* Words and titles only. ⚠️ Not on the controls — a text shadow under an icon
+   on a lit glass tile is a smudge, and the glass already carries the contrast. */
+.lyr, .quiet, .side-left h2, .side-left p, .c-now-t, .c-scrub { text-shadow: 0 1px 1.2cqw rgba(0, 0, 0, 0.35); }
+.side, .centre { position: absolute; inset: 0; transition: opacity var(--duration-slow) var(--ease-smooth-out); }
+.stage[data-layout="side"] .centre, .stage[data-layout="centre"] .side { opacity: 0; pointer-events: none; }
+.chrome { transition: opacity 700ms var(--ease-in-out); }
+.stage.is-idle .chrome { opacity: 0; pointer-events: none; }
+.stage.is-empty .xport, .stage.is-empty .pos, .stage.is-empty .c-now, .stage.is-empty .side-left { visibility: hidden; }
+
+/* ── The objects ─────────────────────────────────────────────────────────
+   The island's recipe — tile, sheen, hairline, gloss, lift — over a glass. The
+   glass is a second background LAYER under the sheen, so `background-color`
+   stays free for the tile's own hover, exactly as on the island. */
+.amb-tool, .amb-key {
+  display: grid; place-items: center; flex: none; padding: 0; border: 0; cursor: pointer;
+  color: #dcdcdc;
+  background-color: var(--tile);
+  background-image: var(--sheen), linear-gradient(var(--amb-glass), var(--amb-glass));
+  box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+  backdrop-filter: var(--amb-blur); -webkit-backdrop-filter: var(--amb-blur);
+  transition-property: background-color, box-shadow, color, scale, opacity;
+  transition-duration: var(--duration-quick);
+  transition-timing-function: var(--ease-smooth-out);
+}
+.amb-tool:hover:not(:disabled), .amb-key:hover:not(:disabled) {
+  color: #fff;
+  background-color: var(--tile-hi);
+  box-shadow: var(--hairline), var(--gloss), var(--lift-2);
+}
+/* ⚠️ .96 and 90ms — the island's press, for the same reason: below .95 it is
+   a bounce, and the hover's 150ms is too slow to read as going down. */
+.amb-tool:active:not(:disabled), .amb-key:active:not(:disabled) { scale: 0.96; transition-duration: 90ms; }
+.amb-tool:disabled, .amb-key:disabled { opacity: 0.35; cursor: default; }
+
+/* Tools: the island's `media-side`, a rounded square. */
+.amb-tool { width: var(--amb-tool); height: var(--amb-tool); border-radius: calc(var(--amb-tool) * 0.3); }
+.amb-tool svg { width: 44%; height: 44%; }
+.amb-tool[aria-expanded="true"] { color: #fff; background-color: var(--tile-on); }
+.amb-tool.is-text { font: 600 calc(var(--amb-tool) * 0.34)/1 var(--sys); letter-spacing: -0.02em; }
+
+/* The transport: the island's `media-key`, round, the main one biggest and
+   brightest. */
+.amb-key { width: var(--amb-key); height: var(--amb-key); border-radius: 50%; }
+.amb-key svg { width: 44%; height: 44%; }
+.amb-key.is-main { width: var(--amb-main); height: var(--amb-main); color: #fff; background-color: var(--tile-on); box-shadow: var(--hairline), var(--gloss), var(--lift-2); }
+.amb-key.is-main:hover:not(:disabled) { background-color: rgba(255, 255, 255, 0.22); }
+/* Shuffle and repeat are quieter than the transport: smaller, and no glass —
+   they are modes, not actions, and they sit either side of the actions. */
+.amb-key.is-mode { width: var(--amb-tool); height: var(--amb-tool); background-color: transparent; background-image: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; color: rgba(255, 255, 255, 0.72); }
+/* ⚠️ The ICON takes the accent; the button does not — `.media-side.is-on`'s
+   rule. A filled accent disc in the middle of a quiet room is the loudest thing
+   in it, and all it says is "shuffle is on". */
+.amb-key[aria-pressed="true"], .amb-tool[aria-pressed="true"] { color: var(--accent); }
+.amb-key.is-mode[aria-pressed="true"] { background-color: var(--tile-on); box-shadow: var(--hairline), var(--gloss); }
+
+/* The scrub: the island's rail, not a slider. A range input for the hit area
+   and the keyboard; the thumb is invisible, the fill is the position. */
+.pos {
+  flex: 1; width: 100%; min-width: 0; margin: 0; cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  height: 6px; border-radius: 4px;
+  background: linear-gradient(to right, #fff var(--p, 0%), rgba(255, 255, 255, 0.16) var(--p, 0%));
+  box-shadow: inset 0 0 0 1px var(--hair), 0 0 10px -4px rgba(255, 255, 255, 0.4);
+  transition: height var(--duration-quick) var(--ease-smooth-out);
+}
+.pos:hover:not(:disabled) { height: 8px; }
+.pos::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: transparent; }
+.pos:disabled { cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The two clock numbers: the island's `media-time`. */
+.t-now, .t-left { min-width: 44px; font-size: max(12.5px, 0.9cqw); font-weight: 600; letter-spacing: -0.2px; font-variant-numeric: tabular-nums; color: #e8e8e8; }
+.t-left { text-align: right; color: rgba(255, 255, 255, 0.62); }
+
+/* Top right: the only controls that are always one move away. */
+.corner { position: absolute; top: 2.4cqw; right: 2.4cqw; display: flex; gap: 8px; z-index: 3; }
+
+/* ── Side ────────────────────────────────────────────────────────────── */
+.side-left { position: absolute; left: 6.4cqw; top: 50%; transform: translateY(-50%); width: 23cqw; display: flex; flex-direction: column; }
+.side-left .cover { width: 17cqw; aspect-ratio: 1; border-radius: var(--r-tile); object-fit: cover; box-shadow: var(--hairline), var(--lift-3); background: var(--tile); }
+.side-left h2 { margin: 2.2cqw 0 0; font: 600 max(18px, 2.2cqw)/1.12 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.side-left p { margin: 0.5cqw 0 0; font: 500 max(13px, 1.25cqw)/1.25 var(--sys); color: rgba(255, 255, 255, 0.66); }
+.side-left .pos { margin-top: 2.2cqw; flex: none; }
+.side-left .xport { margin-top: 1.6cqw; display: flex; align-items: center; gap: 14px; }
+
+/* ── Centre ──────────────────────────────────────────────────────────── */
+.c-bottom { position: absolute; left: 2.4cqw; right: 2.4cqw; bottom: 2.2cqw; display: grid; grid-template-columns: 27cqw minmax(0, 1fr) 20cqw; align-items: end; gap: 3cqw; }
+.c-now { display: flex; align-items: center; gap: 1.2cqw; min-width: 0; }
+.c-now img { width: 6cqw; min-width: 56px; aspect-ratio: 1; border-radius: var(--r-row); object-fit: cover; flex: none; box-shadow: var(--hairline), var(--lift-2); background: var(--tile); }
+.c-now-t { display: grid; gap: 3px; min-width: 0; }
+.c-now-t b { font: 600 max(14px, 1.3cqw)/1.2 var(--sys); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-now-t span { font: 500 max(12px, 1cqw)/1.25 var(--sys); color: rgba(255, 255, 255, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-mid { display: grid; gap: 14px; }
+.c-scrub { display: flex; align-items: center; gap: 12px; }
+.c-mid .xport { display: flex; justify-content: center; align-items: center; gap: 12px; }
+.c-mid .xport .is-mode:first-child { margin-right: 10px; }
+.c-mid .xport .is-mode:last-child { margin-left: 10px; }
+.c-right { display: flex; align-items: center; justify-content: end; padding-bottom: calc((var(--amb-main) - var(--amb-tool)) / 2); }
+/* Volume: a tool-sized glass pill holding the glyph and a short rail. */
+.vol {
+  display: flex; align-items: center; gap: 10px; width: 14cqw; min-width: 150px; height: var(--amb-tool);
+  padding: 0 14px; border-radius: 999px; color: #dcdcdc;
+  background-color: var(--tile);
+  background-image: var(--sheen), linear-gradient(var(--amb-glass), var(--amb-glass));
+  box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+  backdrop-filter: var(--amb-blur); -webkit-backdrop-filter: var(--amb-blur);
+}
+.vol > [data-glyph] { display: grid; flex: none; }
+.vol svg { width: 17px; height: 17px; flex: none; }
+.vol .pos { height: 5px; }
+
+/* ── Lyrics: one element, placed per layout ──────────────────────────────
+   ⚠️ EVERY line is set at the same size and weight, and nothing about the
+   current line may touch its box. It used to be bolder and bigger: the moment a
+   line became current its words got wider, a line that had fitted re-wrapped
+   onto two, the column below it jumped, and the centring was then measured
+   against a height that no longer existed. Emphasis is now all paint —
+   opacity, blur and `scale`, which is a transform and never reflows. The rest
+   of the lines are drawn SMALLER than their box rather than the current one
+   larger than it, so a scaled line can never overflow the column's clip.
+
+   ⚠️ The states are `is-*`, never bare words: `.near` is the scene canvas —
+   `position: absolute; inset: 0` — and the line either side of the voice,
+   given that class, sat on top of the column at the height of the box.
+
+   Distance, not a binary state, as in the player's own lyrics: `--far` is how
+   many lines away from the voice this one is, and the next line is kept
+   readable because transcripts land late as often as not. */
+.lyr { position: absolute; overflow: hidden; }
+.lines { display: flex; flex-direction: column; transition: transform 900ms var(--ease-bounce); will-change: transform; }
+.line {
+  margin: 0; color: #fff;
+  font: 650 calc(var(--lyr, 1) * var(--lyr-size))/1.2 var(--display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  scale: var(--rest);
+  opacity: var(--rest-opacity);
+  filter: blur(calc(min(var(--far, 3), 3) * 0.7px));
+  transition:
+    opacity var(--duration-very-slow) var(--ease-smooth-out),
+    filter var(--duration-very-slow) var(--ease-smooth-out),
+    scale 700ms var(--ease-bounce);
+}
+.line.is-now { scale: 1; opacity: 1; filter: none; }
+.line.is-next { filter: none; }
+.line.gap { letter-spacing: 0.4em; }
+
+.stage[data-layout="side"] .lyr {
+  left: 56cqw; width: 36cqw; top: 10cqw; height: 36cqw;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+}
+.stage[data-layout="side"] .lines { gap: 1.6cqw; }
+.stage[data-layout="side"] .line {
+  --lyr-size: max(19px, 2.45cqw);
+  --rest: 0.9;
+  --rest-opacity: max(0.12, calc(0.5 - var(--far, 3) * 0.1));
+  transform-origin: left center;
+}
+.stage[data-layout="side"] .line.is-next { --rest-opacity: 0.62; }
+.stage[data-layout="side"] .line.is-past { --rest-opacity: max(0.1, calc(0.34 - var(--far, 3) * 0.08)); }
+
+.stage[data-layout="centre"] .lyr { left: 12cqw; right: 12cqw; top: 12.4cqw; height: 18cqw; text-align: center; }
+.stage[data-layout="centre"] .lines { gap: 1.3cqw; align-items: center; }
+.stage[data-layout="centre"] .line {
+  --lyr-size: max(21px, 2.9cqw);
+  --rest: 0.82;
+  --rest-opacity: 0;
+  transform-origin: center;
+}
+.stage[data-layout="centre"] .line.is-next { --rest-opacity: 0.5; }
+.stage[data-layout="centre"] .line.is-past.is-near { --rest-opacity: 0.28; }
+
+.stage.no-lyrics .lyr { display: none; }
+/* No synced words: the title, softly, where they would have been. */
+.quiet { position: absolute; display: none; margin: 0; font: 600 max(18px, 2.4cqw)/1.2 var(--display); letter-spacing: -0.015em; color: rgba(255, 255, 255, 0.72); text-wrap: balance; }
+.stage.no-lyrics .quiet { display: block; }
+.stage[data-layout="side"] .quiet { left: 56cqw; width: 34cqw; top: 26cqw; }
+.stage[data-layout="centre"] .quiet { left: 12cqw; right: 12cqw; top: 19cqw; text-align: center; }
+
+/* ── The scene menu ──────────────────────────────────────────────────────
+   The island's popover (`.media-devices`): a dark sheet with the sheen, the
+   gloss and the deepest lift. Translucent here, over a real blur, because it
+   floats over the room rather than over the island's black. */
+.menu {
+  position: absolute; top: calc(2.4cqw + var(--amb-tool) + 10px); right: 2.4cqw; z-index: 4;
+  width: 320px; max-height: calc(100vh - 9cqw); overflow-y: auto; scrollbar-width: none;
+  display: grid; gap: 4px;
+  padding: 8px; border-radius: 16px;
+  background-color: rgba(20, 20, 20, 0.72);
+  background-image: var(--sheen);
+  box-shadow: var(--lift-3), var(--gloss), var(--hairline);
+  backdrop-filter: blur(28px) saturate(1.3); -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  font-size: 12px;
+  transform-origin: top right;
+  animation: menu-in var(--duration-fast) var(--ease-smooth-out);
+}
+@keyframes menu-in { from { opacity: 0; scale: var(--scale-large); } }
+/* ⚠️ Sentence case, no eyebrow. The app dropped uppercase letter-spaced labels
+   everywhere else; a heading here is `.media-queue-head`, not a caption. */
+.menu-h { margin: 8px 8px 4px; font-size: 12.5px; font-weight: 600; letter-spacing: -0.1px; color: #9a9a9a; }
+.menu-h:first-child { margin-top: 4px; }
+.menu-scenes { display: grid; gap: 2px; }
+/* A row is the island's `.media-device`: chosen is the ACCENT in the text and
+   a lit tile, not a filled pill. */
+.scene-opt {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: #c4c4c4; cursor: pointer;
+  font-size: 12.5px; text-align: left;
+  transition: background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), scale var(--duration-quick) var(--ease-smooth-out);
+}
+.scene-opt:hover { background-color: var(--tile-hi); color: #fff; }
+.scene-opt:active { scale: 0.98; transition-duration: 90ms; }
+.scene-opt[aria-pressed="true"] { color: var(--accent); background-color: var(--tile); }
+.scene-opt i { width: 28px; height: 19px; border-radius: 6px; flex: none; box-shadow: var(--hairline); background: linear-gradient(135deg, #2b3a58, #d9905e); }
+.scene-opt[data-scene="cabin"] i { background: linear-gradient(160deg, #252642, #b77558 60%, #1b1a2a); }
+.scene-opt[data-scene="artwork"] i { background: radial-gradient(circle at 30% 30%, #d77b86, #3a2d5c 70%); }
+.scene-opt[data-own] i { display: grid; place-items: center; background: var(--tile-hi); color: #c4c4c4; }
+.scene-opt[data-own] i svg { width: 12px; height: 12px; }
+.scene-opt span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-opt small { color: #7c7c7c; font-size: 11px; }
+.menu-sky { display: grid; gap: 4px; }
+/* Choices: the island's list chips. Chosen is RAISED, not painted. */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 6px 4px; }
+.chip {
+  padding: 5px 11px; border: 0; border-radius: 999px; cursor: pointer;
+  font-size: 11.5px; font-weight: 500; color: #a5a5a5;
+  background-color: var(--tile); background-image: var(--sheen);
+  box-shadow: var(--hairline), var(--gloss);
+  transition: background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), box-shadow var(--duration-quick) var(--ease-smooth-out), scale var(--duration-quick) var(--ease-smooth-out);
+}
+.chip:hover { color: #fff; background-color: var(--tile-hi); box-shadow: var(--hairline), var(--gloss), var(--lift-1); }
+.chip:active { scale: 0.96; transition-duration: 90ms; }
+.chip[aria-pressed="true"] { color: #fff; background-color: var(--tile-on); box-shadow: var(--hairline), var(--gloss), var(--lift-1); }
+/* The folder: an ordinary raised button, not a dashed drop target — nothing
+   is dropped on it. */
+.menu-folder {
+  display: flex; align-items: center; gap: 9px; margin: 6px 0 0; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 10px; cursor: pointer;
+  font-size: 12.5px; color: #dcdcdc; text-align: left;
+  background-color: var(--tile); background-image: var(--sheen);
+  box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+  transition: background-color var(--duration-quick) var(--ease-smooth-out), box-shadow var(--duration-quick) var(--ease-smooth-out), scale var(--duration-quick) var(--ease-smooth-out);
+}
+.menu-folder > [data-glyph] { display: grid; flex: none; }
+.menu-folder svg { width: 15px; height: 15px; flex: none; }
+.menu-folder:hover { color: #fff; background-color: var(--tile-hi); box-shadow: var(--hairline), var(--gloss), var(--lift-2); }
+.menu-folder:active { scale: 0.98; transition-duration: 90ms; }
+
+/* Glyph swaps (play ↔ pause, repeat's three states): the island's pop-in. */
+.icon-swapped svg { animation: glyph-in var(--duration-fast) var(--ease-bounce); }
+@keyframes glyph-in { from { opacity: 0; scale: 0.6; filter: blur(var(--blur-small)); } }
+
+/* ── Motion: the app's own switch, not only Windows' ─────────────────────
+   `data-motion` on <html> is written from prefs, the same three states the
+   island honours: `system` follows Windows, `always` and `never` override it. */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion='always']) :is(.scene, .amb, .stage.is-open .amb, .lines, .line, .chrome, .own-v, .own-i, .menu, .icon-swapped svg) { transition-duration: 1ms !important; transition-delay: 0ms !important; animation: none !important; }
+}
+html[data-motion='never'] :is(.scene, .amb, .stage.is-open .amb, .lines, .line, .chrome, .own-v, .own-i, .menu, .icon-swapped svg) { transition-duration: 1ms !important; transition-delay: 0ms !important; animation: none !important; }

@@ -11,6 +11,14 @@
  * Grouped, not alphabetical, and the order is the argument: what you are doing,
  * what is around you, then the machine and the day behind you.
  */
+/* ⚠️ The EXTENSION is deliberate, and it is the only import in this file that
+ * has one. `node --test` strips types and then resolves what is left, and
+ * Node's resolver does not add extensions the way Vite does — so a bare
+ * `./boards` here breaks every test that touches this module, including the
+ * ring's, which has nothing to do with boards. The type import below needs no
+ * extension because it is erased before Node ever sees it. */
+import { screenOf } from "./boards.ts";
+import type { Board } from "./boards";
 import type { ScreenName } from "./island-activity";
 import type { TaskIcon } from "./task-icons";
 
@@ -56,3 +64,23 @@ export const SCREENS: ScreenDef[] = [
   { name: "system", icon: "system", label: "System", offRail: true },
   { name: "review", icon: "review", label: "Review" },
 ];
+
+/** The screens, with this machine's boards among them.
+ *
+ * ⚠️ ONE splice, and a fourth reader is what made it a function. The island
+ * needs it for the rail, the settings window for the list you reorder, and the
+ * ring for what a wedge may point at — three copies of "boards go after Home"
+ * is three chances for the rail to disagree with the list that reorders it.
+ *
+ * ⚠️ Right after Home, not at the end. A board is the same class of thing as
+ * Home — it IS one — so it belongs beside it rather than behind Review at the
+ * bottom of the rail. `railOrder` still overrides the lot.
+ */
+export function withBoards(boards: readonly Board[]): ScreenDef[] {
+  const extra: ScreenDef[] = boards
+    .filter(one => one.id !== "home")
+    .map(one => ({ name: screenOf(one), icon: one.icon, label: one.name }));
+  if (!extra.length) return SCREENS;
+  const at = SCREENS.findIndex(one => one.name === "home");
+  return [...SCREENS.slice(0, at + 1), ...extra, ...SCREENS.slice(at + 1)];
+}

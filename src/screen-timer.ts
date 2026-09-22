@@ -1,562 +1,522 @@
-/* The countdown: a timer you wind, or a pomodoro you work through.
+/* Countdowns and stopwatches: one face, a list of runs beside it.
  *
- * ⚠️ **One screen, two faces, and they are genuinely different things.** A
- * timer is a number you choose; a pomodoro is a shape you move along. One face
- * meant the pomodoro had a duration control it should not have and the timer
- * had a session track that meant nothing.
+ * ⚠️ **One face for three kinds, not three faces.** A pomodoro, a timer and a
+ * stopwatch are the same object — a circle, a figure, a start button — and the
+ * differences between them are what the circle is made of and what sits under
+ * it. The screen used to be two layouts switched by a mode, which meant every
+ * change had to be made twice and the two drifted.
  *
- * ⚠️ **Nothing here is centred.** The first version stacked everything down
- * the middle of a 700px panel, which left two wide margins of nothing and made
- * every element look small. The controls sit on one side and the number on the
- * other — the number is the biggest thing on the screen and it gets a side of
- * its own.
+ * ⚠️ **The ring says which kind it is.** A pomodoro is SEGMENTED, one arc per
+ * leg of the cycle, because the thing you want to know is where you are in a
+ * shape; a timer and a stopwatch are one unbroken circle, because they have no
+ * shape to be part-way through. That is the whole visual difference and it is
+ * doing real work.
  *
- * ⚠️ **Icons, not labels, and not all one size.** Pause is the button you
- * press twenty times and it is 54px of accent; skip and stop are 40px of grey
- * beside it; the lengths are a 32px ghost in the corner. A row of four
- * identical labelled buttons says all four matter equally, which is never true.
+ * ⚠️ **The list EXTENDS, it does not overlay.** Same bargain `.media-lyrics`
+ * makes: no transition on its width, because the island is sized from its
+ * content and measures once per render — a panel easing itself open is
+ * measured at the start of the ease and the island settles at the wrong size.
+ * The panel snaps and the island's own spring is the animation.
  */
 import { element } from "./dom";
-import { paintIcon } from "./task-icons";
+import { paintIcon, taskIcon } from "./task-icons";
 import { timerText } from "./focus-timer";
-import { setDigits, setText } from "./tween";
+import { setDigits } from "./tween";
 import { tick as click } from "./click";
-import { MOST, clamp, free, offsetFor, ticks } from "./dial";
-import { ROUNDS, cycle, phaseName, roundOf, type Lengths, type Timer } from "./timer";
-
-/** How long the ruler takes to ease onto a mark once the hand lets go.
- *  Must match `.tm-strip.is-settling` in the stylesheet. */
-const SETTLE = 260;
+import { clamp, free, offsetFor, ticks, wound } from "./dial";
+import { ROUNDS, phaseName, type Lengths } from "./timer";
+import { buildRing, paintRing } from "./run-ring";
+import {
+  counted, figureMs, running, runName,
+  type Run, type RunKind, type Runs,
+} from "./runs";
 
 export interface TimerDeps {
   lengths: () => Lengths;
-  mode: () => "timer" | "pomodoro";
-  setMode: (mode: "timer" | "pomodoro") => void;
   setLengths: (lengths: Lengths) => void;
-  /** Hold the panel open while the name is being typed. */
+  /** Hold the panel open while a name is being typed. */
   focus: (active: boolean) => void;
-  /** Redraw — this screen owns state the timer does not. */
+  /** Redraw — this screen owns state the runs do not. */
   changed: () => void;
+  /** Open the settings window, where the pomodoro's lengths live. */
+  settings: () => void;
+  /** The list has opened or shut and the panel has to be re-capped. ⚠️ The
+   *  screen cannot do this itself: how wide a screen wants to be is a fact
+   *  `tasks.ts` owns, in one table, for all of them. */
+  width: () => void;
 }
 
-/** The two countdowns this screen drives. ⚠️ Two, because they RUN at once:
- *  one engine meant pressing Start on the timer face silently threw away a
- *  pomodoro four rounds in. Each face holds its own. */
-export interface Timers {
-  pomodoro: Timer;
-  plain: Timer;
-}
+/** The three kinds, in the order the switcher offers them. ⚠️ ONE list: the
+ *  switcher, the add menu and the list panel all read it, and three copies of
+ *  "what a kind is called" is three places to rename it in. */
+const KINDS: { id: RunKind; label: string; icon: "clock" | "timer" | "target" }[] = [
+  { id: "stopwatch", label: "Stopwatch", icon: "clock" },
+  { id: "timer", label: "Timer", icon: "timer" },
+  { id: "pomodoro", label: "Pomodoro", icon: "target" },
+];
 
 export class TimerScreen {
-  private host: HTMLElement;
-  private timers: Timers;
-  private deps: TimerDeps;
+  readonly name = "timer" as const;
 
-  /** What the dial is wound to while nothing is running. */
-  private set = 15;
-  private tuning = false;
-
-  /** Every tick on the ruler, by its minute, and which one is lit. */
-  private marks: HTMLElement[] = [];
-  private lit = -1;
+  /** Whether the list panel is out. ⚠️ Held here, not in the runs: it is a
+   *  fact about this screen rather than about the runs, and the widgets that
+   *  read the same list have no panel to open.
+   *
+   * ⚠️ READ FROM OUTSIDE, by `widthOf` in tasks.ts, which is what makes the
+   * list extend the island rather than be folded into it. Same arrangement as
+   * the player's `open`. */
+  private open = false;
+  get listOpen(): boolean { return this.open; }
 
   /** A hand is on the dial, or the ruler is still easing onto a mark.
    *
    * ⚠️ Nothing may REBUILD this screen while either is true. The rebuild
    * replaces the element the pointer is captured on, which drops the drag
-   * halfway through with the button still down; mid-settle it is only the
-   * animation that is eaten, which is quieter and just as wrong.
-   */
+   * halfway through with the button still down. */
   private holding = false;
   private easing = 0;
 
-  /** The mode the pill was last drawn under, so it has somewhere to come
-   *  FROM — changing mode rebuilds this screen, pill and all. */
-  private was: "timer" | "pomodoro" | null = null;
-  private pill: { pill: HTMLElement; tabs: HTMLElement[] } | null = null;
-  private watch?: ResizeObserver;
-
-  constructor(host: HTMLElement, timers: Timers, deps: TimerDeps) {
-    this.host = host;
-    this.timers = timers;
-    this.deps = deps;
-  }
-
-  /** The engine behind the face that is showing. */
-  private engine(mode = this.deps.mode()): Timer {
-    return mode === "timer" ? this.timers.plain : this.timers.pomodoro;
-  }
-
+  /** What the screen last drew, so a tick can update the figure in place
+   *  rather than rebuilding a screen somebody may be dragging on. */
   private drawn = "";
+  /** Which kind was on screen last, so switching to another can be ANIMATED
+   *  and everything else cannot.
+   *
+   * ⚠️ Not simply "did we rebuild": the screen rebuilds when the list opens,
+   * when a phase turns over and when a run is renamed, and a face that flew in
+   * on every one of those would be a screen that twitches while you use it. */
+  private shown = "";
+  private face: { figure: HTMLElement; arc: SVGCircleElement | null; segs: SVGCircleElement[] } | null = null;
+  /** The time cell of each row in the list, by run id, so a tick can write to
+   *  them without rebuilding a panel somebody may be pressing. */
+  private rows = new Map<string, HTMLElement>();
+
+  constructor(
+    private host: HTMLElement,
+    private runs: Runs,
+    private deps: TimerDeps,
+  ) {}
+
+  /** The run on screen. */
+  private get run(): Run | null { return this.runs.current; }
+
+  /** Called every second by the shell. */
+  tick() {
+    const run = this.run;
+    if (!run || !this.face) return;
+    // ⚠️ In PLACE. A rebuild every second would drop a drag and restart the
+    // ring's own transition, which is what makes it sweep rather than jump.
+    setDigits(this.face.figure, faceText(run, this.deps.lengths()));
+    this.paintRing(run);
+    /* ⚠️ The LIST ticks too. It is built once when the panel opens, so without
+     * this every row but the one on the face froze at the moment it was drawn
+     * — a stopwatch you had just started sat at 00:00 while the big figure
+     * counted, which reads as a list of dead entries rather than of running
+     * ones. Written in place for the same reason the figure is. */
+    for (const [id, cell] of this.rows) {
+      const one = this.runs.list.find(held => held.id === id);
+      if (one) cell.textContent = faceText(one, this.deps.lengths());
+    }
+  }
 
   render() {
     // See `holding`: a rebuild mid-gesture drops the drag it is rebuilding for.
-    if (this.holding) return;
-    const mode = this.deps.mode();
-    /* ⚠️ Each face reads its OWN engine. Both can be counting at once, and
-     * a face that drew whatever was running drew the other one's clock above
-     * a dial set to something else. */
-    const state = this.engine(mode).state;
-    const lengths = this.deps.lengths();
-    const key = [
-      mode, state?.phase ?? "", state?.endsAt === null, state?.ready ?? false,
-      state?.round ?? 0, state?.name ?? "", this.tuning, this.set,
-      lengths.work, lengths.rest, lengths.long,
-      // The OTHER face's countdown shows as a dot on its tab.
-      !!(mode === "timer" ? this.timers.pomodoro : this.timers.plain).state,
+    if (this.holding || this.easing) return;
+    const run = this.run;
+    /* What the SHAPE of the screen depends on. ⚠️ Not the figure: that changes
+     * every second and rebuilding for it would restart every animation on the
+     * screen once a second. */
+    const shape = [
+      run?.id ?? "", run?.kind ?? "", running(run ?? ({} as Run)) ? "go" : "stop",
+      run?.count ? run.count.phase : "-", String(run?.minutes ?? 0),
+      this.open ? "list" : "",
+      /* ⚠️ EVERY run, not a count and not just the one on the face. The list
+       * is part of this screen, and pressing Start on a row that is not the
+       * current one changes nothing else here — so keyed on the current run
+       * alone, `render` took the tick path and the row kept its play icon for
+       * ever. The time ticked, which was the only cue the press had landed.
+       *
+       * ⚠️ The id, so a removal and an addition are not the same length; the
+       * title, so a rename repaints the row (written on blur, never per
+       * keystroke, so the field cannot lose its caret to this). */
+      this.runs.list.map(one =>
+        `${one.id}${running(one) ? "!" : ""}:${one.title}`).join(","),
     ].join("|");
-    if (key === this.drawn) return;
-    this.drawn = key;
+    if (shape === this.drawn && this.face) { this.tick(); return; }
+    this.drawn = shape;
+
     this.host.replaceChildren();
+    const board = element("div", "tm-board");
+    /* ⚠️ Only when the KIND changed. `data-enter` is what the keyframe hangs
+     * off, and it is set before the children exist so the animation starts on
+     * the frame the face first paints rather than one after it. */
+    const kind = run?.kind ?? "";
+    if (kind && kind !== this.shown) board.dataset.enter = "";
+    this.shown = kind;
 
-    const top = element("div", "tm-top");
-    top.append(this.modes(mode));
-    if (mode === "pomodoro") {
-      const tune = this.button("settings", "Focus and break lengths", () => {
-        this.tuning = !this.tuning;
-        this.drawn = "";
-        this.deps.changed();
-      }, "ghost");
-      tune.classList.toggle("is-on", this.tuning);
-      top.append(tune);
+    if (!run) {
+      board.append(this.emptyFace());
+    } else {
+      board.append(this.head(run), this.body(run), this.foot(run));
     }
-    /* ⚠️ The phase is an ATTRIBUTE, not a colour written per element. Focus
-     * is the accent; a break is a pale tint of the same accent, so the two
-     * read apart at a glance without a second hue to keep in step with
-     * whatever the user has set. */
-    this.host.dataset.phase = state?.phase ?? "";
-    this.host.append(top);
-    // Measured, so it has to happen after the row is in the document.
-    this.slide(mode);
-
-    if (mode === "timer") this.timerFace(state);
-    else this.pomodoroFace(state, lengths);
+    this.host.append(board);
+    if (this.open) this.host.append(this.panel());
   }
 
-  private modes(mode: "timer" | "pomodoro"): HTMLElement {
-    const row = element("div", "tm-modes");
-    row.dataset.at = mode === "timer" ? "0" : "1";
-    const pill = element("i", "tm-modes-pill");
-    row.append(pill);
-    const tabs: HTMLElement[] = [];
-    for (const one of ["timer", "pomodoro"] as const) {
-      const button = element("button", `tm-mode${one === mode ? " is-on" : ""}`,
-        one === "timer" ? "Timer" : "Pomodoro");
-      (button as HTMLButtonElement).type = "button";
-      button.setAttribute("aria-pressed", String(one === mode));
-      /* ⚠️ A dot when the face you are NOT looking at has something
-       * counting. The two run side by side now, so the tab you left has to be
-       * able to say so — otherwise a pomodoro running behind the timer face
-       * is invisible from the screen that owns it.
-       *
-       * ⚠️ On the OTHER tab only. The face you are looking at is already a
-       * clock counting down; a dot there says the same thing a second time
-       * and stops the dot meaning "over here". */
-      const own = one === "timer" ? this.timers.plain : this.timers.pomodoro;
-      if (one !== mode && own.state) button.append(element("i", "tm-mode-dot"));
-      button.onclick = () => this.deps.setMode(one);
-      row.append(button);
-      tabs.push(button);
+  /* ── The top row: which kind, and one more ─────────────────────────── */
+
+  private head(run: Run): HTMLElement {
+    const row = element("div", "tm-head");
+
+    /* ⚠️ The active kind EXPANDS to carry its name and the other two stay
+     * glyphs. Three labelled tabs is a row of words where two of them are
+     * about things you are not looking at; three bare glyphs is a control you
+     * have to learn. One of each is the segmented control every phone has. */
+    const kinds = element("div", "tm-kinds");
+    kinds.setAttribute("role", "tablist");
+    for (const kind of KINDS) {
+      const on = run.kind === kind.id;
+      const tab = element("button", `tm-kind${on ? " is-on" : ""}`);
+      (tab as HTMLButtonElement).type = "button";
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(on));
+      tab.setAttribute("aria-label", kind.label);
+      tab.dataset.tip = kind.label;
+      const mark = element("span", "tm-kind-mark");
+      mark.append(taskIcon(kind.icon));
+      tab.append(mark);
+      if (on) tab.append(element("span", "tm-kind-name", kind.label));
+      /* ⚠️ Switching kind moves to an EXISTING run of that kind where there is
+       * one, and makes a new one where there is not. Pressing "Timer" and
+       * being given a fresh one every time is how a list of five timers you
+       * never asked for happens. */
+      tab.onclick = () => {
+        const held = this.runs.of(kind.id)[0];
+        if (held) this.runs.pick(held.id);
+        else this.runs.add(kind.id);
+        this.deps.changed();
+      };
+      kinds.append(tab);
     }
-    this.pill = { pill, tabs };
+
+    const add = element("button", "tm-add");
+    (add as HTMLButtonElement).type = "button";
+    add.setAttribute("aria-label", `Add another ${run.kind}`);
+    add.dataset.tip = "Add another";
+    paintIcon(add, "plus");
+    add.onclick = () => { this.runs.add(run.kind); this.deps.changed(); };
+
+    row.append(kinds, add);
     return row;
   }
 
-  /** transitions.dev's sliding tabs: the pill TRAVELS between the two rather
-   *  than one lighting up as the other goes out.
-   *
-   * ⚠️ MEASURED off the tabs, never `calc(50%)`. "Timer" and "Pomodoro" are
-   * not the same length, so half the control was a pill that overhung one
-   * word and left the other sticking out from under it — which is exactly
-   * what it looked like.
-   *
-   * ⚠️ And put at the PREVIOUS tab first, with the transition off, then
-   * moved on the next frame. Changing mode rebuilds this whole screen, so the
-   * pill is a new element with nothing to animate from: without this it
-   * simply appears under the other word. The forced reflow between the two
-   * writes is what makes the second one a transition rather than a no-op.
-   */
-  private slide(mode: "timer" | "pomodoro") {
-    const kit = this.pill;
-    const was = this.was;
-    this.was = mode;
-    if (!kit) return;
-    const put = (tab: HTMLElement) => {
-      // Not laid out — a hidden screen, or a test that never showed it. The
-      // stylesheet's own fallback stands rather than a pill of zero width.
-      if (!tab.offsetWidth) return;
-      kit.pill.style.width = `${tab.offsetWidth}px`;
-      kit.pill.style.left = "0px";
-      kit.pill.style.translate = `${tab.offsetLeft}px 0`;
-    };
-    const travels = was !== null && was !== mode;
-    const to = kit.tabs[mode === "timer" ? 0 : 1];
-    kit.pill.style.transition = "none";
-    put(travels ? kit.tabs[was === "timer" ? 0 : 1] : to);
-    void kit.pill.offsetWidth;
-    kit.pill.style.transition = "";
-    if (travels) put(to);
+  /* ── The middle: the ring, and what belongs under it ───────────────── */
 
-    /* ⚠️ And AGAIN whenever the tabs gain a size. This screen is rendered
-     * while it is still hidden — `offsetWidth` is 0 there, so nothing above
-     * measured anything, and the pill kept the stylesheet's half-width
-     * fallback for as long as the panel stayed open. An observer rather than
-     * a retry loop: a screen you never open never gets a size, and a rAF that
-     * waits for one would run for the life of the window. */
-    this.watch?.disconnect();
-    this.watch = new ResizeObserver(() => {
-      if (!kit.pill.isConnected) { this.watch?.disconnect(); return; }
-      kit.pill.style.transition = "none";
-      put(kit.tabs[this.was === "timer" ? 0 : 1]);
-      void kit.pill.offsetWidth;
-      kit.pill.style.transition = "";
-    });
-    for (const tab of kit.tabs) this.watch.observe(tab);
-  }
+  private body(run: Run): HTMLElement {
+    const body = element("div", "tm-body");
+    body.append(this.ring(run));
 
-  /* ── A timer you wind ────────────────────────────────────────────────── */
-
-  private timerFace(state: Timer["state"]) {
-    const timer = this.timers.plain;
-    const running = !!state;
-    const minutes = running ? Math.max(0, timer.seconds() / 60) : this.set;
-    this.host.append(this.dial(minutes, !running));
-
-    /* The row the whole face is built around: what to press on the left, what
-     * it says on the right. */
-    const row = element("div", "tm-row");
-    const acts = element("div", "tm-acts");
-    if (!running) {
-      acts.append(this.button("play", "Start", () => timer.start(this.set), "lead"));
-    } else {
-      acts.append(this.button(
-        state!.endsAt === null ? "play" : "pause",
-        state!.endsAt === null ? "Resume" : "Pause",
-        () => timer.toggle(), "lead",
-      ));
-      acts.append(this.button("close", "Stop", () => timer.stop()));
-    }
-    row.append(acts, this.clock(running ? timerText(timer.seconds()) : `${this.set}:00`));
-    this.host.append(row);
-  }
-
-  /** The big number. ⚠️ A `t-digit-group`, so `setDigits` re-enters only the
-   *  digits that CHANGED with a blurred rise — swapping the whole number makes
-   *  the minutes flinch once a second for no reason. */
-  private clock(text: string): HTMLElement {
-    const clock = element("div", "tm-clock t-digit-group");
-    setDigits(clock, text);
-    return clock;
-  }
-
-  private dial(minutes: number, live: boolean): HTMLElement {
-    const host = element("div", `tm-dial${live ? "" : " is-locked"}`);
-    const strip = element("div", "tm-strip");
-    this.marks = [];
-    this.lit = -1;
-    for (const mark of ticks()) {
-      const line = element("i", mark.major ? "is-major" : "");
-      line.style.left = `${mark.at}px`;
-      strip.append(line);
-      // By minute, so lighting the one under the mark is a lookup, not a scan.
-      this.marks[mark.minute] = line;
-      if (mark.major) {
-        const label = element("span", "tm-tick-say", String(mark.minute));
-        label.style.left = `${mark.at}px`;
-        strip.append(label);
-      }
-    }
-    /* ⚠️ The arrow sits BELOW the ruler, pointing up at the tick it names.
-     * Drawn THROUGH the ticks it was one more tall line among a hundred tall
-     * lines, and the eye had to work out which of them it was on; from
-     * underneath there is nothing for it to be confused with. */
-    host.append(strip, element("span", "tm-marker"));
-    this.place(strip, minutes);
-    if (live) this.windable(host, strip);
-    return host;
-  }
-
-  /** Put the strip where `minutes` sits under the marker, and light the tick
-   *  that is under it.
-   *
-   * ⚠️ ONE property on ONE element, plus a class on one more. This used to
-   * write an opacity and a blur onto all 242 children on every frame of a
-   * drag — which is what the drag felt like — and because the fade was
-   * measured in pixels from the marker it kept the whole ruler inside a 210px
-   * window in the middle of a 700px panel. The fade is a `mask-image` on the
-   * dial now: the same picture, no work per frame, and full width.
-   */
-  private place(strip: HTMLElement, minutes: number) {
-    strip.style.translate = `${offsetFor(minutes)}px`;
-    /* ⚠️ Rounded here, NOT `clamp`: a running timer passes through zero, and
-     * clamp's floor is one minute — so at the moment the ruler reads 0 the
-     * lit tick would be the 1 beside it, an arrow pointing at the wrong mark
-     * for the one second anybody is watching. */
-    const at = Math.max(0, Math.min(MOST, Math.round(minutes))) || 0;
-    if (at === this.lit) return;
-    this.marks[this.lit]?.classList.remove("is-at");
-    this.marks[at]?.classList.add("is-at");
-    this.lit = at;
-  }
-
-  private windable(host: HTMLElement, strip: HTMLElement) {
-    let from: number | null = null;
-    let started = this.set;
-    /** The exact minute under the mark, fractional — because a hand is. */
-    let at = this.set;
-
-    const showing = (minutes: number) => {
-      const clock = this.host.querySelector<HTMLElement>(".tm-clock");
-      /* ⚠️ Plain text while a finger is on it, never `setDigits`: the pop-in
-       * is for a number that changes once a second, and replaying it on every
-       * frame of a drag is a column of digits fighting the hand moving them. */
-      if (clock) clock.textContent = `${minutes}:00`;
-    };
-
-    /** Ease the strip onto its mark, and hold off the redraw until it lands.
-     *  See `holding` — a rebuild here eats the one animation that makes the
-     *  release feel like the dial caught rather than like it twitched. */
-    const settle = () => {
-      this.holding = true;
-      strip.classList.add("is-settling");
-      window.clearTimeout(this.easing);
-      this.easing = window.setTimeout(() => {
-        strip.classList.remove("is-settling");
-        this.holding = false;
-      }, SETTLE);
-    };
-
-    host.addEventListener("pointerdown", event => {
-      if (event.button !== 0) return;
-      from = event.clientX;
-      started = this.set;
-      at = this.set;
-      this.holding = true;
-      window.clearTimeout(this.easing);
-      // Under the hand it must be exactly under the hand, never easing toward it.
-      strip.classList.remove("is-settling");
-      host.setPointerCapture(event.pointerId);
-      host.classList.add("is-winding");
-    });
-    host.addEventListener("pointermove", event => {
-      if (from === null) return;
-      /* ⚠️ The strip follows the hand CONTINUOUSLY and rounds only for the
-       * number it reads out. Stepping a whole minute at a time meant the ruler
-       * stood still for seven pixels of hand and then jumped fifteen, which is
-       * a ratchet rather than a dial — and the ends stopped dead, which reads
-       * as the control having broken. `free` gives at both. */
-      at = free(started, event.clientX - from);
-      const next = clamp(at);
-      if (next !== this.set) {
-        /* A tick as each mark passes, brighter on the fives. ⚠️ The sound IS
-         * the detent — there is no haptic engine on a PC to borrow one from —
-         * but `click` keeps a floor between two of them, because a quick drag
-         * crosses a mark every three milliseconds and that is a buzz. */
-        click(next % 5 === 0 ? 1.34 : 1);
-        this.set = next;
-        showing(next);
-      }
-      this.place(strip, at);
-    });
-    const release = (event: PointerEvent) => {
-      if (from === null) return;
-      from = null;
-      host.classList.remove("is-winding");
-      if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
-      // Wherever the hand left it, up to half a minute off a mark. Ease it home.
-      this.set = clamp(at);
-      at = this.set;
-      settle();
-      this.place(strip, this.set);
-      showing(this.set);
-    };
-    host.addEventListener("pointerup", release);
-    host.addEventListener("pointercancel", release);
-
-    /* A wheel winds it too. ⚠️ `passive: false` and stopped, or the panel's
-     * own wheel-to-change-screen takes the gesture and you leave the timer. */
-    host.addEventListener("wheel", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      const next = clamp(this.set + (event.deltaY > 0 ? -1 : 1));
-      if (next === this.set) return;
-      click(next % 5 === 0 ? 1.34 : 1);
-      this.set = next;
-      at = next;
-      // A wheel arrives in steps, so every step is a small settle of its own.
-      settle();
-      this.place(strip, this.set);
-      showing(this.set);
-    }, { passive: false });
-  }
-
-  /* ── A pomodoro you work through ─────────────────────────────────────── */
-
-  private pomodoroFace(state: Timer["state"], lengths: Lengths) {
-    /* ⚠️ A field with no box around it. It is optional and usually empty, and
-     * an empty bordered input is a hole in the middle of the screen; as a big
-     * quiet line it reads as a heading you are invited to write. */
-    const name = element("input", "tm-name") as HTMLInputElement;
+    /* The name. ⚠️ A field rather than a label, on every kind: "what are you
+     * working on" is the question a pomodoro asks, and a timer wants to say
+     * "oven" for exactly the same reason — you will have three of them. */
+    const name = document.createElement("input");
     name.type = "text";
-    name.placeholder = "What are you working on?";
-    name.value = state?.name ?? "";
-    name.maxLength = 60;
-    name.onfocus = () => this.deps.focus(true);
+    name.className = "tm-name";
+    /* ⚠️ An input carries an INTRINSIC width from its `size` attribute — 20
+     * characters by default — and that width wins over `align-self: stretch`:
+     * the field came out 216px inside a 314px column. The wrapper below is what
+     * actually sizes it; this stops the intrinsic width setting a floor under
+     * the column when the name is long. */
+    name.size = 1;
+    name.value = run.title;
+    name.placeholder = run.kind === "pomodoro"
+      ? "What are you working on?" : "What is this for?";
+    name.setAttribute("aria-label", "Name this run");
+    name.onfocus = () => { void this.deps.focus(true); };
     name.onblur = () => {
-      this.deps.focus(false);
-      if (state) this.timers.pomodoro.rename(name.value);
+      void this.deps.focus(false);
+      this.runs.rename(run.id, name.value);
     };
     name.onkeydown = event => {
       if (event.key === "Enter") name.blur();
-      if (event.key === "Escape") { name.value = state?.name ?? ""; name.blur(); }
-      event.stopPropagation();
+      if (event.key === "Escape") { name.value = run.title; name.blur(); }
     };
-    name.oninput = () => {
-      const held = this.timers.pomodoro.state;
-      if (held) held.name = name.value.trim() || undefined;
-    };
-    this.host.append(name);
-    this.host.append(this.track(state, lengths));
+    /* ⚠️ WRAPPED, because a form control is not stretched by its flex parent.
+     * Chrome sizes an input from its own intrinsic width whatever the column
+     * asks — `align-self: stretch` is ignored and a percentage falls back to
+     * that same intrinsic width, so the field was 216px in a 314px column and
+     * then 64px once the intrinsic width was taken away. A plain div DOES
+     * stretch, and a percentage against its definite width resolves. */
+    const box = element("div", "tm-name-box");
+    box.append(name);
+    body.append(box);
 
-    const timer = this.timers.pomodoro;
-    const row = element("div", "tm-row");
-    const acts = element("div", "tm-acts");
-    if (!state) {
-      acts.append(this.button("play", "Start", () => timer.start(undefined, name.value), "lead"));
-    } else {
-      /* ⚠️ A round that is WAITING says "Start round 3", not "Resume". Both
-       * are `endsAt: null` in the state and they mean different things to a
-       * reader: paused is something you did, ready is the app holding the
-       * door open for the next round after a break ran out. */
-      acts.append(this.button(
-        state.endsAt === null ? "play" : "pause",
-        state.endsAt === null
-          ? (state.ready ? `Start round ${roundOf(state)}` : "Resume")
-          : "Pause",
-        () => timer.toggle(), "lead",
-      ));
-      acts.append(this.button("next", "Skip to the next session", () => timer.skip()));
-      acts.append(this.button("close", "Stop", () => timer.stop()));
+    /* The ruler, on a timer that has not been started. ⚠️ Only then: setting a
+     * length and changing one mid-count are different things, and there is no
+     * control for the second because nobody means it. */
+    if (run.kind === "timer" && !run.count) body.append(this.dial(run));
+    return body;
+  }
+
+  /** The circle. ⚠️ Built by `run-ring.ts`, which the board's three run
+   *  widgets draw from too — the ring is the one thing that says which kind you
+   *  are looking at, and a second copy of it drifted the moment it existed. */
+  private ring(run: Run): HTMLElement {
+    const wrap = element("div", `tm-ring is-${run.kind}`);
+    const built = buildRing(run, this.deps.lengths());
+
+    const face = element("div", "tm-face");
+    if (run.kind === "pomodoro") {
+      const mark = element("span", "tm-face-mark");
+      mark.append(taskIcon(run.count?.phase === "work" || !run.count ? "target" : "coffee"));
+      face.append(mark);
+    }
+    const figure = element("div", "tm-figure");
+    setDigits(figure, faceText(run, this.deps.lengths()));
+    face.append(figure);
+    if (run.kind === "pomodoro") {
+      face.append(element("span", "tm-phase",
+        run.count ? `${phaseName(run.count)} · ${(run.count.round % ROUNDS) + 1} of ${ROUNDS}` : "Ready"));
     }
 
-    const right = element("div", "tm-right");
-    right.append(this.clock(state ? timerText(timer.seconds()) : `${lengths.work}:00`));
-    const said = element("div", "tm-say t-text-swap");
-    setText(said, this.phaseLine(state, lengths));
-    right.append(said);
-    row.append(acts, right);
-    this.host.append(row);
-
-    if (this.tuning) this.host.append(this.drawer(lengths));
+    wrap.append(built.el, face);
+    this.face = { figure, arc: built.arc, segs: built.segs };
+    this.paintRing(run);
+    return wrap;
   }
 
-  private phaseLine(state: Timer["state"], lengths: Lengths): string {
-    if (!state) return `${lengths.work} min focus · ${lengths.rest} min break`;
-    // See the button above on why these two are not the same word.
-    if (state.ready) return `${phaseName(state)} ${roundOf(state)} of ${ROUNDS} · ready`;
-    if (state.endsAt === null) return `${phaseName(state)} · paused`;
-    if (state.phase !== "work") return phaseName(state);
-    return `${phaseName(state)} · ${roundOf(state)} of ${ROUNDS}`;
+  /** Move the ring to where the run actually is. Called every tick. */
+  private paintRing(run: Run) {
+    const held = this.face;
+    if (!held) return;
+    paintRing(held, run, this.deps.lengths(), running(run));
   }
 
-  /** The cycle, as dots that elongate.
-   *
-   * ⚠️ This was a row of bars and it looked like a download. Dots are the
-   * idiom for "which of a short sequence am I on", and the one you are on
-   * EARNS its width — it stretches into a capsule and fills, so the thing
-   * happening is the thing that is biggest. A focus round is a bigger dot than
-   * its break, which puts the shape of the method into one glance.
-   */
-  private track(state: Timer["state"], lengths: Lengths): HTMLElement {
-    const row = element("div", "tm-track");
-    for (const session of cycle(lengths, state)) {
-      const dot = element("div", `tm-dot is-${session.phase} is-${session.state}`);
-      dot.setAttribute("data-tip",
-        `${session.phase === "work" ? "Focus" : session.phase === "long" ? "Long break" : "Break"}`
-        + ` — ${session.minutes} minutes`);
-      if (session.state === "now") {
-        const fill = element("i");
-        fill.style.width = `${Math.round(this.timers.pomodoro.through() * 100)}%`;
-        dot.append(fill);
+  /** The ruler you wind a timer with. */
+  private dial(run: Run): HTMLElement {
+    const wrap = element("div", "tm-dial");
+    const strip = element("div", "tm-strip");
+    const rule = element("div", "tm-rule");
+    for (const mark of ticks()) {
+      const one = element("i", mark.major ? "is-major" : "");
+      one.style.left = `${mark.at}px`;
+      if (mark.major) {
+        const say = element("b");
+        say.textContent = String(mark.minute);
+        one.append(say);
       }
-      row.append(dot);
+      rule.append(one);
     }
+    strip.append(rule);
+
+    let minutes = run.minutes;
+    /* ⚠️ `offsetFor` is ALREADY the shift — it returns `-minutes * PER`,
+     * because winding the ruler up slides it left. Negating it here was
+     * negating it twice, so the ruler sat as far to the RIGHT of the marker as
+     * it should have sat to the left (a timer set to 8 put zero 120px past the
+     * mark, with the rest of the ruler off the fade) and every drag moved it
+     * away from the hand. The sign belongs in one place and `dial.ts` is it. */
+    const show = () => { rule.style.translate = `${offsetFor(minutes)}px`; };
+
+    let from: { x: number; at: number } | null = null;
+    strip.addEventListener("pointerdown", event => {
+      event.stopPropagation();
+      from = { x: event.clientX, at: minutes };
+      strip.setPointerCapture(event.pointerId);
+      strip.classList.add("is-dragging");
+      this.holding = true;
+    });
+    strip.addEventListener("pointermove", event => {
+      if (!from) return;
+      minutes = free(from.at, event.clientX - from.x);
+      show();
+      /* ⚠️ The FIGURE follows the ruler, live. A dial that moves a ruler and
+       * leaves the number to catch up on release is a control you have to let
+       * go of to read. */
+      const whole = clamp(minutes);
+      if (this.face) setDigits(this.face.figure, timerText(whole * 60));
+      if (whole !== this.lastClick) { click(whole % 5 === 0 ? 1.34 : 1); this.lastClick = whole; }
+    });
+    for (const done of ["pointerup", "pointercancel"] as const) {
+      strip.addEventListener(done, event => {
+        if (!from) return;
+        minutes = clamp(wound(from.at, event.clientX - from.x));
+        from = null;
+        strip.classList.remove("is-dragging");
+        strip.classList.add("is-settling");
+        show();
+        this.holding = false;
+        /* ⚠️ The screen stays frozen through the SETTLE as well. Mid-ease a
+         * rebuild eats only the animation, which is quieter than dropping a
+         * drag and just as wrong. */
+        this.easing = window.setTimeout(() => {
+          this.easing = 0;
+          strip.classList.remove("is-settling");
+          this.deps.changed();
+        }, SETTLE);
+        /* ⚠️ The value is committed NOW, not when the ease finishes. The ease
+         * is 260ms of cosmetics; letting it own the write meant the number on
+         * screen was not yet the number a press of Start would use, so winding
+         * to 35 and starting straight away started 25. The render it would
+         * trigger is held off by `easing`, which is already set above — so the
+         * ruler still glides onto its mark. */
+        this.runs.setMinutes(run.id, minutes);
+      });
+    }
+    show();
+    wrap.append(strip);
+    return wrap;
+  }
+
+  private lastClick = -1;
+
+  /* ── The bottom row ────────────────────────────────────────────────── */
+
+  private foot(run: Run): HTMLElement {
+    const row = element("div", "tm-foot");
+
+    const gear = element("button", "tm-round");
+    (gear as HTMLButtonElement).type = "button";
+    gear.setAttribute("aria-label", "Timer settings");
+    gear.dataset.tip = "Settings";
+    paintIcon(gear, "settings");
+    gear.onclick = () => this.deps.settings();
+
+    /* ⚠️ ONE button, and its word changes. Start, pause and resume are the
+     * same press at three moments — three buttons would mean two of them are
+     * always wrong. */
+    const go = element("button", "tm-go");
+    (go as HTMLButtonElement).type = "button";
+    const live = running(run);
+    go.textContent = live ? "Pause" : run.count || counted(run) > 0 ? "Resume" : "Start";
+    go.setAttribute("aria-label", go.textContent);
+    go.onclick = () => { this.runs.toggle(run.id); click(1); this.deps.changed(); };
+
+    const list = element("button", `tm-round${this.open ? " is-on" : ""}`);
+    (list as HTMLButtonElement).type = "button";
+    list.setAttribute("aria-label", this.open ? "Hide the list" : "Show the list");
+    list.setAttribute("aria-expanded", String(this.open));
+    list.dataset.tip = "All runs";
+    paintIcon(list, "list");
+    /* ⚠️ The WIDTH first, then the render. The panel measures its content at
+     * the end of the render, so a render at the old cap measures the two
+     * columns squeezed into one column's room — and `width()` also asks the
+     * island to spring rather than snap, which this is: you pressed a button
+     * for it. */
+    list.onclick = () => {
+      this.open = !this.open;
+      this.deps.width();
+      this.deps.changed();
+    };
+
+    row.append(gear, go, list);
     return row;
   }
 
-  private drawer(lengths: Lengths): HTMLElement {
-    const box = element("div", "tm-drawer");
-    const rows: [string, keyof Lengths, number, number][] = [
-      ["Focus", "work", 5, 90],
-      ["Break", "rest", 1, 30],
-      ["Long break", "long", 5, 60],
-    ];
-    for (const [label, key, least, most] of rows) {
-      const row = element("div", "tm-tune");
-      row.append(element("span", "tm-tune-say", label));
-      const step = (by: number) => {
-        const next = Math.min(most, Math.max(least, lengths[key] + by));
-        if (next === lengths[key]) return;
-        click(1, 0);
-        this.deps.setLengths({ ...lengths, [key]: next });
-        this.drawn = "";
+  /* ── The list, out at the side ─────────────────────────────────────── */
+
+  private panel(): HTMLElement {
+    // ⚠️ Cleared on every rebuild: a row that has gone would otherwise be
+    // written to for ever, holding a reference to an element nothing shows.
+    this.rows.clear();
+    const panel = element("div", "tm-list");
+    const rows = element("div", "tm-rows");
+    for (const run of this.runs.list) {
+      const on = run.id === this.runs.active;
+      const row = element("div", `tm-row${on ? " is-on" : ""}`);
+      row.dataset.run = run.id;
+
+      /* ⚠️ The whole row PICKS, and only the button controls. A row that both
+       * selects and toggles depending on where you press is a row you have to
+       * aim at. */
+      const pick = element("button", "tm-pick");
+      (pick as HTMLButtonElement).type = "button";
+      pick.setAttribute("aria-label", `Show ${runName(run)}`);
+      pick.setAttribute("aria-current", String(on));
+      const when = element("span", "tm-row-time", faceText(run, this.deps.lengths()));
+      this.rows.set(run.id, when);
+      pick.append(when);
+      pick.append(element("span", "tm-row-name", runName(run)));
+      pick.onclick = () => { this.runs.pick(run.id); this.deps.changed(); };
+
+      const live = running(run);
+      const go = element("button", `tm-row-go${live ? " is-live" : ""}`);
+      (go as HTMLButtonElement).type = "button";
+      go.setAttribute("aria-label", `${live ? "Pause" : "Start"} ${runName(run)}`);
+      paintIcon(go, live ? "pause" : "play");
+      go.onclick = event => {
+        event.stopPropagation();
+        this.runs.toggle(run.id);
+        this.deps.changed();
       };
-      /* ⚠️ The two steppers and the number are ONE group. Laid out as three
-       * loose children of a column, the plus of one length sat next to the
-       * minus of the next and neither read as belonging to anything. */
-      const pair = element("div", "tm-tune-row");
-      pair.append(
-        this.small("−", `Shorter ${label.toLowerCase()}`, () => step(-1)),
-        element("b", "tm-tune-value", `${lengths[key]}m`),
-        this.small("+", `Longer ${label.toLowerCase()}`, () => step(1)),
-      );
-      row.append(pair);
-      box.append(row);
+
+      const off = element("button", "tm-row-off");
+      (off as HTMLButtonElement).type = "button";
+      off.setAttribute("aria-label", `Remove ${runName(run)}`);
+      off.dataset.tip = "Remove";
+      paintIcon(off, "close");
+      off.onclick = event => {
+        event.stopPropagation();
+        this.runs.remove(run.id);
+        this.deps.changed();
+      };
+
+      /* ⚠️ The GO button last, so it is pinned to the right edge of every row
+       * whether or not the remove is showing. With the remove between them the
+       * row has one fixed target and one that fades in beside it; with it
+       * after, the target every row shares moves 26px the moment you point at
+       * one of them. */
+      row.append(pick, off, go);
+      rows.append(row);
     }
-    box.append(element("p", "tm-note", "The same numbers as Settings."));
-    return box;
+    if (!this.runs.list.length) {
+      rows.append(element("p", "tm-none", "Nothing here yet."));
+    }
+
+    const clear = element("button", "tm-clear");
+    (clear as HTMLButtonElement).type = "button";
+    clear.textContent = "Clear all";
+    clear.onclick = () => { this.runs.clear(); this.deps.changed(); };
+
+    panel.append(rows, clear);
+    return panel;
   }
 
-  /* ── Bits ────────────────────────────────────────────────────────────── */
-
-  /** ⚠️ Icon only, and the label is the TOOLTIP. Four labelled buttons in a
-   *  row say all four matter equally; a big accent circle beside two grey ones
-   *  says which one you meant. */
-  private button(icon: "play" | "pause" | "close" | "next" | "settings",
-    label: string, run: () => void, tone = "") {
-    const button = element("button", `tm-btn${tone ? ` is-${tone}` : ""}`);
-    (button as HTMLButtonElement).type = "button";
-    button.setAttribute("aria-label", label);
-    button.setAttribute("data-tip", label);
-    paintIcon(button, icon);
-    // 0: a press is deliberate and must never be swallowed by the dial's floor.
-    button.onclick = () => { click(0.8, 0); run(); };
-    return button;
+  /** Nothing at all: the list has been cleared. */
+  private emptyFace(): HTMLElement {
+    const wrap = element("div", "tm-empty");
+    wrap.append(element("p", "tm-empty-say", "Nothing counting."));
+    const row = element("div", "tm-empty-row");
+    for (const kind of KINDS) {
+      const add = element("button", "tm-empty-add");
+      (add as HTMLButtonElement).type = "button";
+      const mark = element("span", "tm-kind-mark");
+      mark.append(taskIcon(kind.icon));
+      add.append(mark, element("span", "", kind.label));
+      add.onclick = () => { this.runs.add(kind.id); this.deps.changed(); };
+      row.append(add);
+    }
+    wrap.append(row);
+    return wrap;
   }
+}
 
-  private small(glyph: string, label: string, run: () => void) {
-    const button = element("button", "tm-step", glyph);
-    (button as HTMLButtonElement).type = "button";
-    button.setAttribute("aria-label", label);
-    button.onclick = run;
-    return button;
-  }
+/** How long the ruler takes to ease onto a mark once the hand lets go.
+ *  Must match `.tm-strip.is-settling` in the stylesheet. */
+const SETTLE = 260;
 
-  /** The seconds, the running dot and the phase line, in place — the screen
-   *  itself is keyed and must not be rebuilt once a second. */
-  tick() {
-    const timer = this.engine();
-    const state = timer.state;
-    if (!state) return;
-    const clock = this.host.querySelector<HTMLElement>(".tm-clock");
-    // Per digit, so only the numbers that changed move. See `clock`.
-    if (clock) setDigits(clock, timerText(timer.seconds()));
-    const fill = this.host.querySelector<HTMLElement>(".tm-dot.is-now i");
-    if (fill) fill.style.width = `${Math.round(timer.through() * 100)}%`;
-    const said = this.host.querySelector<HTMLElement>(".tm-say");
-    if (said) setText(said, this.phaseLine(state, this.deps.lengths()));
-    // A running timer's dial reads what is left, so it glides as it goes.
-    const strip = this.host.querySelector<HTMLElement>(".tm-dial.is-locked .tm-strip");
-    if (strip) this.place(strip, timer.seconds() / 60);
-  }
+/** The figure on a run's face.
+ *
+ * ⚠️ A stopwatch counts in HOURS once it passes one, and a countdown never
+ * does — `timerText` rolls over to `1h 05` past a hundred minutes, which is
+ * right for a countdown you set and wrong for a stopwatch you left running. */
+function faceText(run: Run, lengths: Lengths): string {
+  const ms = figureMs(run, lengths);
+  if (run.kind !== "stopwatch") return timerText(Math.round(ms / 1000));
+  const whole = Math.floor(ms / 1000);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }

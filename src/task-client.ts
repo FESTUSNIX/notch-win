@@ -28,6 +28,14 @@ const noAgents = new URLSearchParams(location.search).has("noagents");
 /* `nocal` pushes the demo agenda out of claiming range but leaves the player
  * alone — the two flags silence different competitors for the pill. */
 const nocal = quiet || new URLSearchParams(location.search).has("nocal");
+/* `sky=night` / `sky=day` make Daylight draw the moon or the sun — see the
+   weather reading below for why they move the sun TIMES instead of the clock.
+   ⚠️ BOTH, not just night. With only the night flag the day case was whatever
+   the real clock said, so the test for it passed all afternoon and failed every
+   evening — and "it passes when run alone" was true right up until sunset. */
+const sky = new URLSearchParams(location.search).get("sky");
+const night = sky === "night";
+const daytime = sky === "day";
 const demoMixer = [
   { pid: 4396, name: "Brave", path: "C:/brave.exe", icon: "", volume: 0.65, muted: false, active: true },
   { pid: 15816, name: "Spotify", path: "C:/spotify.exe", icon: "", volume: 1, muted: false, active: false },
@@ -167,7 +175,7 @@ let demoPrefs: Record<string, unknown> = {
     .split(",").filter(Boolean).map(one => one.split(":")) as [string, string][]), useEverything: true,
   callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
-  timerSound: "Notification.Reminder", timerMode: "pomodoro",
+  timerSound: "Notification.Reminder",
   /* ⚠️ Staged from the query string, like `?click` and `?edge=`. It decides
      what the collapsed strip DOES with a running pomodoro — a quiet line or
      the countdown itself — and there is no other way to reach the other one
@@ -377,9 +385,83 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      module HOLDING the slot, which is the behaviour worth seeing. The rotation
      among the ambient ones is covered by choose()'s own tests, which need no
      DOM and no fixture. */
+  /* ⚠️ The sun times are REAL fields, not decoration for one widget. The
+     reading arrives from `weather.rs` with them and the fixture had only the
+     four the pill uses — so Daylight drew its fallback even day here and
+     nothing could tell that apart from the widget working. */
   if (command === "get_weather") return {place:"Krakow, Poland", celsius:17,
-    summary:"Partly cloudy", icon:"wxPartly", readAtMs: Date.now()} as T;
+    summary:"Partly cloudy", icon:"wxPartly", readAtMs: Date.now(),
+    /* ⚠️ `?sky=night` moves SUNSET rather than the clock. Daylight decides
+       which body to draw from where "now" falls between the two times, so
+       pushing both into the last half hour of the day makes every hour a test
+       can run at count as night — and the widget takes the same path it would
+       at three in the morning. Faking the clock instead would have every other
+       fixture on the page living in the future. */
+    isDay: !night, high: 21, low: 11,
+    /* ⚠️ Day is 00:01 to 23:59 and night is the last twenty minutes of it, so
+       whichever flag is set holds at every hour a test might run at. Unflagged
+       is the honest default — the real times for the fixture's own city. */
+    sunrise: night ? "23:30" : daytime ? "00:01" : "06:12",
+    sunset: night ? "23:50" : daytime ? "23:59" : "19:34",
+    /* ⚠️ The HOURS and DAYS too. `weather.rs` has sent both for a while and the
+       fixture carried neither — so every widget variant that draws a forecast
+       silently fell back to its no-data path, and a chart that never appeared
+       looked exactly like a chart that was not built. A day that climbs and
+       then falls, because a flat series tests none of the scaling. */
+    hours: Array.from({ length: 12 }, (_, at) => ({
+      at: `${String((new Date().getHours() + at) % 24).padStart(2, "0")}:00`,
+      celsius: Math.round(12 + Math.sin(at / 2.4) * 7),
+      icon: at % 4 === 0 ? "wxClear" : at % 3 === 0 ? "wxRain" : "wxPartly",
+    })),
+    days: Array.from({ length: 6 }, (_, at) => ({
+      date: new Date(Date.now() + at * 86400000).toISOString().slice(0, 10),
+      icon: at % 3 === 0 ? "wxClear" : at % 2 === 0 ? "wxRain" : "wxPartly",
+      high: 19 - at, low: 9 + (at % 3),
+    }))} as T;
   if (command === "set_weather_place") return null as T;
+  /* One coin, so the block can be seen without a symbol configured and a
+     network round trip. ⚠️ A RISING day by default and `?coin=down` for the
+     other one: the block's whole colour scheme hangs off the sign, and a
+     fixture that only ever goes up tests half of it. */
+  if (command === "get_crypto") {
+    const down = new URLSearchParams(location.search).get("coin") === "down";
+    const spark = Array.from({ length: 30 }, (_, at) =>
+      61200 + Math.sin(at / 3.1) * 1400 + (down ? -at * 95 : at * 120));
+    return { symbol: "BTCUSDT", name: "BTC", quote: "USDT",
+      price: spark[spark.length - 1], changePct: down ? -2.4 : 1.9,
+      high: Math.max(...spark), low: Math.min(...spark),
+      spark, readAtMs: Date.now() } as T;
+  }
+  if (command === "set_crypto_symbol") return null as T;
+  /* A wallet, so the block can be seen without connecting a real account.
+     ⚠️ `?wallet=off` is the OTHER state, and it is the one most people are in:
+     a block whose only fixture is the happy path is a block whose empty state
+     nobody ever looks at. */
+  if (command === "get_wallet") {
+    if (new URLSearchParams(location.search).get("wallet") === "off") return null as T;
+    const holdings = [
+      { asset: "BTC", amount: 0.0412, value: 2671.4 },
+      { asset: "ETH", amount: 1.18, value: 3240.9 },
+      { asset: "SOL", amount: 14.2, value: 1985.3 },
+      { asset: "USDT", amount: 612.4, value: 612.4 },
+      { asset: "ADA", amount: 840, value: 302.1 },
+    ];
+    const total = holdings.reduce((sum, one) => sum + one.value, 0);
+    /* ⚠️ A HISTORY as well. The line is recorded by the app rather than
+       fetched, so a fixture without one only ever shows the "watching" state —
+       which is real, and is not the state anybody is trying to look at. A
+       fortnight of quarter-hours, wandering. */
+    const history = Array.from({ length: 60 }, (_, at) => ({
+      at: Date.now() - (59 - at) * 15 * 60 * 1000,
+      value: total * (0.88 + Math.sin(at / 7) * 0.06 + at * 0.0022),
+    }));
+    const first = history[0].value;
+    return { connected: true, quote: "USDT", holdings, readAtMs: Date.now(), total,
+      history, changePct: ((total - first) / first) * 100,
+      spanMs: history[history.length - 1].at - history[0].at } as T;
+  }
+  if (command === "connect_binance" || command === "disconnect_binance") return null as T;
+  if (command === "binance_connected") return false as T;
   if (command === "get_activity") return [{provider:"claude",
     state: quiet || noAgents ? "idle" : agentsFixture ? "waiting" : "working",
     running: quiet || noAgents ? 0 : 1}] as T;

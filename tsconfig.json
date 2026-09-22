@@ -9,6 +9,13 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "noEmit": true,
+    /* ⚠️ So a src module can import a sibling as `./thing.ts`. Node's own test
+       runner strips types and then resolves what is left, and its resolver does
+       not add extensions the way Vite does — a bare specifier in a module a
+       test touches fails to load, and the failure names the importer rather
+       than the test. Only used where a runtime sibling import is unavoidable;
+       type imports are erased and need nothing. */
+    "allowImportingTsExtensions": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["src"]

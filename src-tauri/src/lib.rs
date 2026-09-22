@@ -1,3 +1,4 @@
+mod ambient;
 mod apptime;
 mod audio;
 mod autostart;
@@ -35,6 +36,7 @@ mod prefs;
 mod stars;
 mod workspaces;
 mod transcript;
+mod crypto;
 mod weather;
 mod providers;
 mod sessions;
@@ -475,6 +477,8 @@ pub fn run() {
         }))
         .manage(InteractiveRects::default())
         .manage(DisplayItems::default())
+        .manage(crypto::Latest::default())
+        .manage(crypto::Held::default())
         .manage(weather::Latest::default())
         .manage(lyrics::Cache::default())
         .manage(sessions::Sessions::default())
@@ -493,6 +497,7 @@ pub fn run() {
         .manage(tasks::TaskState::new())
         .manage(sessions::Latest::default())
         .manage(media::MediaState::default())
+        .manage(ambient::Pending::default())
         .manage(call::CallState::default())
         .manage(notices::NoticeState::default())
         .manage(calendar::CalendarState::default())
@@ -523,6 +528,7 @@ pub fn run() {
             tasks::set_checklist_item,
             tasks::create_task,
             tasks::rename_task,
+            tasks::schedule_task,
             task_window::open_task_editor,
             task_window::get_task_placement,
             task_window::set_task_input,
@@ -571,6 +577,13 @@ pub fn run() {
             snooze::unsnooze,
             sessions::get_sessions,
             sessions::focus_session,
+            crypto::get_crypto,
+            crypto::set_crypto_symbol,
+            crypto::get_wallet,
+            crypto::connect_binance,
+            crypto::disconnect_binance,
+            crypto::binance_connected,
+            crypto::set_wallet_quote,
             weather::get_weather,
             lyrics::get_lyrics,
             mixer::get_mixer,
@@ -579,6 +592,12 @@ pub fn run() {
             weather::set_weather_place,
             media::get_media,
             media::media_command,
+            ambient::ambient_open,
+            ambient::ambient_close,
+            ambient::ambient_pending,
+            ambient::ambient_scenes,
+            ambient::ambient_set_folder,
+            ambient::ambient_pick_folder,
             call::get_call,
             call::call_action,
             ring::ring_pick,
@@ -605,6 +624,9 @@ pub fn run() {
             calendar::google_status,
             calendar::open_external,
             calendar::calendar_days,
+            calendar::create_event,
+            calendar::move_event,
+            calendar::delete_event,
             spotify::connect_spotify,
             spotify::disconnect_spotify,
             spotify::spotify_status,
@@ -737,7 +759,14 @@ pub fn run() {
             usage::load(app.handle());
             sessions::spawn(app.handle().clone());
             drag::watch_displays(app.handle().clone());
+            crypto::spawn(app.handle().clone());
             weather::spawn(app.handle().clone());
+            /* The asset protocol starts with an empty scope; a folder chosen in a
+             * previous session is opened again here, and nothing else ever is. */
+            {
+                let folder = app.state::<drag::Settings>().0.lock().map(|c| c.ambient_folder.clone()).unwrap_or_default();
+                ambient::allow(app.handle(), &folder);
+            }
             spawn_polling(app.handle().clone());
             Ok(())
         })

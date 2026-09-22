@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use chrono::{Datelike, Utc};
 use rand::Rng;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,7 +31,18 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use crate::credentials;
 
-const SCOPE: &str = "https://www.googleapis.com/auth/calendar.readonly";
+/// ⚠️ **TWO scopes, and leaving either out fails in a way that reads as
+/// something else.** `calendar.events` grants read and write on events but
+/// says nothing about `calendarList` — so on its own the agenda comes back
+/// EMPTY with a 403 on the listing, which looks like a calendar with nothing in
+/// it rather than a permission that was never asked for. The list scope is the
+/// read-only one because this app never creates or renames a calendar, only
+/// events inside one.
+///
+/// ⚠️ Space-separated, which is Google's format and the reason `auth_url`
+/// percent-encodes the whole value — a raw space would truncate the URL at the
+/// shell call. The test below asserts the encoded form for exactly that reason.
+const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN: &str = "https://oauth2.googleapis.com/token";
 const API: &str = "https://www.googleapis.com/calendar/v3";
@@ -63,8 +75,23 @@ pub struct Event {
     pub location: String,
     /// Meet/Zoom/Teams link if the event has one, so the island can offer Join.
     pub meeting_url: String,
+    /// The display name of the calendar it came from.
     pub calendar: String,
+    /// ⚠️ The calendar's **id**, which is what a write is addressed to — the
+    /// name above is for reading and is not unique. This was simply discarded
+    /// before, because a read-only agenda never needed to say where an event
+    /// lived; without it there is no URL to PATCH.
+    pub calendar_id: String,
     pub color: String,
+    /// Whether this app may change the event.
+    ///
+    /// ⚠️ From the calendar's `accessRole`, not assumed. Most people are
+    /// subscribed to at least one calendar they cannot write — holidays, a
+    /// shared team diary, someone's availability — and Google answers a write
+    /// to one of those with a 403. Deciding it here means the grid can refuse
+    /// the drag before it starts, which is the difference between an event that
+    /// will not move and an event that moves and then jumps back.
+    pub writable: bool,
     /// "accepted" | "declined" | "tentative" | "needsAction" | "" for the user.
     pub response: String,
 }
@@ -433,7 +460,7 @@ fn meeting_url(event: &Value) -> String {
     String::new()
 }
 
-fn parse_events(body: &Value, calendar: &str, color: &str) -> Vec<Event> {
+fn parse_events(body: &Value, calendar: &str, color: &str, calendar_id: &str, writable: bool) -> Vec<Event> {
     let Some(items) = body.get("items").and_then(Value::as_array) else {
         return Vec::new();
     };
@@ -478,7 +505,9 @@ fn parse_events(body: &Value, calendar: &str, color: &str) -> Vec<Event> {
                 location: text(event, "location"),
                 meeting_url: meeting_url(event),
                 calendar: calendar.to_string(),
+                calendar_id: calendar_id.to_string(),
                 color: color.to_string(),
+                writable,
                 response,
             }
         })
@@ -511,7 +540,7 @@ async fn between(
     max: &str,
 ) -> Result<Vec<Event>, String> {
     let list = get_json(http, token, &format!("{API}/users/me/calendarList?minAccessRole=reader")).await?;
-    let calendars: Vec<(String, String, String)> = list
+    let calendars: Vec<(String, String, String, bool)> = list
         .get("items")
         .and_then(Value::as_array)
         .map(|items| {
@@ -529,6 +558,10 @@ async fn between(
                             .then(|| text(c, "summary"))
                             .unwrap_or_else(|| text(c, "summaryOverride")),
                         text(c, "backgroundColor"),
+                        /* ⚠️ `owner` and `writer` only. `reader` and
+                         * `freeBusyReader` are the subscription roles, and a
+                         * write to either is a 403 — see `Event::writable`. */
+                        matches!(text(c, "accessRole").as_str(), "owner" | "writer"),
                     )
                 })
                 .collect()
@@ -536,7 +569,7 @@ async fn between(
         .unwrap_or_default();
 
     let mut events = Vec::new();
-    for (id, name, color) in calendars {
+    for (id, name, color, writable) in calendars {
         let url = format!(
             "{API}/calendars/{}/events?timeMin={}&timeMax={}&singleEvents=true&orderBy=startTime&maxResults=250",
             encode(&id),
@@ -545,11 +578,187 @@ async fn between(
         );
         // One unreadable calendar must not empty the whole agenda.
         if let Ok(body) = get_json(http, token, &url).await {
-            events.extend(parse_events(&body, &name, &color));
+            events.extend(parse_events(&body, &name, &color, &id, writable));
         }
     }
     events.sort_by(|a, b| a.start.cmp(&b.start));
     Ok(events)
+}
+
+/* ── Writing ───────────────────────────────────────────────────────────────
+ * Creating, moving and deleting an event, for the calendar's work mode.
+ *
+ * ⚠️ **Every write re-reads the whole agenda before it returns.** The obvious
+ * cheaper thing — patch the one event in the cached snapshot — is wrong on a
+ * recurring series, where moving one occurrence can make Google split the
+ * series and hand back an event with a DIFFERENT id from the one that was
+ * dragged. The snapshot would then hold the old occurrence and the new one at
+ * once, and nothing about that looks like a bug until somebody counts their
+ * meetings. A refresh costs a few requests on an action a person takes by hand
+ * a handful of times an hour; the frontend moves the block optimistically so
+ * the delay is never in front of the pointer.
+ *
+ * ⚠️ These are the TASK windows' commands, the same as `refresh_calendar`.
+ * The notch never writes.
+ */
+
+/// A write that carries JSON and expects an event back.
+async fn send_json(
+    http: &reqwest::Client,
+    token: &str,
+    method: Method,
+    url: &str,
+    body: Option<&Value>,
+) -> Result<Value, String> {
+    let mut request = http.request(method, url).bearer_auth(token);
+    if let Some(payload) = body {
+        request = request.json(payload);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "Could not reach Google Calendar.".to_string())?;
+    let status = response.status();
+    /* ⚠️ A successful DELETE is 204 with an EMPTY body, so the JSON decode
+     * fails on the one path that worked. Decode to a Value only when there is
+     * something to decode. */
+    let text = response.text().await.unwrap_or_default();
+    let parsed: Value = if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(Value::Null)
+    };
+    if !status.is_success() {
+        let detail = parsed
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("no detail");
+        /* ⚠️ 403 is named, because it is the one a person can act on: it means
+         * the calendar is subscribed rather than owned. The grid tries not to
+         * let a read-only event be dragged at all, but a role can change
+         * between a poll and a drop. */
+        if status.as_u16() == 403 {
+            return Err(format!("That calendar is read-only: {detail}"));
+        }
+        return Err(format!("Google Calendar refused the write: {detail}"));
+    }
+    Ok(parsed)
+}
+
+/// Shared by all three: check the window, get a token, do the thing, re-read.
+async fn write_then_refresh<F, Fut>(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    act: F,
+) -> Result<(), String>
+where
+    F: FnOnce(reqwest::Client, String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    if !matches!(window.label(), "tasks" | "task-editor") {
+        return Err("This command belongs to the task windows.".into());
+    }
+    let state = app.state::<CalendarState>();
+    let Some(record) = stored()? else {
+        return Err("Connect Google Calendar first.".into());
+    };
+    /* ⚠️ The same gate the poll takes, held across the write AND the re-read.
+     * Without it a poll already in flight can publish the agenda as it was
+     * before the write and leave the moved event back where it started —
+     * which reads as a drag that did not take. */
+    let _guard = state.gate.lock().await;
+    let http = client();
+    let token = access_token(&http, &state, &record).await?;
+    act(http, token).await?;
+    poll(app, &state).await
+}
+
+/// ⚠️ Timed events only, and the frontend agrees — an all-day event is a
+/// `date`, not a `dateTime`, and sending one as the other is how a whole day
+/// becomes midnight. The grid does not offer the drag; this refuses it anyway.
+fn when(start: &str, end: &str) -> Result<Value, String> {
+    if start.len() <= 10 || end.len() <= 10 {
+        return Err("All-day events cannot be moved on the time grid.".into());
+    }
+    Ok(serde_json::json!({
+        "start": { "dateTime": start },
+        "end": { "dateTime": end },
+    }))
+}
+
+/// Put a new event on a calendar.
+///
+/// ⚠️ `calendar_id` defaults to `primary`, which is Google's own alias for
+/// the signed-in user's own calendar. It is the only one this app can be sure
+/// is writable without asking, and creating into whichever calendar happened
+/// to be first in the list would scatter events across subscriptions.
+#[tauri::command]
+pub async fn create_event(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    title: String,
+    start: String,
+    end: String,
+    calendar_id: Option<String>,
+) -> Result<(), String> {
+    let title = title.trim().to_string();
+    let title = if title.is_empty() { "(no title)".to_string() } else { title };
+    let mut body = when(&start, &end)?;
+    body["summary"] = Value::String(title);
+    let calendar = calendar_id.filter(|one| !one.is_empty()).unwrap_or_else(|| "primary".into());
+    write_then_refresh(&app, &window, move |http, token| async move {
+        let url = format!("{API}/calendars/{}/events", encode(&calendar));
+        send_json(&http, &token, Method::POST, &url, Some(&body)).await.map(|_| ())
+    })
+    .await
+}
+
+/// Move or resize one event. ⚠️ A PATCH, not a PUT: a PUT replaces the whole
+/// resource, so every field this app does not model — attendees, reminders,
+/// the conference link, the description — would be erased by a drag.
+#[tauri::command]
+pub async fn move_event(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    calendar_id: String,
+    event_id: String,
+    start: String,
+    end: String,
+) -> Result<(), String> {
+    if calendar_id.is_empty() || event_id.is_empty() {
+        return Err("That event cannot be identified.".into());
+    }
+    let body = when(&start, &end)?;
+    write_then_refresh(&app, &window, move |http, token| async move {
+        let url = format!(
+            "{API}/calendars/{}/events/{}",
+            encode(&calendar_id),
+            encode(&event_id)
+        );
+        send_json(&http, &token, Method::PATCH, &url, Some(&body)).await.map(|_| ())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_event(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    calendar_id: String,
+    event_id: String,
+) -> Result<(), String> {
+    if calendar_id.is_empty() || event_id.is_empty() {
+        return Err("That event cannot be identified.".into());
+    }
+    write_then_refresh(&app, &window, move |http, token| async move {
+        let url = format!(
+            "{API}/calendars/{}/events/{}",
+            encode(&calendar_id),
+            encode(&event_id)
+        );
+        send_json(&http, &token, Method::DELETE, &url, None).await.map(|_| ())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -698,7 +907,10 @@ mod tests {
         }
         assert!(url.starts_with(AUTH));
         assert!(!url.contains(' '), "a space would break the shell call");
-        assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly"));
+        // ⚠️ Both scopes, and the space between them encoded. A raw space here
+        // truncates the URL at the shell call, which is the bug the assertion
+        // two lines up guards.
+        assert!(url.contains("calendar.events%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.calendarlist.readonly"));
     }
 
     #[test]
@@ -716,7 +928,7 @@ mod tests {
             {"id":"2","summary":"Holiday","start":{"date":"2026-09-09"},"end":{"date":"2026-09-10"}},
             {"id":"3","summary":"Gone","status":"cancelled","start":{"date":"2026-09-09"}}
         ]});
-        let events = parse_events(&body, "Work", "#123456");
+        let events = parse_events(&body, "Work", "#123456", "work@group.calendar.google.com", true);
         assert_eq!(events.len(), 2, "cancelled occurrences are dropped");
         assert!(!events[0].all_day);
         assert_eq!(events[0].meeting_url, "https://meet.google.com/x");
@@ -740,7 +952,7 @@ mod tests {
     #[test]
     fn an_untitled_event_still_reads_as_something() {
         let body = serde_json::json!({"items":[{"id":"1","start":{"date":"2026-09-09"},"end":{"date":"2026-09-10"}}]});
-        assert_eq!(parse_events(&body, "", "")[0].title, "(no title)");
+        assert_eq!(parse_events(&body, "", "", "", false)[0].title, "(no title)");
     }
 }
 

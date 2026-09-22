@@ -206,6 +206,9 @@ export interface MediaDeps {
   source: MediaSource;
   /** Ask the shell for a wider or narrower panel. The queue needs the room. */
   width: (queueOpen: boolean) => void;
+  /** Open ambient mode — the player, full screen. The shell owns it: only the
+   *  shell knows where the island is, which is what the transition grows from. */
+  ambient: () => void;
 }
 
 export class MediaScreen {
@@ -303,6 +306,15 @@ export class MediaScreen {
 
   title$() { return "Playing"; }
   activity(): Activity | null { return null; }
+
+  /** The line being sung right now, for the island's glance, or "".
+   *  ⚠️ Read from the words this screen already fetched for the track — the
+   *  glance asking LRCLIB again would be the same file twice. */
+  lineNow(): string {
+    if (!this.lines.length) return "";
+    const at = lineAt(this.lines, this.deps.source.position());
+    return at >= 0 ? this.lines[at].text : "";
+  }
 
   tools() {
     return {
@@ -485,8 +497,18 @@ export class MediaScreen {
        * and the control simply was not there. */
       before.append(shuffle);
     }
+    /* Ambient mode: the same player, full screen. ⚠️ Beside the lyrics and the
+     * output rather than in the header's tools — it is a way of listening to
+     * THIS, and it belongs with the other ways. */
+    const wide = element("button", "media-side");
+    (wide as HTMLButtonElement).type = "button";
+    (wide as HTMLButtonElement).disabled = !media.active;
+    wide.setAttribute("aria-label", "Ambient mode");
+    wide.dataset.tip = "Ambient mode";
+    paintIcon(wide, "ambient");
+    wide.onclick = () => this.deps.ambient();
     transport.append(before, keys, pair);
-    pair.append(words, output);
+    pair.append(words, output, wide);
     now.append(head, scrub, transport);
     if (this.devicesOpen) now.append(this.deviceMenu());
     this.host.append(now);
