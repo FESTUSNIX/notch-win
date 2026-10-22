@@ -46,7 +46,10 @@ export type FixedScreen =
    *  `paintMediaTab`. Everything that walks `ScreenName` has to cope with a tab
    *  that is not there. */
   | "media"
-  | "notes";
+  | "notes"
+  /** Helm: the must-win, the focus blocks and the Guardian. ⚠️ On the rail
+   *  only while Helm is connected, like the player while something plays. */
+  | "helm";
 
 export type ScreenName = FixedScreen | BoardName;
 

@@ -15,6 +15,7 @@ pub const TICKTICK: &str = "codenotch-win/ticktick";
 pub const GOOGLE: &str = "codenotch-win/google-oauth";
 pub const SPOTIFY: &str = "codenotch-win/spotify-oauth";
 pub const BINANCE: &str = "codenotch-win/binance";
+pub const HELM: &str = "codenotch-win/helm";
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -26,6 +27,7 @@ fn label(target: &str) -> &'static str {
         GOOGLE => "Google Calendar",
         SPOTIFY => "Spotify",
         BINANCE => "Binance",
+        HELM => "Helm",
         _ => "TickTick",
     }
 }

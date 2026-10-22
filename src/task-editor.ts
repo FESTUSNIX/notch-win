@@ -83,6 +83,10 @@ interface Prefs {
   thresholds: Record<string, number>;
   /** `day` or `all`. What Today counts and what the pill counts down. */
   taskView: string;
+  /** `docked` or `drop`: where the Guardian chat window sits. */
+  helmChat: string;
+  /** The sound a Guardian nudge makes. */
+  helmSound: string;
 }
 
 interface Screen { id: string; name: string; width: number; height: number; primary: boolean }
@@ -97,7 +101,7 @@ const PANES = [
   { id: "timer", icon: "timer", label: "Timer", sub: "How long a pomodoro runs, and what it plays when it ends." },
   { id: "search", icon: "search", label: "Search", sub: "What the command palette is allowed to look through." },
   { id: "keys", icon: "keyboard", label: "Shortcuts", sub: "Global, so they work while another app has focus." },
-  { id: "accounts", icon: "link", label: "Connections", sub: "TickTick, Google Calendar, Spotify and the forecast." },
+  { id: "accounts", icon: "link", label: "Connections", sub: "Helm, TickTick, Google Calendar, Spotify and the forecast." },
 ] as const;
 
 type PaneId = (typeof PANES)[number]["id"];
@@ -306,6 +310,16 @@ const PANE_HTML: Record<PaneId, string> = {
     </div></div>`,
 
   accounts: `
+    <div><p class="set-label">Helm</p><div class="set-group">
+      ${row("Now", "", `<span class="set-value" id="helm-state" style="min-width:0;text-align:right">…</span>`)}
+      ${row("Address and key", "Make the key in Helm: Guardian → Devices → Connect codenotch. Kept in Windows Credential Manager and never read back.",
+        `<input id="helm-url" autocomplete="off" spellcheck="false" maxlength="200" placeholder="https://crm.hadastudios.com"><input id="helm-key" type="password" autocomplete="off" spellcheck="false" maxlength="200" placeholder="Device key"><button type="button" class="set-btn is-accent" id="helm-connect">Connect</button><button type="button" class="set-btn" id="helm-disconnect">Disconnect</button>`, "stack")}
+      ${row("Guardian chat", "Docked is a window at the right edge; under the notch it hangs below the island and goes when you click away.",
+        seg("helmchat", [["docked", "Docked right"], ["drop", "Under the notch"]], "Where the Guardian chat opens"))}
+      ${row("Nudge sound", "Plays when the Guardian nudges, and once more three minutes later if it is still unread.",
+        seg("helmsound", [["", "None"], ["Notification.Default", "Chime"],
+          ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]], "Guardian nudge sound"))}
+    </div><p class="set-note">The island shows today from Helm: the must-win, the blocks and the Guardian’s nudges. A nudge stays up, over full-screen apps too, until it is answered.</p></div>
     <div><p class="set-label">TickTick</p><div class="set-group">
       ${row("Account", "", `<span class="set-value" id="ticktick-state" style="min-width:0;text-align:right">…</span>`)}
       ${row("API token", "Settings → Account → API Token on the web. Kept in Windows Credential Manager and never read back.",
@@ -434,6 +448,7 @@ let prefs: Prefs = {
   ringHoldMs: 250, ringTap: "@search", homeCurrency: "",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
+  helmChat: "docked", helmSound: "Notification.Reminder",
 };
 
 let saving = 0;
@@ -1162,6 +1177,8 @@ panelWidth.oninput = () => {
  * way in, so a typo here is a setting that silently will not stick rather
  * than one that plays the wrong noise. */
 onSeg("sound", value => { prefs.timerSound = value; savePrefs(); });
+onSeg("helmchat", value => { prefs.helmChat = value; savePrefs(); });
+onSeg("helmsound", value => { prefs.helmSound = value; savePrefs(); void call("play_sound", { alias: value }).catch(() => {}); });
 onSeg("pompill", value => { prefs.pomodoroPill = value; savePrefs(); });
 onSeg("view", value => { prefs.taskView = value; savePrefs(); });
 
@@ -1498,6 +1515,39 @@ get("crypto-set").onclick = async () => {
     get("crypto-state").textContent = String(error).replace(/^.*?: /, "");
   }
 };
+/* ── Helm ─────────────────────────────────────────────────────────────────
+ * ⚠️ The key goes ONE WAY, like Binance's secret: sent once, checked against
+ * Helm, stored in Credential Manager by Rust and never read back. The field
+ * is cleared the moment it is sent. */
+interface HelmReading { connected: boolean; error: string | null; today: { day: { mustWin: string | null } | null; blocks: unknown[]; nudges: unknown[] } | null }
+
+function sayHelm(helm: HelmReading | null) {
+  const said = get("helm-state");
+  if (!helm?.connected) { said.textContent = "Not connected"; return; }
+  if (helm.error) { said.textContent = helm.error; return; }
+  const blocks = helm.today?.blocks.length ?? 0;
+  const nudges = helm.today?.nudges.length ?? 0;
+  // Counts, never the must-win itself: this window can be on a shared screen.
+  said.textContent = `Connected · ${blocks} ${blocks === 1 ? "block" : "blocks"} today${nudges ? ` · ${nudges} unread` : ""}`;
+}
+
+get("helm-connect").onclick = async () => {
+  const key = get<HTMLInputElement>("helm-key");
+  get("helm-state").textContent = "…";
+  try {
+    const helm = await call<HelmReading>("connect_helm", { url: get<HTMLInputElement>("helm-url").value, key: key.value });
+    key.value = "";
+    sayHelm(helm);
+  } catch (error) {
+    key.value = "";
+    get("helm-state").textContent = String(error).replace(/^.*?: /, "");
+  }
+};
+get("helm-disconnect").onclick = async () => {
+  get<HTMLInputElement>("helm-key").value = "";
+  if (await run("disconnect_helm", {})) sayHelm(null);
+};
+
 /* ── Binance ──────────────────────────────────────────────────────────────
  * ⚠️ The secret goes ONE WAY. It is sent once, stored in Windows Credential
  * Manager by Rust, and never read back — `binance_connected` answers with a
@@ -1592,6 +1642,8 @@ function paintPrefs() {
   get<HTMLInputElement>("call-mode").checked = prefs.callMode;
   get<HTMLInputElement>("notice-mode").checked = prefs.noticeMode;
   markSeg("sound", prefs.timerSound);
+  markSeg("helmchat", prefs.helmChat === "drop" ? "drop" : "docked");
+  markSeg("helmsound", prefs.helmSound);
   markSeg("pompill", prefs.pomodoroPill === "time" ? "time" : "bar");
   for (const [id, key] of POMODORO) {
     const slider = get<HTMLInputElement>(id);
@@ -1656,6 +1708,12 @@ async function boot() {
   try { sayWeather(await call<Weather>("get_weather")); } catch { sayWeather(null); }
   try { sayScenes(await call<Scenes>("ambient_scenes")); } catch { sayScenes(null); }
   try { sayCoin(await call<Coin>("get_crypto")); } catch { sayCoin(null); }
+  try {
+    const helm = await call<HelmReading>("get_helm");
+    sayHelm(helm);
+    // Saved but not read yet must not read as "not connected"; see the wallet below.
+    if (!helm.connected && await call<boolean>("helm_connected")) get("helm-state").textContent = "Connected, reading…";
+  } catch { sayHelm(null); }
   try {
     /* ⚠️ Two questions, because they have two answers: whether a key is stored
      * at all, and what it last reported. A key that is saved but has not polled

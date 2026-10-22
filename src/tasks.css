@@ -220,109 +220,156 @@ h1 {
    Hovering the pill in click mode. Sized and faded by island-surface.ts on
    the glance's own spring; this is only what is inside it.
    ⚠️ Starts hidden: the surface fades it in, and until it has painted once
-   a visible glance would sit on top of the pill at full opacity. */
+   a visible glance would sit on top of the pill at full opacity.
+
+   ⚠️ ONE inset, `--glance-pad`, on every side. The cover fills the height
+   that leaves and the controls sit on the bottom edge of it, so the cover's
+   left, the ambient key's right and both of their bottoms are all the same
+   distance from the shape. It used to be four different paddings round a
+   fixed 76px cover that floated at the top — every gap to the edge was a
+   different number and it read as loose rather than as one object.
+
+   ⚠️ And the cover's corner is CONCENTRIC with the shape's: the shape's
+   bottom curl (`islandGlanceCurl`, 52 design px = 25 CSS px) minus the
+   inset. A cover rounded more or less than that sits in the corner at a
+   visibly different curve from the one round it. */
 #island-glance {
+	--glance-pad: 14px;
+	--glance-curl: 25px;
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
-	align-items: center;
-	gap: 14px;
-	/* ⚠️ Tight on purpose: the glance is 113 CSS px deep, and at roomier padding
-	   the title, artist, lyric and controls stacked to more than the shape held. */
-	padding: 12px 22px 13px 16px;
+	grid-template-rows: minmax(0, 1fr);
+	align-items: stretch;
+	gap: 13px;
+	padding: var(--glance-pad);
 	opacity: 0;
 	visibility: hidden;
 	cursor: pointer;
 }
+/* The player's own `.media-art`, at the glance's size. */
 .glance-art {
-	width: 76px;
-	height: 76px;
-	border-radius: 14px;
+	height: 100%;
+	width: auto;
+	aspect-ratio: 1;
+	min-height: 0;
+	border-radius: calc(var(--glance-curl) - var(--glance-pad));
 	object-fit: cover;
-	background: rgba(255, 255, 255, 0.07);
-	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-2);
 }
+/* Words at the top, controls on the bottom edge — `margin-top: auto`, so the
+   controls land on the inset whatever the text above them measures. */
 .glance-text {
-	display: grid;
-	gap: 2px;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
 	min-width: 0;
+	min-height: 0;
 }
-.glance-title {
-	font-size: 14.5px;
-	font-weight: 600;
-	color: #f2f2f2;
+.glance-title,
+.glance-artist,
+.glance-words {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+/* The player's type, a step down: `.media-title` / `.media-artist`. */
+.glance-title {
+	font-size: 14px;
+	font-weight: 650;
+	letter-spacing: -0.3px;
+	line-height: 1.25;
+	color: #fff;
 }
 .glance-artist {
 	font-size: 12px;
-	color: #a8a8a8;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	line-height: 1.3;
+	color: #8a8a8a;
 }
-/* The line being sung. ⚠️ One line, ellipsised — a lyric that wrapped would
-   change the glance's height mid-song, and the shape is sprung, not fitted. */
+/* The line being sung, in the lyrics' own voice (`.media-word.is-next`): not
+   italic — nothing else in the app sets words in italic.
+   ⚠️ One line, ellipsised — a lyric that wrapped would change the glance's
+   height mid-song, and the shape is sprung, not fitted. */
 .glance-words {
-	margin-top: 1px;
 	font-size: 12px;
-	font-style: italic;
-	color: #d6d6d6;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	/* ⚠️ Said out loud: the element is an <i>, which is italic by default. */
+	font-style: normal;
+	font-weight: 560;
+	line-height: 1.3;
+	color: #cfcfcf;
 	min-height: 1.3em;
 }
 .glance-ctl {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin-top: 4px;
+	margin-top: auto;
 }
+/* Transport: the player's `.media-key` — round, raised, the main one lit. */
 .glance-btn {
 	display: grid;
 	place-items: center;
-	width: 24px;
-	height: 24px;
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
 	padding: 0;
-	border: 0;
 	border-radius: 50%;
-	background: none;
-	color: #e8e8e8;
-	cursor: pointer;
-	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+	color: #dcdcdc;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
 }
-.glance-btn:hover {
-	background: rgba(255, 255, 255, 0.1);
+.glance-btn svg {
+	width: 14px;
+	height: 14px;
+}
+.glance-btn:hover:not(:disabled) {
+	color: #fff;
+	background-color: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-2);
+}
+.glance-btn:active:not(:disabled) {
+	scale: 0.94;
+	transition-duration: 90ms;
 }
 .glance-btn:disabled {
 	opacity: 0.35;
 	cursor: default;
 }
-.glance-btn svg {
+.glance-play {
+	width: 28px;
+	height: 28px;
+	color: #fff;
+	background-color: var(--tile-on);
+}
+.glance-play svg {
 	width: 15px;
 	height: 15px;
 }
-.glance-play {
-	width: 26px;
-	height: 26px;
-	box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5);
-}
+/* Progress: the player's rail, thinner. */
 .glance-line {
 	flex: 1;
-	height: 2px;
-	margin: 0 4px;
+	min-width: 0;
+	height: 4px;
+	margin: 0 6px;
 	border-radius: 2px;
-	background: linear-gradient(to right, rgba(255, 255, 255, 0.8) var(--p, 0%), rgba(255, 255, 255, 0.18) var(--p, 0%));
+	background: linear-gradient(to right, #fff var(--p, 0%), rgba(255, 255, 255, 0.12) var(--p, 0%));
+	box-shadow: inset 0 0 0 1px var(--hair);
 }
-/* The door into ambient mode. ⚠️ The one filled control in the glance: it is
-   the only thing here the pill cannot already do. */
+/* The door into ambient mode: the player's `.media-side`, a rounded square —
+   it opens another way of listening, like the lyrics and output buttons it
+   sits beside in the player. Concentric with the shape's corner, like the
+   cover opposite it. */
 .glance-open {
-	background: rgba(255, 255, 255, 0.12);
+	width: 28px;
+	height: 28px;
+	border-radius: calc(var(--glance-curl) - var(--glance-pad) - 2px);
+	color: #8a8a8a;
+	box-shadow: var(--hairline), var(--gloss);
 }
-.glance-open:hover {
-	background: var(--accent);
-	color: var(--on-accent);
+.glance-open:hover:not(:disabled) {
+	color: #fff;
 }
 
 /* ── Collapsed: the live activity ──────────────────────────────────────── */
@@ -14621,4 +14668,341 @@ html[data-motion='never'] .notice-row {
 	font-size: 11.5px;
 	font-weight: 500;
 	color: #6f6f6f;
+}
+
+/* ── Helm ─────────────────────────────────────────────────────────────────
+   The must-win, the focus blocks and the Guardian's nudges, from Helm. A
+   column of things read at a glance, like the notices: a nudge on top (it is
+   waiting for an answer), then the day, then the Ask line that opens the
+   chat. See screen-helm.ts. */
+#helm-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.helm-content {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.helm-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 14px 0;
+}
+
+/* A nudge is a card with its answer on it. ⚠️ The accent edge is the one
+   thing on this screen in colour besides the running block: it is the part
+   asking for something. */
+.helm-nudge {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 13px;
+	border-radius: 15px;
+	background-color: var(--tile);
+	box-shadow: var(--hairline), inset 3px 0 0 var(--accent);
+	animation: notice-in var(--duration-fast) var(--ease-smooth-out);
+}
+.helm-nudge-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-width: 0;
+}
+.helm-nudge-mark {
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	flex-shrink: 0;
+	border-radius: 8px;
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.helm-nudge-mark svg {
+	width: 16px;
+	height: 16px;
+}
+.helm-nudge-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 14px;
+	font-weight: 650;
+	letter-spacing: -0.15px;
+	color: #f4f4f4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-nudge-shut {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	flex-shrink: 0;
+	padding: 0;
+	border-radius: 50%;
+	color: #8a8a8a;
+	background: rgba(255, 255, 255, 0.08);
+	box-shadow: inset 0 0 0 1px var(--hair);
+	transition: color var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-nudge-shut:hover {
+	color: #f0f0f0;
+}
+.helm-nudge-shut svg {
+	width: 13px;
+	height: 13px;
+}
+.helm-nudge-body {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.5;
+	color: #c4c4c4;
+}
+.helm-nudge-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.helm-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 12px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: #e8e8e8;
+	background: rgba(255, 255, 255, 0.08);
+	box-shadow: inset 0 0 0 1px var(--hair);
+	cursor: pointer;
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-button:hover {
+	background: rgba(255, 255, 255, 0.13);
+}
+.helm-button.is-primary {
+	color: #0b0b0b;
+	background: var(--accent);
+	box-shadow: none;
+}
+.helm-button.is-primary:hover {
+	background: color-mix(in srgb, var(--accent) 86%, #ffffff);
+}
+.helm-button-icon {
+	display: grid;
+}
+.helm-button-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.helm-chip {
+	height: 30px;
+	padding: 0 11px;
+	border-radius: 999px;
+	font-size: 12px;
+	color: #b4b4b4;
+	background: none;
+	box-shadow: inset 0 0 0 1px var(--hair);
+	cursor: pointer;
+	transition:
+		color var(--duration-quick) var(--ease-smooth-out),
+		background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-chip:hover {
+	color: #f0f0f0;
+	background: rgba(255, 255, 255, 0.06);
+}
+
+/* The must-win: the one line the day is for. */
+.helm-must {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 13px;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.04);
+	box-shadow: inset 0 0 0 1px var(--hair);
+}
+.helm-must-mark {
+	display: grid;
+	flex-shrink: 0;
+	color: var(--accent);
+}
+.helm-must-mark svg {
+	width: 18px;
+	height: 18px;
+}
+.helm-must-text {
+	min-width: 0;
+	font-size: 14.5px;
+	font-weight: 600;
+	letter-spacing: -0.15px;
+	color: #f2f2f2;
+}
+.helm-must.is-empty .helm-must-mark {
+	color: #6a6a6a;
+}
+.helm-must.is-empty .helm-must-text {
+	font-weight: 500;
+	color: #8a8a8a;
+}
+
+.helm-blocks {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.helm-block {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 46px;
+	padding: 4px 2px 4px 4px;
+	border-bottom: 1px solid var(--line);
+}
+.helm-block:last-child {
+	border-bottom: 0;
+}
+.helm-block-mark {
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	color: #7c7c7c;
+}
+.helm-block-mark svg {
+	width: 15px;
+	height: 15px;
+}
+.helm-block.is-running .helm-block-mark {
+	color: #0b0b0b;
+	background: var(--accent);
+}
+.helm-block.is-paused .helm-block-mark {
+	color: var(--accent);
+	box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.helm-block-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.helm-block-title {
+	font-size: 13.5px;
+	font-weight: 550;
+	color: #ededed;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-block.is-done .helm-block-title,
+.helm-block.is-skipped .helm-block-title {
+	color: #8a8a8a;
+	text-decoration: line-through;
+	text-decoration-color: #555555;
+}
+.helm-block-sub {
+	font-size: 11.5px;
+	color: #8a8a8a;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-time {
+	flex-shrink: 0;
+	font-size: 15px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	color: var(--accent);
+}
+.helm-block.is-paused .helm-time {
+	color: #9a9a9a;
+}
+.helm-icon-button,
+.helm-ask-send {
+	display: grid;
+	place-items: center;
+	width: 30px;
+	height: 30px;
+	flex-shrink: 0;
+	padding: 0;
+	border-radius: 50%;
+	color: #d8d8d8;
+	background: rgba(255, 255, 255, 0.07);
+	box-shadow: inset 0 0 0 1px var(--hair);
+	cursor: pointer;
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-icon-button:hover,
+.helm-ask-send:hover {
+	background: rgba(255, 255, 255, 0.13);
+}
+.helm-icon-button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.helm-icon-button svg,
+.helm-ask-send svg {
+	width: 15px;
+	height: 15px;
+}
+.helm-none {
+	padding: 12px 4px;
+	font-size: 13px;
+	color: #8a8a8a;
+}
+/* The last reading stays; this says why it may be old. */
+.helm-error {
+	margin: 0;
+	font-size: 12px;
+	color: var(--warn);
+}
+
+/* The Ask line. ⚠️ Outside the redrawn part — see HelmScreen. */
+.helm-ask {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 4px 4px 13px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.05);
+	box-shadow: inset 0 0 0 1px var(--hair);
+	transition: box-shadow var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-ask:focus-within {
+	box-shadow: inset 0 0 0 1px var(--accent);
+}
+.helm-ask-field {
+	flex: 1;
+	min-width: 0;
+	height: 32px;
+	border: 0;
+	outline: none;
+	background: none;
+	font-size: 13px;
+	color: #f0f0f0;
+}
+.helm-ask-field::placeholder {
+	color: #7a7a7a;
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .helm-nudge {
+		animation: none;
+	}
+}
+html[data-motion='never'] .helm-nudge {
+	animation: none;
 }

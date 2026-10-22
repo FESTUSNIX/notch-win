@@ -809,6 +809,11 @@ hairlines, no section headings, no cards around events.
     editor fullscreen and hides the island all day. It is kept in a separate
     atomic from `config.chrome_hidden`: one is a preference that survives a
     restart, the other a condition that clears itself.
+    ⚠️ **A third atomic overrides both: `NUDGE_UP`.** While a Guardian nudge
+    from Helm is unread (`helm.rs`), the chrome stays up over a full-screen app
+    and over a manual hide, and a new nudge re-asserts topmost. That was the
+    owner's call: nudges must not be lost. It clears itself when the nudge is
+    read, so nothing about the two hide states changes for good.
 25. **Switching the audio output goes through `IPolicyConfig`**, which is
     undocumented — there has never been a public API. The vtable in audio.rs is
     declared by hand and **the ten reserved slots are load-bearing**: they exist
@@ -5063,3 +5068,36 @@ The two halves were the same fault.
       (`position: absolute; inset: 0`), and a lyric line given that class sat on
       top of the column at the full height of the box. It is the second time
       that name has collided in this page.
+ 773. ⚠️ **`hover()` is called every 100ms while the pointer is on the island,
+      not once per crossing.** `hover.rs` keeps emitting `tasks:hover` for as
+      long as the pointer is over a mask, so anything in `hover()` that
+      re-arms a timer on every call is a timer that never fires. The glance
+      shipped exactly that way — a 140ms intent delay reset every 100ms — and
+      never appeared, with no error anywhere. `glanceWant` holds where the
+      pending timer is heading; it is only re-armed when that changes.
+ 774. **Ambient mode's photographic look is a LENS over the scene, not detail in
+      it** (`ambient-lens.ts`): bloom (a quarter-size frame cubed by
+      multiplying it by itself — 2D canvas has no threshold — then blurred and
+      SCREENED), 24fps film grain, a soft-light warm/cool grade and a vignette,
+      all driven once a second from the sky. Bloom is dimmer by day on purpose:
+      everything in a daylit frame is bright, and a lamp-tuned bloom turns noon
+      into haze. The colour wash does not bloom; your own video does, lightly.
+ 775. **A raindrop on the glass is a lens holding the view, upside down**
+      (`lensDrop`): a clipped, flipped, shrunk sample of the FAR canvas, then a
+      dark rim, a caustic and a highlight. ⚠️ The 210 still drops are rendered
+      into their own canvas a few times a second, not every frame — 200-odd
+      clipped image draws per frame was the most expensive thing on the page.
+      ⚠️ Drops under ~1.3 units skip the lens (a bead and a shadow) and the
+      size spread is skewed large on purpose: at 1–5 units every drop was a dot
+      and the refraction, the one thing that says "rainy window", was invisible.
+      The city's water reflection draws the far canvas onto ITSELF in strips;
+      that is defined to copy first, and the rows read are all above the
+      waterline the strips write to.
+ 776. **The glance has ONE inset, on every side, and the cover fills what it
+      leaves.** `--glance-pad` (14px) is the padding all round; the cover is
+      `height: 100%` with `aspect-ratio: 1`, and the controls sit on the bottom
+      edge by `margin-top: auto`. So cover-left, ambient-key-right and both
+      bottoms all measure the same — verified at 14/14/14/14 in a rendered
+      glance. Corners are CONCENTRIC: `--glance-curl` (the shape's 25px bottom
+      curl, `islandGlanceCurl`) minus the inset. Change `islandGlanceThin` or
+      `islandGlanceCurl` in layout.ts and `--glance-curl` must follow.

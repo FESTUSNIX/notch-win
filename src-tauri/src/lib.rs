@@ -17,6 +17,7 @@ mod hover;
 mod media;
 mod dragout;
 mod guard;
+mod helm;
 mod dropprobe;
 mod log;
 mod model;
@@ -503,6 +504,7 @@ pub fn run() {
         .manage(calendar::CalendarState::default())
         .manage(shortcuts::ShortcutState_::default())
         .manage(apptime::AppTimeState::default())
+        .manage(helm::HelmState::default())
         .manage(system::Watched::default())
         .manage(Settings(Mutex::new(settings)))
         .invoke_handler(tauri::generate_handler![
@@ -583,6 +585,13 @@ pub fn run() {
             crypto::connect_binance,
             crypto::disconnect_binance,
             crypto::binance_connected,
+            helm::get_helm,
+            helm::helm_connected,
+            helm::connect_helm,
+            helm::disconnect_helm,
+            helm::helm_act,
+            helm::helm_open,
+            helm::open_helm_chat,
             crypto::set_wallet_quote,
             weather::get_weather,
             lyrics::get_lyrics,
@@ -740,6 +749,7 @@ pub fn run() {
             ring::spawn(app.handle().clone());
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
+            helm::spawn(app.handle().clone());
             system::spawn(app.handle().clone());
             // Last, so a stolen key combination cannot stop the rest of setup.
             if let Err(message) = shortcuts::setup(app.handle()) {

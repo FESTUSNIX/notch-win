@@ -18,6 +18,7 @@ import { lineAt, parseLrc, worth, type Line } from "./lyrics";
 import { skyAt, type Sky, type SkyChoice, type WeatherChoice } from "./ambient-sky.ts";
 import { paletteOf, SCENE_ORDER, SCENES, type Canvases } from "./ambient-scenes.ts";
 import { paintIcon, type TaskIcon } from "./task-icons";
+import { Lens } from "./ambient-lens.ts";
 import { onSystemMotionChange, setMotion, still } from "./motion-pref";
 import "./ambient.css";
 
@@ -232,6 +233,7 @@ function refreshSky() {
 const far = $<HTMLCanvasElement>("far"), near = $<HTMLCanvasElement>("near");
 const canvases: Canvases = { far: far.getContext("2d")!, near: near.getContext("2d")!, W: 0, H: 0, FW: 0, FH: 0, S: 1 };
 const built = new Set<string>();
+const lens = new Lens($<HTMLCanvasElement>("bloom"), $("grain"), stage);
 
 function size() {
   /* ⚠️ Capped. A 4K monitor at 200% would otherwise be a 7680-pixel canvas
@@ -242,6 +244,7 @@ function size() {
   Object.assign(canvases, { W, H, S: W / 1000, FW: Math.round(W / 3), FH: Math.round(H / 3) });
   near.width = W; near.height = H;
   far.width = canvases.FW; far.height = canvases.FH;
+  lens.size(W, H);
   built.clear();
 }
 
@@ -298,7 +301,7 @@ function tick(now: number) {
   const dt = last ? Math.min(0.1, (now - last) / 1000) : 0.016;
   last = now;
   clockT += dt;
-  if (now - skyAtT > 1000) { skyAtT = now; refreshSky(); updateTimes(); }
+  if (now - skyAtT > 1000) { skyAtT = now; refreshSky(); updateTimes(); lens.mood(sky, isOwn(choices.scene)); }
   placeLyrics();
   loopVideo();
   const calm = still();
@@ -307,6 +310,16 @@ function tick(now: number) {
     if (!built.has(s.id)) { s.build(canvases); built.add(s.id); }
     s.draw(canvases, sky, clockT, calm ? 0 : dt, { palette });
     if (calm) built.add("drawn");
+  }
+  /* The lens over whatever is up. Your own scene blooms from its own frame;
+   * the colour wash does not bloom at all — it is already nothing but glow. */
+  const own = isOwn(choices.scene);
+  if (!calm || !built.has("lensed")) {
+    const src: CanvasImageSource[] = own
+      ? [activeVideo ?? stillImg]
+      : [far, near];
+    if (stage.dataset.scene !== "artwork") lens.frame(src, now, !calm);
+    if (calm) built.add("lensed");
   }
   frame = requestAnimationFrame(tick);
 }

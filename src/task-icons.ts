@@ -14,6 +14,7 @@ import {
   KeyboardIcon, ArrowExpand01Icon, RepeatIcon, RepeatOne01Icon, LayoutTwoColumnIcon, TextFontIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
   Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon, ShuffleIcon,
+  Shield01Icon,
 } from "@hugeicons/core-free-icons";
 
 /* ── The agents' own marks ──────────────────────────────────
@@ -151,6 +152,8 @@ const icons = {
      TXT printed inside it — at sixteen pixels beside a speaker that reads as
      a document, not as words being sung. */
   words: SubtitleIcon, shuffle: ShuffleIcon,
+  // Helm: the Guardian, the same shield Helm itself uses for it.
+  guardian: Shield01Icon,
   // Whose agent it is. See the marks above.
   claude: CLAUDE_MARK,
   codex: CODEX_MARK,

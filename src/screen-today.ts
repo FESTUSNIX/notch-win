@@ -94,6 +94,9 @@ export class TodayScreen {
   private writable = false;
 
   readonly focusTimer: FocusTimer;
+  /** Set by the shell while Helm is connected: Focus on a task starts a Helm
+   *  block instead of the local timer, and returns true when it did. */
+  handOff: ((task: Task) => boolean) | null = null;
   private composer!: HTMLFormElement;
   private title!: HTMLInputElement;
 
@@ -388,7 +391,10 @@ export class TodayScreen {
     this.writable = !frozen;
 
     const drawn = renderDay(this.list, this.doneTarget, shown, {
-      focus: task => this.focusTimer.start(task),
+      /* ⚠️ Helm first, when it is connected: a focus session there is a Helm
+       * block, with its reward and its time logged, rather than a timer that
+       * only this machine knows about. See `handOff`. */
+      focus: task => { if (!this.handOff?.(task)) this.focusTimer.start(task); },
       focused: session ? `${session.projectId}:${session.id}` : undefined,
       view: this.view, list: this.listId, disabled: frozen,
       settling: this.settling, leaving: this.leaving, expanded: this.expanded, collapsed: this.collapsed,

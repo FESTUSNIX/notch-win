@@ -76,6 +76,28 @@ button, input { font: inherit; }
 .own-i.on { animation: drift 70s ease-in-out infinite alternate; }
 @keyframes drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
 
+/* ── The lens (ambient-lens.ts) ──────────────────────────────────────────
+   Numbers set once a second from the sky: `--bloom`, `--grade-warm`,
+   `--grade-cool`, `--grain`. */
+.bloom, .lens, .lens > i { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* A quarter-size frame, thresholded in script, blurred here and SCREENED —
+   screen only ever brightens, so the glow cannot grey the dark. */
+.bloom { filter: blur(1.6cqw) saturate(1.15); mix-blend-mode: screen; opacity: var(--bloom, 0.45); transform: scale(1.04); }
+.lens > i { display: block; }
+/* Warm where the room's light is (low left), cool out in the night (top
+   right). `soft-light` tints without greying. */
+.grade {
+  mix-blend-mode: soft-light;
+  background:
+    radial-gradient(70% 80% at 12% 80%, rgba(255, 150, 70, var(--grade-warm, 0.2)), transparent 70%),
+    radial-gradient(80% 70% at 88% 12%, rgba(60, 110, 210, var(--grade-cool, 0.14)), transparent 70%);
+}
+.vignette { background: radial-gradient(120% 95% at 50% 48%, transparent 52%, rgba(0, 0, 0, 0.5) 100%); }
+/* ⚠️ The tile's size is fixed in CSS pixels: grain is a property of the
+   "film", not of the room, so it must not scale with the canvas. */
+.grain { background-repeat: repeat; background-size: 200px 200px; opacity: var(--grain, 0.07); }
+.stage[data-scene="artwork"] .bloom { display: none; }
+
 .shade { position: absolute; inset: 0; pointer-events: none; transition: background var(--duration-very-slow) var(--ease-smooth-out); }
 .stage[data-layout="side"] .shade {
   background:

@@ -248,6 +248,36 @@ fact; together they are the question you actually had.
 App time lives here now rather than on System, where it never belonged: System
 is the machine's controls, and how long you spent in an editor is not a control.
 
+### Helm
+
+Helm is the owner's work OS (crm.hadastudios.com), and its Guardian runs the
+day. Connected in Settings → Connections with Helm's address and a device key
+made in Helm (Guardian → Devices → Connect codenotch), kept in Credential
+Manager and checked before it is saved. `src-tauri/src/helm.rs` and
+`src/screen-helm.ts`.
+
+- **The Helm screen**: the must-win, today's focus blocks with Start, Pause
+  and Done, and an Ask line. Read from `/api/desktop` every 20 s and at once
+  after an action; Helm applies its own rules (one block at a time, the reward
+  and the logged time when one is done). On the rail only while connected.
+- **Focus**: while Helm is connected, Focus on a task starts a Helm block of
+  that name rather than the local timer, and the running block takes the pill.
+- **Nudges**: an unread Guardian nudge claims the pill at 80, with its button
+  (Start the block, Check in, Close the day), Helm's quick replies and ×. It
+  plays the chosen sound, again once after three minutes if still unread, and
+  **keeps the chrome up over a full-screen app or a manual hide** until it is
+  read (`NUDGE_UP` in `shortcuts.rs`). While presenting, the pill says only
+  "Guardian".
+- **The chat**: Helm's own `/panel` in a window, docked at the right edge or
+  under the notch (a setting). It signs in once with Helm's email code; the
+  page gets no IPC, and anything outside the chat opens in the browser.
+- **Coding time**: while VS Code is in front and you're at the keyboard (app
+  time's idle rule), the workspace it has open is noted once a minute and sent
+  every three minutes, where it becomes coded time per project to confirm at
+  the end of the day. Only the workspace's name leaves the machine; the rest of
+  the title is dropped. Without a connection, the Claude Code hook's
+  `~/.helm/activity.json` is used for this alone.
+
 ### Not now
 
 Anything that asks for attention can be told to wait an hour — a waiting agent

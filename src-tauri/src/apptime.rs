@@ -184,6 +184,7 @@ pub fn spawn(app: AppHandle) {
                 continue;
             }
             let Some(exe) = foreground_exe() else { continue };
+            crate::helm::sample(&exe);
             let day = Local::now().format("%Y-%m-%d").to_string();
             let state = app.state::<AppTimeState>();
             let next = {

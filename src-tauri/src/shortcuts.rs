@@ -32,6 +32,29 @@ use crate::win;
 /// watched on Tuesday leaves the island hidden on Wednesday.
 static AUTO_HIDDEN: AtomicBool = AtomicBool::new(false);
 
+/// A Guardian nudge from Helm is waiting to be read.
+///
+/// ⚠️ It overrides BOTH reasons to be hidden, the full-screen one and the one
+/// asked for. Mateusz's call: a nudge must not be lost because a video was
+/// full-screen or the island had been put away. It lasts only while the nudge
+/// is unread; reading it (here or in Helm) puts things back as they were.
+static NUDGE_UP: AtomicBool = AtomicBool::new(false);
+
+/// Keep the chrome up while a nudge waits, and with `raise` lift it back over
+/// whatever went topmost after it (a borderless full-screen player).
+pub fn set_nudge_up(app: &AppHandle, up: bool, raise: bool) {
+    if NUDGE_UP.swap(up, Ordering::Relaxed) != up {
+        apply_visibility(app);
+    }
+    if up && raise {
+        for label in ["notch", "tasks"] {
+            if let Some(window) = app.get_webview_window(label) {
+                win::harden(&window);
+            }
+        }
+    }
+}
+
 
 
 /// Chosen to avoid what Windows and the usual editors already claim.
@@ -280,7 +303,7 @@ fn gesture(app: AppHandle, shortcut: String) {
 /// strip that reveals it again. The webview owns both, so there is nothing to
 /// wait for here.
 fn apply_visibility(app: &AppHandle) {
-    let hidden = crate::config::load().chrome_hidden || AUTO_HIDDEN.load(Ordering::Relaxed);
+    let hidden = (crate::config::load().chrome_hidden || AUTO_HIDDEN.load(Ordering::Relaxed)) && !NUDGE_UP.load(Ordering::Relaxed);
     for label in ["notch", "tasks"] {
         let Some(window) = app.get_webview_window(label) else { continue };
         if !window.is_visible().unwrap_or(true) {

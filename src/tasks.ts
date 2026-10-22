@@ -34,6 +34,7 @@ import { MediaScreen, MediaSource } from "./screen-media";
  * working in. That join is the whole feature. */
 import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
+import { HelmScreen, HelmSource } from "./screen-helm";
 import { TimerScreen } from "./screen-timer";
 import { DEFAULT_LENGTHS, phaseName, spokenEnd, type Countdown } from "./timer";
 import { Runs, counted, figureMs, running as runGoing, runName, type Run } from "./runs";
@@ -164,6 +165,9 @@ const WIDTH: Record<FixedScreen, number> = {
    * that belong together. This is about 540 CSS px — roughly what Windows
    * gives the notification itself. */
   notices: 1130,
+  /* Narrow like the notices: a nudge, a line of must-win and a short list of
+   * blocks, each read at a glance. */
+  helm: 1180,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -260,6 +264,7 @@ app.innerHTML = `<div id="notch-shell">
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
         <section class="screen" data-screen="timer" role="tabpanel" aria-label="Timer" hidden><div class="screen-body timer-body spans" id="timer-body"></div></section>
         <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
+        <section class="screen" data-screen="helm" role="tabpanel" aria-label="Helm" hidden><div class="screen-body scrolls" id="helm-body"></div></section>
         <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
@@ -517,6 +522,16 @@ const callScreen = new CallScreen(get("call-body"), callSource,
  * cannot stand. */
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
+const helmSource = new HelmSource(() => render(), (what, why) => say(what, why));
+const helmScreen = new HelmScreen(get("helm-body"), helmSource, surface);
+/* ⚠️ Helm blocks take over focus while Helm is connected (his call): one
+ * timer, one history, and the reward and the logged time keep working. The
+ * local timer is for when it is not. */
+today.handOff = task => {
+  if (!helmSource.connected) return false;
+  helmSource.startNew(task.title);
+  return true;
+};
 const timerScreen = new TimerScreen(get("timer-body"), runs, {
   lengths: () => lengths(),
   /* ⚠️ Writes the SAME preference the settings window writes. One stored
@@ -795,6 +810,7 @@ function stops(): RailStop[] {
      * nowhere for either to land. */
     hidden: (tab.name === "media" && !media.media.active)
       || (tab.name === "call" && !callSource.call.active)
+      || (tab.name === "helm" && !helmSource.connected)
       /* ⚠️ Off the rail unless you put it there. The bell in the header is
        * how you reach this, and the rail is for places you go on purpose —
        * see the note on TABS. It is still reorderable and switchable in
@@ -1175,11 +1191,15 @@ function paintBubble() {
 function claims(): (Activity | null)[] {
   return [
     noticeClaim(),
+    /* 80: under a toast that just went past, over a call and everything
+     * else. A nudge is waiting for an answer; see screen-helm.ts. */
+    helmSource.nudgeClaim(),
     callSource.activity(),
     timerClaim(),
     agentsScreen.activity(),
     system.activity(),
     today.activity(),
+    helmSource.blockClaim(),
     media.activity(),
     calendar.activity(),
     restingClaim(),
@@ -1483,8 +1503,11 @@ function render() {
   player.render();
   callScreen.render();
   notices.render();
+  helmScreen.render();
   timerScreen.render();
   paintHead();
+  // Helm disconnected while you were looking at it: same rule as the call.
+  if (!helmSource.connected && screen === "helm") show("home");
   /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
    * handle is the call ending while you are LOOKING at it, which would leave
    * the island on a screen that says nothing with no way to tell what
@@ -2504,6 +2527,7 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     event.preventDefault();
     if (today.escape()) return;
+    if (helmScreen.escape()) return;
     void surface.collapse();
     return;
   }
@@ -2872,6 +2896,7 @@ async function boot() {
   await notes.boot();
   await callSource.boot();
   await noticeSource.boot();
+  await helmSource.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();
@@ -2885,6 +2910,7 @@ async function boot() {
     agentsScreen.tick();
     callScreen.tick();
     notices.tick();
+    helmScreen.tick();
     timerScreen.tick();
     /* ⚠️ The player has a clock too, and until the lyrics arrived nothing
      * moved it: the screen redrew on events and once a minute, so the scrub

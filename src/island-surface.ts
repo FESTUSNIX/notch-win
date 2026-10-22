@@ -87,6 +87,8 @@ export class IslandSurface {
   private glanceable = false;
   private glanceOn = false;
   private glanceTimer = 0;
+  /** Where the pending intent timer is heading. See `hover()`. */
+  private glanceWant = false;
   /** Ambient mode is up: the island is covered, and must neither open nor
    *  glance under a player that is not even looking at it. */
   private ambient = false;
@@ -457,7 +459,12 @@ export class IslandSurface {
      * way — in, so the pill does not swell every time the pointer crosses the
      * top of the screen on its way somewhere; out, so grazing its edge while
      * reaching for a button does not fold it under the pointer. */
-    if (!this.openOnHover && this.glanceable && !this.open) {
+    /* ⚠️ Armed only when the WANTED state changes. hover.rs reports the
+     * pointer every 100ms for as long as it is on the island, and re-arming a
+     * 140ms timer on each report cancelled it every time — the glance never
+     * came up at all, and nothing said why. */
+    if (!this.openOnHover && this.glanceable && !this.open && value !== this.glanceWant) {
+      this.glanceWant = value;
       clearTimeout(this.glanceTimer);
       this.glanceTimer = window.setTimeout(() => this.setGlance(value), value ? 140 : 320);
     }
@@ -535,6 +542,7 @@ export class IslandSurface {
 
   private setGlance(on: boolean) {
     clearTimeout(this.glanceTimer);
+    this.glanceWant = on;
     if (this.glanceOn === on) return;
     this.glanceOn = on;
     const target = on ? 1 : 0;
