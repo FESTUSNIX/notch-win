@@ -1,4 +1,6 @@
 @import "./tokens.css";
+/* The kit's parts, before everything that might want to adjust one of them. */
+@import "./kit.css";
 
 :root {
 	color-scheme: dark;
@@ -10544,6 +10546,221 @@ html[data-motion='never'] *::after {
 	}
 }
 
+/* ⚠️ A `div` with role=button since 28 Oct (a finished run asks "done?" on
+   it, with buttons of its own) — so what a <button> gave it for free is said
+   here: the pointer, the ink, and a focus ring for the keyboard. */
+.agent-card {
+	cursor: pointer;
+	color: inherit;
+	outline: none;
+}
+.agent-card:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Its Helm project and the request it is on. ⚠️ Flat inside the card — a
+   tile in a tile is what the panel rules forbid (AGENTS 567). */
+.agent-helm {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	margin-top: 1px;
+}
+.agent-helm-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.3;
+}
+.agent-helm-project {
+	font-size: 11.5px;
+	color: #a9a9a9;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.agent-helm-request {
+	font-size: 12.5px;
+	font-weight: 500;
+	color: #ececec;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* "<request> done?" — the card's live line while a finished run asks. */
+.agent-ask {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	min-width: 0;
+	cursor: default;
+}
+.agent-ask-q {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.35;
+	color: #d6d6d6;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.agent-ask-title {
+	font-weight: 600;
+	color: #fff;
+}
+.agent-ask-acts {
+	display: flex;
+	gap: 6px;
+}
+.agent-ask.is-compact .agent-ask-acts .hp-btn {
+	flex: 1;
+	padding-inline: 8px;
+}
+.agent-ask-said {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--good);
+	animation: agent-step-in var(--duration-fast) var(--ease-smooth-out);
+}
+.agent-ask-mark {
+	display: grid;
+}
+.agent-ask-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.agent-ask.is-compact .hp-log-acts .hp-btn {
+	flex: 1;
+	padding-inline: 8px;
+}
+
+/* The detail's Helm panel: the project, the request, the question, and the
+   project's other requests a press away from Claude. */
+.agent-helm-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin-top: 18px;
+}
+.agent-helm-head {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+	min-width: 0;
+}
+.agent-helm-who {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	line-height: 1.3;
+}
+.agent-helm-name {
+	font-size: 12.5px;
+	color: #a9a9a9;
+}
+.agent-helm-on {
+	font-size: 15px;
+	font-weight: 600;
+	color: #f2f2f2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.agent-helm-est {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	flex-shrink: 0;
+	padding: 3px 9px 3px 7px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #bdbdbd;
+	background: var(--tile);
+	box-shadow: var(--hairline);
+	cursor: default;
+}
+/* ⚠️ The question in a WELL on the detail: it is the screen's news, and the
+   well is what makes it one instrument rather than a sentence and two
+   buttons that happen to be near each other. */
+.agent-helm-panel > .agent-ask {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 11px 12px 11px 15px;
+	border-radius: 14px;
+	background: rgba(0, 0, 0, 0.3);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.045),
+		inset 0 2px 6px -3px rgba(0, 0, 0, 0.9);
+}
+.agent-helm-panel > .agent-ask .agent-ask-q {
+	font-size: 14px;
+}
+.agent-helm-panel > .agent-ask .hp-log {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px 16px;
+}
+.agent-helm-panel > .agent-ask .hp-log-acts {
+	margin-left: auto;
+}
+.agent-helm-est-mark {
+	display: grid;
+	color: #8f8f8f;
+}
+.agent-helm-est-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.agent-helm-requests {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.agent-helm-requests > .agent-panel-title {
+	margin: 2px 0 5px;
+}
+.agent-helm-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 40px;
+	padding: 4px 5px 4px 12px;
+	border-radius: 11px;
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.agent-helm-row:hover {
+	background-color: var(--tile);
+	box-shadow: var(--hairline), var(--gloss);
+}
+.agent-helm-row-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 13.5px;
+	color: #dedede;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.agent-helm-row-est {
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #a3a3a3;
+}
+
 /* ── The detail ───────────────────────────────────────
    ⚠️ Room, deliberately. Everything here is a reading somebody leaned in to
    take — a checklist, a sentence, a pair of figures — and the version of this
@@ -11819,6 +12036,164 @@ html[data-motion='never'].dragging-files #drop-veil {
 .palette-field::placeholder {
 	color: #4f4f4f;
 	font-weight: 400;
+}
+
+/* ── Quick capture (helm-capture.ts) ──────────────────────────────────────
+   One line for the Guardian, and its answer. ⚠️ The bar IS the panel while
+   it is up (`setSolo` sizes the island to it), so the header and the screen
+   are taken out of the layout entirely — not hidden in place the way the
+   palette hides them, because the island must not keep their height. */
+#island-expanded.is-capturing > .island-head,
+#island-expanded.is-capturing > .screens,
+#island-expanded.is-capturing > #surface-options {
+	display: none;
+}
+.capture {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 12px;
+	flex-shrink: 0;
+	animation: palette-in var(--duration-fast) var(--ease-smooth-out);
+}
+.capture[hidden] {
+	display: none;
+}
+/* The bar is the kit's composer (kit.css) — the same well as the Guardian's,
+   a size up, because here it is the whole panel. */
+.capture-bar .k-well {
+	padding: 5px 6px 5px 6px;
+	border-radius: 18px;
+}
+.capture-bar .k-input,
+.capture-bar .k-mirror {
+	font-size: 16px;
+	line-height: 22px;
+	padding: 7px 6px;
+}
+.capture-answer {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 4px 8px 2px 15px;
+	animation: agent-step-in var(--duration-fast) var(--ease-smooth-out);
+}
+.capture-answer[hidden] {
+	display: none;
+}
+.capture-line {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	min-width: 0;
+}
+.capture-line-mark {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 16px;
+	height: 20px;
+	color: var(--good);
+}
+.capture-line-mark svg {
+	width: 15px;
+	height: 15px;
+}
+/* Thinking: a breathing dot, like a working agent's pip. */
+.capture-line-mark.is-thinking::before {
+	content: '';
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: agent-breathe 1.4s var(--ease-in-out) infinite;
+}
+.capture-text {
+	margin: 0;
+	min-width: 0;
+	font-size: 13.5px;
+	line-height: 1.5;
+	color: #e8e8e8;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.capture-text.is-status {
+	color: #a9a9a9;
+}
+.capture-line.is-error .capture-line-mark,
+.capture-line.is-error .capture-text {
+	color: var(--warn);
+}
+.capture-receipts {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0;
+	padding: 0 0 0 26px;
+	list-style: none;
+}
+.capture-receipt {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 30px;
+	font-size: 13px;
+	color: #cfcfcf;
+}
+.capture-receipt-mark {
+	display: grid;
+	color: var(--good);
+}
+.capture-receipt-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.capture-receipt-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.capture-receipt.is-undone .capture-receipt-label {
+	color: #7a7a7a;
+	text-decoration: line-through;
+}
+.capture-receipt.is-undone .capture-receipt-mark {
+	color: #6a6a6a;
+}
+.capture-receipt-state {
+	font-size: 12px;
+	color: #8f8f8f;
+}
+.capture-undo {
+	height: 28px;
+	padding: 0 11px;
+	border-radius: 9px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: #c9c9c9;
+	box-shadow: var(--hairline);
+	flex-shrink: 0;
+}
+.capture-undo:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss);
+}
+.capture-undo:active:not(:disabled) {
+	background: var(--tile-on);
+	scale: 0.96;
+	transition-duration: 90ms;
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .capture,
+	html:not([data-motion='always']) .capture-answer,
+	html:not([data-motion='always']) .capture-line-mark.is-thinking::before {
+		animation: none;
+	}
 }
 
 /* ⚠️ `scrollbar-gutter` both-edges, or the scrollbar's width shifts every row
@@ -14670,339 +15045,2971 @@ html[data-motion='never'] .notice-row {
 	color: #6f6f6f;
 }
 
-/* ── Helm ─────────────────────────────────────────────────────────────────
-   The must-win, the focus blocks and the Guardian's nudges, from Helm. A
-   column of things read at a glance, like the notices: a nudge on top (it is
-   waiting for an answer), then the day, then the Ask line that opens the
-   chat. See screen-helm.ts. */
-#helm-body {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-.helm-content {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-.helm-empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 10px;
-	padding: 14px 0;
-}
+/* ── Helm's Today ─────────────────────────────────────────────────────────
+   Today's own parts (`.day-head`, `.day-rail`, `.day-row`, `.check`,
+   `.task-focus`, `.day-empty`) with the hero and the composer as classes,
+   because both Todays are in the page at once and an id can only be one of
+   them. See screen-helm.ts.
 
-/* A nudge is a card with its answer on it. ⚠️ The accent edge is the one
-   thing on this screen in colour besides the running block: it is the part
-   asking for something. */
-.helm-nudge {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	padding: 12px 13px;
-	border-radius: 15px;
-	background-color: var(--tile);
-	box-shadow: var(--hairline), inset 3px 0 0 var(--accent);
-	animation: notice-in var(--duration-fast) var(--ease-smooth-out);
+   ⚠️ The refresh of 28 Oct, in Helm's order of weight: ONE hero (Now: its
+   face, its title at 19px, one bar holding the time and the actions), the
+   rows a step quieter (one line, a face, at most one chip), the needs strip
+   as objects, and the header's figures the quietest thing with a colour. No
+   grey meta line anywhere: the project is a face, lateness is a chip, a
+   length is a tabular figure. */
+
+/* ── The header: how much, and the day's figures ──
+   ⚠️ The head and the rail are WRAPPED, and so is the composer below. The
+   island measures a screen's direct children by `offsetHeight`, which leaves
+   out their margins — so the rail's 7px and the composer's 7px were missing
+   from every measurement and the panel came out 14px short, which is the list
+   scrolling with nothing below it but the fold, cut in half. Inside a wrapper
+   the margins are part of the wrapper's height. */
+.helm-top,
+.helm-foot {
+	flex-shrink: 0;
 }
-.helm-nudge-head {
+.helm-top[hidden],
+.helm-foot[hidden] {
+	display: none;
+}
+.helm-head {
+	min-height: 24px;
+}
+.helm-must {
 	display: flex;
 	align-items: center;
-	gap: 9px;
+	gap: 7px;
 	min-width: 0;
 }
-.helm-nudge-mark {
+.helm-must-mark {
 	display: grid;
-	place-items: center;
-	width: 26px;
-	height: 26px;
 	flex-shrink: 0;
-	border-radius: 8px;
-	color: var(--accent);
-	background: color-mix(in srgb, var(--accent) 14%, transparent);
+	color: var(--dim);
 }
-.helm-nudge-mark svg {
-	width: 16px;
-	height: 16px;
+.helm-must-mark svg {
+	width: 14px;
+	height: 14px;
 }
-.helm-nudge-title {
-	flex: 1;
+.helm-must-text {
 	min-width: 0;
-	font-size: 14px;
-	font-weight: 650;
-	letter-spacing: -0.15px;
-	color: #f4f4f4;
+	font-size: 13px;
+	font-weight: 600;
+	color: #e4e4e4;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
-.helm-nudge-shut {
-	display: grid;
-	place-items: center;
-	width: 24px;
-	height: 24px;
+.helm-must.is-empty .helm-must-text {
+	font-weight: 500;
+	color: var(--dim);
+}
+/* Done, his own time, the agents': a mark and a figure each. ⚠️ The marks
+   carry the meaning and the colour — iris is YOU, terracotta is Claude — so
+   the figures never need a word beside them. */
+.helm-figures {
+	display: flex;
+	align-items: center;
+	gap: 14px;
 	flex-shrink: 0;
-	padding: 0;
-	border-radius: 50%;
-	color: #8a8a8a;
-	background: rgba(255, 255, 255, 0.08);
-	box-shadow: inset 0 0 0 1px var(--hair);
-	transition: color var(--duration-quick) var(--ease-smooth-out);
 }
-.helm-nudge-shut:hover {
-	color: #f0f0f0;
+.helm-fig {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #dcdcdc;
+	cursor: default;
 }
-.helm-nudge-shut svg {
+.helm-fig[hidden] {
+	display: none;
+}
+.helm-fig b {
+	font-weight: 600;
+}
+.helm-fig-mark {
+	display: grid;
+}
+.helm-fig-mark svg {
 	width: 13px;
 	height: 13px;
 }
-.helm-nudge-body {
-	margin: 0;
-	font-size: 13px;
-	line-height: 1.5;
-	color: #c4c4c4;
+.helm-fig.is-done .helm-fig-mark {
+	color: var(--good);
 }
-.helm-nudge-acts {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
+.helm-fig.is-you {
+	color: var(--iris);
+}
+.helm-fig.is-agents {
+	color: var(--mark-claude);
 }
 
-.helm-button {
+/* ── What needs him ──
+   ⚠️ Objects, so raised (AGENTS 188): each one opens itself in Helm. One
+   line that scrolls sideways rather than wrapping, because a strip that grew
+   a second row would push Now down by a row every time a reminder arrived. */
+.helm-needs {
+	display: flex;
+	gap: 7px;
+	padding: 9px 15px 1px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	flex-shrink: 0;
+	scrollbar-width: none;
+}
+.helm-needs[hidden] {
+	display: none;
+}
+/* The end fades over a chip's width, so the cut one reads as "more", not as clipped. */
+.helm-needs.is-overflowing {
+	mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent);
+}
+.helm-need {
+	display: inline-flex;
+	align-items: stretch;
+	flex-shrink: 0;
+	height: 32px;
+	border-radius: 10px;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		box-shadow var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-need:hover {
+	background-color: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-2);
+}
+.helm-need-main {
 	display: inline-flex;
 	align-items: center;
+	gap: 7px;
+	padding: 0 11px 0 9px;
+	border-radius: 10px;
+	background: transparent;
+	color: #ececec;
+}
+.helm-need-main:hover {
+	background-color: transparent;
+}
+.helm-need-main:disabled {
+	opacity: 1;
+}
+.helm-need-main:active:not(:disabled) {
+	background: transparent;
+	scale: 0.97;
+	transition-duration: 90ms;
+}
+.helm-need-mark {
+	display: grid;
+	flex-shrink: 0;
+}
+.helm-need-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.helm-need.is-meeting .helm-need-mark {
+	color: var(--cool);
+}
+.helm-need.is-reminder .helm-need-mark {
+	color: var(--warn);
+}
+.helm-need.is-renewal .helm-need-mark {
+	color: var(--good);
+}
+.helm-need.is-request .helm-need-mark {
+	color: var(--iris);
+}
+.helm-need-title {
+	max-width: 190px;
+	font-size: 12.5px;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-need-side {
+	font-size: 12px;
+	font-weight: 600;
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.helm-need.is-late .helm-need-side {
+	color: var(--warn);
+}
+/* A meeting's Join: the second half of the same object, not a second one. */
+.helm-need-join {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0 11px 0 9px;
+	border-radius: 0 10px 10px 0;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--cool);
+	box-shadow: inset 1px 0 0 var(--hair);
+}
+.helm-need-join:hover {
+	background-color: color-mix(in srgb, var(--cool) 14%, transparent);
+}
+.helm-need-join:active:not(:disabled) {
+	background: color-mix(in srgb, var(--cool) 20%, transparent);
+}
+.helm-need-join .hp-btn-mark svg {
+	width: 13px;
+	height: 13px;
+}
+
+/* ── Now ── */
+.helm-hero {
+	margin: 0;
+	padding: 14px 16px 12px;
+	flex-shrink: 0;
+}
+.helm-hero[hidden] {
+	display: none;
+}
+.helm-now-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 13px;
+	min-width: 0;
+}
+.helm-now-face {
+	display: grid;
+	flex-shrink: 0;
+	margin-top: 1px;
+}
+.helm-now-text {
+	flex: 1;
+	min-width: 0;
+}
+.helm-now-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 9px;
+	min-width: 0;
+}
+.helm-hero-title {
+	min-width: 0;
+	font-size: 19px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+.helm-now-marks {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+}
+.helm-now-marks:empty {
+	display: none;
+}
+.helm-hero-sub {
+	margin-top: 2px;
+	font-size: 13px;
+	color: #a9a9a9;
+	white-space: pre;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.helm-hero-sub[hidden] {
+	display: none;
+}
+/* The Guardian's one line on why Now is first: under the title, aligned with
+   it rather than with the face, so it reads as part of the same block. */
+.helm-why {
+	display: flex;
+	align-items: flex-start;
+	gap: 7px;
+	margin: 9px 0 0 53px;
+	font-size: 13px;
+	line-height: 1.45;
+	color: #cfcfcf;
+}
+.helm-why[hidden] {
+	display: none;
+}
+.helm-why-mark {
+	display: grid;
+	flex-shrink: 0;
+	margin-top: 2px;
+	color: var(--accent);
+}
+.helm-why-mark svg {
+	width: 13px;
+	height: 13px;
+}
+/* The bar: the time against the estimate on the left, the actions on the
+   right. ⚠️ A WELL, recessed (Helm: "the key value sits on a sunken well"),
+   not a card — a raised box inside the panel is the nesting the panel rules
+   forbid, and the well is what says these are one instrument. */
+.helm-now-bar {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+	margin-top: 12px;
+	padding: 6px 6px 6px 8px;
+	border-radius: 13px;
+	background: rgba(0, 0, 0, 0.3);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.045),
+		inset 0 2px 6px -3px rgba(0, 0, 0, 0.9);
+}
+.helm-ring-wrap {
+	display: grid;
+	flex-shrink: 0;
+	width: 34px;
+	height: 34px;
+}
+.helm-ring-wrap[hidden] {
+	display: none;
+}
+.hp-ring {
+	width: 100%;
+	height: 100%;
+	rotate: -90deg;
+}
+.hp-ring circle {
+	fill: none;
+	stroke-width: 3.5;
+}
+.hp-ring .trk {
+	stroke: rgba(255, 255, 255, 0.16);
+}
+.hp-ring .arc {
+	stroke: var(--accent);
+	stroke-linecap: round;
+	transition: stroke-dashoffset 1s linear;
+}
+.helm-hero.is-paused:not(.is-idle) .hp-ring .arc {
+	stroke: #8e8e8e;
+}
+.helm-ring-wrap.is-over .hp-ring .arc {
+	stroke: var(--warn);
+}
+.helm-now-time {
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+	flex: 1;
+	min-width: 0;
+	font-variant-numeric: tabular-nums;
+}
+.helm-elapsed {
+	font-size: 17px;
+	font-weight: 500;
+	letter-spacing: -0.3px;
+	color: #f2f2f2;
+}
+.helm-hero.is-idle .helm-elapsed {
+	font-size: 15px;
+	color: #cfcfcf;
+}
+.helm-hero.is-paused:not(.is-idle) .helm-elapsed {
+	color: #a9a9a9;
+}
+.helm-of {
+	font-size: 13px;
+	color: #949494;
+}
+.helm-now-acts {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+.helm-now-acts > button {
+	display: inline-grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border-radius: 10px;
+	color: #b9b9b9;
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-now-acts > button[hidden] {
+	display: none;
+}
+.helm-now-acts > button svg {
+	width: 17px;
+	height: 17px;
+}
+.helm-now-acts > button:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+}
+.helm-now-acts > button:active:not(:disabled) {
+	background: var(--tile-on);
+	scale: 0.96;
+	transition-duration: 90ms;
+}
+.helm-claude {
+	color: var(--mark-claude) !important;
+}
+.helm-claude:hover {
+	background-color: color-mix(in srgb, var(--mark-claude) 16%, transparent) !important;
+}
+/* Pause, Resume, Start: an icon when it is the quiet one, an icon and a word
+   when it is the call. */
+.helm-toggle .helm-toggle-word {
+	display: none;
+}
+/* ⚠️ The ONE filled accent on the screen: Start (or Resume) before the
+   session, Done while it runs — see `paintNow`. */
+.helm-now-acts > button.is-primary {
+	order: 9;
+	width: auto;
+	min-width: 34px;
+	color: var(--on-accent);
+	background-color: var(--accent);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 62%);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+		inset 0 1px 0 rgba(255, 255, 255, 0.38),
+		0 1px 2px rgba(0, 0, 0, 0.5),
+		var(--glow-accent);
+}
+.helm-now-acts > button.is-primary:hover {
+	color: var(--on-accent);
+	background-color: var(--accent-hi);
+}
+.helm-now-acts > button.is-primary:active:not(:disabled) {
+	background-color: color-mix(in srgb, #000 7%, var(--accent));
+}
+.helm-toggle.is-primary {
+	display: inline-flex !important;
+	gap: 6px;
+	padding: 0 15px 0 12px !important;
+	border-radius: 999px !important;
+	font-size: 13px;
+	font-weight: 650;
+}
+.helm-toggle.is-primary .helm-toggle-word {
+	display: inline;
+}
+.helm-toggle .hp-btn-mark svg {
+	width: 15px;
+	height: 15px;
+}
+.helm-finish.is-primary {
+	border-radius: 50% !important;
+}
+
+/* ── The rows ──
+   One line each: what decides it (a tick, a fold, a `+`), the face, the
+   title, and at the end the chip and the length — which the row's actions
+   take the place of under the pointer, so the title keeps its full width. */
+/* ⚠️ `.focus-controls button` sets display, which beats the hidden attribute —
+   for Today's own focus hero, which shares the class. */
+.focus-controls button[hidden] {
+	display: none;
+}
+/* ⚠️ Positioned, so a row's offset is measured against the list it scrolls
+   in (AGENTS 505) when the fold brings its rows into view. */
+.helm-list {
+	position: relative;
+	--fade-top: 0px;
+	--fade-bottom: 0px;
+	mask-image: linear-gradient(180deg, transparent 0, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+}
+.helm-list.is-above {
+	--fade-top: 16px;
+}
+.helm-list.is-below {
+	--fade-bottom: 30px;
+}
+.day-row.helm-row {
+	gap: 11px;
+	min-height: 44px;
+	padding: 5px 8px 5px 9px;
+}
+.day-row.helm-row.nested {
+	min-height: 38px;
+	padding: 4px 8px 4px 42px;
+}
+.helm-row-main {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	flex: 1;
+	min-width: 0;
+}
+.helm-row .task-title {
+	display: block;
+	min-width: 0;
+	font-size: 14.5px;
+	line-height: 1.3;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: default;
+}
+.helm-row.nested .task-title {
+	font-size: 13.5px;
+	color: #dedede;
+}
+.day-row.is-suggested .task-title {
+	color: #d4d4d4;
+}
+
+.helm-row-pick {
+	display: grid;
+	flex-shrink: 0;
+	color: var(--accent);
+	opacity: 0.85;
+}
+.helm-row-pick svg {
+	width: 12px;
+	height: 12px;
+}
+/* The end of the row: the reading and the actions share one cell. */
+.helm-row-end {
+	display: grid;
+	flex-shrink: 0;
+	align-items: center;
+	justify-items: end;
+}
+.helm-row-meta,
+.helm-row-acts {
+	grid-area: 1 / 1;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-row-acts {
+	gap: 2px;
+	opacity: 0;
+	pointer-events: none;
+}
+.helm-row-acts:empty {
+	display: none;
+}
+.day-row.helm-row:hover .helm-row-acts,
+.day-row.helm-row:focus-within .helm-row-acts {
+	opacity: 1;
+	pointer-events: auto;
+}
+.day-row.helm-row:hover .helm-row-end:has(.helm-row-acts:not(:empty)) .helm-row-meta,
+.day-row.helm-row:focus-within .helm-row-end:has(.helm-row-acts:not(:empty)) .helm-row-meta {
+	opacity: 0;
+}
+.helm-row-due {
+	font-size: 12.5px;
+	color: #a3a3a3;
+	white-space: nowrap;
+}
+.helm-row-minutes {
+	min-width: 42px;
+	text-align: right;
+	font-size: 12.5px;
+	color: #a3a3a3;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.helm-row-acts .task-focus {
+	opacity: 1;
+}
+.helm-row-claude svg {
+	color: var(--mark-claude);
+}
+.helm-row-claude:hover {
+	background-color: color-mix(in srgb, var(--mark-claude) 16%, transparent);
+}
+/* A group's fold and a suggestion's `+` lead their row, so they stay in view
+   rather than appearing on hover like the row's other buttons. */
+.day-row .task-focus.helm-open,
+.day-row.is-suggested > .task-focus:first-child {
+	opacity: 1;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border-radius: 50%;
+}
+.day-row.is-suggested > .task-focus:first-child {
+	color: var(--accent);
+	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.day-row.is-suggested > .task-focus:first-child:hover {
+	background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.day-row.is-suggested > .task-focus:first-child svg {
+	width: 13px;
+	height: 13px;
+}
+.day-row .task-focus.helm-open {
+	color: #bdbdbd;
+}
+
+/* ── The chip: one per row, only for status, always with its word ── */
+.helm-chip {
+	display: inline-flex;
+	align-items: center;
+	height: 20px;
+	padding: 0 8px;
+	border-radius: 999px;
+	font-size: 11.5px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 0;
+	--tone: #c4c4c4;
+	color: var(--tone);
+	background: color-mix(in srgb, var(--tone) 13%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 24%, transparent);
+}
+.helm-chip.is-late {
+	--tone: var(--hot);
+}
+.helm-chip.is-today,
+.helm-chip.is-uncapped {
+	--tone: var(--warn);
+}
+.helm-chip.is-move {
+	--tone: var(--iris);
+}
+.helm-chip.is-wait {
+	--tone: #b9b9b9;
+}
+
+/* ── The fold between Today and the suggestions ── */
+
+.helm-open svg {
+	width: 14px;
+	height: 14px;
+	transition: rotate var(--duration-quick) var(--ease-smooth-out);
+}
+/* Folded, the chevron points at the title; open, down. */
+.helm-open:not(.is-open) svg {
+	rotate: -90deg;
+}
+
+/* Moved to tomorrow: a mark and a count, the sentence in its tooltip. */
+.helm-tomorrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-left: auto;
+	padding: 4px 6px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #a3a3a3;
+	cursor: default;
+}
+.helm-tomorrow-mark {
+	display: grid;
+}
+.helm-tomorrow-mark svg {
+	width: 13px;
+	height: 13px;
+}
+
+/* ── The composer, pinned at the foot ──
+   The kit's (kit.css). ⚠️ The foot is OPAQUE and the list ends above it: in
+   his screenshot the last row showed through a transparent field laid over
+   it — the list's fade ran into the composer, so the row read as passing
+   underneath. Now the list fades only where there is more, and the foot is
+   the island's own black. */
+.helm-foot {
+	position: relative;
+	padding: 4px 12px 12px;
+	background: #000;
+}
+/* The last reading stays; this says why it may be old. */
+.helm-error {
+	margin: 8px 9px 0;
+	font-size: 12.5px;
+	color: var(--warn);
+}
+
+/* ── The cockpit's shared parts (helm-parts.ts) ───────────────────────────
+   A project's face, Claude's small mark, the ring, the buttons and the
+   minutes to log — one look wherever they appear. */
+.hp-logo {
+	--hue: #9aa0ab;
+	position: relative;
+	display: inline-grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	overflow: hidden;
+	color: color-mix(in srgb, var(--hue) 72%, #fff);
+	background-color: color-mix(in srgb, var(--hue) 24%, #0c0c0c);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--hue) 34%, transparent),
+		var(--gloss);
+}
+.hp-logo.is-md {
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+}
+.hp-logo.is-lg {
+	width: 40px;
+	height: 40px;
+	border-radius: 11px;
+}
+/* ⚠️ The SLOT stays when there is nothing to put in it (AGENTS 725). */
+.hp-logo.is-blank {
+	background: transparent;
+	box-shadow: none;
+}
+/* ⚠️ A light plate under a logo: Helm's are drawn for a white page, and a
+   dark-on-transparent mark on this ground is a hole. A full-bleed logo covers
+   the plate entirely. */
+.hp-logo.has-logo {
+	background-color: #f4f4f5;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.hp-logo-img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+.hp-logo-letters {
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	line-height: 1;
+}
+.hp-logo.is-md .hp-logo-letters {
+	font-size: 12px;
+}
+.hp-logo.is-lg .hp-logo-letters {
+	font-size: 15px;
+}
+.hp-logo-glyph {
+	display: grid;
+	color: var(--hue);
+}
+.hp-logo-glyph svg {
+	width: 13px;
+	height: 13px;
+}
+.hp-logo.is-lg .hp-logo-glyph svg {
+	width: 19px;
+	height: 19px;
+}
+.hp-agent {
+	display: inline-grid;
+	place-items: center;
+	flex-shrink: 0;
+	color: var(--mark-claude);
+}
+.hp-agent svg {
+	width: 13px;
+	height: 13px;
+}
+
+/* Buttons with a word: the accent call, a ghost, and Claude's own. */
+.hp-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	gap: 6px;
 	height: 30px;
 	padding: 0 12px;
 	border-radius: 999px;
 	font-size: 12.5px;
 	font-weight: 600;
-	color: #e8e8e8;
-	background: rgba(255, 255, 255, 0.08);
-	box-shadow: inset 0 0 0 1px var(--hair);
-	cursor: pointer;
-	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+	white-space: nowrap;
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-quick) var(--ease-smooth-out);
 }
-.helm-button:hover {
-	background: rgba(255, 255, 255, 0.13);
+.hp-btn:active:not(:disabled) {
+	scale: 0.96;
+	transition-duration: 90ms;
 }
-.helm-button.is-primary {
-	color: #0b0b0b;
-	background: var(--accent);
-	box-shadow: none;
-}
-.helm-button.is-primary:hover {
-	background: color-mix(in srgb, var(--accent) 86%, #ffffff);
-}
-.helm-button-icon {
+.hp-btn-mark {
 	display: grid;
 }
-.helm-button-icon svg {
+.hp-btn-mark svg {
 	width: 14px;
 	height: 14px;
 }
-.helm-chip {
-	height: 30px;
-	padding: 0 11px;
-	border-radius: 999px;
-	font-size: 12px;
-	color: #b4b4b4;
-	background: none;
-	box-shadow: inset 0 0 0 1px var(--hair);
-	cursor: pointer;
-	transition:
-		color var(--duration-quick) var(--ease-smooth-out),
-		background-color var(--duration-quick) var(--ease-smooth-out);
+.hp-btn.is-primary {
+	padding: 0 13px 0 11px;
+	color: var(--on-accent);
+	background-color: var(--accent);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 62%);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+		inset 0 1px 0 rgba(255, 255, 255, 0.38),
+		0 1px 2px rgba(0, 0, 0, 0.5);
 }
-.helm-chip:hover {
-	color: #f0f0f0;
-	background: rgba(255, 255, 255, 0.06);
+.hp-btn.is-primary:hover {
+	background-color: var(--accent-hi);
 }
-
-/* The must-win: the one line the day is for. */
-.helm-must {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 10px 13px;
-	border-radius: 13px;
-	background: rgba(255, 255, 255, 0.04);
-	box-shadow: inset 0 0 0 1px var(--hair);
+.hp-btn.is-primary:active:not(:disabled) {
+	background-color: color-mix(in srgb, #000 7%, var(--accent));
 }
-.helm-must-mark {
-	display: grid;
-	flex-shrink: 0;
-	color: var(--accent);
+.hp-btn.is-ghost {
+	color: #c4c4c4;
 }
-.helm-must-mark svg {
-	width: 18px;
-	height: 18px;
+.hp-btn.is-ghost:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
 }
-.helm-must-text {
-	min-width: 0;
-	font-size: 14.5px;
-	font-weight: 600;
-	letter-spacing: -0.15px;
-	color: #f2f2f2;
+.hp-btn.is-ghost:active:not(:disabled) {
+	background: var(--tile-on);
 }
-.helm-must.is-empty .helm-must-mark {
-	color: #6a6a6a;
+.hp-btn.is-claude {
+	padding: 0 12px 0 10px;
+	color: var(--mark-claude);
+	background-color: color-mix(in srgb, var(--mark-claude) 12%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mark-claude) 26%, transparent);
 }
-.helm-must.is-empty .helm-must-text {
-	font-weight: 500;
-	color: #8a8a8a;
+.hp-btn.is-claude:hover {
+	background-color: color-mix(in srgb, var(--mark-claude) 20%, transparent);
+}
+.hp-btn.is-claude:active:not(:disabled) {
+	background: color-mix(in srgb, var(--mark-claude) 26%, transparent);
+}
+.hp-btn.is-claude .hp-btn-mark svg {
+	width: 13px;
+	height: 13px;
 }
 
-.helm-blocks {
+/* The minutes to log: a stepper (it RECEIVES input, so it is sunk), what the
+   time is made of, and Log. */
+.hp-log {
 	display: flex;
 	flex-direction: column;
-	margin: 0;
-	padding: 0;
-	list-style: none;
+	gap: 9px;
+	min-width: 0;
 }
-.helm-block {
+.hp-log-head {
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	min-height: 46px;
-	padding: 4px 2px 4px 4px;
-	border-bottom: 1px solid var(--line);
+	flex-wrap: wrap;
+	gap: 8px;
 }
-.helm-block:last-child {
-	border-bottom: 0;
+.hp-stepper {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+		inset 0 2px 5px -3px rgba(0, 0, 0, 0.9);
 }
-.helm-block-mark {
+.hp-step {
 	display: grid;
 	place-items: center;
 	width: 26px;
 	height: 26px;
-	flex-shrink: 0;
+	padding: 0;
 	border-radius: 50%;
-	color: #7c7c7c;
+	color: #c4c4c4;
 }
-.helm-block-mark svg {
-	width: 15px;
-	height: 15px;
+.hp-step svg {
+	width: 13px;
+	height: 13px;
 }
-.helm-block.is-running .helm-block-mark {
-	color: #0b0b0b;
-	background: var(--accent);
+.hp-step:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
 }
-.helm-block.is-paused .helm-block-mark {
+.hp-step:active:not(:disabled) {
+	background: var(--tile-on);
+	scale: 0.92;
+	transition-duration: 90ms;
+}
+.hp-log-value {
+	min-width: 66px;
+	text-align: center;
+	font-size: 14.5px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	color: #fff;
+}
+.hp-log-parts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 13px;
+}
+.hp-part {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #c9c9c9;
+	cursor: default;
+}
+.hp-part-mark {
+	display: grid;
+}
+.hp-part-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.hp-part.is-agent .hp-part-mark {
+	color: var(--mark-claude);
+}
+.hp-part.is-you .hp-part-mark {
+	color: var(--iris);
+}
+.hp-part.is-est .hp-part-mark {
+	color: #8f8f8f;
+}
+.hp-log-acts {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .hp-ring .arc,
+	html:not([data-motion='always']) .helm-row-acts,
+	html:not([data-motion='always']) .helm-row-meta {
+		transition: none;
+	}
+}
+
+/* ── The Guardian ─────────────────────────────────────────────────────────
+   The thread, with the box to write in pinned under it. ⚠️ The bubbles are
+   the only raised thing (the agents screen's `.agent-bubble`); his own words
+   sit on the right in the pressed tile, and everything a reply did — what it
+   changed, its cards — lies flat inside it. See screen-guardian.ts. */
+.g-thread {
+	padding: 4px 15px 8px;
+}
+.g-items {
+	display: flex;
+	flex-direction: column;
+}
+.g-day {
+	margin: 14px 0 8px;
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--dim);
+	text-align: center;
+}
+.g-day:first-child {
+	margin-top: 4px;
+}
+.g-msg {
+	display: flex;
+	margin-top: 8px;
+}
+.g-msg.is-me {
+	justify-content: flex-end;
+}
+
+.g-mine {
+	max-width: 80%;
+	padding: 9px 13px;
+	border-radius: 14px 14px 5px 14px;
+	background-color: var(--tile-on);
+	min-width: 0;
+}
+.g-text {
+	margin: 0;
+	font-size: 13.5px;
+	line-height: 1.55;
+	color: #dcdcdc;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+.g-mine .g-text {
+	color: #f2f2f2;
+}
+.g-md {
+	white-space: normal;
+}
+.g-md p,
+.g-md ul,
+.g-md ol {
+	margin: 0;
+}
+.g-md p + p,
+.g-md p + ul,
+.g-md ul + p {
+	margin-top: 6px;
+}
+.g-md:empty {
+	display: none;
+}
+.g-mine-shots {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+.g-mine-shots img {
+	width: 64px;
+	height: 64px;
+	object-fit: cover;
+	border-radius: 9px;
+}
+/* What it is doing while the reply is being written. */
+.g-status {
+	margin: 4px 0 0;
+	font-size: 12px;
+	font-style: italic;
+	color: #9a9a9a;
+}
+.g-status[hidden] {
+	display: none;
+}
+.g-quiet {
+	margin: 24px auto;
+	max-width: 300px;
+	text-align: center;
+	font-size: 12.5px;
+	line-height: 1.6;
+	color: var(--dim);
+}
+
+/* A nudge: its mark and title on one line, then what it said. */
+.g-nudge-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin-bottom: 3px;
+}
+.g-mark {
+	display: grid;
 	color: var(--accent);
-	box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-.helm-block-text {
+.g-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.g-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	color: #f2f2f2;
+}
+.g-acts {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 10px;
+}
+/* The nudge's own button: the screen's one accent call (the timer's `.tm-go`). */
+.g-go {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 13px 0 11px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--on-accent);
+	background-color: var(--accent);
+	box-shadow: var(--gloss);
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-quick) var(--ease-smooth-out);
+}
+.g-go:hover {
+	background-color: color-mix(in srgb, #fff 9%, var(--accent));
+}
+.g-go:active:not(:disabled) {
+	background-color: color-mix(in srgb, #000 7%, var(--accent));
+	scale: 0.96;
+	transition-duration: 90ms;
+}
+.g-go svg {
+	width: 14px;
+	height: 14px;
+}
+/* Quick replies and suggestions: grey, then ghost — after the one accent. */
+.g-chip {
+	height: 28px;
+	padding: 0 11px;
+	border-radius: 999px;
+	font-size: 12px;
+	color: #b4b4b4;
+	background: var(--tile);
+	box-shadow: var(--hairline);
+	flex-shrink: 0;
+	transition:
+		color var(--duration-quick) var(--ease-smooth-out),
+		background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.g-chip:hover {
+	color: #f0f0f0;
+	background: var(--tile-hi);
+}
+.g-chip:active:not(:disabled) {
+	scale: 0.96;
+	transition-duration: 90ms;
+}
+.g-chips {
+	display: flex;
+	gap: 6px;
+	padding: 0 16px 6px;
+	overflow-x: auto;
+	flex-shrink: 0;
+	scrollbar-width: none;
+}
+.g-chips:empty {
+	display: none;
+}
+
+/* What a reply changed: quiet lines, each with its way back. */
+.g-receipts {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+.g-receipt {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 26px;
+	font-size: 12.5px;
+	color: #bdbdbd;
+}
+.g-receipt-icon {
+	display: grid;
+	color: var(--good);
+}
+.g-receipt-icon svg {
+	width: 13px;
+	height: 13px;
+}
+.g-receipt-label {
 	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-receipt.is-undone .g-receipt-label {
+	color: #777;
+	text-decoration: line-through;
+}
+.g-receipt.is-undone .g-receipt-icon {
+	color: #666;
+}
+.g-receipt-state {
+	font-size: 11px;
+	color: #777;
+}
+.g-undo {
+	height: 24px;
+	padding: 0 9px;
+	border-radius: 8px;
+	font-size: 11.5px;
+	color: #9a9a9a;
+	flex-shrink: 0;
+}
+.g-undo:hover {
+	color: #fff;
+	background: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss);
+}
+
+/* Its cards, flat inside the reply: a title line and rows. */
+.g-card {
+	margin-top: 10px;
+	padding-top: 9px;
+	border-top: 1px solid var(--hair);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.g-card-title {
+	margin: 0 0 4px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #cfcfcf;
+}
+.g-card-subject {
+	margin: 0;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: #dcdcdc;
+}
+
+.g-card-side {
+	flex-shrink: 0;
+	color: #8a8a8a;
+	font-variant-numeric: tabular-nums;
+}
+.g-figures {
+	display: flex;
+	gap: 18px;
+	margin-bottom: 4px;
+}
+.g-figure {
+	display: flex;
+	flex-direction: column;
+}
+.g-figure b {
+	font-size: 14px;
+	font-weight: 600;
+	color: #f0f0f0;
+	font-variant-numeric: tabular-nums;
+}
+.g-figure span {
+	font-size: 10.5px;
+	color: #8a8a8a;
+}
+.g-draft {
+	margin: 4px 0 6px;
+	padding: 9px 11px;
+	border-radius: 10px;
+	background: rgba(0, 0, 0, 0.26);
+	box-shadow: inset 0 0 0 1px var(--hair);
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: #d6d6d6;
+	white-space: pre-wrap;
+}
+.g-card .g-undo {
+	align-self: flex-start;
+}
+/* The cards of 28 Oct: a time suggestion with Log, a reminder, a renewal.
+   Flat inside the reply like the others; the head is a mark and a title. */
+.g-card-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-width: 0;
+}
+.g-card-head .g-card-title {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	font-size: 13px;
+	color: #ececec;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-card-mark {
+	display: grid;
+	flex-shrink: 0;
+	color: var(--accent);
+}
+.g-card-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.g-card.is-time .g-card-mark {
+	color: var(--iris);
+}
+.g-card.is-reminder .g-card-mark {
+	color: var(--warn);
+}
+.g-card.is-renewal .g-card-mark {
+	color: var(--good);
+}
+.g-card-mark.is-late {
+	color: var(--hot) !important;
+}
+.g-card-mark.is-good {
+	color: var(--good);
+}
+/* In a reply there is width to spare, so the minutes, what they are made of
+   and Log sit on one line. */
+.g-card .hp-log {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 16px;
+	margin-top: 8px;
+}
+.g-card .hp-log-acts {
+	margin-left: auto;
+}
+
+.g-card-said {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin: 8px 0 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--good);
+}
+/* Open in Helm: a door at the end of the row, not a row of its own — the
+   card's subject is the thing, and a labelled button under every one doubled
+   each card's height to say the same three words. */
+
+/* ⚠️ The time card sits under a hairline like every card, and its own Log
+   is the one filled button in the reply — the nudge's Start is the only other
+   one, and they are never in the same bubble. */
+
+/* Pasted pictures, waiting above the box. */
+
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .g-go,
+	html:not([data-motion='always']) .g-chip {
+		transition: none;
+	}
+}
+
+/* ══ Round 2 (28 Oct): the kit on Today, the Guardian and the Agents screen ══
+   The parts themselves are in kit.css; this is where each screen places them.
+   ⚠️ After the round-1 rules on purpose: where a selector is restated here
+   (`.g-card`, `.g-text`, `.g-receipt`…) this is the one that wins, and the
+   round-1 values it replaces were removed where they would have fought. */
+
+/* ── Today's blocks ────────────────────────────────────────────────────── */
+.helm-head {
+	gap: 10px;
+}
+.helm-head .helm-must {
+	flex: 1;
+}
+.helm-blocks-anchor {
+	position: relative;
+	flex-shrink: 0;
+	margin-right: -6px;
+}
+.helm-blocks-button {
+	width: 28px;
+	height: 28px;
+	color: #a9a9a9;
+}
+.helm-blocks-button svg {
+	width: 16px;
+	height: 16px;
+}
+.helm-blocks-button.is-open {
+	color: #fff;
+	background-color: var(--tile-on);
+}
+.helm-list {
+	padding: 6px 10px 10px;
+}
+.helm-block:not([hidden]) ~ .helm-block:not([hidden]) {
+	margin-top: 4px;
+}
+.helm-block > .k-block-body {
+	padding-bottom: 4px;
+}
+/* Now is the hero: its block header is quiet, the hero under it is not. */
+.helm-block.is-now .helm-hero {
+	padding: 4px 6px 6px;
+}
+.helm-block.is-now .helm-now-bar {
+	margin-top: 12px;
+}
+.helm-block .helm-needs {
+	padding: 2px 4px 4px;
+}
+.helm-block.is-suggested .helm-tomorrow {
+	margin-left: 0;
+}
+/* The live sessions, one line each. */
+.helm-agents {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 0 0 2px;
+}
+.helm-agent {
+	display: grid;
+	grid-template-columns: 22px minmax(0, auto) minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	min-height: 38px;
+	padding: 0 10px 0 9px;
+	border-radius: 11px;
+	text-align: left;
+	color: inherit;
+}
+.helm-agent:hover {
+	background-color: var(--tile);
+}
+.helm-agent:active:not(:disabled) {
+	background-color: var(--tile-hi);
+	scale: 0.99;
+	transition-duration: 90ms;
+}
+.helm-agent-mark {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 7px;
+	color: var(--mark-claude);
+	background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.helm-agent-mark[data-agent='codex'] {
+	color: var(--mark-codex);
+}
+.helm-agent-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.helm-agent-name {
+	min-width: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: #f0f0f0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-agent-doing {
+	min-width: 0;
+	font-size: 13px;
+	color: #b4b4b4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-agent-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--accent);
+}
+.helm-agent.is-waiting .helm-agent-state {
+	color: var(--warn);
+}
+.helm-agent .agent-pip {
+	width: 6px;
+	height: 6px;
+}
+
+/* ── The Guardian ─────────────────────────────────────────────────────── */
+/* ⚠️ Columns, measured by the middle one (`leads`, island-surface.ts): the
+   history and the project stretch to the thread and scroll inside. */
+.g-shell {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+.g-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+}
+/* ⚠️ A FIXED width while a panel is beside it: a main column sized by what
+   is left over re-wraps every message on every frame of the opening. */
+.g-shell.has-side .g-main {
+	flex: 0 0 var(--g-main-w, 680px);
+	width: var(--g-main-w, 680px);
+}
+.g-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 40px;
+	padding: 2px 12px 4px;
+	flex-shrink: 0;
+}
+.g-bar .k-icon {
+	width: 30px;
+	height: 30px;
+	color: #a9a9a9;
+}
+.g-bar .k-icon svg {
+	width: 17px;
+	height: 17px;
+}
+.g-bar .k-toggle[data-on='true'] {
+	color: #fff;
+}
+.g-focus {
+	display: flex;
+	min-width: 0;
+}
+.g-focus-pick {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 12px 0 9px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #b9b9b9;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+.g-focus-pick:hover {
+	color: #fff;
+	background-color: var(--tile);
+}
+.g-focus-mark {
+	display: grid;
+}
+.g-focus-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.g-viewing {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.g-viewing:empty {
+	display: none;
+}
+.g-day-chip {
+	height: 26px;
+	color: #e8e8e8;
+}
+.g-today {
+	height: 26px;
+	padding: 0 11px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 650;
+	color: var(--on-accent);
+	background-color: var(--accent);
+	box-shadow: var(--gloss);
+}
+.g-today:hover {
+	background-color: var(--accent-hi);
+}
+.g-spacer {
+	flex: 1;
+}
+.g-thread {
+	display: flex;
+	flex-direction: column;
+	padding: 2px 16px 16px;
+	position: relative;
+	--fade-top: 0px;
+	--fade-bottom: 0px;
+	mask-image: linear-gradient(180deg, transparent 0, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+}
+/* ⚠️ A spring under the messages, not `justify-content: flex-end`: an end-
+   packed scroller cannot be scrolled to its top. The pseudo-element is not a
+   child, so the island's measure never counts it. */
+.g-thread::before {
+	content: '';
+	flex: 1 0 0;
+}
+.g-thread.is-above {
+	--fade-top: 18px;
+}
+.g-thread.is-below {
+	--fade-bottom: 22px;
+}
+.g-items {
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 auto;
+}
+.g-day {
+	align-self: center;
+	margin: 16px 0 6px;
+	padding: 3px 10px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #b9b9b9;
+	text-align: center;
+	background: rgba(255, 255, 255, 0.05);
+}
+.g-day:first-child {
+	margin-top: 4px;
+}
+.g-msg {
+	position: relative;
+	display: flex;
+	margin-top: 14px;
+}
+.g-day + .g-msg {
+	margin-top: 8px;
+}
+.g-msg.is-flash > :first-child {
+	animation: g-flash 1.6s var(--ease-smooth-out);
+}
+@keyframes g-flash {
+	0%,
+	40% {
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+	}
+}
+.g-msg.is-me {
+	justify-content: flex-end;
+}
+/* His words: the iris that means YOU everywhere in Helm, as a pressed bubble. */
+.g-mine {
+	max-width: 78%;
+	padding: 9px 14px;
+	border-radius: 18px 18px 6px 18px;
+	background-color: color-mix(in srgb, var(--iris) 24%, #0b0b0b);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--iris) 30%, transparent);
+	min-width: 0;
+}
+.g-mine .g-text {
+	color: #f6f6f6;
+}
+.g-reply {
+	max-width: 96%;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 1px;
+	gap: 10px;
 }
-.helm-block-title {
-	font-size: 13.5px;
-	font-weight: 550;
-	color: #ededed;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.g-text {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.55;
+	color: #e4e4e4;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
 }
-.helm-block.is-done .helm-block-title,
-.helm-block.is-skipped .helm-block-title {
-	color: #8a8a8a;
-	text-decoration: line-through;
-	text-decoration-color: #555555;
+.g-reply > .g-md:empty {
+	display: none;
 }
-.helm-block-sub {
-	font-size: 11.5px;
-	color: #8a8a8a;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.g-mine-shots img {
+	width: 72px;
+	height: 72px;
+	border-radius: 11px;
 }
-.helm-time {
+/* What it is doing while the reply is written: a breathing dot and a word. */
+.g-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-size: 13px;
+	font-style: normal;
+	color: #c4c4c4;
+}
+.g-status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: agent-breathe 1.4s var(--ease-in-out) infinite;
+}
+.g-hello {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	margin: 28px auto 10px;
+	max-width: 330px;
+	text-align: center;
+}
+.g-hello p {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.55;
+	color: #c4c4c4;
+}
+/* The Guardian's tile: its mark in the accent on a tint of it — an identity,
+   not a second filled accent competing with the one call on the screen. */
+.g-hello-tile,
+.g-nudge-tile {
+	display: grid;
+	place-items: center;
 	flex-shrink: 0;
-	font-size: 15px;
+	width: 34px;
+	height: 34px;
+	border-radius: 10px;
+	color: var(--accent);
+	background-color: color-mix(in srgb, var(--accent) 15%, #0c0c0c);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 70%);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08),
+		0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.g-hello-tile svg {
+	width: 19px;
+	height: 19px;
+}
+.g-nudge-tile {
+	width: 30px;
+	height: 30px;
+	border-radius: 9px;
+	margin-top: 1px;
+}
+.g-nudge-tile svg {
+	width: 16px;
+	height: 16px;
+}
+.g-msg.is-nudge {
+	gap: 11px;
+}
+.g-nudge {
+	flex: 1;
+	min-width: 0;
+}
+.g-nudge-head {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+	margin-bottom: 2px;
+}
+.g-title {
+	font-size: 14px;
+	font-weight: 650;
+	color: #f4f4f4;
+}
+.g-time {
+	font-size: 12.5px;
+	color: #9e9e9e;
+	font-variant-numeric: tabular-nums;
+}
+.g-acts {
+	margin-top: 10px;
+}
+
+/* On hover: copy, ask again, make it a request — a small raised bar that
+   floats on the message's bottom edge, so it costs no height. */
+/* ⚠️ Under a reply, at its left: the room above-right is where his own bubble
+   usually is, and a bar laid over it reads as the two colliding. The reply
+   keeps a little room at its foot for it. */
+.g-msg.is-reply {
+	padding-bottom: 12px;
+}
+.g-msg.is-reply + .g-msg {
+	margin-top: 4px;
+}
+.g-hover {
+	position: absolute;
+	bottom: -12px;
+	left: 0;
+	z-index: 3;
+	display: flex;
+	gap: 1px;
+	padding: 2px;
+	border-radius: 10px;
+	background-color: #1b1b1b;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), var(--gloss), var(--lift-2);
+	opacity: 0;
+	translate: 0 3px;
+	pointer-events: none;
+	transition:
+		opacity var(--duration-quick) var(--ease-smooth-out),
+		translate var(--duration-quick) var(--ease-smooth-out);
+}
+/* On his own messages the bar sits in the room to the bubble's left, in flow:
+   nothing of the message is under it. */
+.g-hover.is-mine {
+	position: static;
+	align-self: center;
+	margin-right: 8px;
+}
+.g-msg:hover > .g-hover,
+.g-hover:focus-within {
+	opacity: 1;
+	translate: 0 0;
+	pointer-events: auto;
+	transition-delay: 120ms;
+}
+.g-hover .k-icon {
+	width: 26px;
+	height: 26px;
+	border-radius: 8px;
+	color: #c4c4c4;
+}
+.g-hover .k-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* A reply's changes, folded: "4 zmiany ▾", each with Cofnij inside. */
+.g-changes {
+	display: flex;
+	flex-direction: column;
+	align-self: flex-start;
+	max-width: 100%;
+	border-radius: 12px;
+}
+.g-changes.is-open:has(.g-changes-head) {
+	width: min(420px, 100%);
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+		inset 0 2px 5px -3px rgba(0, 0, 0, 0.9);
+}
+.g-changes-head {
+	display: inline-flex;
+	align-items: center;
+	align-self: flex-start;
+	gap: 7px;
+	height: 30px;
+	padding: 0 10px 0 6px;
+	border-radius: 10px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #d4d4d4;
+}
+.g-changes-head:hover {
+	color: #fff;
+	background-color: var(--tile);
+}
+.g-changes-tick {
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	color: #052812;
+	background: var(--good);
+}
+.g-changes-tick svg {
+	width: 11px;
+	height: 11px;
+}
+.g-changes-undone {
+	font-weight: 500;
+	color: #a9a9a9;
+}
+.g-changes:not(.is-open) .k-chevron svg {
+	rotate: -90deg;
+}
+.g-changes .g-receipts {
+	margin: 0;
+	padding: 0 4px 4px;
+	gap: 0;
+}
+.g-changes:not(:has(.g-changes-head)) .g-receipts {
+	padding: 0;
+}
+.g-changes .g-receipt {
+	min-height: 34px;
+	padding: 0 4px 0 8px;
+	gap: 9px;
+	font-size: 13px;
+	color: #d0d0d0;
+}
+.g-changes .g-receipt + .g-receipt {
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.g-receipt-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.g-undo {
+	height: 26px;
+	padding: 0 10px;
+	border-radius: 8px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--iris);
+}
+.g-undo:hover {
+	color: #fff;
+	background-color: color-mix(in srgb, var(--iris) 22%, transparent);
+	box-shadow: none;
+}
+
+/* ── Cards: raised tiles on the panel (the reply itself is flat) ───────── */
+.g-card {
+	margin: 0;
+	padding: 10px 12px 11px;
+	border-top: 0;
+	border-radius: 14px;
+	gap: 6px;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	min-width: 0;
+}
+.g-card-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 28px;
+}
+.g-card-tile {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
+	border-radius: 8px;
+	--tone: var(--accent);
+	color: var(--tone);
+	background: color-mix(in srgb, var(--tone) 16%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 26%, transparent);
+}
+.g-card-tile svg {
+	width: 15px;
+	height: 15px;
+}
+.g-card-tile.is-iris {
+	--tone: var(--iris);
+}
+.g-card-tile.is-warn {
+	--tone: var(--warn);
+}
+.g-card-tile.is-hot {
+	--tone: var(--hot);
+}
+.g-card-tile.is-good {
+	--tone: var(--good);
+}
+.g-card-head .g-card-title {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: #f2f2f2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-card-side {
+	flex-shrink: 0;
+	font-size: 12.5px;
+	color: #a9a9a9;
+}
+.g-card-sub {
+	margin: -2px 0 0 36px;
+	font-size: 13px;
+	color: #b4b4b4;
+}
+.g-card-subline {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.g-card-subline .k-chip {
+	height: 22px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #c4c4c4;
+}
+/* ⚠️ In a card the call is TINTED, not filled: a reply can carry three cards,
+   and three filled accents in one reply is no hierarchy at all. The composer's
+   Send is the screen's one filled accent. */
+.hp-btn.is-tinted,
+.g-card .hp-btn.is-primary {
+	padding: 0 13px 0 11px;
+	color: var(--accent);
+	background-color: color-mix(in srgb, var(--accent) 13%, transparent);
+	background-image: none;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.hp-btn.is-tinted:hover,
+.g-card .hp-btn.is-primary:hover {
+	color: var(--accent-hi);
+	background-color: color-mix(in srgb, var(--accent) 21%, transparent);
+}
+.hp-btn.is-tinted:active:not(:disabled),
+.g-card .hp-btn.is-primary:active:not(:disabled) {
+	background-color: color-mix(in srgb, var(--accent) 27%, transparent);
+}
+.g-card-figs {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	flex-shrink: 0;
+	line-height: 1.3;
+}
+.g-amount {
+	font-size: 14px;
 	font-weight: 650;
 	font-variant-numeric: tabular-nums;
-	color: var(--accent);
+	color: #f4f4f4;
 }
-.helm-block.is-paused .helm-time {
-	color: #9a9a9a;
+.g-late {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--hot);
 }
-.helm-icon-button,
-.helm-ask-send {
+.g-when {
+	font-size: 12.5px;
+	color: #b4b4b4;
+}
+.g-card-acts {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 4px 0 0 36px;
+}
+.g-card-acts .hp-btn {
+	height: 30px;
+}
+.g-card .hp-log {
+	margin: 6px 0 0 36px;
+}
+.g-card-error {
+	margin: 2px 0 0 36px;
+	font-size: 13px;
+	color: var(--warn);
+}
+.g-card-said {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 2px 0 0 36px;
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--good);
+}
+.g-card-said.is-quiet {
+	color: #b4b4b4;
+	font-weight: 500;
+}
+.g-card-said-mark {
+	display: grid;
+}
+.g-card-said-mark svg {
+	width: 15px;
+	height: 15px;
+}
+.g-card-focus {
 	display: grid;
 	place-items: center;
 	width: 30px;
 	height: 30px;
-	flex-shrink: 0;
+	margin: -2px -6px -2px 0;
 	padding: 0;
+	border-radius: 9px;
+}
+.g-card-focus:hover {
+	background-color: var(--tile-hi);
+}
+.g-card-rows {
+	display: flex;
+	flex-direction: column;
+	margin: 2px -4px 0 32px;
+}
+/* A request: priority, title, the time against the estimate — and on hover
+   Start with Claude and Done take the place of the figure. */
+.g-req {
+	position: relative;
+	display: grid;
+	grid-template-columns: 8px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	min-height: 36px;
+	padding: 3px 6px;
+	border-radius: 9px;
+}
+.g-req + .g-req {
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.g-req:hover {
+	background-color: rgba(255, 255, 255, 0.04);
+}
+.g-prio {
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
-	color: #d8d8d8;
-	background: rgba(255, 255, 255, 0.07);
-	box-shadow: inset 0 0 0 1px var(--hair);
-	cursor: pointer;
-	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+	background: #5a5a5a;
 }
-.helm-icon-button:hover,
-.helm-ask-send:hover {
-	background: rgba(255, 255, 255, 0.13);
+.g-prio.is-urgent {
+	background: var(--hot);
 }
-.helm-icon-button:disabled {
-	opacity: 0.45;
-	cursor: default;
+.g-prio.is-high {
+	background: var(--warn);
 }
-.helm-icon-button svg,
-.helm-ask-send svg {
+.g-prio.is-normal {
+	background: var(--cool);
+}
+.g-req-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.35;
+}
+.g-req-title {
+	font-size: 13.5px;
+	color: #ececec;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-req.is-done .g-req-title {
+	color: #8f8f8f;
+	text-decoration: line-through;
+}
+.g-req-wait {
+	font-size: 12.5px;
+	color: var(--warn);
+}
+.g-req-end {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
+}
+.g-req-fig {
+	font-size: 12.5px;
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.g-req-acts {
+	position: absolute;
+	right: 4px;
+	top: 50%;
+	translate: 0 -50%;
+	display: flex;
+	gap: 2px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
+}
+.g-req:hover .g-req-acts,
+.g-req:focus-within .g-req-acts {
+	opacity: 1;
+	pointer-events: auto;
+}
+.g-req:hover:has(.g-req-acts) .g-req-end,
+.g-req:focus-within:has(.g-req-acts) .g-req-end {
+	opacity: 0;
+}
+.g-req-acts .k-icon {
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+}
+.g-req-acts .k-icon svg {
 	width: 15px;
 	height: 15px;
 }
-.helm-none {
-	padding: 12px 4px;
-	font-size: 13px;
-	color: #8a8a8a;
+.g-req-claude {
+	color: var(--mark-claude);
 }
-/* The last reading stays; this says why it may be old. */
-.helm-error {
-	margin: 0;
+.g-req-claude:hover {
+	color: var(--mark-claude);
+	background-color: color-mix(in srgb, var(--mark-claude) 16%, transparent);
+}
+.g-req-done:hover {
+	color: var(--good);
+	background-color: color-mix(in srgb, var(--good) 14%, transparent);
+}
+/* The day: the queue as numbered rows, Now first, then the clock. */
+.g-qrow {
+	display: grid;
+	grid-template-columns: 18px minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 10px;
+	min-height: 32px;
+	padding: 2px 4px;
+}
+.g-qnum {
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	font-size: 11px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: #cfcfcf;
+	background: rgba(255, 255, 255, 0.08);
+}
+.g-qrow.is-now .g-qnum {
+	color: var(--on-accent);
+	background: var(--accent);
+}
+.g-qtext {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.35;
+}
+.g-qtitle {
+	font-size: 13.5px;
+	color: #e2e2e2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-qrow.is-now .g-qtitle {
+	font-weight: 600;
+	color: #fff;
+}
+.g-qcontext {
+	font-size: 12.5px;
+	color: #a9a9a9;
+}
+.g-qmin {
+	font-size: 12.5px;
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
+}
+.g-qgo {
+	height: 28px;
+}
+.g-card-timed {
+	display: flex;
+	flex-direction: column;
+	margin-top: 4px;
+	padding-top: 4px;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.g-trow {
+	display: grid;
+	grid-template-columns: 42px 8px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	min-height: 28px;
+	padding: 0 4px;
+	font-size: 13px;
+}
+.g-ttime {
+	font-weight: 600;
+	color: #c9c9c9;
+	font-variant-numeric: tabular-nums;
+}
+.g-tmark {
+	width: 8px;
+	height: 8px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--accent) 70%, #000);
+}
+.g-trow.is-meeting .g-tmark {
+	background: var(--cool);
+}
+.g-trow.is-done .g-tmark {
+	background: #4a4a4a;
+}
+.g-trow.is-done .g-ttitle {
+	color: #8a8a8a;
+	text-decoration: line-through;
+}
+.g-trow.is-late .g-tside {
+	color: var(--hot);
+}
+.g-ttitle {
+	min-width: 0;
+	color: #dcdcdc;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-tside {
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
+}
+.g-card.is-money .g-trow {
+	grid-template-columns: minmax(0, 1fr) auto;
+	margin-left: 32px;
+}
+.g-card .g-figures {
+	margin: 4px 0 2px 36px;
+	gap: 22px;
+}
+.g-figure b {
+	font-size: 15px;
+}
+.g-figure span {
 	font-size: 12px;
-	color: var(--warn);
+	color: #a9a9a9;
+}
+.g-card .g-draft {
+	margin: 2px 0 0 36px;
+}
+.g-card .g-card-subject {
+	margin: 0 0 0 36px;
+	font-size: 13.5px;
+	font-weight: 600;
 }
 
-/* The Ask line. ⚠️ Outside the redrawn part — see HelmScreen. */
-.helm-ask {
+/* ── The foot: chips and the composer, on the island's own black ──────── */
+.g-foot {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 4px 12px 12px;
+	flex-shrink: 0;
+	background: #000;
+}
+.g-foot .g-chips {
+	padding: 0 2px;
+}
+.g-foot .g-chips:empty {
+	display: none;
+}
+.g-chip {
+	height: 30px;
+	padding: 0 13px;
+	font-size: 13px;
+	color: #cfcfcf;
+	background-color: var(--tile);
+	box-shadow: var(--hairline), var(--gloss);
+}
+.g-chip:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+}
+
+/* ── History, on the left ─────────────────────────────────────────────── */
+.g-history .k-side-in {
+	padding: 4px 10px 12px 12px;
+	gap: 8px;
+}
+.g-search {
+	position: relative;
+	display: flex;
+	flex-shrink: 0;
+}
+.g-search-mark {
+	position: absolute;
+	left: 10px;
+	top: 50%;
+	translate: 0 -50%;
+	z-index: 1;
+	display: grid;
+	color: #9a9a9a;
+	pointer-events: none;
+}
+.g-search-mark svg {
+	width: 15px;
+	height: 15px;
+}
+input.k-field.g-search-field {
+	width: 100%;
+	padding-left: 32px;
+}
+.g-search-field::-webkit-search-cancel-button {
+	filter: invert(0.7);
+}
+.g-hist-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	margin: 0 -4px;
+	padding: 0 4px 6px;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.g-hist-day,
+.g-hist-hit {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex-shrink: 0;
+	width: 100%;
+	padding: 8px 10px;
+	border-radius: 11px;
+	text-align: left;
+	color: inherit;
+}
+.g-hist-day:hover,
+.g-hist-hit:hover {
+	background-color: var(--tile);
+}
+.g-hist-day.is-on,
+.g-hist-day.is-on:hover {
+	background-color: var(--tile-on);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.g-hist-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+}
+.g-hist-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 13.5px;
+	font-weight: 600;
+	color: #f0f0f0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-hist-preview,
+.g-hist-snippet {
+	font-size: 12.5px;
+	line-height: 1.4;
+	color: #b0b0b0;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.g-hist-snippet mark {
+	color: #fff;
+	background: color-mix(in srgb, var(--accent) 34%, transparent);
+	border-radius: 3px;
+	padding: 0 1px;
+}
+.g-hist-who {
+	display: grid;
+	color: var(--accent);
+}
+.g-hist-who.is-me {
+	color: var(--iris);
+}
+.g-hist-who svg {
+	width: 13px;
+	height: 13px;
+}
+.g-hist-time {
+	font-size: 12px;
+	color: #9e9e9e;
+	font-variant-numeric: tabular-nums;
+}
+.g-hist-empty {
+	margin: 14px 4px;
+	font-size: 13px;
+	color: #a9a9a9;
+	text-align: center;
+}
+.g-hist-ghost {
+	flex-shrink: 0;
+	height: 48px;
+	border-radius: 11px;
+	background: rgba(255, 255, 255, 0.04);
+	animation: agent-breathe 1.6s var(--ease-in-out) infinite;
+}
+
+/* ── The project, on the right ────────────────────────────────────────── */
+.g-project .k-side-in {
+	padding: 6px 12px 12px 14px;
+	gap: 10px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.g-pp-head {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+	min-width: 0;
+}
+.g-pp-who {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.3;
+}
+.g-pp-big {
+	font-size: 15px;
+	font-weight: 650;
+	color: #f4f4f4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-pp-client {
+	font-size: 12.5px;
+	color: #a9a9a9;
+}
+.g-pp-figures {
+	display: flex;
+	gap: 8px;
+}
+.g-pp-fig {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	border-radius: 9px;
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+	cursor: default;
+}
+.g-pp-fig b {
+	font-weight: 650;
+}
+.g-pp-fig.is-you {
+	color: var(--iris);
+}
+.g-pp-fig.is-agents {
+	color: var(--mark-claude);
+}
+.g-pp-fig-mark {
+	display: grid;
+}
+.g-pp-fig-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.g-pp-title {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin: 4px 0 -4px;
+	font-size: 13px;
+	font-weight: 650;
+	color: #d6d6d6;
+}
+.g-pp-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin: 0 -6px;
+}
+.g-pp-pick {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 36px;
+	padding: 0 8px;
+	border-radius: 10px;
+	text-align: left;
+	color: inherit;
+}
+.g-pp-pick:hover {
+	background-color: var(--tile);
+}
+.g-pp-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 13.5px;
+	color: #ececec;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.g-pp-live {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.g-pp-req {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 40px;
+	padding: 4px 8px;
+	border-radius: 10px;
+}
+.g-pp-req:hover {
+	background-color: rgba(255, 255, 255, 0.04);
+}
+.g-pp-req + .g-pp-req {
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.g-pp-req-text {
+	flex: 1;
+	min-width: 0;
+}
+.g-pp-req-title {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	font-size: 13px;
+	line-height: 1.35;
+	color: #e6e6e6;
+}
+.g-pp-req.is-doing .g-pp-req-title {
+	color: #fff;
+	font-weight: 600;
+}
+.g-pp-req-end {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 4px 4px 4px 13px;
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.05);
-	box-shadow: inset 0 0 0 1px var(--hair);
-	transition: box-shadow var(--duration-quick) var(--ease-smooth-out);
+	flex-shrink: 0;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
 }
-.helm-ask:focus-within {
-	box-shadow: inset 0 0 0 1px var(--accent);
+.g-pp-est {
+	font-size: 12.5px;
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
 }
-.helm-ask-field {
+.g-pp-acts {
+	position: absolute;
+	right: 4px;
+	top: 50%;
+	translate: 0 -50%;
+	display: flex;
+	gap: 2px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
+}
+.g-pp-req:hover .g-pp-acts,
+.g-pp-req:focus-within .g-pp-acts {
+	opacity: 1;
+	pointer-events: auto;
+}
+.g-pp-req:hover .g-pp-req-end,
+.g-pp-req:focus-within .g-pp-req-end {
+	opacity: 0;
+}
+.g-pp-acts .k-icon {
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	background-color: #161616;
+}
+.g-pp-acts .k-icon svg {
+	width: 15px;
+	height: 15px;
+}
+.g-pp-claude {
+	color: var(--mark-claude);
+}
+.g-pp-claude:hover {
+	color: var(--mark-claude);
+	background-color: color-mix(in srgb, var(--mark-claude) 18%, #161616);
+}
+.g-pp-done:hover {
+	color: var(--good);
+	background-color: color-mix(in srgb, var(--good) 16%, #161616);
+}
+
+/* ── The Agents screen, beside its project ────────────────────────────── */
+.agent-layout {
+	display: grid;
+	grid-template-columns: var(--agent-main-w, minmax(0, 1fr)) auto;
+	align-items: start;
+	min-width: 0;
+}
+.agent-main {
+	min-width: 0;
+}
+.agent-side {
+	position: sticky;
+	top: -8px;
+	align-self: start;
+}
+.agent-side[hidden] {
+	display: none;
+}
+.agent-side.is-open {
+	margin-left: 14px;
+}
+.agent-side.is-right.is-open {
+	box-shadow: none;
+}
+.agent-side .k-side-in {
+	height: auto;
+	gap: 10px;
+	padding: 8px 2px 4px 14px;
+	box-shadow: inset 1px 0 0 var(--hair);
+}
+.agent-side-head {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+	min-width: 0;
+}
+.agent-side-who {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.3;
+}
+.agent-side-name {
+	font-size: 15px;
+	font-weight: 650;
+	color: #f4f4f4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.agent-side-via {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12.5px;
+	color: #a9a9a9;
+}
+.agent-side-mark {
+	display: grid;
+	color: var(--mark-claude);
+}
+.agent-side-mark[data-agent='codex'] {
+	color: var(--mark-codex);
+}
+.agent-side-mark svg {
+	width: 12px;
+	height: 12px;
+}
+.agent-side-close {
+	width: 28px;
+	height: 28px;
+}
+.agent-side-close svg {
+	width: 14px;
+	height: 14px;
+}
+.agent-side-figs {
+	display: flex;
+	gap: 8px;
+}
+.agent-side-fig {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	border-radius: 9px;
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+	background: rgba(0, 0, 0, 0.32);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+	cursor: default;
+}
+.agent-side-fig.is-you {
+	color: var(--iris);
+}
+.agent-side-fig.is-agents {
+	color: var(--mark-claude);
+}
+.agent-side-fig-mark {
+	display: grid;
+}
+.agent-side-fig-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.agent-side-title {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin: 2px 0 -4px;
+}
+.agent-side-list {
+	display: flex;
+	flex-direction: column;
+	margin: 0 -6px;
+}
+.agent-side-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 38px;
+	padding: 3px 6px 3px 8px;
+	border-radius: 10px;
+}
+.agent-side-row:hover {
+	background-color: rgba(255, 255, 255, 0.04);
+}
+.agent-side-row + .agent-side-row {
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.agent-side-row-title {
 	flex: 1;
 	min-width: 0;
-	height: 32px;
-	border: 0;
-	outline: none;
-	background: none;
 	font-size: 13px;
-	color: #f0f0f0;
+	line-height: 1.35;
+	color: #e4e4e4;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 }
-.helm-ask-field::placeholder {
-	color: #7a7a7a;
+.agent-side-row.is-on .agent-side-row-title {
+	color: #fff;
+	font-weight: 600;
 }
+.agent-side-row-end {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+.agent-side-est {
+	font-size: 12.5px;
+	color: #a9a9a9;
+	font-variant-numeric: tabular-nums;
+}
+.agent-side-empty {
+	margin: 8px;
+	font-size: 13px;
+	color: #a9a9a9;
+}
+.agent-side-toggle {
+	width: 30px;
+	height: 30px;
+	margin-left: 4px;
+}
+.agent-side-toggle svg {
+	width: 16px;
+	height: 16px;
+}
+.agent-helm-door {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 30px;
+	height: 30px;
+	margin: -4px -2px -4px -4px;
+	padding: 0;
+	border-radius: 9px;
+}
+.agent-helm-door:hover {
+	background-color: var(--tile-hi);
+}
+.agent-helm-door:hover .hp-logo {
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--hue) 50%, transparent),
+		0 0 0 2px color-mix(in srgb, var(--hue) 30%, transparent);
+}
+.agent-helm.is-door {
+	margin: -3px -6px -3px -5px;
+	padding: 3px 6px 3px 5px;
+	border-radius: 9px;
+	cursor: pointer;
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.agent-helm.is-door:hover {
+	background-color: var(--tile-hi);
+}
+
 @media (prefers-reduced-motion: reduce) {
-	html:not([data-motion='always']) .helm-nudge {
+	html:not([data-motion='always']) .g-status-dot,
+	html:not([data-motion='always']) .g-hist-ghost,
+	html:not([data-motion='always']) .g-msg.is-flash > :first-child {
 		animation: none;
 	}
+	html:not([data-motion='always']) .g-hover {
+		transition: none;
+	}
 }
-html[data-motion='never'] .helm-nudge {
-	animation: none;
+
+/* ── The other screens' fields, in the kit's well ─────────────────────────
+   One field look across the island: a filled, recessed well whose focus is a
+   glow (kit.css `.k-field`, `.k-well`). */
+/* TickTick's composer: in a foot of its own, so the gap under it is part of
+   a measured box rather than a margin the island cannot see (AGENTS 789). */
+.today-foot {
+	flex-shrink: 0;
+	padding: 4px 12px 12px;
+	background: #000;
+}
+#inline-composer {
+	min-height: 48px;
+	margin: 0;
+	padding: 6px 8px 6px 11px;
+	border-top: 0;
+	border-radius: 20px;
+	background-color: rgba(255, 255, 255, 0.05);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.75);
+}
+#inline-composer:hover {
+	background-color: rgba(255, 255, 255, 0.065);
+}
+#inline-composer:focus-within {
+	background-color: rgba(255, 255, 255, 0.07);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.09)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.7),
+		0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent),
+		0 0 24px -8px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+#inline-title {
+	font-size: 14.5px;
+}
+/* The notes' search and the calendar's two task fields. */
+input.k-field.note-search-field {
+	height: 34px;
+	font-size: 13.5px;
+}
+.cal-new input.k-field,
+input.k-field.cal-tasks-field {
+	height: 32px;
+	padding: 0 11px;
+	border-radius: 10px;
+	font-size: 13px;
+	background-color: rgba(255, 255, 255, 0.05);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.75);
+}
+.cal-new input.k-field:focus,
+.cal-new input.k-field:focus-visible,
+input.k-field.cal-tasks-field:focus {
+	background-color: rgba(255, 255, 255, 0.07);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.09)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.7),
+		0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.agent-side .k-side-in {
+	padding-right: 8px;
+}
+/* Start is a word button (`hp-btn is-claude`), sized for a row of the panel. */
+.agent-side-start.hp-btn {
+	height: 28px;
+	padding: 0 10px 0 8px;
+	font-size: 12px;
+}
+.agent-side-start .hp-btn-mark svg {
+	width: 12px;
+	height: 12px;
+}
+.agent-side-row-end .k-chip {
+	height: 22px;
+	font-size: 12px;
+}
+
+/* ── Today beside the selected session's project ──────────────────────────
+   Columns measured by the main one (`leads`), like the Guardian: the panel
+   stretches to Today and scrolls inside. */
+.helm-shell {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+.helm-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+}
+.helm-shell.has-side .helm-main {
+	flex: 0 0 var(--h-main-w, 680px);
+	width: var(--h-main-w, 680px);
+}
+.agent-side.today-side {
+	position: static;
+	align-self: stretch;
+	margin-left: 0;
+}
+.agent-side.today-side .k-side-in {
+	height: 100%;
+	padding: 2px 12px 12px 14px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.helm-agent.is-on,
+.helm-agent.is-on:hover {
+	background-color: var(--tile-on);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.agent-side-open.hp-btn {
+	height: 28px;
+	margin-left: auto;
+	padding: 0 10px 0 8px;
+	font-size: 12px;
 }

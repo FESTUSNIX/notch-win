@@ -142,6 +142,12 @@
      and the card's wash; this is the other fact, and it never changes. */
 	--mark-claude: #d97757;
 	--mark-codex: #f0efeb;
+	/* YOU, in Helm: your own time, your move. Helm's iris (#5b54e8), lifted
+     for a dark ground — at Helm's own value it is a hole in black. ⚠️ Not a
+     second accent: the accent is the app's one live colour and the user picks
+     it; this is a fact with a referent, like the agents' marks beside it, and
+     it never changes with the accent. */
+	--iris: #8a84ff;
 	--hot: #ff6961; /* a disk at 97%, a CPU pinned */
 	--cool: #5ac8fa; /* the calendar, meetings */
 	--calm: #a78bfa; /* media */

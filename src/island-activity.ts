@@ -47,9 +47,12 @@ export type FixedScreen =
    *  that is not there. */
   | "media"
   | "notes"
-  /** Helm: the must-win, the focus blocks and the Guardian. ⚠️ On the rail
+  /** Helm: the queue, the session running and the Guardian. ⚠️ On the rail
    *  only while Helm is connected, like the player while something plays. */
-  | "helm";
+  | "helm"
+  /** The Guardian: its nudges and the chat, one thread. On the rail while
+   *  Helm is connected. */
+  | "guardian";
 
 export type ScreenName = FixedScreen | BoardName;
 

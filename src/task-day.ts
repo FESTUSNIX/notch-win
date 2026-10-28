@@ -85,7 +85,8 @@ function tick(): SVGSVGElement {
  * A real checkbox, visually hidden inside the ring: it keeps the label, the
  * keyboard and the accessibility tree that a styled <button> would have to
  * rebuild by hand. The ring, fill, tick and pulse are painted around it. */
-function control(color: string, done: boolean, label: string, disabled: boolean, toggle: () => void): HTMLElement {
+/** The round check, shared with Helm's Today (screen-helm.ts) so its blocks tick the same way. */
+export function control(color: string, done: boolean, label: string, disabled: boolean, toggle: () => void): HTMLElement {
   const wrap = element("label", "check");
   wrap.style.setProperty("--list", color);
   const input = element("input") as HTMLInputElement;

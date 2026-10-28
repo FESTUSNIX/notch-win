@@ -36,6 +36,15 @@ import { held, spoken, tokens } from "./media-format";
 import { modelName } from "./model-name";
 import { hush, isQuiet, wake } from "./snooze";
 import type { Activity } from "./island-activity";
+import { faceOf, logControl, logoTile, wordButton } from "./helm-parts";
+import { spoken as minutesSaid, type NotchFolder, type NotchRequest } from "./helm-link";
+import { SidePanel, setToggle, toggleButton } from "./kit/parts";
+import { projectPanel } from "./project-panel";
+import type { Ask, HelmSource } from "./screen-helm";
+
+/** The project panel's width, in CSS px. ⚠️ The island's width table adds it
+ *  to the screen's own (tasks.ts `widthOf`): room added, not carved out. */
+export const AGENT_PANEL_W = 268;
 
 export type AgentState = "working" | "waiting" | "idle";
 
@@ -179,8 +188,60 @@ export class AgentsScreen {
    * rail opens; the detail is what the strip opens. */
   private detailed = false;
   error = "";
+  /** Helm, for the project and request each session is on (the cockpit,
+   *  28 Oct). Set by the shell; without it — or without `/api/notch` on the
+   *  Helm it reads — the cards are what they always were. */
+  helm: HelmSource | null = null;
+  /** The project of the selected session, beside the screen (round 2). */
+  readonly side = new SidePanel({ id: "agents-project", side: "right", label: "Project", className: "agent-side" });
+  /** The screen's own width in CSS px, without the panel — set by the shell. */
+  mainCss = 775;
+  /** The panel opened or shut: the shell re-applies the width cap (AGENTS 759). */
+  widthChanged: () => void = () => {};
 
-  constructor(private host: HTMLElement, private changed: () => void) {}
+  constructor(private host: HTMLElement, private changed: () => void) {
+    this.side.el.style.setProperty("--side-w", `${AGENT_PANEL_W}px`);
+  }
+
+  /** Width the panel adds while it is open and has something to show. */
+  get extraWidth(): number {
+    return this.side.open && this.sideSession() ? AGENT_PANEL_W : 0;
+  }
+
+  /** The session the panel is about: the one selected, else the first live
+   *  one Helm knows the project of. */
+  private sideSession(): { session: SessionView; folder: NotchFolder } | null {
+    const helm = this.helm;
+    if (!helm) return null;
+    const pick = (one: SessionView | undefined) => {
+      const link = one ? helm.linkOf(one) : null;
+      return one && link ? { session: one, folder: link.folder } : null;
+    };
+    return pick(this.sessions.find(one => one.id === this.staged))
+      ?? this.sessions.filter(one => one.state !== "idle").map(pick).find(Boolean)
+      ?? null;
+  }
+
+  private toggleSide(open = !this.side.open) {
+    this.side.toggle(open);
+    this.widthChanged();
+    this.changed();
+  }
+
+  /** Open one session's detail, from somewhere else (Today's Agents block). */
+  openSession(id: string) {
+    if (!this.sessions.some(one => one.id === id)) return;
+    this.staged = id;
+    this.detailed = true;
+    this.changed();
+  }
+
+  /** The agents' minutes today in these folders, from this machine's runs. */
+  minutesToday(folders: string[]): number {
+    const names = new Set(folders.map(f => f.toLowerCase()));
+    const day = today();
+    return this.usage.filter(b => b.day === day && names.has(b.project.toLowerCase())).reduce((total, b) => total + (b.seconds ?? 0), 0) / 60;
+  }
 
   async boot() {
     try {
@@ -193,6 +254,8 @@ export class AgentsScreen {
     if (native) {
       await listen<SessionView[]>("notch:sessions", event => {
         this.sessions = event.payload;
+        // A session that runs again has carried on; its "done?" is moot.
+        this.helm?.sessionsAre(this.sessions);
         this.changed();
       });
     }
@@ -442,6 +505,14 @@ export class AgentsScreen {
     head.append(facts);
     card.append(head);
 
+    /* ── What it is for, in Helm ──────────────────────────────────
+     * The project, the request it is on and — when a run has ended — whether
+     * that request is done. ⚠️ Directly under the head, above what it is
+     * doing: on a screen about ONE session, "for whom and on what" is the
+     * second thing anybody reads, and a run that just ended is asking. */
+    const helm = this.helmPanel(session);
+    if (helm) card.append(helm);
+
     /* ── What it did, and what it said about it ──────────────────
      * Two columns, because they are two different kinds of thing: a list of
      * actions, and one sentence of prose. Stacked, the sentence reads as one
@@ -517,17 +588,28 @@ export class AgentsScreen {
    */
   private card(session: SessionView): HTMLElement {
     const quiet = isQuiet(`agent:${session.id}`);
-    const card = element("button", `agent-card is-${session.state}${quiet ? " is-quiet" : ""}`);
-    (card as HTMLButtonElement).type = "button";
+    /* ⚠️ A `div` with the role, not a `<button>`. A finished run asks
+     * "done?" ON the card, with buttons — and a button inside a button is
+     * invalid HTML whose live consequence is a press on the inner one also
+     * pressing the card (AGENTS 223). The keyboard is given back by hand. */
+    const card = element("div", `agent-card is-${session.state}${quiet ? " is-quiet" : ""}`);
+    card.setAttribute("role", "button");
+    card.tabIndex = 0;
     card.setAttribute("aria-label", `${session.project}, ${WORDS[session.state]}`);
     /* ⚠️ Opens the DETAIL, it does not raise the window. On a card this
      * small the click target is the whole tile, and a tile that throws you into
      * another application is one you learn not to touch. Going there is a
      * deliberate second step, on the detail, where it is labelled. */
-    card.onclick = () => {
+    const open = () => {
       this.staged = session.id;
       this.detailed = true;
       this.changed();
+    };
+    card.onclick = open;
+    card.onkeydown = event => {
+      if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      open();
     };
 
     const top = element("div", "agent-card-top");
@@ -541,6 +623,43 @@ export class AgentsScreen {
     meta.append(element("span", "agent-model", modelName(session.model) || agentName(session.provider)));
     if (session.branch) meta.append(element("span", "agent-branch", session.branch));
     card.append(meta);
+
+    /* Its Helm project and the request it is on — only when the cockpit
+     * knows the folder. ⚠️ Flat, inside the card: a tile in a tile is the
+     * one thing the panel rules forbid (AGENTS 567). */
+    const link = this.helm?.linkOf(session);
+    /* A run on a request just ended: the card asks, in the place of the
+     * live line, until it is answered or the session runs again. ⚠️ The
+     * question names the request, so the line above does not as well. */
+    const ask = this.helm?.askFor(session.id);
+    if (link) {
+      const line = this.helmLine(link.folder, ask ? null : link.request);
+      /* The project's FACE is a door to it, beside the screen. ⚠️ The face and
+       * nothing more: the whole line is the middle of the card, and a card
+       * whose middle opens something other than the card is a card you stop
+       * trusting. Its own press, so the card does not also open (786). */
+      const tile = line.querySelector<HTMLElement>(".hp-logo");
+      if (tile) {
+        const door = element("button", "agent-helm-door") as HTMLButtonElement;
+        door.type = "button";
+        door.setAttribute("aria-label", `${link.folder.project.name}: its requests`);
+        door.dataset.tip = "The project's requests";
+        tile.replaceWith(door);
+        door.append(tile);
+        door.onclick = event => {
+          event.stopPropagation();
+          this.staged = session.id;
+          this.toggleSide(true);
+        };
+      }
+      card.append(line);
+    }
+
+    if (ask) {
+      card.append(this.askBlock(ask, true));
+      if (session.input || session.output) card.append(this.spent(session));
+      return card;
+    }
 
     /* The one live fact a card has room for: what it is doing, or how long it
      * has been quiet. ⚠️ One line, clipped — the phrase is the tail of a
@@ -563,6 +682,120 @@ export class AgentsScreen {
      * things that are worth saying. */
     if (session.input || session.output) card.append(this.spent(session));
     return card;
+  }
+
+  /* ── Helm: the project, the request, and "done?" ─────────────────── */
+
+  /** The project's face and name, and the request it is on — two lines, the
+   *  request the brighter, because it is the one that changes. */
+  private helmLine(folder: NotchFolder, request: NotchRequest | null): HTMLElement {
+    const line = element("div", "agent-helm");
+    const project = folder.project;
+    line.append(logoTile(faceOf(project, this.helm?.logo(project) ?? null, null), "sm"));
+    const text = element("div", "agent-helm-text");
+    text.append(element("span", "agent-helm-project", project.name));
+    if (request) text.append(element("span", "agent-helm-request", request.title));
+    line.append(text);
+    line.dataset.tip = request ? `${project.name} — ${request.title}` : `${project.name} in Helm`;
+    return line;
+  }
+
+  /** The question a finished run asks, and what follows it: the time to log.
+   *
+   * ⚠️ Every button here stops its own click, or a press on Done would also
+   * open the detail the card leads to. */
+  private askBlock(ask: Ask, compact: boolean): HTMLElement {
+    const helm = this.helm!;
+    const box = element("div", `agent-ask${compact ? " is-compact" : ""}`);
+    box.onclick = event => event.stopPropagation();
+    if (ask.stage === "done") {
+      const said = element("p", "agent-ask-said");
+      const mark = element("span", "agent-ask-mark");
+      paintIcon(mark, "check");
+      said.append(mark, element("span", "", ask.said ?? "Done"));
+      box.append(said);
+      return box;
+    }
+    if (ask.stage === "suggest" || ask.stage === "logging") {
+      box.append(logControl(ask.suggestion, {
+        minutes: ask.minutes,
+        busy: ask.stage === "logging",
+        setMinutes: minutes => helm.setMinutes(ask.session, minutes),
+        log: () => helm.logAsk(ask.session),
+        skip: () => helm.skipAsk(ask.session),
+      }));
+      return box;
+    }
+    const question = element("p", "agent-ask-q");
+    /* On the card the question names the request ("Nowy koszyk B2B done?");
+     * on the detail the request is the line right above it, in 15px, so the
+     * question there is just the question. */
+    if (compact) question.append(element("b", "agent-ask-title", ask.title), element("span", "agent-ask-word", " done?"));
+    else question.append(element("span", "agent-ask-word", "Is it done?"));
+    question.dataset.tip = `${ask.project.name} — ${ask.title}`;
+    const acts = element("div", "agent-ask-acts");
+    const yes = wordButton("check", "Done", "hp-btn is-primary agent-ask-done", () => helm.answer(ask.session, true));
+    const no = wordButton(null, "Not yet", "hp-btn is-ghost agent-ask-later", () => helm.answer(ask.session, false));
+    yes.disabled = no.disabled = ask.stage === "busy";
+    acts.append(yes, no);
+    box.append(question, acts);
+    return box;
+  }
+
+  /** The detail's Helm panel: the project, the request it is on, the question
+   *  if a run just ended, and the project's other open requests, each one a
+   *  press away from a terminal running Claude on it. */
+  private helmPanel(session: SessionView): HTMLElement | null {
+    const helm = this.helm;
+    const link = helm?.linkOf(session);
+    if (!helm || !link) return null;
+    const panel = element("section", "agent-helm-panel");
+    const head = element("div", "agent-helm-head");
+    const project = link.folder.project;
+    head.append(logoTile(faceOf(project, helm.logo(project), null), "md"));
+    const who = element("div", "agent-helm-who");
+    who.append(element("span", "agent-helm-name", project.name));
+    if (link.request) {
+      const on = element("span", "agent-helm-on", link.request.title);
+      who.append(on);
+    }
+    head.append(who);
+    const beside = toggleButton("sideRight", this.side.open ? "Hide the project" : "The project's requests", "agent-side-toggle", () => this.toggleSide());
+    setToggle(beside, this.side.open);
+    if (link.request?.estimate) {
+      const est = element("span", "agent-helm-est");
+      const mark = element("span", "agent-helm-est-mark");
+      paintIcon(mark, "target");
+      est.append(mark, element("span", "", minutesSaid(link.request.estimate)));
+      est.dataset.tip = "The estimate";
+      head.append(est);
+    }
+    head.append(beside);
+    panel.append(head);
+
+    const ask = helm.askFor(session.id);
+    if (ask) panel.append(this.askBlock(ask, false));
+
+    /* ⚠️ The TODO ones only, and a few. The one it is on is already the
+     * line above; a finished one is not something to start. */
+    const todo = this.side.open ? [] : link.folder.requests.filter(r => r.status === "todo").slice(0, 3);
+    if (todo.length) {
+      const list = element("div", "agent-helm-requests");
+      list.append(element("h4", "agent-panel-title", "Next in " + project.name));
+      for (const request of todo) {
+        const row = element("div", "agent-helm-row");
+        row.append(element("span", "agent-helm-row-title", request.title));
+        if (request.estimate) row.append(element("span", "agent-helm-row-est", minutesSaid(request.estimate)));
+        const start = wordButton("claude", "Start", "hp-btn is-claude agent-helm-start", () => helm.startWithClaude(request.id, request.title));
+        start.setAttribute("aria-label", `Start ${request.title} with Claude`);
+        start.dataset.tip = "Start with Claude";
+        start.disabled = helm.starting.has(request.id);
+        row.append(start);
+        list.append(row);
+      }
+      panel.append(list);
+    }
+    return panel;
   }
 
   /* ── What it all cost ─────────────────────────────────
@@ -776,7 +1009,12 @@ export class AgentsScreen {
    * is that session, not a list with it somewhere in it. Walking to the screen
    * from the rail is the other intent entirely, and clears this. */
   openFromPill() {
-    const first = this.sessions.filter(one => !isQuiet(`agent:${one.id}`))
+    /* ⚠️ A finished run asking "done?" first: that question IS the strip's
+     * claim when there is one (56, over a waiting session), so the session it
+     * is about is the one the strip was showing. */
+    const asked = this.helm?.askedSession();
+    const first = (asked ? this.sessions.find(one => one.id === asked) : undefined)
+      ?? this.sessions.filter(one => !isQuiet(`agent:${one.id}`))
       .find(one => one.state === "waiting")
       ?? this.sessions.filter(one => !isQuiet(`agent:${one.id}`))
         .find(one => one.state === "working");
@@ -806,6 +1044,38 @@ export class AgentsScreen {
       this.host.append(element("p", "home-empty", "No agent sessions open."));
       return;
     }
+    /* ── The screen beside its project panel ──────────────────────────────
+     * ⚠️ The main column is a FIXED width and the panel a track that is 0 or
+     * its width, with the island's spring as the motion (AGENTS 752–760): a
+     * main column sized by what is left over re-lays every card out on every
+     * frame of the opening. The width is derived from the shell's constant,
+     * never read from the DOM mid-render; only the scrollbar is measured. */
+    const layout = element("div", "agent-layout");
+    const main = element("div", "agent-main");
+    const bar = Math.max(0, this.host.offsetWidth - this.host.clientWidth);
+    layout.style.setProperty("--agent-main-w", `${Math.max(360, Math.round(this.mainCss - 30 - bar))}px`);
+    layout.append(main, this.side.el);
+    this.host.append(layout);
+    this.paintSide();
+    this.fill(main);
+  }
+
+  /** The project of the selected session: its open requests, each a press
+   *  away from Claude, the question a finished run asks, and today's time. */
+  private paintSide() {
+    const found = this.sideSession();
+    this.side.inner.replaceChildren();
+    this.side.el.hidden = !found;
+    if (!found || !this.side.open || !this.helm) return;
+    const ask = this.helm.askFor(found.session.id);
+    projectPanel(this.side.inner, {
+      helm: this.helm, session: found.session, folder: found.folder,
+      close: () => this.toggleSide(false),
+      extra: ask ? this.askBlock(ask, true) : null,
+    });
+  }
+
+  private fill(host: HTMLElement) {
 
     /* ── One session, in detail ────────────────────────────
      * ⚠️ Falls back to the overview rather than holding an id that is gone.
@@ -816,24 +1086,24 @@ export class AgentsScreen {
       ? this.sessions.find(one => one.id === this.staged)
       : undefined;
     if (shown) {
-      this.host.append(this.detail(shown));
+      host.append(this.detail(shown));
       /* The pager covers the LIVE ones. A dormant session is reachable from
        * the overview and nobody pages through six of them. */
       const live = this.live();
       if (live.length > 1 && live.some(one => one.id === shown.id)) {
-        this.host.append(this.dots(live, shown));
+        host.append(this.dots(live, shown));
       }
-      if (this.error) this.host.append(element("p", "screen-error", this.error));
+      if (this.error) host.append(element("p", "screen-error", this.error));
       return;
     }
     this.detailed = false;
 
     const grid = element("div", "agent-grid");
     for (const session of this.sessions) grid.append(this.card(session));
-    this.host.append(grid);
+    host.append(grid);
 
     const usage = this.usageBlock();
-    if (usage) this.host.append(usage);
-    if (this.error) this.host.append(element("p", "screen-error", this.error));
+    if (usage) host.append(usage);
+    if (this.error) host.append(element("p", "screen-error", this.error));
   }
 }

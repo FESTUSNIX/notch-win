@@ -50,9 +50,12 @@ export const SCREENS: ScreenDef[] = [
    * the header is how you reach it, and it is always there. */
   { name: "timer", icon: "timer", label: "Timer", offRail: true },
   { name: "today", icon: "today", label: "Today" },
-  /* ⚠️ On the rail only while Helm is connected — see `stops()`. Beside Today
-   * because it is the same question, asked of Helm: what is this day for. */
-  { name: "helm", icon: "guardian", label: "Helm" },
+  /* ⚠️ Helm's day IS Today while Helm is connected, and TickTick's steps
+   * aside — see `stops()` and the redirect in `show()`. Same name, same icon:
+   * to him it is one screen whose source changed. */
+  { name: "helm", icon: "today", label: "Today" },
+  /* The Guardian's nudges and the chat. On the rail while Helm is connected. */
+  { name: "guardian", icon: "guardian", label: "Guardian" },
   /* ⚠️ The player's stop exists only while something is playing. */
   { name: "media", icon: "media", label: "Playing" },
   { name: "agents", icon: "agent", label: "Agents" },

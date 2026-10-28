@@ -5101,3 +5101,256 @@ The two halves were the same fault.
       glance. Corners are CONCENTRIC: `--glance-curl` (the shape's 25px bottom
       curl, `islandGlanceCurl`) minus the inset. Change `islandGlanceThin` or
       `islandGlanceCurl` in layout.ts and `--glance-curl` must follow.
+
+### The cockpit: codenotch runs the work, Helm manages it (2026-10-28)
+
+`/api/notch` (read in `helm.rs` with the queue, every minute and after any
+action) gives the island what RUNNING the work needs: his clock and the
+agents', what needs him, and every project with a folder on this PC with its
+open requests. `src/helm-link.ts` is the pure half (the joins, node-tested in
+`tests/helm-link.test.mjs`), `src/helm-parts.ts` the shared look (a project's
+face, the ring, the minutes-to-log control), `src/helm-capture.ts` quick
+capture, `src-tauri/src/terminal.rs` the terminal running Claude on a request.
+
+ 777. ⚠️⚠️ **The deployed Helm answers `/api/notch` with 404 until it ships it,
+      and that is a STATE, not an error.** `read_notch` maps 404 to `Ok(None)`;
+      the island then draws none of the clock's agents figure, the needs, the
+      logos, the Agents links or Start with Claude — and says nothing on the
+      pill. Other failures keep the last reading and go to the log once per run
+      of them. `?helm&notch=off` stages it and a browser test walks it. A cockpit
+      that toasted "Helm answered 404" every minute is what this rule prevents.
+ 778. ⚠️ **The reading is checked, not trusted** (`readNotch`). The two apps
+      move separately: a field renamed on Helm's side must hide the cockpit, not
+      throw inside a render that also draws the rest of Today.
+ 779. ⚠️⚠️ **Never start `claude` by name.** On this machine it is npm's
+      `claude.cmd`, and a .cmd runs under `cmd.exe`, which re-reads the line:
+      `%` expands and a `"` in the prompt ends the quoting, after which `&` runs
+      a second command. The prompt is a request somebody else wrote. The shim
+      only forwards to `node_modules/@anthropic-ai/claude-code/bin/claude.exe`,
+      so `terminal::find_claude` finds that (or the native install's
+      `~/.local/bin/claude.exe`, or `node cli.js` for an old package) and starts
+      it directly. A lone .cmd with nothing real behind it is refused.
+ 780. ⚠️ **Windows Terminal re-joins its arguments WITHOUT escaping quotes.**
+      It wraps an argument with a space in plain `"…"` when it builds the
+      child's command line, and splits commands at every unescaped `;`. So for
+      the wt route the prompt's `"` become `'`, every `;` is written `\;`, a
+      trailing `\` gets a space, and a leading `-` gets one too (`for_wt`, under
+      test). Our own line to wt.exe is quoted with MSVC's backslash rules
+      (`quote`, tested against a `CommandLineToArgvW` model) and passed with
+      `raw_arg`, or Rust would quote it a second time. The plain-console route
+      needs none of this and passes the prompt untouched.
+ 781. ⚠️ **wt.exe is an App Execution Alias**: a reparse point `CreateProcess`
+      starts happily and `Path::is_file` calls missing. `symlink_metadata` reads
+      the alias itself.
+ 782. ⚠️ **The prompt is read BEFORE the request is marked doing.** "Doing" is
+      what links a session to a request on the Agents screen; marking it first
+      and then finding no folder would leave a request "on it" with nothing
+      running, and the island would repeat that lie. No folder: the pill says so
+      (`Helm doesn't know this project's folder yet.`) and nothing changes.
+ 783. ⚠️ **A session is matched to its Helm folder by PATH first, then by
+      name** (`folderFor`). Two checkouts of one repo share a folder name and
+      are not the same workspace; the name (`folders[].folder`, lower-cased,
+      against the project the Agents screen shows) is the fallback.
+ 784. ⚠️ **`notch:finished` now carries the session id and its folder.** The
+      island asks "<request> done?" on THAT session's card; by project name
+      alone two terminals in one repo would get each other's question.
+ 785. ⚠️ **The question lives in `HelmSource`, not on the Agents screen.** It is
+      on the card, on the detail and on the pill (56, over a waiting agent —
+      it is the same session, said more specifically), and three copies would
+      disagree the moment one was answered. It goes when answered, when the
+      session runs again (he carried on; the run did not end the work), or from
+      the pill after twenty minutes.
+ 786. ⚠️ **An agent card is a `div role=button` now.** It holds Done / Not yet,
+      and a button inside a button is invalid HTML whose live consequence is the
+      inner press also pressing the card (223). Enter and Space are wired by
+      hand, and every inner button stops its own click.
+ 787. ⚠️ **Logos are fetched in Rust and handed over as data URLs.** The route
+      needs his Bearer token and the token never reaches a WebView. "Has none"
+      (404) is remembered too, or a logo-less project is asked about on every
+      render. A logo sits on a light plate: Helm's are drawn for a white page.
+ 788. ⚠️⚠️ **The Suggested fold "opened into empty space" for two reasons, and
+      both are general.** Its toggle redrew only its own screen, never the
+      shell — so the island was never measured again and could not grow; and
+      the rows it added landed below the list's visible part with nothing
+      scrolling to them. A screen-local toggle that changes height must go
+      through the shell's render (with `deliberately()`), and a reveal must
+      scroll what it revealed into view — after the measure, on the next frame.
+ 789. ⚠️ **`measure()` reads a screen's direct children by `offsetHeight`, which
+      leaves out their MARGINS.** Helm's Today had the rail's 7px and the
+      composer's 7px as margins on direct children, so every measurement came
+      out 14px short and the list scrolled with half a row cut by the composer.
+      They are inside wrappers now (`.helm-top`, `.helm-foot`), where a margin is
+      part of the wrapper's height. Any new screen built of flex children: no
+      margins on the direct children.
+ 790. ⚠️ **A list that scrolls fades at the edge where there is more**
+      (`.helm-list.is-above/.is-below`), and only there. A hard edge cutting a
+      row reads as a layout that ran out of room; a fade over the last row of a
+      list that FITS would hide a row for nothing.
+ 791. ⚠️ **One chip per row, only for status, always with its word** (Helm's own
+      rule): late beats due-today beats your-move beats waiting (`chipFor`).
+      The grey meta line under each title is gone: the project is the face, a
+      length is a tabular figure at the end, and the row's actions take the
+      figures' place under the pointer instead of pushing the title along.
+ 792. ⚠️ **Quick capture's bar IS the panel** (`setSolo`): the island is sized
+      to it alone, with no screen under it and no minimum depth — the floor is
+      sized for a screen, and under it a one-line field sat on a slab of black
+      twice its own height. It keeps the palette's discipline otherwise: one
+      open/close chain (260), the mask before anything opens (397), the fold
+      decided before the size is handed back (399).
+ 793. ⚠️ **Releasing the caret arms the ordinary fold timer** (450 ms), which
+      took the capture's answer away before it could be read. `pinFor` is
+      called AFTER `input(false)` resolves, replacing that timer with its own.
+ 794. ⚠️ **One chat stream, two readers.** `helm:chat` carries no turn id, so
+      `GuardianChat` holds whose turn it is (`chat` or `capture`) and refuses a
+      second while one is in flight; capture's reply goes to its own record and
+      never becomes a bubble mid-thread.
+ 795. ⚠️ **An older Helm ignores `capture: true`** and answers as a chat — a
+      longer reply, not a failure. The bar clamps the answer to two lines.
+ 796. **The quick-capture key is the one added back** (`Ctrl+Alt+J`, his call),
+      against 595's rule that keys stop multiplying: capture's whole point is
+      not leaving what you are in. J is not an AltGr letter (165). "Back to the
+      defaults" in Settings was sending the six keys of an older build and
+      failing on the missing `ring` every time; it sends the three now.
+ 797. **Coding time is not measured here any more.** It was read off VS Code's
+      title, which names whatever workspace is open — how time ended up under
+      "personal" and "nxm". A VS Code extension reports the active file's repo
+      to Helm itself. `helm::sample`, the minute set, `/api/activity` and the
+      `~/.helm/activity.json` fallback are all gone; app time is untouched.
+ 798. ⚠️ **Preview writes are recorded** (`window.__helmCalls`): logging an hour
+      or starting a terminal changes nothing a preview can show, so a test reads
+      back what was asked of Helm instead.
+
+### The kit, and the Guardian as a workspace (round 2, 28 Oct)
+
+His words: the inputs were bad looking and not functional, the chat could do
+more, and the two apps should not look like two apps. `src/kit/*` is Helm's
+interactive parts in this app's dark language, used on every screen that takes
+words: `composer.ts` (the field), `menu.ts` (the `@`/`/` pickers, the Blocks
+menu), `parts.ts` (blocks that fold, side panels, the segmented control, chips),
+`voice.ts` (the microphone), `words.ts` (the pure half, node-tested in
+`tests/kit.test.mjs`), `store.ts` (what is remembered), and `src/kit.css`.
+
+ 799. ⚠️ **A mention's chip is painted BEHIND the text, not put in it.** The
+      composer is an ordinary textarea with a mirror under it that lays the same
+      words out identically and draws a pill under `@Esono Rozwój` and
+      `/request`. The caret, selection, undo, IME and paste stay the browser's.
+      A contenteditable with real chip nodes would have to rebuild all of that
+      (609–613 are what that costs). ⚠️ The mirror and the field must share
+      every text metric — font, size, line-height, padding, width, wrapping —
+      or the pills drift off their words; `.k-input, .k-mirror` is one rule.
+ 800. ⚠️ **A mention is its words.** Delete them and the mention goes
+      (`liveMentions`); Backspace at its end takes the whole `@Name`; it is
+      sent once however often it is typed. What is sent is `{text, command,
+      mentions}` with the command taken off the front (`outgoing`).
+ 801. ⚠️ **Names match by WORDS before letters.** The palette's subsequence
+      matcher is right for commands and wrong for names: `eso` lit Akcesfonia
+      (a-k-c-E-S-f-O) beside Esono. A name containing what was typed, or whose
+      initials start with it, wins; the loose match is only the fallback.
+ 802. ⚠️ **A picker's highlight is held only when it was MOVED.** Held by id
+      across every refill, the live-first order of the empty query left
+      Akcesfonia highlighted as the list narrowed to Esono, and Enter picked it
+      (same as 183). `Menu.moved` is set by the arrows and the pointer only.
+ 803. ⚠️ **The `@`/`/` picker opens ABOVE the field on a screen and UNDER it in
+      the capture bar.** The capture bar is the whole panel (`setSolo`), so
+      there is no room above it; under it the picker is in flow and the island
+      must measure again when it opens, closes or is picked from (`below`).
+ 804. ⚠️ **The draft is kept per composer** (`kit:draft:<id>` in
+      localStorage, debounced), across closing the island and a reload, and
+      cleared only by Send. Escape clears through `execCommand`, so Ctrl+Z
+      brings a paragraph back.
+ 805. ⚠️⚠️ **The composer is pinned under the list on an OPAQUE foot, never laid
+      over it.** In his screenshot "Add to today" sat on the last row with the
+      row showing through: the field was transparent and the list's bottom fade
+      ran into it, so the row read as passing underneath. The foot is the
+      island's own black, the list ends where it begins (a browser test checks
+      the two boxes), and the list fades only where there is more to scroll to.
+ 806. ⚠️ **Hold to talk is MediaRecorder + Helm's `/api/transcribe`, not the
+      Web Speech API** Helm's own composer uses: WebView2 ships no recognition
+      service. Opus in webm at 32 kbit/s — about 1.2 MB for the five minutes
+      Helm allows, under the 4.5 MB the deployed Helm's host accepts (WAV would
+      only fit ~2 min 20 s). The words go INTO the box, never sent by
+      themselves. **Hold the mic, or Ctrl+Space with the caret in the field**
+      (Helm's own key); Escape cancels wherever the caret is; a press shorter
+      than half a second is a tap and does nothing.
+ 807. ⚠️⚠️ **WebView2 asks for the microphone with a prompt the island cannot
+      show.** It is browser UI drawn over a transparent, clipped,
+      non-activating window, so `getUserMedia` waits on a dialog nobody can
+      see and the mic simply never starts — no error. wry answers only the
+      clipboard's permission. `mic.rs` answers `PermissionRequested` for the
+      microphone on the tasks window, for this app's OWN origins only (`ours`,
+      tested against look-alikes). It needs `webview2-com` named in
+      Cargo.toml — the same 0.38.2 wry already locks, nothing fetched.
+      Windows' own switch (Privacy › Microphone › desktop apps) it cannot
+      touch: off, the page gets NotAllowedError and says so in words.
+ 808. ⚠️ **Without the endpoint the mic HIDES.** `helm_transcribe_ready` asks
+      once per session with a GET the route does not serve: 405 means it
+      exists, 404 that it does not; 503 at either step ("Speech isn't set up")
+      hides it too. A failed ask is retried a minute later, not on the next
+      render — the getter runs on every one.
+ 809. ⚠️ **The multipart body is built by hand** (`helm::multipart`): reqwest's
+      `multipart` feature is off here and would pull two crates for twenty
+      lines. The boundary is checked against the audio, and `lang` is sent
+      only when it looks like a language tag.
+ 810. **The Guardian is three columns measured by the middle one.**
+      `island-surface` gained a `leads` mode: the `.lead` column (bar, thread,
+      composer) is measured by its children; the history and project panels
+      stretch to it and scroll inside, so they are never asked (a stretched
+      column answers with the island's own height — 683). `data-floor` keeps a
+      one-message day from squeezing an open panel into a strip.
+ 811. ⚠️ **The thread is bottom-anchored with a spring, not `flex-end`.** An
+      end-packed scroller cannot be scrolled to its top; a `::before` with
+      `flex: 1 0 0` takes the slack instead, and a pseudo-element is not a
+      child, so the measure never counts it.
+ 812. ⚠️ **Side panels follow 752–760 to the letter** (`kit/parts SidePanel`):
+      always in the DOM, width 0 or theirs with no transition, an inner box at
+      full width, `inert` shut, and the screen re-applies its width cap when
+      one toggles. The main column is FIXED while a panel is beside it — sized
+      by what is left over it re-wraps every message on every frame. On a
+      left or right edge the fixed width is dropped: the island is only the
+      shell's width there.
+ 813. ⚠️ **The focus is a chip, never a surprise.** Set from the project
+      panel, a card's project, or the `@` picker when none is set; sent as
+      `focus: {projectId}` with every message; remembered. Setting it does NOT
+      open the panel — picked from `@` mid-sentence, the island growing wide
+      under the words being typed was the last thing wanted.
+ 814. ⚠️ **A reply's changes fold when there is more than one** ("3 zmiany ▾"),
+      each with Cofnij inside; one is shown as it is.
+ 815. ⚠️ **In a card the call is TINTED, not filled.** A reply can carry three
+      cards; three filled accents in one reply is no hierarchy. The composer's
+      Send (lit only with words) is the screen's one filled accent.
+ 816. ⚠️ **A card's state after an action is the card's own** (`cards` keyed by
+      `message:index`): logged, sent (with where), billed, started, done.
+      ⚠️ A reminder Helm already sent at that level answers 409 — shown as
+      SENT with Helm's sentence, not as a failure to press again.
+ 817. ⚠️ **A time card can be old.** One made from Claude Code is saved in the
+      thread, so Log can sit on a message from hours ago. Before logging a
+      stored card the thread is re-read (as Helm's panel does) and a card that
+      is gone or marked logged turns "Już nieaktualne" instead of logging twice.
+ 818. ⚠️ **Message actions float on the reply's FOOT, left** — top-right is
+      where his own bubble above usually is, and the bar read as colliding with
+      it. On his own messages they sit in flow in the empty room to the left.
+ 819. **Today is blocks** (Now, Needs you, Agents, Today, Suggested), each
+      folding from its header and each switched in the Blocks menu, both
+      remembered (`kit:fold:today-*`, `kit:today-hidden` — what is HIDDEN is
+      stored, 246). All in the one scroller (323, 751). Suggested's rows are
+      drawn only while it is open: hidden rows are still found by a screen
+      reader, a search and a test.
+ 820. **Add to today files through the Guardian when it carries a `/command`
+      or an `@project`** (Helm's `/api/queue` add takes a title and nothing
+      else); a plain line still goes straight into Today.
+ 821. **A live session's project opens BESIDE the screen** — from a row of
+      Today's Agents block (with a way on to the session itself), and on the
+      Agents screen from a card's project face or the detail's toggle. One
+      builder (`project-panel.ts`): its open requests, doing as a chip and
+      todo as a Start button — two Claude marks side by side, one a fact and
+      one a press, read as the same thing twice. ⚠️ On a card only the FACE is
+      the door: the project line is the middle of the card, and a card whose
+      middle opens something other than the card is one you stop trusting.
+      Today is `leads` columns like the Guardian for it.
+ 822. ⚠️ **A preview reply is KEPT** (`sentHere` in task-client): a reply that
+      vanished on the reload after `done` was a thread that forgot what it had
+      just answered, and the test reading it raced a 200 ms window.
+ 823. **Staged:** `&history=off`, `&speech=off`, `&projects=off` (each the 404
+      of a Helm without it), `&remind=sent` (Helm's 409). Tests mock the
+      microphone with an oscillator (`fakeMic`), created inside the press — an
+      AudioContext needs the gesture.

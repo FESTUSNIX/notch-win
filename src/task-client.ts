@@ -188,8 +188,291 @@ let demoPrefs: Record<string, unknown> = {
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 
+/* ── Helm, staged ───────────────────────────────────────────────────────
+   `?helm` connects it (the queue, a thread; `&running` or `&paused` adds a
+   session on its first item); `?nudge` adds an unread nudge. A preview has no Tauri events, so what Rust
+   would emit (`helm:chat`, `helm:nudge`) goes out on `previewBus` instead. */
+const params = new URLSearchParams(location.search);
+export const previewBus = new EventTarget();
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+const atToday = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+const dayFrom = (days: number) => { const d = new Date(); d.setDate(d.getDate() + days); return localDay(d); };
+function demoHelmQueue() {
+  const item = (key: string, title: string, context: string | null, minutes: number, more: Record<string, unknown> = {}) => ({
+    key, kind: key.split(":")[0], title, context, projectId: 3, workItemId: null, taskId: null, dealId: null, blockId: null,
+    dueOn: null, minutes, done: { kind: "own" }, doneLabel: null, href: "/", ...more,
+  });
+  type Item = ReturnType<typeof item>;
+  const entry = (key: string, type: string, title: string, items: Item[], more: Record<string, unknown> = {}) => ({
+    key, type, title, context: type === "small" ? null : items[0].context, projectId: items[0].projectId,
+    dueOn: items.map(i => i.dueOn).filter(Boolean).sort()[0] ?? null, minutes: items.reduce((t, i) => t + i.minutes, 0),
+    why: null, items, by: null, carried: false, ...more,
+  });
+  const rynek = item("request:1", "Rynek Czeski — poprawki w koszyku", "Esono Rozwój", 120, { workItemId: 1, dueOn: dayFrom(2) });
+  const small = [
+    item("attention:payment-9", "Ubrania is 3 days late", "1 200 zł, due 24 Oct", 15, { kind: "money", done: { kind: "mark-paid" }, doneLabel: "Mark as paid" }),
+    item("log:3@x", "Log 2 h 15 min on Esono Rozwój", "about 2 h 20 min coded", 5, { kind: "log", done: { kind: "log", minutes: 135 }, doneLabel: "Log 2 h 15 min" }),
+    item("followup:4@x", "Follow up on the offer", "Południowa Służba Ratownicza", 30, { dueOn: dayFrom(0), done: { kind: "mark" } }),
+  ];
+  const blog = item("todo:1", "Napisać post na blog HADA", null, 45, { kind: "todo", projectId: null });
+  const logo = item("request:5", "Zmiana logo na nowe", "sonocars", 60, { workItemId: 5, projectId: 5, dueOn: dayFrom(-2) });
+  const tasks = [item("task:7", "Home page design ready", "Online store", 60, { kind: "task", taskId: 7, projectId: 9, hue: "magenta", dueOn: dayFrom(4) }), item("task:8", "Cart and checkout design ready", "Online store", 60, { kind: "task", taskId: 8, projectId: 9, hue: "magenta", dueOn: dayFrom(4) })];
+  const galeria = item("request:2", "Galeria: nowe zdjęcia aut", "sonocars", 60, { workItemId: 2, projectId: 5 });
+  return {
+    items: [rynek, ...small, blog, logo, ...tasks, galeria],
+    today: [
+      entry("request:1", "item", rynek.title, [rynek], { by: "guardian", why: "Termin w czwartek, zostały około 2 godziny." }),
+      entry("small", "small", "3 small things", small, { by: "guardian" }),
+      entry("todo:1", "item", blog.title, [blog], { by: "me" }),
+      entry("request:5", "item", logo.title, [logo], { carried: true }),
+    ],
+    suggested: [
+      entry("group:9:task@x", "group", "Online store: 2 tasks", tasks),
+      entry("request:2", "item", galeria.title, [galeria], { why: "sonocars dostał w tym tygodniu najmniej czasu." }),
+    ],
+    /* ⚠️ On the online store's project, so its group in the suggestions wears
+       the "Waiting" chip — a fixture where no row is waiting tests none of it. */
+    waiting: [item("attention:waiting-12", "Waiting on the client", "Online store", 15, { projectId: 9 })],
+    snoozed: 2, doneToday: 3, workedMinutes: 190, freeMinutes: null,
+    sessions: params.has("running") || params.has("paused") ? { "2": "request:1" } : {},
+  };
+}
+function demoHelm() {
+  if (!params.has("helm")) return { connected: false, signedIn: false, today: null, error: null, queue: null, queueError: null, notch: null, skewMs: 0 };
+  const live = params.has("running") || params.has("paused");
+  return {
+    connected: true, signedIn: true, error: null, queueError: null, skewMs: 0,
+    queue: demoHelmQueue(),
+    notch: demoNotch(),
+    today: {
+      now: new Date().toISOString(), today: localDay(),
+      day: { firstStep: "Rynek Czeski — poprawki w koszyku (Esono Rozwój)", closedAt: null, off: false },
+      rhythm: { on: true, wake: 465, start: 540, close: 1065 },
+      blocks: [
+        { id: 1, title: "Zestawienie prac NXM Artech", status: "done", plannedAt: null, minutes: 15, runStartedAt: null, elapsedSeconds: 900, project: "NXM" },
+        ...(live ? [{ id: 2, title: "Rynek Czeski — poprawki w koszyku", status: params.has("paused") ? "paused" : "running", plannedAt: null, minutes: 120, runStartedAt: params.has("paused") ? null : minutesAgo(29), elapsedSeconds: params.has("paused") ? 1740 : 0, project: "Esono Rozwój" }] : []),
+      ],
+      nudges: params.has("nudge") ? [{ id: 91, kind: "idle", title: "Przerwa trwa 40 minut", body: "Następne w kolejce: Rynek Czeski — poprawki w koszyku (Esono Rozwój). Wracamy?", url: "/", at: minutesAgo(2) }] : [],
+      replies: ["Zaczynam", "Za duże, daj 10 minut", "Dziś wolne"],
+    },
+  };
+}
+function demoThread() {
+  const day = localDay();
+  const msg = (id: number, role: string, kind: string, title: string | null, body: string, time: string, extra: Record<string, unknown> = {}) =>
+    ({ id, day, kind, role, title, body, url: null, createdAt: atToday(time), read: true, receipts: [], cards: [], images: [], ...extra });
+  return {
+    strictness: "normal", usual: "normal",
+    messages: [
+      msg(1, "guardian", "start", "9:42 i jeszcze nic nie ruszyło", "Na teraz: Repricer: reguły cen (Esono Repricer). Zacznij od 10 minut, reszta pójdzie łatwiej.", "09:42", { url: "/" }),
+      msg(2, "me", "chat", null, "Za duże, daj 10 minut", "09:44"),
+      /* ⚠️ THREE changes, so the reply's receipts fold ("3 zmiany"): a
+         fixture with one change never shows the fold at all. */
+      msg(3, "guardian", "chat", null, "Jasne. Zacznij od jednej reguły: progu dla kategorii **Opony**. Dodałem blok na 10 minut na teraz.", "09:44", {
+        receipts: [
+          { label: "Start: Repricer: reguły cen (10 min)", icon: "start", undo: { op: "delete", table: "focus_blocks", id: 9 } },
+          { label: "Plan: Repricer po 10 min, potem Rynek Czeski", icon: "plan", undo: { op: "update", table: "days", id: 2, values: {} } },
+          { label: "Notatka: próg dla Opon", icon: "note", undo: null },
+        ],
+      }),
+      msg(4, "me", "chat", null, "Co mam dziś?", "13:40"),
+      msg(5, "guardian", "chat", null, "Najpierw Rynek Czeski: termin w czwartek. Po callu z Piotrem follow-up.", "13:40", {
+        cards: [{ type: "day", day, mustWin: null, queue: [
+          { title: "Rynek Czeski — poprawki w koszyku", context: "Esono Rozwój", due: null, minutes: 120 },
+          { title: "Follow up on the offer", context: "Południowa Służba Ratownicza", due: null, minutes: 30 },
+          { title: "Galeria: nowe zdjęcia aut", context: "sonocars", due: null, minutes: 60 },
+        ], blocks: [
+          { id: 1, title: "Zestawienie prac NXM Artech", time: "08:50", minutes: 15, status: "done" },
+        ], meetings: [{ title: "Call z Piotrem", from: "15:00", to: "15:30" }] }],
+      }),
+      msg(6, "me", "chat", null, "Co jest otwarte w Esono?", "13:52"),
+      msg(8, "guardian", "chat", null, "Trzy otwarte zgłoszenia, jedno już w toku u Claude'a.", "13:52", {
+        cards: [{ type: "requests", project: "Esono Rozwój", projectId: 3, items: [
+          { id: 1, title: "Rynek Czeski — poprawki w koszyku", status: "doing", priority: "urgent", estimate: 120, logged: 95, due: dayFrom(2), waiting: null },
+          { id: 11, title: "Filtry kategorii w sklepie", status: "todo", priority: "high", estimate: 90, logged: 0, due: null, waiting: null },
+          { id: 12, title: "Mapa strony dla Google", status: "todo", priority: "normal", estimate: 30, logged: 0, due: null, waiting: "klienta" },
+        ] }],
+      }),
+      msg(9, "me", "chat", null, "Skończyłem Rynek Czeski", "14:10"),
+      msg(7, "guardian", "chat", null, "Świetnie. Zaloguję czas na Rynek Czeski? Do tego dwie sprawy z pieniędzmi na ten tydzień.", "14:10", {
+        cards: [
+          { type: "time", requestId: 1, title: "Rynek Czeski — poprawki w koszyku", project: "Esono Rozwój", projectId: 3, minutes: 90, you: 20, agent: 70, estimate: 120, capped: true },
+          { type: "reminder", paymentId: 9, title: "Faktura dla Ubrania", client: "Ubrania", amount: 1200, daysLate: 2, level: "friendly" },
+          { type: "renewal", id: 3, period: "co rok", title: "Domena sonocars.pl", client: "sonocars", amount: 120, on: dayFrom(3), paidBy: "client" },
+        ],
+      }),
+      ...(params.has("nudge") ? [msg(91, "guardian", "idle", "Przerwa trwa 40 minut", "Następne w kolejce: Rynek Czeski — poprawki w koszyku (Esono Rozwój). Wracamy?", "16:42", { url: "/", read: false })] : []),
+      /* What was said in the preview itself, kept as Helm keeps it: a reply
+         that vanished on the reload after `done` would be a thread that
+         forgets what it just answered. */
+      ...structuredClone(sentHere),
+    ],
+  };
+}
+const sentHere: Record<string, unknown>[] = [];
+/* Earlier days, for the history panel: `/api/guardian/thread?day=` answers
+   these as a bare array (the contract's `ThreadMessage[]`). */
+function demoDay(day: string) {
+  const at = (time: string) => { const [h, m] = time.split(":").map(Number); const d = new Date(`${day}T00:00:00`); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const msg = (id: number, role: string, kind: string, title: string | null, body: string, time: string, extra: Record<string, unknown> = {}) =>
+    ({ id, day, kind, role, title, body, url: null, createdAt: at(time), read: true, receipts: [], cards: [], images: [], ...extra });
+  if (day === dayFrom(-1)) return [
+    msg(201, "guardian", "start", "Dzień dobry", "Na dziś: faktura dla Ubrania i Galeria dla sonocars.", "09:05", { url: "/" }),
+    msg(202, "me", "chat", null, "Co z fakturą dla Ubrania?", "11:20"),
+    msg(203, "guardian", "chat", null, "Faktura dla Ubrania czeka od 2 dni. Wysłałem uprzejme przypomnienie.", "11:20", {
+      receipts: [{ label: "Przypomnienie: Ubrania, 1 200 zł", icon: "reminder", undo: null }],
+    }),
+  ];
+  if (day === dayFrom(-3)) return [
+    msg(301, "me", "chat", null, "Zaplanuj mój czwartek", "08:40"),
+    msg(302, "guardian", "chat", null, "Plan na czwartek: Repricer, potem Rynek Czeski, a po 15:00 call z Piotrem.", "08:41"),
+  ];
+  return [];
+}
+function demoHistory() {
+  return { days: [
+    { day: localDay(), count: 10, preview: "Świetnie. Zaloguję czas na Rynek Czeski?" },
+    { day: dayFrom(-1), count: 3, preview: "Faktura dla Ubrania czeka od 2 dni." },
+    { day: dayFrom(-3), count: 2, preview: "Plan na czwartek: Repricer, potem Rynek Czeski" },
+  ] };
+}
+/* ⚠️ Accents folded both ways, as Helm's search does: "faktura" finds
+   "fakturą". Written with the combining range spelled out, no escapes —
+   a patch tool eats backslashes (AGENTS 60). */
+const COMBINING = new RegExp("[" + String.fromCharCode(0x300) + "-" + String.fromCharCode(0x36f) + "]", "g");
+function demoSearch(q: string) {
+  const fold = (t: string) => t.normalize("NFD").replace(COMBINING, "").replace(/ł/g, "l").toLowerCase();
+  const wanted = fold(q.trim());
+  const all = [...demoThread().messages, ...demoDay(dayFrom(-1)), ...demoDay(dayFrom(-3))] as { id: number; day: string; role: string; body: string; createdAt: string }[];
+  return { results: all.filter(m => wanted && fold(m.body).includes(wanted)).map(m => ({ id: m.id, day: m.day, role: m.role, snippet: m.body, createdAt: m.createdAt })) };
+}
+/* `/api/notch/projects`, staged: every project, the live ones marked. */
+function demoProjects() {
+  if (params.get("projects") === "off") return null;
+  return { projects: [
+    { id: 3, name: "Esono Rozwój", client: "Esono", logoVersion: "v1", hue: "orange", personal: false, live: true },
+    { id: 4, name: "Esono Repricer", client: "Esono", logoVersion: "v2", hue: "blue", personal: false, live: false },
+    { id: 5, name: "sonocars", client: "sonocars", logoVersion: null, hue: "red", personal: false, live: false },
+    { id: 8, name: "Akcesfonia", client: "Akcesfonia", logoVersion: null, hue: "violet", personal: false, live: true },
+    { id: 9, name: "Online store", client: "Ubrania", logoVersion: null, hue: "magenta", personal: false, live: false },
+    { id: 30, name: "Codenotch", client: null, logoVersion: null, hue: "aqua", personal: true, live: true },
+  ] };
+}
+/* The cockpit, staged: `/api/notch` as Helm will send it — his clock and the
+   agents', what needs him, and the projects with folders on this PC.
+   ⚠️ `&notch=off` is the OTHER state, and the one the deployed Helm is in
+   until it ships the endpoint: a 404, which helm.rs turns into `null`. Every
+   part built on it has to vanish then rather than break — that flag is how
+   the preview (and helm.spec) proves it does. */
+const hoursFromNowIso = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+function demoNotch() {
+  if (params.get("notch") === "off") return null;
+  const project = (id: number, name: string, hue: string, logoVersion: string | null, personal = false) =>
+    ({ id, name, logoVersion, hue, client: null, personal });
+  const request = (id: number, title: string, status: "todo" | "doing", estimate: number | null, started: number | null = null) =>
+    ({ id, title, status, estimate, startedAt: started === null ? null : minutesAgo(started) });
+  return {
+    day: localDay(),
+    clock: { you: 190, agents: 85 },
+    needs: params.has("noneeds") ? [] : [
+      { key: "meeting:1", kind: "meeting", title: "Call z Piotrem", context: "Południowa Służba Ratownicza", amount: null,
+        at: hoursFromNowIso(0.7), href: "/calendar", join: "https://meet.google.com/demo" },
+      { key: "reminder:7", kind: "reminder", title: "Faktura dla Ubrania", context: "Ubrania", amount: 1200,
+        at: dayFrom(-2), href: "/money", join: null },
+      { key: "renewal:3", kind: "renewal", title: "Domena sonocars.pl", context: "sonocars", amount: 120,
+        at: dayFrom(3), href: "/money", join: null },
+      { key: "request:9", kind: "request", title: "Nowe zgłoszenie od Ubrania", context: "Ubrania", amount: null,
+        at: null, href: "/projects/12", join: null },
+    ],
+    folders: [
+      { folder: "esono", path: "C:/Users/matko/CODE/esono", project: project(3, "Esono Rozwój", "orange", "v1"), requests: [
+        request(1, "Rynek Czeski — poprawki w koszyku", "doing", 120, 95),
+        request(11, "Filtry kategorii w sklepie", "todo", 90),
+        request(12, "Mapa strony dla Google", "todo", 30),
+      ] },
+      /* ⚠️ No path: Helm knows the project but not where it lives on this PC,
+         so Start with Claude has to say so rather than open a terminal in the
+         wrong place. */
+      { folder: "akcesfonia", path: null, project: project(8, "Akcesfonia", "violet", null), requests: [
+        request(21, "Nowy koszyk B2B", "doing", null, 200),
+        request(22, "Eksport faktur do CSV", "todo", 60),
+      ] },
+      { folder: "codenotch-win", path: "C:/Users/matko/CODE/_personal/codenotch-win", project: project(30, "Codenotch", "aqua", null, true), requests: [
+        request(31, "Helm w notchu", "doing", 240, 120),
+        request(32, "Tryb ambient: nowe sceny", "todo", 120),
+      ] },
+      { folder: "esono-price-watch", path: "C:/Users/matko/CODE/_tests/esono-price-watch", project: project(4, "Esono Repricer", "blue", "v2"), requests: [
+        request(41, "Reguły cen dla opon", "todo", 60),
+      ] },
+      { folder: "sonocars", path: "C:/Users/matko/CODE/sonocars", project: project(5, "sonocars", "red", null), requests: [
+        request(5, "Zmiana logo na nowe", "todo", 60),
+        request(2, "Galeria: nowe zdjęcia aut", "todo", 60),
+      ] },
+    ],
+  };
+}
+/** Two staged logos, as Helm serves them: an image, by project and version. */
+const demoLogos: Record<string, string> = {
+  "3:v1": `data:image/svg+xml;utf8,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#ff8a4c'/><stop offset='1' stop-color='#e8562a'/></linearGradient></defs><rect width='64' height='64' rx='15' fill='url(#g)'/><path d='M21 22h22M21 32h17M21 42h22' stroke='#fff' stroke-width='6' stroke-linecap='round'/></svg>")}`,
+  "4:v2": `data:image/svg+xml;utf8,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='15' fill='#1d6fd8'/><path d='M18 42l10-12 8 7 10-15' fill='none' stroke='#fff' stroke-width='5.5' stroke-linecap='round' stroke-linejoin='round'/></svg>")}`,
+};
+/** What the preview's terminal would have been asked to do. */
+const demoFolderOf = (id: number) => demoNotch()?.folders.find(f => f.requests.some(r => r.id === id)) ?? null;
+/** `?finished` stages a run that has just ended on a request — what
+   `notch:finished` carries natively — on the waiting session under `?agents`
+   and on the working one otherwise. */
+export function previewFinished(): { session: string; project: string; folder: string | null } | null {
+  if (!params.has("finished") || native) return null;
+  /* ⚠️ Under `?agents` only: a finished run is a session that has STOPPED,
+     and the default fixture's one session is working. */
+  return agentsFixture ? { session: "s1", project: "akcesfonia", folder: null } : null;
+}
+async function scriptReply(text: string, capture = false) {
+  const now = new Date().toISOString();
+  const keep = (id: number, role: string, body: string, receipts: unknown[] = []) =>
+    sentHere.push({ id, day: localDay(), kind: "chat", role, title: null, body, url: null, createdAt: now, read: true, receipts, cards: [], images: [] });
+  const send = (detail: unknown) => previewBus.dispatchEvent(new CustomEvent("helm:chat", { detail }));
+  const wait = (ms: number) => new Promise(done => setTimeout(done, ms));
+  send({ t: "start", id: 100 });
+  await wait(300);
+  /* Quick capture's answer: one line and what it filed. */
+  if (capture) {
+    send({ t: "status", text: "Zapisuję" });
+    await wait(500);
+    send({ t: "text", d: "Zapisane, przypomnę jutro o 9:00." });
+    send({ t: "receipt", index: 0, receipt: { label: `Przypomnienie: ${text.slice(0, 60)}`, icon: "note", undo: { op: "delete", table: "reminders", id: 4 } } });
+    await wait(150);
+    send({ t: "done", id: 102, changed: true });
+    return;
+  }
+  send({ t: "status", text: "Sprawdzam kalendarz" });
+  await wait(600);
+  for (const part of ["Dobrze. ", "Przesunąłem Repricer ", "na 17:00, ", `bo pytasz o: „${text.slice(0, 40)}”.`]) {
+    send({ t: "text", d: part });
+    await wait(220);
+  }
+  const receipts = [
+    { label: "Plan: Repricer po południu", icon: "plan", undo: null },
+    { label: "Repricer: reguły cen, 17:00", icon: "block", undo: { op: "update", table: "focus_blocks", id: 3, values: {} } },
+  ];
+  receipts.forEach((receipt, index) => send({ t: "receipt", index, receipt }));
+  await wait(200);
+  const id = 1000 + sentHere.length;
+  keep(id, "me", text);
+  keep(id + 1, "guardian", `Dobrze. Przesunąłem Repricer na 17:00, bo pytasz o: „${text.slice(0, 40)}”.`, receipts);
+  send({ t: "done", id: id + 1, changed: true });
+}
+
+/* What the preview was asked to do to Helm, for the browser tests to read back
+   (`window.__helmCalls`). ⚠️ Helm's writes have nothing to show in a preview —
+   a logged hour or a started terminal changes nothing on this page — so the
+   only way a test can know Log sent 265 minutes to request 21 is to ask. */
+const helmCalls: { command: string; args: Record<string, unknown> }[] = [];
+if (preview) (window as unknown as { __helmCalls: typeof helmCalls }).__helmCalls = helmCalls;
+
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
+  if (command.startsWith("helm_")) helmCalls.push({ command, args: structuredClone(args) });
   if (command === "get_tasks") return structuredClone(demo) as T;
   if (command === "get_task_placement") return {
     /* ⚠️ Staged from the query string. The island lost its own edge and clock
@@ -276,7 +559,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      that ate `ń` and is the reason the defaults moved. The settings window's
      AltGr guard is what found it: it warned about a shortcut no build had
      shipped for months. */
-  if (command === "get_shortcuts") return {hide:"Ctrl+Alt+H", ring:"Alt+W"} as T;
+  if (command === "get_shortcuts") return {hide:"Ctrl+Alt+H", ring:"Alt+W", capture:"Ctrl+Alt+J"} as T;
   if (command === "ring_pick" || command === "ring_close") return undefined as T;
   if (command === "get_chrome_hidden") return false as T;
   if (command === "show_chrome" || command === "toggle_chrome") return undefined as T;
@@ -631,6 +914,57 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return undefined as T;
   }
   if (command === "open_task_editor") { window.open("/task-editor.html", "task-editor"); return undefined as T; }
+  /* Helm, staged. ⚠️ Disconnected unless `?helm`: a connected Helm adds a
+     running block to the pill and, with `?nudge`, a nudge at priority 80 —
+     which would take the strip from every other test. */
+  if (command === "get_helm") return structuredClone(demoHelm()) as T;
+  if (command === "helm_thread") {
+    if (!params.has("helm")) throw new Error("Sign in to Helm in Settings to talk to the Guardian.");
+    if (typeof args.day === "string" && args.day) return structuredClone(demoDay(args.day)) as T;
+    return structuredClone(demoThread()) as T;
+  }
+  /* Round 2's endpoints, staged. ⚠️ `&history=off`, `&speech=off` and
+     `&projects=off` are each the 404 a Helm without the endpoint answers —
+     helm.rs turns those into null, and the island has to take it quietly. */
+  if (command === "helm_history") {
+    if (params.get("history") === "off") return null as T;
+    return structuredClone(typeof args.q === "string" && args.q ? demoSearch(args.q) : demoHistory()) as T;
+  }
+  if (command === "helm_projects") return structuredClone(demoProjects()) as T;
+  if (command === "helm_transcribe_ready") return (params.get("speech") !== "off") as T;
+  if (command === "helm_transcribe") {
+    if (params.get("speech") === "off") return { unavailable: true } as T;
+    await new Promise(done => setTimeout(done, 450));
+    return { text: "Przesuń Repricer na jutro rano" } as T;
+  }
+  /* `&remind=sent` is Helm's 409: that level went out before. */
+  if (command === "helm_remind") return (params.get("remind") === "sent"
+    ? { ok: false, status: 409, error: "Uprzejme przypomnienie poszło już 26 paź" }
+    : { ok: true, sentTo: "ksiegowosc@ubrania.pl" }) as T;
+  if (command === "helm_renewal") return { ok: true } as T;
+  if (command === "helm_send") { void scriptReply(String(args.text ?? ""), !!args.capture); return undefined as T; }
+  /* The cockpit's commands. ⚠️ Under `notch=off` they answer as the deployed
+     Helm would without the endpoint — but nothing should be calling them then,
+     because nothing that calls them is drawn. */
+  if (command === "helm_request") {
+    if (params.get("notch") === "off") throw new Error("This Helm can't do that yet.");
+    if (args.status !== "done") return { ok: true, suggestion: null } as T;
+    /* The akcesfonia request has no estimate, so Helm can't cap it: his time
+       plus the agents' at the client's share, UNCAPPED — the amber case, which
+       needs staging as much as the ordinary one. (With an estimate Helm always
+       caps, so "uncapped" never sits next to one.) */
+    return { ok: true, suggestion: args.id === 21
+      ? { minutes: 250, you: 20, agent: 230, estimate: null, capped: false }
+      : { minutes: 90, you: 20, agent: 70, estimate: 120, capped: true } } as T;
+  }
+  if (command === "helm_log") return undefined as T;
+  if (command === "helm_start_claude") {
+    const folder = demoFolderOf(Number(args.id));
+    if (!folder?.path) throw new Error("Helm doesn't know this project's folder yet.");
+    return `${folder.path.split("/").pop()} · Windows Terminal` as T;
+  }
+  if (command === "helm_logo") return (demoLogos[`${args.id}:${args.version}`] ?? null) as T;
+  if (["helm_act", "helm_queue", "helm_read", "helm_undo", "helm_open", "helm_send_code", "disconnect_helm"].includes(command)) return undefined as T;
   if (command === "connect_ticktick") throw new Error("Connect TickTick in the desktop app. This is sample data.");
   if (command === "disconnect_ticktick") { demo = emptySnapshot(); emit(); return undefined as T; }
   const task = demo.tasks.find(t => t.id === args.taskId && t.projectId === args.projectId);

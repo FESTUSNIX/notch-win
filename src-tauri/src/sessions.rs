@@ -77,6 +77,12 @@ pub struct Finished {
     /// The working directory's last component — "akcesfonia", not a path. With
     /// two or three sessions open, which one finished is the whole message.
     pub project: String,
+    /// Which session it was, and its working directory. ⚠️ The island asks
+    /// "is the request done?" on THAT session's card, and two terminals open
+    /// in the same repo have the same project name — the name alone would put
+    /// the question on whichever card happened to come first.
+    pub session: String,
+    pub folder: Option<String>,
     pub seconds: u64,
     /// What THIS run cost.
     ///
@@ -576,6 +582,8 @@ impl Watcher {
                         provider: entry.kind.provider().to_string(),
                         model: entry.model.clone(),
                         project: entry.project.clone(),
+                        session: session.session_id.clone(),
+                        folder: entry.folder.clone(),
                         input: entry.usage.input.saturating_sub(entry.usage_at_start.input),
                         output: entry.usage.output.saturating_sub(entry.usage_at_start.output),
                         seconds: ran.as_secs().max(1),

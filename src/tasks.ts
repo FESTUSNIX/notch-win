@@ -34,7 +34,9 @@ import { MediaScreen, MediaSource } from "./screen-media";
  * working in. That join is the whole feature. */
 import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
-import { HelmScreen, HelmSource } from "./screen-helm";
+import { HelmSource, HelmTodayScreen } from "./screen-helm";
+import { GuardianChat, GuardianScreen } from "./screen-guardian";
+import { Capture } from "./helm-capture";
 import { TimerScreen } from "./screen-timer";
 import { DEFAULT_LENGTHS, phaseName, spokenEnd, type Countdown } from "./timer";
 import { Runs, counted, figureMs, running as runGoing, runName, type Run } from "./runs";
@@ -165,9 +167,10 @@ const WIDTH: Record<FixedScreen, number> = {
    * that belong together. This is about 540 CSS px — roughly what Windows
    * gives the notification itself. */
   notices: 1130,
-  /* Narrow like the notices: a nudge, a line of must-win and a short list of
-   * blocks, each read at a glance. */
-  helm: 1180,
+  /* Helm's day is Today while Helm is connected, so it is Today's width;
+   * the Guardian is a conversation, read at the same measure. */
+  helm: 1420,
+  guardian: 1420,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -202,6 +205,11 @@ function widthOf(name: ScreenName): number {
    * in one — it did not exist when the table was written — and a board of two
    * cards on a panel sized for three is exactly what the table exists to stop
    * everywhere else. Capped at the full body, which is what Home asks for. */
+  /* ⚠️ The Guardian's panels and the Agents screen's project panel are room
+   * ADDED beside the content, never carved out of it (AGENTS 687, 696). */
+  if (name === "guardian") return WIDTH.guardian + dpx(guardianScreen.extraWidth);
+  if (name === "helm") return WIDTH.helm + dpx(helmScreen.extraWidth);
+  if (name === "agents") return WIDTH.agents + dpx(agentsScreen.extraWidth);
   const board = boardOf(boards, name);
   if (board) {
     const want = boardWidthCss(cellsAcross(widgetsOf(board.widgets)));
@@ -264,7 +272,8 @@ app.innerHTML = `<div id="notch-shell">
         <section class="screen" data-screen="today" role="tabpanel" aria-label="Today" hidden></section>
         <section class="screen" data-screen="timer" role="tabpanel" aria-label="Timer" hidden><div class="screen-body timer-body spans" id="timer-body"></div></section>
         <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
-        <section class="screen" data-screen="helm" role="tabpanel" aria-label="Helm" hidden><div class="screen-body scrolls" id="helm-body"></div></section>
+        <section class="screen" data-screen="helm" role="tabpanel" aria-label="Today" hidden></section>
+        <section class="screen" data-screen="guardian" role="tabpanel" aria-label="Guardian" hidden></section>
         <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
@@ -415,6 +424,7 @@ const surface = new IslandSurface(open => {
      * and the width is left alone so the fold is not retargeted at a full
      * expanded panel on its way to the pill. This is the other end of both. */
     palette.unmask();
+    capture.unmask();
     surface.capBody(cpx(widthOf(screen)));
     render();
     /* ⚠️ On the NEXT frame, never inside this one. `show` caps the body,
@@ -424,7 +434,11 @@ const surface = new IslandSurface(open => {
      * at the bottom — on a full test run and nowhere else. A frame later it is
      * an ordinary screen change, the same one a tab press makes. */
     requestAnimationFrame(() => landOn());
-  } else if (palette.open) void palette.hide();
+  } else {
+    if (palette.open) void palette.hide();
+    // ⚠️ The same rule as the palette: a fold closes the capture bar (AGENTS 174).
+    if (capture.open) void capture.hide();
+  }
 });
 
 const today = new TodayScreen(document.querySelector<HTMLElement>('[data-screen="today"]')!, surface, () => render());
@@ -523,7 +537,61 @@ const callScreen = new CallScreen(get("call-body"), callSource,
 callSource.started = () => { if (prefs.callOpen) show("call"); };
 const notices = new NoticesScreen(get("notices-body"), noticeSource);
 const helmSource = new HelmSource(() => render(), (what, why) => say(what, why));
-const helmScreen = new HelmScreen(get("helm-body"), helmSource, surface);
+const guardianChat = new GuardianChat(() => render(), (what, why) => say(what, why));
+const helmScreen = new HelmTodayScreen(document.querySelector<HTMLElement>('[data-screen="helm"]')!, helmSource, surface, () => render(), {
+  sessions: () => agentsScreen.sessions,
+  /* ⚠️ After `show`: walking to the Agents screen resets it to the overview,
+   * so the session is opened once the screen is there. */
+  openSession: id => { show("agents"); agentsScreen.openSession(id); },
+  width: () => { surface.capBody(cpx(widthOf(screen))); surface.deliberately(); },
+  /* A line in Add to today with a `/command` or an `@project` is something to
+   * FILE, so it goes to the Guardian the way quick capture's line does, and its
+   * answer lands on the pill. */
+  file: sent => {
+    if (guardianChat.pending) { say("Guardian", "Still answering the last one"); return false; }
+    void guardianChat.capture(sent.text, { command: sent.command, mentions: sent.mentions }).then(started => {
+      if (!started) return;
+      const watch = window.setInterval(() => {
+        const live = guardianChat.captured;
+        if (!live?.done && !live?.error) return;
+        window.clearInterval(watch);
+        say("Guardian", (live.error ?? live.text.trim()) || "Filed");
+      }, 200);
+    });
+    return true;
+  },
+});
+const guardianScreen = new GuardianScreen(document.querySelector<HTMLElement>('[data-screen="guardian"]')!, guardianChat, helmSource, surface, {
+  // ⚠️ A panel opened or shut changes the width: the cap has to follow (AGENTS 759).
+  width: () => { surface.capBody(cpx(widthOf(screen))); surface.deliberately(); },
+});
+/* Each session's Helm project and request, and "done?" when a run on one ends. */
+agentsScreen.helm = helmSource;
+agentsScreen.widthChanged = () => { surface.capBody(cpx(widthOf(screen))); surface.deliberately(); };
+/* The screens' own widths, in CSS px, for the columns beside their panels. */
+guardianScreen.mainCss = cpx(WIDTH.guardian);
+helmScreen.mainCss = cpx(WIDTH.helm);
+agentsScreen.mainCss = cpx(WIDTH.agents);
+/* The agents' time on a project today, from this machine's own runs. */
+helmSource.agentMinutes = folders => agentsScreen.minutesToday(folders);
+/* Quick capture: one line to the Guardian (Ctrl+Alt+J, or the palette). */
+const capture = new Capture(surface, guardianChat, {
+  signedIn: () => helmSource.signedIn,
+  say: (what, why) => say(what, why),
+  closed: () => { surface.capBody(cpx(widthOf(screen))); render(); },
+  voice: helmSource.voice,
+  projects: () => helmSource.projects,
+  face: project => helmSource.faceOfProject(project),
+});
+/* A NEW nudge drops the island open on the Guardian, the way a phone's island
+ * opens for a call — his call: nudges must not be missed. ⚠️ Not while he is
+ * typing in the palette or a field: taking the panel from under a sentence
+ * would lose it. The pill and the sound still say it. */
+helmSource.onNudge = () => {
+  if (palette.open || surface.editing) return;
+  show("guardian");
+  surface.pinFor(8000);
+};
 /* ⚠️ Helm blocks take over focus while Helm is connected (his call): one
  * timer, one history, and the reward and the logged time keep working. The
  * local timer is for when it is not. */
@@ -810,7 +878,11 @@ function stops(): RailStop[] {
      * nowhere for either to land. */
     hidden: (tab.name === "media" && !media.media.active)
       || (tab.name === "call" && !callSource.call.active)
+      /* ⚠️ One Today at a time: Helm's while it is connected (his call),
+       * TickTick's otherwise. */
       || (tab.name === "helm" && !helmSource.connected)
+      || (tab.name === "today" && helmSource.connected)
+      || (tab.name === "guardian" && !helmSource.connected)
       /* ⚠️ Off the rail unless you put it there. The bell in the header is
        * how you reach this, and the rail is for places you go on purpose —
        * see the note on TABS. It is still reorderable and switchable in
@@ -835,6 +907,17 @@ const SCREEN_EXIT_MS = 150;
  *             content stuttering rather than as either animation.
  */
 function show(name: ScreenName, live = false) {
+  /* ⚠️ "Today" means Helm's day while Helm is connected — wherever it was asked
+   * for: the rail, the ring, the palette, a claim. One redirect here rather
+   * than one at each of those. */
+  if (name === "today" && helmSource.connected) name = "helm";
+  else if (name === "helm" && !helmSource.connected) name = "today";
+  // Opening the conversation reads it: the thread is loaded fresh and marked read.
+  if (name === "guardian" && screen !== "guardian") {
+    void guardianChat.load();
+    // Whether this Helm keeps a history at all, so the panel's toggle is only there if it does.
+    void guardianChat.loadHistory();
+  }
   const from = screen;
   /* ⚠️ Only a RAIL screen is remembered. Going from the notices to the timer
    * and pressing back should not put you on the notices — neither is a place
@@ -1195,6 +1278,8 @@ function claims(): (Activity | null)[] {
      * else. A nudge is waiting for an answer; see screen-helm.ts. */
     helmSource.nudgeClaim(),
     callSource.activity(),
+    /* 56: a run on a Helm request just ended — "done?". See screen-helm.ts. */
+    helmSource.askClaim(),
     timerClaim(),
     agentsScreen.activity(),
     system.activity(),
@@ -1504,10 +1589,11 @@ function render() {
   callScreen.render();
   notices.render();
   helmScreen.render();
+  guardianScreen.render();
   timerScreen.render();
   paintHead();
   // Helm disconnected while you were looking at it: same rule as the call.
-  if (!helmSource.connected && screen === "helm") show("home");
+  if (!helmSource.connected && (screen === "helm" || screen === "guardian")) show("home");
   /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
    * handle is the call ending while you are LOOKING at it, which would leave
    * the island on a screen that says nothing with no way to tell what
@@ -1589,6 +1675,7 @@ function render() {
 }
 
 get("island-expanded").prepend(palette.element());
+get("island-expanded").prepend(capture.element());
 /* Reachable without knowing the shortcut. ⚠️ It does NOT pin — see
  * Palette.show: the pin is a user-facing latch, and three callers toggling it
  * around one open left the island stuck open. Holding the panel is `editing`'s
@@ -1627,6 +1714,24 @@ if (preview) {
     event.preventDefault();
     void summon();
   }, true);
+  /* And quick capture's, for the same reason: `helm:capture` is a native event. */
+  document.addEventListener("keydown", event => {
+    if (!event.ctrlKey || !event.altKey || event.code !== "KeyJ") return;
+    event.preventDefault();
+    void tellTheGuardian();
+  }, true);
+}
+
+/** Quick capture, from the shortcut, the palette or a typed line.
+ *
+ * ⚠️ The palette closes first if it is up: two surfaces asking for the caret
+ * at once is the race the palette's own queue exists to stop (AGENTS 260). */
+async function tellTheGuardian(text = "", send = false) {
+  if (palette.open) await palette.hide();
+  if (!capture.open && surface.isHidden) await call("show_chrome").catch(() => {});
+  steered = performance.now();
+  if (text) await capture.show(text, send);
+  else await capture.toggle();
 }
 
 /* ── What the palette can do ──────────────────────────────────────────────
@@ -1771,6 +1876,12 @@ palette.add(() => {
         call("set_clock_format", { clock24 });
       } },
   ];
+  /* Quick capture, for anybody who does not know its key. */
+  if (helmSource.signedIn) {
+    acts.push({ id: "cmd:tell-guardian", title: "Tell the Guardian", keywords: "capture jot remind note helm quick",
+      icon: "guardian", hint: "Do", keep: { title: "Tell the Guardian", note: "command", icon: "guardian", kind: "", path: "" },
+      run: () => tellTheGuardian() });
+  }
   if (snooze.count()) {
     acts.push({ id: "cmd:unsnooze", title: "Bring back what is snoozed",
       note: `${snooze.count()} quiet`, keywords: "unmute wake",
@@ -2207,7 +2318,18 @@ palette.add(query => {
       surface.pinFor(8000);
       void today.capture(query);
     },
-  }];
+  }, ...(helmSource.signedIn ? [{
+    /* The same line, to the Guardian instead: it files it (a reminder, a note
+     * on a project) and says what it did. ⚠️ An OFFER, like the task row —
+     * built out of the query, so it cannot be ranked against it (AGENTS 181). */
+    id: "make:guardian",
+    title: `Tell the Guardian "${query}"`,
+    keywords: "capture remind note helm",
+    icon: "guardian" as TaskIcon,
+    tier: TIER.offer,
+    hint: "Helm",
+    run: () => tellTheGuardian(query, true),
+  }] : [])];
 });
 
 /** Everything a preference actually changes, in one place.
@@ -2522,12 +2644,13 @@ get("island-expanded").addEventListener("wheel", event => {
 window.addEventListener("blur", () => { void surface.input(false).catch(() => {}); });
 document.addEventListener("keydown", event => {
   // The palette owns its own keys while it is up and stops them there, so
-  // reaching here at all means it is closed.
-  if (palette.open) return;
+  // reaching here at all means it is closed. Quick capture likewise.
+  if (palette.open || capture.open) return;
   if (event.key === "Escape") {
     event.preventDefault();
     if (today.escape()) return;
     if (helmScreen.escape()) return;
+    if (guardianScreen.escape()) return;
     void surface.collapse();
     return;
   }
@@ -2612,6 +2735,8 @@ async function boot() {
     /* One surface over everything. ⚠️ No pin here either — this listener
      * was the first of the three that latched it. */
     await listen("island:palette", () => { void summon(); });
+    /* Quick capture's key (shortcuts.rs). */
+    await listen("helm:capture", () => { void tellTheGuardian(); });
 
     /* Picked from the ring. ⚠️ It OPENS the island as well as switching to
      * the screen, and it has to: the ring is used from inside another window,
@@ -2695,6 +2820,7 @@ async function boot() {
      * that can only ever see clicks that landed on the island. */
     await listen("island:dismiss", () => {
       if (palette.open) { void palette.hide(); return; }
+      if (capture.open) { void capture.hide(); return; }
       void surface.dismiss();
     });
   }
@@ -2897,6 +3023,7 @@ async function boot() {
   await callSource.boot();
   await noticeSource.boot();
   await helmSource.boot();
+  await guardianChat.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();

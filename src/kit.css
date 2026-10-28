@@ -1,0 +1,903 @@
+/* ── The kit (src/kit/*) ─────────────────────────────────────────────────
+   Helm's interactive parts in codenotch's dark language: the composer, the
+   pickers and menus, chips, blocks that fold, side panels, a segmented
+   control. One look on every screen that has them — the Guardian, Today,
+   quick capture, the Agents screen and the fields elsewhere.
+
+   ⚠️ AGENTS 188 holds here too: anything that RECEIVES input is sunk (the
+   composer's well, the segmented track, a field), anything that IS an object
+   is raised (a chip, the current segment, a menu, a card). Focus is a glow on
+   the well, never a bare outline.
+
+   ⚠️ Every part is `k-` prefixed. A bare class here is a class something in
+   tasks.css may already own, and the later rule wins on order alone
+   (AGENTS 195, 694). */
+
+/* ── Shared ────────────────────────────────────────────────────────────── */
+.k-icon {
+	display: inline-grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 50%;
+	color: #b8b8b8;
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-quick) var(--ease-smooth-out);
+}
+.k-icon svg {
+	width: 18px;
+	height: 18px;
+}
+.k-icon[hidden] {
+	display: none;
+}
+.k-icon:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+}
+.k-icon:active:not(:disabled) {
+	background-color: var(--tile-on);
+	scale: 0.94;
+	transition-duration: 90ms;
+}
+/* A panel's toggle: down while its panel is open. */
+.k-toggle[data-on='true'] {
+	color: #fff;
+	background-color: var(--tile-on);
+	box-shadow: var(--hairline), var(--gloss);
+}
+.k-toggle[data-on='true']:hover {
+	background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ── The composer ─────────────────────────────────────────────────────── */
+.k-composer {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	margin: 0;
+}
+.k-composer[hidden] {
+	display: none;
+}
+.k-well {
+	display: flex;
+	flex-direction: column;
+	padding: 3px 4px 3px 6px;
+	border-radius: 20px;
+	background-color: rgba(255, 255, 255, 0.05);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.75),
+		0 1px 0 rgba(255, 255, 255, 0.025);
+	cursor: text;
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+.k-well:hover {
+	background-color: rgba(255, 255, 255, 0.065);
+}
+/* ⚠️ A glow round a FILLED well, never an outline round nothing — the field
+   in his screenshot was a bare purple ring with no ground inside it. */
+.k-composer:focus-within .k-well,
+.k-composer.is-recording .k-well {
+	background-color: rgba(255, 255, 255, 0.07);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.09)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.7),
+		0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent),
+		0 0 24px -8px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.k-composer.is-recording .k-well {
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--hot) 42%, rgba(255, 255, 255, 0.09)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.7),
+		0 0 0 3px color-mix(in srgb, var(--hot) 10%, transparent),
+		0 0 24px -8px color-mix(in srgb, var(--hot) 42%, transparent);
+}
+.k-composer.is-disabled .k-well {
+	opacity: 0.6;
+	cursor: default;
+}
+.k-line {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	min-width: 0;
+}
+.k-line > .k-icon,
+.k-line > .k-send {
+	margin-bottom: 1px;
+}
+.k-lead {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 34px;
+	color: var(--accent);
+}
+.k-lead svg {
+	width: 17px;
+	height: 17px;
+}
+.k-text {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+}
+/* ⚠️ The field and its mirror lay text out IDENTICALLY — every metric below
+   is on both. See composer.ts. */
+.k-input,
+.k-mirror {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	margin: 0;
+	padding: 8px 6px;
+	border: 0;
+	font-family: inherit;
+	font-size: 14.5px;
+	font-weight: 400;
+	line-height: 20px;
+	letter-spacing: normal;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+	word-break: normal;
+	tab-size: 4;
+}
+.k-input {
+	position: relative;
+	z-index: 1;
+	resize: none;
+	overflow-y: hidden;
+	color: #f4f4f4;
+	background: transparent;
+	caret-color: var(--accent);
+	outline: none;
+	scrollbar-width: thin;
+	scrollbar-color: #3a3a3a transparent;
+}
+/* ⚠️ (0,2,0), over the global `input:focus-visible` outline the textarea does
+   not get but a future input would. Focus shows on the well. */
+.k-input:focus-visible {
+	outline: none;
+}
+.k-input::placeholder {
+	color: #8f8f8f;
+}
+.k-input:disabled {
+	color: #bdbdbd;
+}
+.k-mirror {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	overflow: hidden;
+	color: transparent;
+	pointer-events: none;
+}
+/* A mention and the command: pills painted under their own words. The spread
+   is the padding, so the words keep their exact place. */
+.k-mention,
+.k-command {
+	border-radius: 5px;
+	--pill: color-mix(in srgb, var(--hue, var(--iris)) 24%, transparent);
+	background-color: var(--pill);
+	box-shadow:
+		0 0 0 2px var(--pill),
+		0 0 0 2.5px color-mix(in srgb, var(--hue, var(--iris)) 30%, transparent);
+}
+.k-command {
+	--hue: var(--accent);
+}
+.k-composer.is-recording .k-input,
+.k-composer.is-recording .k-mirror,
+.k-composer.is-transcribing .k-input,
+.k-composer.is-transcribing .k-mirror {
+	opacity: 0;
+}
+
+/* Send: round, and lit only with something to send. */
+.k-send {
+	display: inline-grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 50%;
+	color: #7a7a7a;
+	background-color: rgba(255, 255, 255, 0.07);
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out),
+		box-shadow var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-fast) var(--ease-bounce);
+}
+.k-send svg {
+	width: 17px;
+	height: 17px;
+}
+.k-send:disabled {
+	opacity: 1;
+}
+.k-send:hover:disabled {
+	background-color: rgba(255, 255, 255, 0.07);
+}
+.k-send.is-ready {
+	color: var(--on-accent);
+	background-color: var(--accent);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 64%);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+		inset 0 1px 0 rgba(255, 255, 255, 0.4),
+		0 1px 2px rgba(0, 0, 0, 0.5),
+		var(--glow-accent);
+}
+.k-send.is-ready:hover {
+	background-color: var(--accent-hi);
+}
+.k-send.is-ready:active {
+	scale: 0.92;
+	transition-duration: 90ms;
+}
+
+/* The mic: a ghost until held, then the one red thing on the screen. */
+.k-mic {
+	position: relative;
+	isolation: isolate;
+	touch-action: none;
+	user-select: none;
+}
+.k-mic.is-live,
+.k-mic.is-live:hover {
+	color: #fff;
+	background-color: var(--hot);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.3),
+		0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.k-mic.is-live::after {
+	content: '';
+	position: absolute;
+	inset: -5px;
+	z-index: -1;
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--hot) 26%, transparent);
+	animation: k-breathe 1.4s var(--ease-in-out) infinite;
+}
+@keyframes k-breathe {
+	0%,
+	100% {
+		scale: 0.86;
+		opacity: 0.6;
+	}
+	50% {
+		scale: 1.08;
+		opacity: 1;
+	}
+}
+
+/* Recording: the time, the voice as a moving wave, and the way out. */
+.k-rec {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 2px 0 8px;
+}
+.k-rec[hidden] {
+	display: none;
+}
+.k-rec-dot {
+	flex-shrink: 0;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--hot);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--hot) 70%, transparent);
+	animation: k-blink 1.1s var(--ease-in-out) infinite;
+}
+@keyframes k-blink {
+	50% {
+		opacity: 0.35;
+	}
+}
+.k-rec-time {
+	flex-shrink: 0;
+	min-width: 34px;
+	font-size: 14px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: #f4f4f4;
+}
+.k-rec-wave {
+	flex: 1;
+	min-width: 0;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 3px;
+	overflow: hidden;
+}
+.k-rec-wave i {
+	flex: 0 0 3px;
+	height: calc(3px + var(--h, 0.08) * 21px);
+	border-radius: 2px;
+	background: color-mix(in srgb, var(--hot) 55%, #fff);
+	transition: height 90ms linear;
+}
+.k-rec .k-rec-cancel {
+	width: 28px;
+	height: 28px;
+}
+.k-rec .k-rec-cancel svg {
+	width: 15px;
+	height: 15px;
+}
+/* Sent for the words: the wave goes quiet and a light runs along it. */
+.k-composer.is-transcribing .k-rec {
+	display: flex;
+}
+.k-composer.is-transcribing .k-rec-dot {
+	background: var(--accent);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.k-composer.is-transcribing .k-rec-time,
+.k-composer.is-transcribing .k-rec-cancel {
+	visibility: hidden;
+}
+.k-composer.is-transcribing .k-rec-wave i {
+	height: 4px;
+	background: color-mix(in srgb, var(--accent) 45%, #333);
+	animation: k-wait 1.1s var(--ease-in-out) infinite;
+	animation-delay: calc(var(--i, 0) * 40ms);
+}
+@keyframes k-wait {
+	40% {
+		height: 12px;
+		background: var(--accent);
+	}
+}
+
+/* Pictures waiting to go, inside the well. */
+.k-shots {
+	display: flex;
+	gap: 8px;
+	padding: 6px 4px 2px;
+}
+.k-shots[hidden] {
+	display: none;
+}
+.k-shot {
+	position: relative;
+	flex-shrink: 0;
+}
+.k-shot img {
+	display: block;
+	width: 46px;
+	height: 46px;
+	object-fit: cover;
+	border-radius: 11px;
+	box-shadow: inset 0 0 0 1px var(--hair), var(--lift-1);
+}
+.k-shot-x {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border-radius: 50%;
+	color: #eee;
+	background-color: #2c2c2c;
+	box-shadow: var(--hairline), var(--lift-1);
+	opacity: 0;
+	transition: opacity var(--duration-quick) var(--ease-smooth-out);
+}
+.k-shot:hover .k-shot-x,
+.k-shot-x:focus-visible {
+	opacity: 1;
+}
+.k-shot-x:hover {
+	background-color: #3a3a3a;
+}
+.k-shot-x svg {
+	width: 11px;
+	height: 11px;
+}
+
+/* The pickers: above the well, over whatever is above it — the composer
+   sits at the bottom of its screen. Under it, in flow, for the capture bar. */
+.k-pop.k-menu {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 8px);
+	z-index: 30;
+	width: min(340px, 100%);
+}
+.k-composer.is-below .k-pop.k-menu {
+	position: static;
+	width: auto;
+	margin-top: 8px;
+}
+
+/* ── Menus ─────────────────────────────────────────────────────────────── */
+.k-menu {
+	padding: 5px;
+	border-radius: 14px;
+	background-color: #151515;
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 40%);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.085),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06),
+		0 4px 12px -4px rgba(0, 0, 0, 0.8),
+		0 20px 44px -14px rgba(0, 0, 0, 0.95);
+	transform-origin: bottom left;
+}
+.k-menu[hidden] {
+	display: none;
+}
+.k-menu.is-in {
+	animation: k-menu-in var(--duration-quick) var(--ease-smooth-out);
+}
+@keyframes k-menu-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px) scale(0.98);
+	}
+}
+.k-menu-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.k-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 36px;
+	padding: 0 10px 0 7px;
+	border-radius: 9px;
+	font-size: 13.5px;
+	text-align: left;
+	color: #dedede;
+}
+.k-menu-item:hover {
+	background-color: transparent;
+}
+.k-menu-item.is-active {
+	color: #fff;
+	background-color: rgba(255, 255, 255, 0.085);
+}
+.k-menu-item:active:not(:disabled) {
+	background-color: rgba(255, 255, 255, 0.12);
+}
+.k-menu-mark {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	flex-shrink: 0;
+	color: #b0b0b0;
+}
+.k-menu-mark svg {
+	width: 16px;
+	height: 16px;
+}
+.k-menu-item.is-active .k-menu-mark {
+	color: var(--accent);
+}
+.k-menu-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.k-menu-label b {
+	font-weight: 650;
+	color: var(--accent);
+}
+.k-menu-detail {
+	flex-shrink: 0;
+	max-width: 45%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12.5px;
+	color: #9c9c9c;
+	font-variant-numeric: tabular-nums;
+}
+/* A menu of switches: the switch at the end, its state the whole answer. */
+.k-switch {
+	position: relative;
+	flex-shrink: 0;
+	width: 30px;
+	height: 18px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.14);
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.k-switch::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: #f2f2f2;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+	transition: translate var(--duration-fast) var(--ease-bounce);
+}
+.k-switch.is-on {
+	background: var(--accent);
+}
+.k-switch.is-on::after {
+	translate: 12px 0;
+}
+.k-dropdown.k-menu {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 40;
+	min-width: 230px;
+	transform-origin: top right;
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────────── */
+.k-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 24px;
+	padding: 0 9px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 0;
+	color: #d6d6d6;
+	background-color: rgba(255, 255, 255, 0.07);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.k-chip-mark {
+	display: grid;
+}
+.k-chip-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.k-chip.is-good {
+	color: var(--good);
+	background-color: color-mix(in srgb, var(--good) 13%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 24%, transparent);
+}
+.k-chip.is-warn {
+	color: var(--warn);
+	background-color: color-mix(in srgb, var(--warn) 13%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 24%, transparent);
+}
+.k-chip.is-hot {
+	color: var(--hot);
+	background-color: color-mix(in srgb, var(--hot) 13%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hot) 24%, transparent);
+}
+.k-chip.is-claude {
+	color: var(--mark-claude);
+	background-color: color-mix(in srgb, var(--mark-claude) 13%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mark-claude) 24%, transparent);
+}
+.k-count {
+	display: inline-grid;
+	place-items: center;
+	min-width: 19px;
+	height: 18px;
+	padding: 0 6px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: #d4d4d4;
+	background: rgba(255, 255, 255, 0.085);
+	flex-shrink: 0;
+}
+.k-count[hidden] {
+	display: none;
+}
+
+/* A project's chip: its face, its name, × to let go. Raised: it is an object. */
+.k-pchip {
+	display: inline-flex;
+	align-items: center;
+	height: 30px;
+	padding: 0 3px 0 0;
+	border-radius: 999px;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	min-width: 0;
+	max-width: 100%;
+}
+.k-pchip-main {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	min-width: 0;
+	padding: 0 8px 0 4px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #f0f0f0;
+}
+.k-pchip-main:hover {
+	background-color: transparent;
+}
+.k-pchip-main .hp-logo {
+	border-radius: 50%;
+}
+.k-pchip-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.k-pchip-x {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border-radius: 50%;
+	color: #a9a9a9;
+}
+.k-pchip-x:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+}
+.k-pchip-x svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* ── The segmented control ────────────────────────────────────────────── */
+.k-seg {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 11px;
+	background: rgba(0, 0, 0, 0.36);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+		inset 0 2px 5px -3px rgba(0, 0, 0, 0.9);
+}
+.k-seg-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 11px;
+	border-radius: 9px;
+	font-size: 12.5px;
+	font-weight: 600;
+	white-space: nowrap;
+	color: #a9a9a9;
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out);
+}
+.k-seg-item:hover {
+	color: #fff;
+	background-color: rgba(255, 255, 255, 0.05);
+}
+.k-seg-item.is-on,
+.k-seg-item.is-on:hover {
+	color: #fff;
+	background-color: var(--tile-on);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.k-seg-mark {
+	display: grid;
+}
+.k-seg-mark svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ── Blocks that fold ─────────────────────────────────────────────────── */
+.k-block {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.k-block[hidden] {
+	display: none;
+}
+.k-block-bar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 32px;
+}
+.k-block-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1;
+	min-width: 0;
+	height: 32px;
+	padding: 0 8px 0 5px;
+	border-radius: 9px;
+	text-align: left;
+	color: #ececec;
+}
+.k-block-head:hover {
+	background-color: rgba(255, 255, 255, 0.045);
+}
+.k-block-head:active:not(:disabled) {
+	background-color: rgba(255, 255, 255, 0.07);
+}
+.k-chevron {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	color: #9e9e9e;
+}
+.k-chevron svg {
+	width: 14px;
+	height: 14px;
+	transition: rotate var(--duration-fast) var(--ease-smooth-out);
+}
+.k-block:not(.is-open) > .k-block-bar .k-chevron svg {
+	rotate: -90deg;
+}
+.k-block-mark {
+	display: grid;
+	flex-shrink: 0;
+	color: #b4b4b4;
+}
+.k-block-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.k-block-title {
+	flex-shrink: 0;
+	font-size: 13px;
+	font-weight: 650;
+	letter-spacing: -0.005em;
+}
+.k-block-summary {
+	flex: 1;
+	min-width: 0;
+	font-size: 13px;
+	font-weight: 500;
+	color: #ababab;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.k-block.is-open .k-block-summary {
+	display: none;
+}
+.k-block-end {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+.k-block-end:empty {
+	display: none;
+}
+.k-block-body[hidden] {
+	display: none;
+}
+.k-block-body.is-in {
+	animation: k-fold-in var(--duration-fast) var(--ease-smooth-out);
+}
+@keyframes k-fold-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+}
+
+/* ── Side panels ──────────────────────────────────────────────────────── */
+/* ⚠️ No transition on the width, ever (AGENTS 752): the island's spring is
+   the reveal. And a hairline is the whole boundary (698). */
+.k-side {
+	--side-w: 252px;
+	flex-shrink: 0;
+	width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+.k-side.is-open {
+	width: var(--side-w);
+}
+.k-side-in {
+	display: flex;
+	flex-direction: column;
+	width: var(--side-w);
+	height: 100%;
+	min-height: 0;
+}
+.k-side.is-left.is-open {
+	box-shadow: inset -1px 0 0 var(--hair);
+}
+.k-side.is-right.is-open {
+	box-shadow: inset 1px 0 0 var(--hair);
+}
+
+/* ── A plain field, in the same well ──────────────────────────────────── */
+.k-field,
+input.k-field {
+	height: 34px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 11px;
+	font-size: 13.5px;
+	color: #f2f2f2;
+	background-color: rgba(255, 255, 255, 0.05);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.75);
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+input.k-field::placeholder {
+	color: #8f8f8f;
+}
+input.k-field:hover {
+	background-color: rgba(255, 255, 255, 0.065);
+}
+input.k-field:focus,
+input.k-field:focus-visible {
+	outline: none;
+	background-color: rgba(255, 255, 255, 0.07);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, 0.09)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.7),
+		0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent),
+		0 0 22px -8px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .k-menu.is-in,
+	html:not([data-motion='always']) .k-block-body.is-in,
+	html:not([data-motion='always']) .k-mic.is-live::after,
+	html:not([data-motion='always']) .k-rec-dot,
+	html:not([data-motion='always']) .k-composer.is-transcribing .k-rec-wave i {
+		animation: none;
+	}
+	html:not([data-motion='always']) .k-chevron svg,
+	html:not([data-motion='always']) .k-switch::after,
+	html:not([data-motion='always']) .k-rec-wave i {
+		transition: none;
+	}
+}
+html[data-motion='never'] .k-menu.is-in,
+html[data-motion='never'] .k-block-body.is-in,
+html[data-motion='never'] .k-mic.is-live::after {
+	animation: none;
+}

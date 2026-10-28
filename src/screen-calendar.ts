@@ -561,7 +561,7 @@ export class CalendarScreen {
     const add = element("div", "cal-tasks-add");
     const field = document.createElement("input");
     field.type = "text";
-    field.className = "cal-tasks-field";
+    field.className = "cal-tasks-field k-field";
     field.placeholder = "Add a task";
     field.maxLength = 1000;
     /* ⚠️ Not "New task name" — the month view's composer already answers to
@@ -937,6 +937,7 @@ export class CalendarScreen {
     const field = document.createElement("input");
     field.type = "text";
     field.placeholder = "What needs doing?";
+    field.className = "k-field";
     field.maxLength = 1000;
     /* ⚠️ Not "Task name". Today's composer already carries that label and both
      * are in the DOM at once — two fields answering to one name is ambiguous

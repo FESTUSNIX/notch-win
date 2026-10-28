@@ -46,7 +46,7 @@ tab.
 
 ### Search and commands
 
-**`Ctrl+Alt+K`**, or the magnifier in the header. Type, arrow, Enter — or
+**Tap `Alt+W`**, or the magnifier in the header. Type, arrow, Enter — or
 `Alt`+the number beside a row to run it outright. `Escape` or a click anywhere
 else closes it, and the island narrows while it is up: a list of one-line
 results in a 910px panel reads as a window someone left open.
@@ -133,15 +133,16 @@ session that had exited all did nothing and reported nothing. The palette closes
 before an action runs, so there is nowhere left to put an error; it goes to the
 pill's own notice instead.
 
-### Six global shortcuts
+### Three global shortcuts
 
-`Ctrl+Alt+Space` opens and closes the island. `Ctrl+Alt+K` opens the palette.
-`Ctrl+Alt+T` opens the island with the caret already in the composer, so a
-thought reaches TickTick from anywhere. `Ctrl+Alt+H` takes it and the usage
+`Alt+W` is the one you use: **tapped** it opens the palette, **held** it puts the
+ring of screens under the pointer, and everything that used to have a key of its
+own is a wedge or a palette row away. `Ctrl+Alt+H` takes the island and the usage
 notch off screen — the island sits where an editor keeps its tab strip, so
-getting it out of the way had to be one key. `Ctrl+Alt+M` sends the island to
-the next display, and `Ctrl+Alt+V` parks the clipboard on the shelf. All of them
-are rebindable in the task editor, and the choice to hide survives a restart.
+getting it out of the way had to be one key. **`Ctrl+Alt+J` tells the Guardian**
+one line from wherever you are (quick capture, below) — J because Helm's own
+Guardian panel is `Ctrl+J`. All three are rebindable in Settings → Shortcuts,
+and the choice to hide survives a restart.
 
 ⚠️ **Nine letters are unavailable, and the reason is not obvious.**
 `Ctrl+Alt` *is* `AltGr` on Windows, so a `Ctrl+Alt+N` hotkey and an `AltGr+N`
@@ -169,7 +170,8 @@ pixels of hot strip behind for exactly that.
 
 Every live Claude Code session, ordered by who wants you: **waiting** in amber
 first, then working, then idle. Each row carries the project, the branch, the
-tokens seen and how long the last run took.
+tokens seen and how long the last run took — and, with Helm connected, **the
+Helm project it is for and the request it is on** (see Helm below).
 
 **Clicking a row raises that session's terminal.** This is the point of the
 screen — finding which of three terminals has stopped otherwise means
@@ -251,32 +253,101 @@ is the machine's controls, and how long you spent in an editor is not a control.
 ### Helm
 
 Helm is the owner's work OS (crm.hadastudios.com), and its Guardian runs the
-day. Connected in Settings → Connections with Helm's address and a device key
-made in Helm (Guardian → Devices → Connect codenotch), kept in Credential
-Manager and checked before it is saved. `src-tauri/src/helm.rs` and
-`src/screen-helm.ts`.
+day. Connected in Settings → Connections → Helm: the address and your email,
+then the code Helm emails you. That one sign-in gives codenotch both a device
+key (today's blocks and nudges) and your own Helm session (the queue and the
+chat, which act as you in Helm), kept in Credential Manager. Nothing is copied by hand.
+`src-tauri/src/helm.rs` (and `terminal.rs` for Start with Claude), `src/screen-helm.ts`,
+`src/screen-guardian.ts`, `src/helm-capture.ts`; the joins and the shared parts are
+`src/helm-link.ts` (pure, node-tested) and `src/helm-parts.ts`.
 
-- **The Helm screen**: the must-win, today's focus blocks with Start, Pause
-  and Done, and an Ask line. Read from `/api/desktop` every 20 s and at once
-  after an action; Helm applies its own rules (one block at a time, the reward
-  and the logged time when one is done). On the rail only while connected.
-- **Focus**: while Helm is connected, Focus on a task starts a Helm block of
-  that name rather than the local timer, and the running block takes the pill.
-- **Nudges**: an unread Guardian nudge claims the pill at 80, with its button
-  (Start the block, Check in, Close the day), Helm's quick replies and ×. It
-  plays the chosen sound, again once after three minutes if still unread, and
-  **keeps the chrome up over a full-screen app or a manual hide** until it is
-  read (`NUDGE_UP` in `shortcuts.rs`). While presenting, the pill says only
-  "Guardian".
-- **The chat**: Helm's own `/panel` in a window, docked at the right edge or
-  under the notch (a setting). It signs in once with Helm's email code; the
-  page gets no IPC, and anything outside the chat opens in the browser.
-- **Coding time**: while VS Code is in front and you're at the keyboard (app
-  time's idle rule), the workspace it has open is noted once a minute and sent
-  every three minutes, where it becomes coded time per project to confirm at
-  the end of the day. Only the workspace's name leaves the machine; the rest of
-  the title is dropped. Without a connection, the Claude Code hook's
-  `~/.helm/activity.json` is used for this alone.
+- **Today is Helm's Today** while Helm is connected, and TickTick's steps
+  aside: what you committed to, in your order. Now is the hero (the session
+  running with pause and done, else Today's first with the Guardian's line on
+  why, Start, Not today, Done), the rest of Today as rows (tick for done; a
+  project's group or the small things open to their items), then the
+  Guardian's suggestions folded ("Suggested · n", each with `+` to put it
+  into Today), and "Add to today" at the foot. Money opens Helm, where it's
+  recorded. The blocks and nudges come from `/api/desktop` every 20 s, Today
+  and the suggestions from `/api/queue` (as you) every minute, and both at
+  once after an action; Helm applies its own rules (one session at a time, the
+  reward and the logged time when one is done). `show("today")` goes to it,
+  so the rail, ring and palette all agree.
+- **Focus**: Focus on a TickTick task starts a Helm block of that name rather
+  than the local timer, and the running block takes the pill.
+- **The Guardian**: its nudges and the chat as one thread, drawn natively —
+  replies stream in as they are written (`helm:chat`), what a reply changed is
+  listed with Cofnij, its cards (the day with the queue's top, money, requests, drafts with Copy)
+  lie flat in the reply, and a screenshot can be pasted into the box.
+- **Nudges**: a new one plays the chosen sound and **drops the island open on
+  the Guardian** for eight seconds (not while you are typing in it, and not
+  while presenting), then the pill keeps it — its action and its age, never
+  its words — until it is answered. Again once after three minutes if still
+  unread, and **the chrome stays up over a full-screen app or a manual hide**
+  until it is read (`NUDGE_UP` in `shortcuts.rs`).
+- **The cockpit** (`/api/notch`, read with the queue every minute and after
+  anything you do). codenotch is where the work is RUN; Helm's web is where it
+  is managed. Today's header carries **your time and the agents'** for the day
+  (iris for you, terracotta for Claude) beside the day's done count, and under
+  it **what needs you** — reminders, renewals, new requests, the next meeting
+  with its Join — each opening itself in Helm. Rows and Now wear their
+  **project's logo**, and a status **chip** (late, today, your move, waiting)
+  where there used to be a grey line.
+- **Start with Claude**, on a request row in Today (and Now), and on a project's
+  requests in an Agents session's detail: Helm marks it doing and hands over the
+  prompt and the project's folder, and a **new Windows Terminal tab opens in that
+  folder running Claude Code on the prompt** (a plain console when Windows
+  Terminal is not installed). If Helm does not know the folder yet, the pill says
+  so and nothing is started. ⚠️ Claude Code's own `claude.exe` is started
+  directly, never the npm `claude.cmd` shim: a .cmd runs under `cmd.exe`, which
+  re-reads the prompt — a request somebody else wrote — as a command line.
+- **Quick capture**: `Ctrl+Alt+J` (or *Tell the Guardian* in the palette, or
+  `Tell the Guardian "…"` on whatever you typed there) opens the island on one
+  line. Enter sends it to the Guardian to file; the answer comes back as one line
+  with what it changed and Cofnij, and the island folds itself away.
+- **The composer** (round 2, `src/kit/composer.ts`) is the same field in the
+  Guardian, Add to today and quick capture: it grows from one line to about six
+  and then scrolls, takes pasted or picked pictures as thumbnails, and has a
+  round Send lit only with words. **Enter** sends, **Shift+Enter** breaks the
+  line, **Escape** clears (Ctrl+Z brings it back), then lets go. **`@`** picks
+  a project into the text (sent as `mentions`); **`/`** says what the line is —
+  request, note, log, to-do (sent as `command`). The draft is kept per field.
+  In Add to today a plain line goes into Today; one with a `/command` or an
+  `@project` goes to the Guardian to file.
+- **Hold to talk**: hold the mic, or **hold Ctrl+Space with the caret in the
+  field**; let go and Helm's `/api/transcribe` puts the words in the box for you
+  to read before sending. **Escape** cancels. The mic hides on a Helm without
+  speech. WebView2's microphone prompt cannot be shown on the island, so
+  `mic.rs` allows the microphone for this app's own pages; Windows' own switch
+  (Settings › Privacy › Microphone › desktop apps) still has to be on.
+- **The Guardian** has a **project focus** (a chip on its bar, set from the
+  project panel, a card or `@`, sent as `focus` with every message), a
+  **history** panel on the left (the days, a search across every message),
+  a **project** panel on the right (its open requests, to start with Claude or
+  mark done, and its time today), cards that act (requests, time to log,
+  reminders at a level, renewals billed or reminded, the day's first thing
+  started) and say what happened, a reply's changes folded ("3 zmiany ▾") with
+  Cofnij inside, and copy / ask again / make it a request on a message's hover.
+- **Today is blocks** — Now, Needs you, Agents, Today, Suggested — each folding
+  from its header, each switched on or off in the **Blocks** menu, both
+  remembered. **Agents** opens the selected session's project beside the
+  screen, with its open requests.
+- **Preview**: `&history=off`, `&speech=off`, `&projects=off` are a Helm
+  without each endpoint, `&remind=sent` its 409.
+- **When Helm has no `/api/notch` yet** (it ships separately), that endpoint's
+  404 is normal: the clock's agents figure, the needs, the logos, the Agents
+  links and Start with Claude are simply not drawn, nothing is said about it, and
+  it all appears on the next minute's read once Helm answers. Quick capture still
+  works — an older Helm ignores the flag and answers it as a chat message.
+- **Coding time is no longer measured here** (28 Oct). It was read off VS Code's
+  window title, which names whatever workspace is open — and that is how time got
+  filed under "personal" and "nxm". A VS Code extension now reports the active
+  file's repo to Helm itself. Nothing is sent to `/api/activity` from codenotch,
+  and `~/.helm/activity.json` is no longer read.
+- **Preview**: `tasks.html?helm` stages a connected Helm (`&paused`, `&running`,
+  `&nudge` for the other states) with a scripted streaming reply and the cockpit;
+  `&notch=off` is a Helm without `/api/notch`; `?helm&agents&finished` is a run
+  that just ended on a request. `tests/browser/helm.spec.ts`.
 
 ### Not now
 
@@ -305,6 +376,14 @@ watching. Windows also raises a toast naming the project and how long it took
 
 A finish is a session that stopped writing its transcript while its process is
 still alive. Closing a terminal mid-run raises nothing.
+
+With Helm connected, a finish on a session whose project has a request **doing**
+also asks, on that session's card and on the island's collapsed pill:
+**"<request> done?"** — Done or Not yet. Done marks it done in Helm, which
+answers with the time to log ("Log 1 h 30", made of the agents' time and yours,
+against the estimate, in amber when it ran past and Helm did not cap it); change
+the minutes if they are off, then Log or Skip. Not yet leaves it doing. The
+question goes away by itself if the session simply runs again.
 
 ### Displays
 

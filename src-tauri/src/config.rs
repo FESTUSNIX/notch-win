@@ -70,10 +70,14 @@ pub struct Config {
     /// combination taken away from every other application on the machine, and
     /// six of the seven were doors into things the ring and the palette open
     /// anyway — a key each for "add a task" and "shelve the clipboard" is the
-    /// list this app built a radial menu to stop growing.
+    /// list this app built a radial menu to stop growing. (Three since 28 Oct:
+    /// quick capture came back as its own key, deliberately.)
     pub shortcut_hide: String,
     /// The ring of screens around the pointer.
     pub shortcut_ring: String,
+    /// Quick capture: one line to the Guardian. See `DEFAULT_CAPTURE` on why
+    /// this is the one key that was added back.
+    pub shortcut_capture: String,
     /// A folder of the user's own ambient scenes — videos and stills. Empty
     /// means the generated scenes only. ⚠️ The asset protocol is allowed to
     /// serve THIS folder and nothing else; see `ambient::allow`.
@@ -103,6 +107,7 @@ impl Default for Config {
             chrome_hidden: false,
             shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
             shortcut_ring: crate::shortcuts::DEFAULT_RING.into(),
+            shortcut_capture: crate::shortcuts::DEFAULT_CAPTURE.into(),
             ambient_folder: String::new(),
         }
     }

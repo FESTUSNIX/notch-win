@@ -153,6 +153,9 @@ export class IslandSurface {
    *  they would go on hanging off a shape that is now a search bar, offering
    *  the actions and the screens of whatever was underneath. */
   private searching = false;
+  /** Quick capture has the panel to itself: it is sized to its own furniture
+   *  (the capture bar) and to no screen at all. See `setSolo`. */
+  private solo = false;
   private masks: { x: number; y: number; width: number; height: number }[] = [];
   /** Chrome that is CLICKABLE but does not open the island by being pointed
    *  at. ⚠️ One list would not do: everything reported here is what the
@@ -285,7 +288,7 @@ export class IslandSurface {
      * scroller whose content is shorter than its box reports the box, so the
      * measurement feeds the panel's own height back into itself and a one-task
      * day stays as tall as a full one. Its children's natural heights do not. */
-    const natural = (el: HTMLElement) => {
+    const natural = (el: HTMLElement): number => {
       const kids = [...el.children] as HTMLElement[];
       /* ⚠️ `spans` is for a GRID, and neither the sum of its children nor the
        * tallest one is its height. Summing asks for three stacked columns'
@@ -337,6 +340,20 @@ export class IslandSurface {
        * ⚠️ Adjacent margins collapse, so counting both sides over-measures
        * where both are set. Nothing here sets both, and erring tall is the
        * harmless direction: a few spare pixels beat a scrollbar. */
+      /* ⚠️ `leads` is for a screen laid out in COLUMNS where one of them sets
+       * the height and the others follow it — the Guardian's thread between
+       * its history and its project panels. Its `.lead` column is measured by
+       * its own children (each by these same rules); the side columns stretch
+       * to it and scroll inside, so they are never asked. A stretched column
+       * asked for its height would answer with the island's own, which is the
+       * feedback loop `spans` warns about (AGENTS 683). `data-floor` is the
+       * least it may be while a side panel is open, so a one-message day does
+       * not squeeze an open history list into a strip. */
+      if (el.classList.contains("leads")) {
+        const lead = el.querySelector<HTMLElement>(":scope > .lead");
+        const inner = lead ? ([...lead.children] as HTMLElement[]).reduce((n, kid) => n + natural(kid), 0) : 0;
+        return Math.max(Number(el.dataset.floor) || 0, inner);
+      }
       if (el.classList.contains("scrolls")) {
         const style = getComputedStyle(el);
         const inner = kids.reduce((n, kid) => {
@@ -374,7 +391,10 @@ export class IslandSurface {
     if (across) this.expanded.style.height = `${this.body}px`;
     else this.expanded.style.width = `${this.body}px`;
     const screen = this.expanded.querySelector<HTMLElement>(".screen.active");
-    const content = screen ? [...screen.children].reduce((n, el) => n + natural(el as HTMLElement), 0) : 0;
+    /* ⚠️ No screen at all while capture has the panel: its bar is one line,
+     * and measuring the screen hidden under it would open a full-height black
+     * panel with one line of text at the top of it. */
+    const content = screen && !this.solo ? [...screen.children].reduce((n, el) => n + natural(el as HTMLElement), 0) : 0;
     const available = isVertical(this.edge) ? this.shell.clientWidth : this.shell.clientHeight;
     this.depth = Math.min(
       available,
@@ -383,7 +403,10 @@ export class IslandSurface {
        * padding now, so adding a card's worth on top of it spent that gap
        * twice — ~30px under the last row of every screen, which is what made
        * the bottom look nothing like the sides. */
-      Math.max(cpx(FRAME.islandMinDepth), chrome + content),
+      /* ⚠️ No floor while capture has the panel: its bar is one line, and the
+       * floor is sized for a screen — under it the bar sat on a slab of black
+       * twice its own height. */
+      Math.max(this.solo ? 0 : cpx(FRAME.islandMinDepth), chrome + content),
     );
     /* Layers are sized to the BODY, never the element: the flare at each end is
      * shape, not room, and content laid into it would be clipped by the curve.
@@ -953,6 +976,13 @@ export class IslandSurface {
   private reachedFor(on: boolean) {
     if (on) this.hover(true);
     this.report();
+  }
+
+  /** Quick capture takes the panel over and sizes it to itself alone. */
+  setSolo(on: boolean) {
+    if (this.solo === on) return;
+    this.solo = on;
+    this.measure();
   }
 
   /** The palette takes the whole surface over, so the furniture stands down. */

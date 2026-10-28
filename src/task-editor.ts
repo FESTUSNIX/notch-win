@@ -83,8 +83,6 @@ interface Prefs {
   thresholds: Record<string, number>;
   /** `day` or `all`. What Today counts and what the pill counts down. */
   taskView: string;
-  /** `docked` or `drop`: where the Guardian chat window sits. */
-  helmChat: string;
   /** The sound a Guardian nudge makes. */
   helmSound: string;
 }
@@ -137,6 +135,9 @@ const KEYS = [
   { id: "ring", title: "Search, and the ring",
     note: "Tap it for the palette. Hold it and the ring comes up under the pointer." },
   { id: "hide", title: "Hide everything", note: "Takes both notches off screen." },
+  /* ⚠️ The one key added back (28 Oct, his call) — see DEFAULT_CAPTURE in
+   * shortcuts.rs on why capture earns a chord of its own. */
+  { id: "capture", title: "Tell the Guardian", note: "One line to Helm from anywhere." },
 ] as const;
 type KeyId = (typeof KEYS)[number]["id"];
 type Shortcuts = Record<KeyId, string>;
@@ -312,14 +313,14 @@ const PANE_HTML: Record<PaneId, string> = {
   accounts: `
     <div><p class="set-label">Helm</p><div class="set-group">
       ${row("Now", "", `<span class="set-value" id="helm-state" style="min-width:0;text-align:right">…</span>`)}
-      ${row("Address and key", "Make the key in Helm: Guardian → Devices → Connect codenotch. Kept in Windows Credential Manager and never read back.",
-        `<input id="helm-url" autocomplete="off" spellcheck="false" maxlength="200" placeholder="https://crm.hadastudios.com"><input id="helm-key" type="password" autocomplete="off" spellcheck="false" maxlength="200" placeholder="Device key"><button type="button" class="set-btn is-accent" id="helm-connect">Connect</button><button type="button" class="set-btn" id="helm-disconnect">Disconnect</button>`, "stack")}
-      ${row("Guardian chat", "Docked is a window at the right edge; under the notch it hangs below the island and goes when you click away.",
-        seg("helmchat", [["docked", "Docked right"], ["drop", "Under the notch"]], "Where the Guardian chat opens"))}
+      ${row("Sign in", "Helm emails you a code. The session and this PC's key are kept in Windows Credential Manager and never read back.",
+        `<input id="helm-url" autocomplete="off" spellcheck="false" maxlength="200" placeholder="https://crm.hadastudios.com" value="https://crm.hadastudios.com"><input id="helm-email" type="email" autocomplete="off" spellcheck="false" maxlength="200" placeholder="Your email"><button type="button" class="set-btn is-accent" id="helm-send">Send code</button>`, "stack")}
+      ${row("Code", "The digits from the email.",
+        `<input id="helm-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Code"><button type="button" class="set-btn is-accent" id="helm-sign-in">Sign in</button><button type="button" class="set-btn" id="helm-disconnect">Disconnect</button>`, "stack")}
       ${row("Nudge sound", "Plays when the Guardian nudges, and once more three minutes later if it is still unread.",
         seg("helmsound", [["", "None"], ["Notification.Default", "Chime"],
           ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]], "Guardian nudge sound"))}
-    </div><p class="set-note">The island shows today from Helm: the must-win, the blocks and the Guardian’s nudges. A nudge stays up, over full-screen apps too, until it is answered.</p></div>
+    </div><p class="set-note">While Helm is connected, Today is Helm’s day and the Guardian lives on the island: its nudges, which stay up over full-screen apps until answered, and the chat.</p></div>
     <div><p class="set-label">TickTick</p><div class="set-group">
       ${row("Account", "", `<span class="set-value" id="ticktick-state" style="min-width:0;text-align:right">…</span>`)}
       ${row("API token", "Settings → Account → API Token on the web. Kept in Windows Credential Manager and never read back.",
@@ -448,7 +449,7 @@ let prefs: Prefs = {
   ringHoldMs: 250, ringTap: "@search", homeCurrency: "",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
-  helmChat: "docked", helmSound: "Notification.Reminder",
+  helmSound: "Notification.Reminder",
 };
 
 let saving = 0;
@@ -1177,7 +1178,6 @@ panelWidth.oninput = () => {
  * way in, so a typo here is a setting that silently will not stick rather
  * than one that plays the wrong noise. */
 onSeg("sound", value => { prefs.timerSound = value; savePrefs(); });
-onSeg("helmchat", value => { prefs.helmChat = value; savePrefs(); });
 onSeg("helmsound", value => { prefs.helmSound = value; savePrefs(); void call("play_sound", { alias: value }).catch(() => {}); });
 onSeg("pompill", value => { prefs.pomodoroPill = value; savePrefs(); });
 onSeg("view", value => { prefs.taskView = value; savePrefs(); });
@@ -1261,7 +1261,7 @@ async function paintEverything() {
  * outright on a missing argument. This window sent two of six for a while,
  * which meant saving a shortcut silently did nothing at all. Two is now the
  * whole set, which is one fewer way to get that wrong. */
-let keys: Shortcuts = { hide: "", ring: "" };
+let keys: Shortcuts = { hide: "", ring: "", capture: "" };
 let listening: KeyId | null = null;
 
 /** The accelerator Windows will actually take, built from the physical key
@@ -1380,9 +1380,12 @@ get("keys-default").onclick = async () => {
   /* ⚠️ Rust owns the defaults — see the AltGr note in `shortcuts.rs` for why
    * they are the letters they are. Sending an empty set is what asks for
    * them back. */
+  /* ⚠️ These three MATCH the Rust defaults and the command's arguments. This
+   * button sent the six keys of an older build for a while — and
+   * `set_shortcuts` takes exactly its own arguments, so it failed on the
+   * missing `ring` every time and "Back to the defaults" did nothing. */
   if (await run("set_shortcuts", {
-    palette: "Ctrl+Alt+K", toggle: "Ctrl+Alt+Space", capture: "Ctrl+Alt+T",
-    shelf: "Ctrl+Alt+V", display: "Ctrl+Alt+M", hide: "Ctrl+Alt+H",
+    hide: "Ctrl+Alt+H", ring: "Alt+W", capture: "Ctrl+Alt+J",
   }, "Back to the defaults.")) await paintKeys();
 };
 
@@ -1516,35 +1519,46 @@ get("crypto-set").onclick = async () => {
   }
 };
 /* ── Helm ─────────────────────────────────────────────────────────────────
- * ⚠️ The key goes ONE WAY, like Binance's secret: sent once, checked against
- * Helm, stored in Credential Manager by Rust and never read back. The field
- * is cleared the moment it is sent. */
-interface HelmReading { connected: boolean; error: string | null; today: { day: { mustWin: string | null } | null; blocks: unknown[]; nudges: unknown[] } | null }
+ * Two steps, like signing in to Helm itself: the address and email send a
+ * code, the code signs in. ⚠️ What comes back — his session and this PC's
+ * device key — goes ONE WAY into Credential Manager (Rust), like Binance's
+ * secret; nothing here ever holds it. */
+interface HelmReading { connected: boolean; signedIn: boolean; error: string | null; today: { nudges: unknown[] } | null; queue: { items: unknown[] } | null }
 
 function sayHelm(helm: HelmReading | null) {
   const said = get("helm-state");
   if (!helm?.connected) { said.textContent = "Not connected"; return; }
   if (helm.error) { said.textContent = helm.error; return; }
-  const blocks = helm.today?.blocks.length ?? 0;
+  const queued = helm.queue?.items.length ?? 0;
   const nudges = helm.today?.nudges.length ?? 0;
-  // Counts, never the must-win itself: this window can be on a shared screen.
-  said.textContent = `Connected · ${blocks} ${blocks === 1 ? "block" : "blocks"} today${nudges ? ` · ${nudges} unread` : ""}`;
+  // Counts, never what's in the queue: this window can be on a shared screen.
+  said.textContent = helm.signedIn
+    ? `Signed in · ${queued} in the queue${nudges ? ` · ${nudges} unread` : ""}`
+    : `Connected, sign in for the queue and the chat${nudges ? ` · ${nudges} unread` : ""}`;
 }
 
-get("helm-connect").onclick = async () => {
-  const key = get<HTMLInputElement>("helm-key");
+get("helm-send").onclick = async () => {
   get("helm-state").textContent = "…";
   try {
-    const helm = await call<HelmReading>("connect_helm", { url: get<HTMLInputElement>("helm-url").value, key: key.value });
-    key.value = "";
-    sayHelm(helm);
+    await call("helm_send_code", { url: get<HTMLInputElement>("helm-url").value, email: get<HTMLInputElement>("helm-email").value });
+    get("helm-state").textContent = "Code sent. Check your email.";
+    get<HTMLInputElement>("helm-code").focus();
   } catch (error) {
-    key.value = "";
+    get("helm-state").textContent = String(error).replace(/^.*?: /, "");
+  }
+};
+get("helm-sign-in").onclick = async () => {
+  const code = get<HTMLInputElement>("helm-code");
+  get("helm-state").textContent = "…";
+  try {
+    sayHelm(await call<HelmReading>("helm_sign_in", { code: code.value }));
+    code.value = "";
+  } catch (error) {
     get("helm-state").textContent = String(error).replace(/^.*?: /, "");
   }
 };
 get("helm-disconnect").onclick = async () => {
-  get<HTMLInputElement>("helm-key").value = "";
+  get<HTMLInputElement>("helm-code").value = "";
   if (await run("disconnect_helm", {})) sayHelm(null);
 };
 
@@ -1642,7 +1656,6 @@ function paintPrefs() {
   get<HTMLInputElement>("call-mode").checked = prefs.callMode;
   get<HTMLInputElement>("notice-mode").checked = prefs.noticeMode;
   markSeg("sound", prefs.timerSound);
-  markSeg("helmchat", prefs.helmChat === "drop" ? "drop" : "docked");
   markSeg("helmsound", prefs.helmSound);
   markSeg("pompill", prefs.pomodoroPill === "time" ? "time" : "bar");
   for (const [id, key] of POMODORO) {

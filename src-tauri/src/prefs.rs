@@ -313,9 +313,6 @@ pub struct Prefs {
     pub task_view: String,
 
     /* ── Helm ───────────────────────────────────────────────────────────── */
-    /// Where the Guardian's chat window sits: `docked` is full height at the
-    /// right edge, `drop` hangs under the notch and goes when it loses focus.
-    pub helm_chat: String,
     /// Which of Windows' sounds a Guardian nudge makes, as `timer_sound`.
     ///
     /// ⚠️ On by default. A nudge is the one thing here that must not be missed
@@ -367,7 +364,6 @@ impl Default for Prefs {
             muted_modules: Vec::new(),
             thresholds: BTreeMap::new(),
             task_view: "day".into(),
-            helm_chat: "docked".into(),
             helm_sound: "Notification.Reminder".into(),
         }
     }
@@ -435,10 +431,6 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
          * than a hand is accurate, and a list that is longer than the thing it
          * describes is a setting that silently does nothing. */
         ring_stops: prefs.ring_stops.into_iter().take(8).collect(),
-        helm_chat: match prefs.helm_chat.as_str() {
-            "drop" => prefs.helm_chat,
-            _ => "docked".into(),
-        },
         helm_sound: if crate::sound::is_known(&prefs.helm_sound) {
             prefs.helm_sound
         } else {

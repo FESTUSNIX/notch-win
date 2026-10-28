@@ -14,7 +14,9 @@ import {
   KeyboardIcon, ArrowExpand01Icon, RepeatIcon, RepeatOne01Icon, LayoutTwoColumnIcon, TextFontIcon,
   Mic01Icon, MicOff01Icon, ScreenShareIcon, HandIcon, CallEnd01Icon,
   Notification01Icon, Timer01Icon, ArrowLeft01Icon, Coffee02Icon, Target01Icon, SubtitleIcon, ShuffleIcon,
-  Shield01Icon,
+  Shield01Icon, UserIcon, ArrowTurnForwardIcon, Invoice01Icon, Message01Icon, MinusSignIcon,
+  ArrowUp02Icon, ImageAdd01Icon, SidebarLeftIcon, SidebarRightIcon, HistoryIcon, AtIcon, CommandLineIcon,
+  ArrowReloadHorizontalIcon, DashboardSquare01Icon, ViewIcon, MoreHorizontalIcon, Mail01Icon, UndoIcon, Coins01Icon,
 } from "@hugeicons/core-free-icons";
 
 /* ── The agents' own marks ──────────────────────────────────
@@ -154,6 +156,19 @@ const icons = {
   words: SubtitleIcon, shuffle: ShuffleIcon,
   // Helm: the Guardian, the same shield Helm itself uses for it.
   guardian: Shield01Icon,
+  /* The cockpit (28 Oct). `you` is his own time beside the agents' mark;
+     `later` is Not today — Helm's own arrow for it, where the old `next` was
+     a media glyph that read as "skip track"; `money` and `request` are what a
+     need is about; `minus` pairs with `plus` on the minutes to log. */
+  you: UserIcon, later: ArrowTurnForwardIcon, money: Invoice01Icon, request: Message01Icon,
+  minus: MinusSignIcon,
+  /* The kit (round 2): the composer's send, attach and slash; the side panels'
+     toggles; history; retry; the Blocks menu; a message's "more"; a mail sent;
+     a change taken back; money billed. */
+  send: ArrowUp02Icon, attach: ImageAdd01Icon, sideLeft: SidebarLeftIcon, sideRight: SidebarRightIcon,
+  history: HistoryIcon, at: AtIcon, slash: CommandLineIcon, retry: ArrowReloadHorizontalIcon,
+  blocks: DashboardSquare01Icon, view: ViewIcon, more: MoreHorizontalIcon, mail: Mail01Icon, undo: UndoIcon,
+  coins: Coins01Icon,
   // Whose agent it is. See the marks above.
   claude: CLAUDE_MARK,
   codex: CODEX_MARK,

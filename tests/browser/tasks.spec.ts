@@ -486,19 +486,22 @@ test("settings: one window, eight pages, and nothing that can show a token", asy
   await expect(page.locator("#modules .set-row")).toHaveCount(7);
   await page.screenshot({path: "test-results/settings-pill.png"});
 
-  /* The recorder takes a key press, not typing. ⚠️ `Ctrl+Alt+J` rather than
-     a letter AltGr claims — see the guard checked below. */
+  /* The recorder takes a key press, not typing. ⚠️ `Ctrl+Alt+G` rather than
+     a letter AltGr claims — see the guard checked below — and not `Ctrl+Alt+J`,
+     which is quick capture's own default now. */
   await page.getByRole("tab", {name: "Shortcuts"}).click();
-  /* ⚠️ TWO of them, where there were seven. Every global shortcut is a
+  /* ⚠️ THREE of them, where there were seven. Every global shortcut is a
    * combination taken away from every other application on the machine, and
    * six of the seven were doors into things one key already opens: tapped it
    * is the palette, held it is the ring, and everything that had a key of its
-   * own is a wedge or a row away. */
-  await expect(page.locator(".key-record")).toHaveCount(2);
+   * own is a wedge or a row away. The third is quick capture to the Guardian,
+   * added back on purpose (see DEFAULT_CAPTURE in shortcuts.rs). */
+  await expect(page.locator(".key-record")).toHaveCount(3);
+  await expect(page.locator("#key-capture")).toHaveText("CtrlAltJ");
   await page.locator("#key-ring").click();
   await expect(page.locator("#key-ring")).toHaveClass(/is-listening/);
-  await page.keyboard.press("Control+Alt+J");
-  await expect(page.locator("#key-ring")).toHaveText("CtrlAltJ");
+  await page.keyboard.press("Control+Alt+G");
+  await expect(page.locator("#key-ring")).toHaveText("CtrlAltG");
   await expect(page.locator("#altgr-note")).toBeHidden();
 
   /* ⚠️ Ctrl+Alt IS AltGr on Windows, and on a Polish layout `Ctrl+Alt+N`

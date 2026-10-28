@@ -18,6 +18,8 @@ mod media;
 mod dragout;
 mod guard;
 mod helm;
+mod mic;
+mod terminal;
 mod dropprobe;
 mod log;
 mod model;
@@ -587,11 +589,26 @@ pub fn run() {
             crypto::binance_connected,
             helm::get_helm,
             helm::helm_connected,
-            helm::connect_helm,
+            helm::helm_send_code,
+            helm::helm_sign_in,
             helm::disconnect_helm,
             helm::helm_act,
+            helm::helm_queue,
             helm::helm_open,
-            helm::open_helm_chat,
+            helm::helm_thread,
+            helm::helm_send,
+            helm::helm_undo,
+            helm::helm_read,
+            helm::helm_request,
+            helm::helm_log,
+            helm::helm_start_claude,
+            helm::helm_logo,
+            helm::helm_history,
+            helm::helm_projects,
+            helm::helm_transcribe,
+            helm::helm_transcribe_ready,
+            helm::helm_remind,
+            helm::helm_renewal,
             crypto::set_wallet_quote,
             weather::get_weather,
             lyrics::get_lyrics,
@@ -740,6 +757,9 @@ pub fn run() {
                 .build(app)?;
 
             task_window::setup(app.handle())?;
+            // Hold to talk: WebView2's microphone prompt cannot be answered on
+            // the island, so its own pages are answered here (mic.rs).
+            mic::allow(app.handle());
             hover::spawn(app.handle().clone(), "notch");
             hover::spawn(app.handle().clone(), "tasks");
             tasks::spawn(app.handle().clone());

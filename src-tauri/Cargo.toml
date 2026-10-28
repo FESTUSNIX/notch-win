@@ -40,6 +40,11 @@ windows-future = "0.3.2"
 # depends on (0.62.2 -> 0.62.2), for the same reason windows-future must.
 windows-core = "0.62.2"
 tauri-plugin-global-shortcut = "2"
+# The island's microphone permission (`mic.rs`). ⚠️ Already in the tree as
+# wry's own WebView2 binding — same version as Cargo.lock has for wry, so
+# nothing new is fetched; it is named here only so `mic.rs` can answer
+# WebView2's PermissionRequested for the microphone.
+webview2-com = "0.38.2"
 # One island, not two. See the note in lib.rs.
 tauri-plugin-single-instance = "2"
 # PKCE for the Google loopback flow: a verifier that never leaves this machine.

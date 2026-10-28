@@ -80,19 +80,26 @@ pub const DEFAULT_HIDE: &str = "Ctrl+Alt+H";
 /// is where everything else lives. `Alt+W` because it is near the hand and
 /// takes nothing from a Polish layout; see `eats_a_letter`.
 pub const DEFAULT_RING: &str = "Alt+W";
+/// Quick capture: one line to the Guardian from wherever he is.
+///
+/// ⚠️ A THIRD key, against the ring's whole argument that keys should stop
+/// multiplying — and on purpose (his call, 28 Oct). Capture is the one thing
+/// whose point is not leaving what you are in: a thought typed mid-sentence in
+/// another app, filed, gone. Through the ring it is a hold, an aim and a field;
+/// here it is one chord and the field. J because Helm's own Guardian panel is
+/// Ctrl+J, and J is not one of the letters AltGr types (see `eats_a_letter`).
+pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+J";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Shortcuts {
-    /// Expands or collapses the island.
     /// Takes the island and the usage notch off screen entirely.
     pub hide: String,
-    /// Opens the island on Today with the caret already in the composer.
-    /// Sends the island to the next display.
-    /// Puts whatever is on the clipboard on the shelf.
-    /// Opens the command palette.
-    /// Puts the ring of screens around the pointer.
+    /// Tapped, the command palette; held, the ring of screens around the pointer.
     pub ring: String,
+    /// Opens the island on one line for the Guardian (quick capture).
+    #[serde(default)]
+    pub capture: String,
 }
 
 impl Default for Shortcuts {
@@ -100,8 +107,22 @@ impl Default for Shortcuts {
         Self {
             hide: DEFAULT_HIDE.into(),
             ring: DEFAULT_RING.into(),
+            capture: DEFAULT_CAPTURE.into(),
         }
     }
+}
+
+/// The capture key was pressed: the island opens on its one line.
+///
+/// ⚠️ The chrome comes back first if it was hidden, for the reason
+/// `show_chrome` gives: a field opened on an island slid off the screen is a
+/// key that does nothing at all. The rest is the page's — the field, the
+/// caret, the fold — so this only says so.
+fn capture(app: &AppHandle) {
+    if crate::config::load().chrome_hidden {
+        set_chrome_hidden(app, false);
+    }
+    let _ = app.emit_to("tasks", "helm:capture", ());
 }
 
 #[derive(Default)]
@@ -173,6 +194,46 @@ fn keys_of(shortcut: &str) -> Vec<i32> {
         }
     }
     out
+}
+
+/// Stop the Alt (or Win) in a global shortcut from opening a menu on its own.
+///
+/// ⚠️ **The hotkey eats the letter, so the focused window sees a bare Alt.**
+/// `RegisterHotKey` takes the W of Alt+W before any window gets it; the window
+/// in front sees Alt go down and come up with nothing between, which is
+/// Windows' gesture for "activate the menu bar" — `SC_KEYMENU`. A window with
+/// no menu then sits in the menu loop until the next keystroke. When the
+/// palette was open the island WAS that window, so pressing Alt+W to close it
+/// did nothing until some other key was pressed (and in VS Code the same press
+/// lit up the menu bar).
+///
+/// The fix everyone uses (AutoHotkey's "menu mask key", PowerToys): send a key
+/// that means nothing, `vkE8` (unassigned), while the modifier is still down.
+/// Alt is then no longer pressed alone, and nothing reacts to the E8 itself.
+fn mask_menu_key(shortcut: &str) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    };
+    let lower = shortcut.to_ascii_lowercase();
+    let lone_modifier = lower.split('+').any(|part| matches!(part.trim(), "alt" | "option" | "super" | "meta" | "win" | "cmd" | "command"));
+    if !lone_modifier {
+        return;
+    }
+    let key = |up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(0xE8),
+                wScan: 0,
+                dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    unsafe {
+        SendInput(&[key(false), key(true)], std::mem::size_of::<INPUT>() as i32);
+    }
 }
 
 /// Is every one of them still held?
@@ -370,18 +431,19 @@ pub fn get_shortcuts(app: AppHandle) -> Shortcuts {
     app.state::<ShortcutState_>().0.lock().unwrap().clone()
 }
 
-/// Replace both bindings.
+/// Replace all three bindings.
 ///
-/// Registration is all-or-nothing on purpose: a half-applied pair leaves the
+/// Registration is all-or-nothing on purpose: a half-applied set leaves the
 /// user with one working key and no way to tell which, so a rejected binding
-/// puts the previous pair back before returning the error.
+/// puts the previous set back before returning the error.
 #[tauri::command]
-pub fn set_shortcuts(app: AppHandle, hide: String, ring: String) -> Result<(), String> {
+pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String) -> Result<(), String> {
     let next = Shortcuts {
         hide: hide.trim().into(),
         ring: ring.trim().into(),
+        capture: capture.trim().into(),
     };
-    let all = [&next.hide, &next.ring];
+    let all = [&next.hide, &next.ring, &next.capture];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -405,6 +467,7 @@ pub fn set_shortcuts(app: AppHandle, hide: String, ring: String) -> Result<(), S
             let mut config = crate::config::load();
             config.shortcut_hide = next.hide;
             config.shortcut_ring = next.ring;
+            config.shortcut_capture = next.capture;
             crate::config::save(&config);
             Ok(())
         }
@@ -441,7 +504,7 @@ pub fn eats_a_letter(binding: &str) -> bool {
 
 fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
     let manager = app.global_shortcut();
-    for (name, binding) in [("Hide", &shortcuts.hide), ("Ring", &shortcuts.ring)] {
+    for (name, binding) in [("Hide", &shortcuts.hide), ("Ring", &shortcuts.ring), ("Capture", &shortcuts.capture)] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
             // no way to say which, so the message must not pretend it can.
@@ -469,9 +532,18 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         moved.push(format!("ring: {} -> {DEFAULT_RING}", config.shortcut_ring));
         config.shortcut_ring = DEFAULT_RING.to_string();
     }
+    /* A config written before capture had a key takes the default through
+     * `serde(default)`; an EMPTY one (a hand-edited file) would fail
+     * registration for all three, so it is given the default here rather than
+     * left to break the other two. */
+    if config.shortcut_capture.trim().is_empty() {
+        config.shortcut_capture = DEFAULT_CAPTURE.to_string();
+        moved.push(format!("capture: none -> {DEFAULT_CAPTURE}"));
+    }
     for (field, fallback, name) in [
         (&mut config.shortcut_hide, DEFAULT_HIDE, "hide"),
         (&mut config.shortcut_ring, DEFAULT_RING, "ring"),
+        (&mut config.shortcut_capture, DEFAULT_CAPTURE, "capture"),
     ] {
         if eats_a_letter(field) {
             moved.push(format!("{name}: {field} -> {fallback}"));
@@ -486,6 +558,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
     let shortcuts = Shortcuts {
         hide: config.shortcut_hide,
         ring: config.shortcut_ring,
+        capture: config.shortcut_capture,
     };
 
     let handler = app.clone();
@@ -521,6 +594,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                                 return;
                             }
                             RING_DOWN.store(now_ms().max(1), Ordering::SeqCst);
+                            mask_menu_key(&current.ring);
                             /* ⚠️ Nothing is opened here. A tap does something
                              * else entirely and a hold opens the ring; which
                              * of the two this is will not be known for another
@@ -546,6 +620,8 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                 if matches(&pressed, &current.hide) {
                     let hidden = crate::config::load().chrome_hidden;
                     set_chrome_hidden(&handler, !hidden);
+                } else if matches(&pressed, &current.capture) {
+                    capture(&handler);
                 }
             })
             .build(),
@@ -612,8 +688,8 @@ mod tests {
         for eaten in ["Ctrl+Alt+N", "Ctrl+Alt+S", "ctrl+alt+e", "Control+Alt+Z", "Ctrl+Alt+X"] {
             assert!(eats_a_letter(eaten), "{eaten}");
         }
-        // The ones actually shipped.
-        for safe in ["Ctrl+Alt+Space", "Ctrl+Alt+H", "Ctrl+Alt+T", "Ctrl+Alt+V", "Ctrl+Alt+M", "Ctrl+Alt+K"] {
+        // The ones actually shipped, now or before.
+        for safe in ["Ctrl+Alt+Space", "Ctrl+Alt+H", "Ctrl+Alt+T", "Ctrl+Alt+V", "Ctrl+Alt+M", "Ctrl+Alt+K", "Ctrl+Alt+J"] {
             assert!(!eats_a_letter(safe), "{safe}");
         }
         // A third modifier is no longer AltGr.
@@ -626,8 +702,19 @@ mod tests {
     #[test]
     fn no_shipped_default_eats_a_letter() {
         let defaults = Shortcuts::default();
-        for binding in [&defaults.hide, &defaults.ring] {
+        for binding in [&defaults.hide, &defaults.ring, &defaults.capture] {
             assert!(!eats_a_letter(binding), "{binding}");
         }
+    }
+
+    #[test]
+    fn the_three_defaults_are_three_different_keys() {
+        /* ⚠️ `set_shortcuts` refuses a set with two the same, and the
+         * defaults are what "Back to the defaults" sends — a clash here would
+         * be a reset button that always fails. */
+        let d = Shortcuts::default();
+        assert!(!d.hide.eq_ignore_ascii_case(&d.ring));
+        assert!(!d.hide.eq_ignore_ascii_case(&d.capture));
+        assert!(!d.ring.eq_ignore_ascii_case(&d.capture));
     }
 }

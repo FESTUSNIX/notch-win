@@ -14,11 +14,11 @@ test("the screens can be reordered and switched off, except the one you land on"
    * against a perfectly correct page. */
   await page.getByRole("tab", {name: "Island"}).click();
   const rows = page.locator(".screen-row");
-  await expect(rows).toHaveCount(12);
+  await expect(rows).toHaveCount(14);
 
   const order = () => rows.evaluateAll(all => all.map(r => (r as HTMLElement).dataset.screen));
   expect(await order()).toEqual([
-    "home", "call", "notices", "timer", "today", "media", "agents", "shelf", "notes",
+    "home", "call", "notices", "timer", "today", "helm", "guardian", "media", "agents", "shelf", "notes",
     "calendar", "system", "review",
   ]);
 
@@ -61,8 +61,8 @@ test("the screens can be reordered and switched off, except the one you land on"
   await page.mouse.up();
   const moved = await order();
   expect(moved.indexOf("review")).toBeLessThan(moved.indexOf("today"));
-  expect(moved).toHaveLength(12);
-  expect(new Set(moved).size).toBe(12);
+  expect(moved).toHaveLength(14);
+  expect(new Set(moved).size).toBe(14);
 });
 
 test("the rail obeys the order, drops what is hidden, and keeps what it has not heard of", async ({page}) => {
@@ -174,7 +174,7 @@ test("the ring can be chosen, verbs and all, and is capped at eight", async ({pa
    * two thirds of this pane: identical controls where the only thing that
    * varies is a word. */
   const chips = page.locator(".ring-chip");
-  await expect(chips).toHaveCount(16);
+  await expect(chips).toHaveCount(18);
   /* ⚠️ Verbs as well as screens, and they are what stops the ring being a
    * navigation menu: every one of them is a keystroke that would otherwise
    * want a global shortcut of its own, which is the problem the ring exists

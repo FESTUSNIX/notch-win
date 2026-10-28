@@ -486,7 +486,7 @@ export class NotesScreen {
       const search = element("div", "note-search");
       const input = document.createElement("input");
       input.type = "search";
-      input.className = "note-search-field";
+      input.className = "note-search-field k-field";
       input.placeholder = `Search ${this.notes.length} notes…`;
       input.setAttribute("aria-label", "Search notes");
       input.value = this.query;
