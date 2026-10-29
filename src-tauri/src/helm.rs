@@ -786,6 +786,10 @@ fn take_lines(buffer: &mut Vec<u8>) -> Vec<String> {
 /// rather than chatting about it. ⚠️ A Helm that predates the flag ignores
 /// it and answers as it would any message — which is a longer reply, not a
 /// failure, so nothing here depends on it being understood.
+///
+/// `voice` is a hold to talk (voice.rs): he said it, and the reply is spoken
+/// back, so Helm keeps it short and speakable. The same holds for a Helm
+/// without the flag: a longer reply, said in full.
 #[tauri::command]
 pub async fn helm_send(
     app: AppHandle,
@@ -795,8 +799,9 @@ pub async fn helm_send(
     focus: Option<i64>,
     command: Option<String>,
     mentions: Option<Vec<i64>>,
+    voice: Option<bool>,
 ) -> Result<(), String> {
-    let body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]));
+    let body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]), voice == Some(true));
     let mut response = as_him(chat_http(), reqwest::Method::POST, "/api/guardian/chat", Some(body)).await?;
     if !response.status().is_success() {
         return Err(refusal(response, "The Guardian didn't answer.").await);
@@ -936,10 +941,13 @@ pub async fn helm_start_claude(id: i64) -> Result<String, String> {
 /// checked here: a command it does not know, a non-positive project id or a
 /// flood of mentions is dropped rather than sent — the chat must not fail
 /// because a draft carried something odd.
-fn chat_body(text: &str, images: &[Picture], capture: bool, focus: Option<i64>, command: Option<&str>, mentions: &[i64]) -> serde_json::Value {
+fn chat_body(text: &str, images: &[Picture], capture: bool, focus: Option<i64>, command: Option<&str>, mentions: &[i64], voice: bool) -> serde_json::Value {
     let mut body = json!({ "text": text, "images": images, "page": null });
     if capture {
         body["capture"] = json!(true);
+    }
+    if voice {
+        body["voice"] = json!(true);
     }
     if let Some(id) = focus.filter(|id| *id > 0) {
         body["focus"] = json!({ "projectId": id });
@@ -1139,6 +1147,14 @@ pub async fn helm_transcribe(audio: String, mime: String, lang: Option<String>) 
     }
 }
 
+/// The Guardian's words said out loud: `/api/speak` as him, asking for PCM
+/// (24 kHz, 16-bit mono), which `voice.rs` plays as it streams in. The answer
+/// is handed back whole — 404 (an older Helm) and 503 (no OpenAI key) are the
+/// player's to read, the same states as everywhere else here.
+pub(crate) async fn speak(text: &str) -> Result<reqwest::Response, String> {
+    as_him(chat_http(), reqwest::Method::POST, "/api/speak", Some(json!({ "text": text, "format": "pcm" }))).await
+}
+
 /// Whether this Helm has `/api/transcribe` at all, asked once per session.
 /// ⚠️ With a GET, which the route does not serve: a route that exists answers
 /// 405, one that does not 404 — nothing is recorded or sent to find out.
@@ -1290,15 +1306,16 @@ mod tests {
 
     #[test]
     fn the_chat_body_carries_only_what_the_contract_names() {
-        let plain = chat_body("hej", &[], false, None, None, &[]);
+        let plain = chat_body("hej", &[], false, None, None, &[], false);
         assert_eq!(plain, json!({ "text": "hej", "images": [], "page": null }));
-        let full = chat_body("napraw koszyk", &[], true, Some(3), Some("request"), &[3, 5, 3, -1, 0]);
+        let full = chat_body("napraw koszyk", &[], true, Some(3), Some("request"), &[3, 5, 3, -1, 0], true);
         assert_eq!(full["capture"], json!(true));
+        assert_eq!(full["voice"], json!(true), "a hold to talk says so");
         assert_eq!(full["focus"], json!({ "projectId": 3 }));
         assert_eq!(full["command"], json!("request"));
         assert_eq!(full["mentions"], json!([{ "projectId": 3 }, { "projectId": 5 }]), "deduped, positive ids only");
         // A command Helm does not know, or a non-id focus, is not sent at all.
-        let odd = chat_body("x", &[], false, Some(0), Some("delete"), &[]);
+        let odd = chat_body("x", &[], false, Some(0), Some("delete"), &[], false);
         assert!(odd.get("focus").is_none() && odd.get("command").is_none() && odd.get("mentions").is_none());
     }
 

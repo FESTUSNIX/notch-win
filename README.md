@@ -141,8 +141,10 @@ own is a wedge or a palette row away. `Ctrl+Alt+H` takes the island and the usag
 notch off screen — the island sits where an editor keeps its tab strip, so
 getting it out of the way had to be one key. **`Ctrl+Alt+J` tells the Guardian**
 one line from wherever you are (quick capture, below) — J because Helm's own
-Guardian panel is `Ctrl+J`. All three are rebindable in Settings → Shortcuts,
-and the choice to hide survives a restart.
+Guardian panel is `Ctrl+J`. **Hold `Alt+Q` to talk to the Guardian** from any
+app (below, "Helm"): two keys because it is held while you speak, and `Alt`
+rather than `Ctrl+Alt` so it can never be AltGr. All four are rebindable in
+Settings → Shortcuts, and the choice to hide survives a restart.
 
 ⚠️ **Nine letters are unavailable, and the reason is not obvious.**
 `Ctrl+Alt` *is* `AltGr` on Windows, so a `Ctrl+Alt+N` hotkey and an `AltGr+N`
@@ -341,6 +343,22 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   speech. WebView2's microphone prompt cannot be shown on the island, so
   `mic.rs` allows the microphone for this app's own pages; Windows' own switch
   (Settings › Privacy › Microphone › desktop apps) still has to be on.
+- **Talk to the Guardian from anywhere** (29 Oct): **hold `Alt+Q`** in any app
+  and speak. Past half a second the island opens on the Guardian, listening
+  (a hot strip with your voice as bars, over the composer); let go and the
+  words go to Helm's `/api/transcribe` (OpenAI), then to the Guardian's chat
+  with `voice: true`, so it answers in one to three short Polish sentences. Its
+  tools, receipts and cards are the chat's as ever, in the same thread. The
+  reply is **said out loud** sentence by sentence while it streams (Helm's
+  `/api/speak`, OpenAI's voice, played natively by `voice.rs`), with the text
+  in the thread. Hold again to answer; **holding while it speaks stops it and
+  listens**; **Escape** (taken from every app only while a turn is live) or the
+  strip's × stops everything. A press under half a second does nothing. It is
+  **never said out loud while presenting, in a call (in-call mode) or in a
+  meeting on your calendar**, or with **Settings → Connections → Helm → Spoken
+  replies** off: the strip shows why and the reply is text only (the island
+  stays up longer to read it). Needs Helm with `OPENAI_API_KEY`; without it the
+  replies are text only.
 - **The Guardian** has a **project focus** (a chip on its bar, set from the
   project panel, a card or `@`, sent as `focus` with every message), a
   **history** panel on the left (the days, a search across every message),

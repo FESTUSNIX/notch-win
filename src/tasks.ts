@@ -36,6 +36,7 @@ import { CallScreen, CallSource } from "./screen-call";
 import { NoticeSource, NoticesScreen } from "./screen-notices";
 import { HelmSource, HelmTodayScreen } from "./screen-helm";
 import { GuardianChat, GuardianScreen } from "./screen-guardian";
+import { VoiceTalk } from "./voice-talk";
 import { Capture } from "./helm-capture";
 import { TimerScreen } from "./screen-timer";
 import { DEFAULT_LENGTHS, phaseName, spokenEnd, type Countdown } from "./timer";
@@ -343,6 +344,8 @@ interface Prefs {
   mutedModules: string[];
   thresholds: Record<string, number>;
   taskView: string;
+  /** The Guardian's replies to a hold to talk, out loud (Settings → Helm). */
+  spokenReplies: boolean;
 }
 
 let prefs: Prefs = {
@@ -353,7 +356,7 @@ let prefs: Prefs = {
   pomodoroPill: "bar", ringStops: [], followLive: true,
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
-  mutedModules: [], thresholds: {}, taskView: "day",
+  mutedModules: [], thresholds: {}, taskView: "day", spokenReplies: true,
 };
 
 /* ⚠️ A FOLD CLOSES THE PALETTE, and it has to.
@@ -581,6 +584,22 @@ helmScreen.mainCss = cpx(WIDTH.helm);
 agentsScreen.mainCss = cpx(WIDTH.agents);
 /* The agents' time on a project today, from this machine's own runs. */
 helmSource.agentMinutes = folders => agentsScreen.minutesToday(folders);
+/* Hold to talk from anywhere (Alt+Q, voice.rs): the Guardian answers out
+ * loud, in this same thread. ⚠️ It opens the screen itself, out from under the
+ * palette or capture, and holds the island up until the turn is over. */
+const voiceTalk = new VoiceTalk(guardianChat, helmSource, surface, {
+  open: () => {
+    steered = performance.now();
+    if (palette.open) void palette.hide();
+    if (capture.open) void capture.hide();
+    guardianChat.today();
+    show("guardian");
+    surface.show(true);
+  },
+  foot: () => document.querySelector<HTMLElement>('[data-screen="guardian"] .g-foot'),
+  spoken: () => prefs.spokenReplies !== false,
+});
+document.querySelector('[data-screen="guardian"] .g-foot')?.prepend(voiceTalk.el);
 /* Quick capture: one line to the Guardian (Ctrl+Alt+J, or the palette). */
 const capture = new Capture(surface, guardianChat, {
   signedIn: () => helmSource.signedIn,
@@ -1726,6 +1745,22 @@ if (preview) {
     if (!event.ctrlKey || !event.altKey || event.code !== "KeyJ") return;
     event.preventDefault();
     void tellTheGuardian();
+  }, true);
+  /* And hold to talk's (Alt+Q held): `voice:down` and `voice:up` are native too.
+   * Let go of either key and the hold is over, as in voice.rs. */
+  let talkDown = 0;
+  document.addEventListener("keydown", event => {
+    if (!event.altKey || event.ctrlKey || event.code !== "KeyQ") return;
+    event.preventDefault();
+    if (talkDown) return;
+    talkDown = performance.now();
+    voiceTalk.down();
+  }, true);
+  document.addEventListener("keyup", event => {
+    if (!talkDown || (event.code !== "KeyQ" && event.key !== "Alt")) return;
+    const ms = performance.now() - talkDown;
+    talkDown = 0;
+    voiceTalk.up(ms);
   }, true);
 }
 
@@ -3031,6 +3066,7 @@ async function boot() {
   await noticeSource.boot();
   await helmSource.boot();
   await guardianChat.boot();
+  await voiceTalk.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();

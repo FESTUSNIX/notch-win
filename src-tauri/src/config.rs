@@ -78,6 +78,9 @@ pub struct Config {
     /// Quick capture: one line to the Guardian. See `DEFAULT_CAPTURE` on why
     /// this is the one key that was added back.
     pub shortcut_capture: String,
+    /// Hold to talk to the Guardian (voice.rs). ⚠️ A config from before it
+    /// takes the default through the struct's `serde(default)`.
+    pub shortcut_talk: String,
     /// A folder of the user's own ambient scenes — videos and stills. Empty
     /// means the generated scenes only. ⚠️ The asset protocol is allowed to
     /// serve THIS folder and nothing else; see `ambient::allow`.
@@ -108,6 +111,7 @@ impl Default for Config {
             shortcut_hide: crate::shortcuts::DEFAULT_HIDE.into(),
             shortcut_ring: crate::shortcuts::DEFAULT_RING.into(),
             shortcut_capture: crate::shortcuts::DEFAULT_CAPTURE.into(),
+            shortcut_talk: crate::shortcuts::DEFAULT_TALK.into(),
             ambient_folder: String::new(),
         }
     }

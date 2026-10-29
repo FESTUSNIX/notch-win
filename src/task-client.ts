@@ -185,6 +185,8 @@ let demoPrefs: Record<string, unknown> = {
   homeCurrency: "PLN",
   followLive: !new URLSearchParams(location.search).has("nofollow"),
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
+  /* `?spoken=off` is Settings → Spoken replies switched off. */
+  spokenReplies: new URLSearchParams(location.search).get("spoken") !== "off",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 
@@ -460,7 +462,32 @@ export function previewFinished(): { session: string; project: string; folder: s
      and the default fixture's one session is working. */
   return agentsFixture ? { session: "s1", project: "akcesfonia", folder: null } : null;
 }
-async function scriptReply(text: string, capture = false) {
+/* Hold to talk's voice, staged. ⚠️ Rust plays it natively, so the preview only
+   keeps time: a sentence "plays" for 45 ms a letter, its level goes out on
+   `previewBus` as `voice:out`, and a hush cuts every one short. `?call` and
+   `?event=now` are what voice.rs answers as a call and a meeting (text only). */
+let demoHushes = 0;
+function demoQuiet(): string | null {
+  if (demoPrefs.spokenReplies === false) return "off";
+  if (callAsked) return "call";
+  if (eventFlag === "now") return "meeting";
+  return null;
+}
+async function demoSay(text: string): Promise<{ played?: boolean; hushed?: boolean; muted?: string }> {
+  const why = demoQuiet();
+  if (why) return { muted: why };
+  const hushes = demoHushes;
+  const out = (level: number) => previewBus.dispatchEvent(new CustomEvent("voice:out", { detail: level }));
+  for (let at = 0; at < Math.min(text.length * 45, 6000); at += 50) {
+    if (demoHushes !== hushes) { out(0); return { hushed: true }; }
+    out(0.35 + 0.45 * Math.abs(Math.sin(at / 90)));
+    await new Promise(done => setTimeout(done, 50));
+  }
+  out(0);
+  return { played: true };
+}
+
+async function scriptReply(text: string, capture = false, voice = false) {
   const now = new Date().toISOString();
   const keep = (id: number, role: string, body: string, receipts: unknown[] = []) =>
     sentHere.push({ id, day: localDay(), kind: "chat", role, title: null, body, url: null, createdAt: now, read: true, receipts, cards: [], images: [] });
@@ -476,6 +503,23 @@ async function scriptReply(text: string, capture = false) {
     send({ t: "receipt", index: 0, receipt: { label: `Przypomnienie: ${text.slice(0, 60)}`, icon: "note", undo: { op: "delete", table: "reminders", id: 4 } } });
     await wait(150);
     send({ t: "done", id: 102, changed: true });
+    return;
+  }
+  /* A spoken turn's answer: two sentences, the first whole well before the
+     second, so a test sees it said while the rest is still being written. */
+  if (voice) {
+    send({ t: "status", text: "Sprawdzam kalendarz" });
+    await wait(400);
+    for (const part of ["Dobrze, ", "przesunąłem Repricer na siedemnastą. ", "Zostały ci ", "dziś ", "dwie rzeczy."]) {
+      send({ t: "text", d: part });
+      await wait(part.startsWith("Zostały") ? 900 : 200);
+    }
+    const receipt = { label: "Repricer: reguły cen, 17:00", icon: "block", undo: { op: "update", table: "focus_blocks", id: 3, values: {} } };
+    send({ t: "receipt", index: 0, receipt });
+    const id = 1000 + sentHere.length;
+    keep(id, "me", text);
+    keep(id + 1, "guardian", "Dobrze, przesunąłem Repricer na siedemnastą. Zostały ci dziś dwie rzeczy.", [receipt]);
+    send({ t: "done", id: id + 1, changed: true });
     return;
   }
   send({ t: "status", text: "Sprawdzam kalendarz" });
@@ -505,7 +549,7 @@ if (preview) (window as unknown as { __helmCalls: typeof helmCalls }).__helmCall
 
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
-  if (command.startsWith("helm_")) helmCalls.push({ command, args: structuredClone(args) });
+  if (command.startsWith("helm_") || command.startsWith("voice_")) helmCalls.push({ command, args: structuredClone(args) });
   if (command === "get_tasks") return structuredClone(demo) as T;
   if (command === "get_task_placement") return {
     /* ⚠️ Staged from the query string. The island lost its own edge and clock
@@ -592,7 +636,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
      that ate `ń` and is the reason the defaults moved. The settings window's
      AltGr guard is what found it: it warned about a shortcut no build had
      shipped for months. */
-  if (command === "get_shortcuts") return {hide:"Ctrl+Alt+H", ring:"Alt+W", capture:"Ctrl+Alt+J"} as T;
+  if (command === "get_shortcuts") return {hide:"Ctrl+Alt+H", ring:"Alt+W", capture:"Ctrl+Alt+J", talk:"Alt+Q"} as T;
   if (command === "ring_pick" || command === "ring_close") return undefined as T;
   if (command === "get_chrome_hidden") return false as T;
   if (command === "show_chrome" || command === "toggle_chrome") return undefined as T;
@@ -976,7 +1020,11 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     ? { ok: false, status: 409, error: "Uprzejme przypomnienie poszło już 26 paź" }
     : { ok: true, sentTo: "ksiegowosc@ubrania.pl" }) as T;
   if (command === "helm_renewal") return { ok: true } as T;
-  if (command === "helm_send") { void scriptReply(String(args.text ?? ""), !!args.capture); return undefined as T; }
+  if (command === "helm_send") { void scriptReply(String(args.text ?? ""), !!args.capture, !!args.voice); return undefined as T; }
+  if (command === "voice_say") return (await demoSay(String(args.text ?? ""))) as T;
+  if (command === "voice_hush") { demoHushes++; return undefined as T; }
+  if (command === "voice_quiet") return demoQuiet() as T;
+  if (command === "voice_escape") return undefined as T;
   /* The cockpit's commands. ⚠️ Under `notch=off` they answer as the deployed
      Helm would without the endpoint — but nothing should be calling them then,
      because nothing that calls them is drawn. */

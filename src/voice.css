@@ -1,0 +1,164 @@
+/* ── Talking with the Guardian (voice-talk.ts, 29 Oct) ────────────────────
+   The strip that stands in for the composer while a spoken turn is live: a
+   disc for what is happening, the voice as bars, a mark when the reply is
+   text only, and the way out. Hot while he speaks (the composer's own
+   recording colour), the Guardian's accent from then on: its tile in the
+   thread is the same green.
+
+   ⚠️ AGENTS 188: it RECEIVES his voice, so it is sunk like the composer's
+   well, at the well's height, so the island does not jump when one becomes
+   the other. The disc is an object and is raised. */
+
+.g-foot.is-talking .g-composer,
+.g-foot.is-talking .g-chips {
+	display: none;
+}
+
+.v-strip {
+	--v: var(--accent);
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 5px 5px 5px 6px;
+	border-radius: 22px;
+	background-color: rgba(255, 255, 255, 0.06);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--v) 26%, rgba(255, 255, 255, 0.08)),
+		inset 0 2px 4px -2px rgba(0, 0, 0, 0.72),
+		0 0 0 3px color-mix(in srgb, var(--v) 8%, transparent),
+		0 0 26px -10px color-mix(in srgb, var(--v) 40%, transparent);
+	transition: box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+.v-strip[hidden] {
+	display: none;
+}
+.v-strip[data-phase='listening'] {
+	--v: var(--hot);
+}
+
+/* What is happening, at a glance: the mic, the shield thinking, the voice. */
+.v-disc {
+	position: relative;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	color: var(--v);
+	background-color: color-mix(in srgb, var(--v) 17%, #0c0c0c);
+	background-image: var(--sheen);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--v) 32%, transparent),
+		var(--gloss),
+		var(--lift-1),
+		0 0 18px -6px color-mix(in srgb, var(--v) 60%, transparent);
+}
+.v-disc svg {
+	width: 17px;
+	height: 17px;
+}
+/* Listening breathes, like the composer's mic while held. */
+.v-strip[data-phase='listening'] .v-disc::after {
+	content: '';
+	position: absolute;
+	inset: -5px;
+	z-index: -1;
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--hot) 24%, transparent);
+	animation: k-breathe 1.4s var(--ease-in-out) infinite;
+}
+/* Thinking pulses quietly: the Guardian is acting, nothing to hear yet. */
+.v-strip[data-phase='thinking'] .v-disc,
+.v-strip[data-phase='transcribing'] .v-disc {
+	animation: v-pulse 1.6s var(--ease-in-out) infinite;
+}
+@keyframes v-pulse {
+	50% {
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, var(--v) 50%, transparent),
+			var(--gloss),
+			var(--lift-1),
+			0 0 22px -4px color-mix(in srgb, var(--v) 75%, transparent);
+	}
+}
+
+/* The voice: his while he holds, the Guardian's while it speaks. */
+.v-wave {
+	flex: 1;
+	min-width: 0;
+	height: 26px;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 3px;
+	overflow: hidden;
+}
+.v-wave i {
+	flex: 0 0 3px;
+	height: calc(3px + var(--h, 0.06) * 23px);
+	border-radius: 2px;
+	background: color-mix(in srgb, var(--v) 62%, #fff);
+	transition: height 70ms linear;
+}
+/* Waiting on Helm: the wave goes quiet and a light runs along it (the composer's own). */
+.v-strip[data-phase='transcribing'] .v-wave i,
+.v-strip[data-phase='thinking'] .v-wave i {
+	height: 4px;
+	background: color-mix(in srgb, var(--v) 40%, #333);
+	animation: k-wait 1.1s var(--ease-in-out) infinite;
+	animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.v-time {
+	flex-shrink: 0;
+	min-width: 34px;
+	font-size: 14px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: #f4f4f4;
+}
+.v-time[hidden] {
+	display: none;
+}
+
+/* Text only, and why: a call, a meeting, presenting, switched off. A mark
+   with its reason on hover, raised like a chip — it is a fact, not a control. */
+.v-quiet {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	color: #e2e2e2;
+	background-color: var(--tile-hi);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.v-quiet[hidden] {
+	display: none;
+}
+.v-quiet svg {
+	width: 15px;
+	height: 15px;
+}
+
+.v-strip .v-stop {
+	width: 30px;
+	height: 30px;
+}
+.v-strip .v-stop svg {
+	width: 15px;
+	height: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .v-disc,
+	html:not([data-motion='always']) .v-disc::after,
+	html:not([data-motion='always']) .v-wave i {
+		animation: none !important;
+		transition: none;
+	}
+}

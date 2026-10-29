@@ -20,6 +20,7 @@ mod dragout;
 mod guard;
 mod helm;
 mod mic;
+mod voice;
 mod terminal;
 mod dropprobe;
 mod log;
@@ -612,6 +613,10 @@ pub fn run() {
             helm::helm_remind,
             helm::helm_renewal,
             helm::helm_blocker,
+            voice::voice_say,
+            voice::voice_hush,
+            voice::voice_quiet,
+            voice::voice_escape,
             curtain::curtain_pending,
             curtain::curtain_ready,
             curtain::curtain_close,
@@ -766,6 +771,8 @@ pub fn run() {
             // Hold to talk: WebView2's microphone prompt cannot be answered on
             // the island, so its own pages are answered here (mic.rs).
             mic::allow(app.handle());
+            // Hold to talk anywhere: the Guardian's replies said out loud (voice.rs).
+            voice::spawn(app.handle().clone());
             hover::spawn(app.handle().clone(), "notch");
             hover::spawn(app.handle().clone(), "tasks");
             tasks::spawn(app.handle().clone());

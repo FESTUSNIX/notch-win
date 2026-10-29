@@ -85,6 +85,8 @@ interface Prefs {
   taskView: string;
   /** The sound a Guardian nudge makes. */
   helmSound: string;
+  /** The Guardian's replies to a hold to talk, out loud. */
+  spokenReplies: boolean;
 }
 
 interface Screen { id: string; name: string; width: number; height: number; primary: boolean }
@@ -138,6 +140,9 @@ const KEYS = [
   /* ⚠️ The one key added back (28 Oct, his call) — see DEFAULT_CAPTURE in
    * shortcuts.rs on why capture earns a chord of its own. */
   { id: "capture", title: "Tell the Guardian", note: "One line to Helm from anywhere." },
+  /* Held, not pressed (29 Oct): see DEFAULT_TALK in shortcuts.rs on why it is
+   * two keys and never Ctrl+Alt. */
+  { id: "talk", title: "Talk to the Guardian", note: "Hold it in any app and speak; let go to send." },
 ] as const;
 type KeyId = (typeof KEYS)[number]["id"];
 type Shortcuts = Record<KeyId, string>;
@@ -320,6 +325,7 @@ const PANE_HTML: Record<PaneId, string> = {
       ${row("Nudge sound", "Plays when the Guardian nudges, and once more three minutes later if it is still unread.",
         seg("helmsound", [["", "None"], ["Notification.Default", "Chime"],
           ["Notification.Reminder", "Calendar"], ["Notification.Looping.Alarm", "Alarm"]], "Guardian nudge sound"))}
+      ${row("Spoken replies", "The Guardian answers out loud when you hold to talk. Never in a call, a meeting or while presenting.", check("spoken-replies"))}
     </div><p class="set-note">While Helm is connected, Today is Helm’s day and the Guardian lives on the island: its nudges, which stay up over full-screen apps until answered, and the chat.</p></div>
     <div><p class="set-label">TickTick</p><div class="set-group">
       ${row("Account", "", `<span class="set-value" id="ticktick-state" style="min-width:0;text-align:right">…</span>`)}
@@ -450,6 +456,7 @@ let prefs: Prefs = {
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
   helmSound: "Notification.Reminder",
+  spokenReplies: true,
 };
 
 let saving = 0;
@@ -668,7 +675,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
 for (const [id, key] of [
   ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
   ["notice-mode", "noticeMode"], ["follow-live", "followLive"],
-  ["ring-glass", "ringGlass"],
+  ["ring-glass", "ringGlass"], ["spoken-replies", "spokenReplies"],
 ] as const) {
   get<HTMLInputElement>(id).onchange = event => {
     prefs[key] = (event.target as HTMLInputElement).checked;
@@ -1261,7 +1268,7 @@ async function paintEverything() {
  * outright on a missing argument. This window sent two of six for a while,
  * which meant saving a shortcut silently did nothing at all. Two is now the
  * whole set, which is one fewer way to get that wrong. */
-let keys: Shortcuts = { hide: "", ring: "", capture: "" };
+let keys: Shortcuts = { hide: "", ring: "", capture: "", talk: "" };
 let listening: KeyId | null = null;
 
 /** The accelerator Windows will actually take, built from the physical key
@@ -1385,7 +1392,7 @@ get("keys-default").onclick = async () => {
    * `set_shortcuts` takes exactly its own arguments, so it failed on the
    * missing `ring` every time and "Back to the defaults" did nothing. */
   if (await run("set_shortcuts", {
-    hide: "Ctrl+Alt+H", ring: "Alt+W", capture: "Ctrl+Alt+J",
+    hide: "Ctrl+Alt+H", ring: "Alt+W", capture: "Ctrl+Alt+J", talk: "Alt+Q",
   }, "Back to the defaults.")) await paintKeys();
 };
 
@@ -1667,6 +1674,7 @@ function paintPrefs() {
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
   get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
+  get<HTMLInputElement>("spoken-replies").checked = prefs.spokenReplies;
   get<HTMLInputElement>("home-currency").value = prefs.homeCurrency;
   get<HTMLInputElement>("ring-hold").value = String(prefs.ringHoldMs);
   get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;

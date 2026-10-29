@@ -318,6 +318,11 @@ pub struct Prefs {
     /// ⚠️ On by default. A nudge is the one thing here that must not be missed
     /// while he is looking at another screen; silence stays one choice away.
     pub helm_sound: String,
+    /// Whether the Guardian's replies to a hold to talk are said out loud
+    /// (voice.rs). Off, they are text in the island only. ⚠️ Never out loud
+    /// while presenting, in a call or in a meeting either way — that is not a
+    /// preference, it is `voice::quiet`.
+    pub spoken_replies: bool,
 }
 
 impl Default for Prefs {
@@ -365,6 +370,7 @@ impl Default for Prefs {
             thresholds: BTreeMap::new(),
             task_view: "day".into(),
             helm_sound: "Notification.Reminder".into(),
+            spoken_replies: true,
         }
     }
 }
@@ -478,6 +484,7 @@ mod tests {
         assert_eq!(empty.accent, "#00ff88");
         assert!(empty.muted_modules.is_empty());
         assert_eq!(empty.task_view, "day");
+        assert!(empty.spoken_replies, "the Guardian answers out loud unless told not to");
     }
 
     /// ⚠️ Values arrive from a WebView. A colour that is not a colour leaves

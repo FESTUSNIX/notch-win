@@ -5446,3 +5446,78 @@ being quit. `curtain.rs` watches the window in front; `helm.rs` hands it Helm's
       faded already and hides at once.
  839. **`win::harden` stands aside while it is up**, as for ambient mode (761):
       re-asserting topmost on the island would lift it over the dim.
+
+### Talking with the Guardian (hold to talk anywhere, 29 Oct)
+
+His words: "It all would be great if I could just talk with guardian on the PC."
+His choice: the Guardian answers out loud. Hold `Alt+Q` in any app and speak;
+let go and the Guardian (Helm's chat, Claude with its tools) acts and answers
+through OpenAI's voice, with the text in the island; hold again to answer it.
+`voice.rs` is the native half (the key, the level, the voice, quiet, Escape),
+`voice-turn.ts` the state machine (pure, `tests/voice.test.mjs`),
+`voice-talk.ts` the turn and the strip, `voice.css` its look. Helm's side:
+`/api/transcribe` on OpenAI, `/api/speak`, and `voice: true` on the chat
+(`GUARDIAN_VOICE`: one to three short Polish sentences, said as spoken).
+
+ 840. ⚠️⚠️ **The voice is played in RUST, and the level read there too.** A
+      key pressed in another app is no gesture in the island, so an
+      AudioContext the page makes is born suspended and an `<audio>` is
+      refused (`click.ts` knew): the reply would be silent and the meter flat
+      on exactly this path, and only until he first clicked the island — the
+      kind of bug that never shows up when you test by clicking. `voice.rs`
+      plays `/api/speak`'s PCM (24 kHz 16-bit mono) through `waveOut` as it
+      streams in, and reads the default microphone's peak meter (Core Audio)
+      while the key is held. The recorder's analyser still feeds the bars; the
+      louder of the two wins.
+ 841. ⚠️ **`waveOut` buffers are done when `waveOutUnprepareHeader` stops
+      answering STILLPLAYING** — no callback, no flags read off a packed
+      struct. Each header is boxed and its data's heap buffer never moves, so
+      the pointers stay good while the deque shuffles; nothing is dropped
+      before the device gives it back. The device closes after four idle
+      seconds (open, it sits in the volume mixer).
+ 842. ⚠️ **The release is watched with `GetAsyncKeyState`, for the ring's
+      reason** (the plugin's `Released` never arrives). Auto-repeat lands as
+      more presses, so only the first starts a hold, and the flag is trusted
+      only for five minutes (Helm's longest recording). The Alt of `Alt+Q` is
+      masked (`mask_menu_key`) or the app in front opens its menu bar on the
+      release. A talk key must be `watchable` — every part a key
+      `keys_of` can name — or the microphone would stay open with nothing to
+      end it; `set_shortcuts` refuses one and `setup` moves a saved one back.
+ 843. **The microphone opens on the PRESS, the island only after half a
+      second.** A tap does nothing visible and sends nothing, and the first
+      word of a real hold is never cut by getUserMedia's start.
+ 844. ⚠️ **Escape is taken from every app only while a turn is live**
+      (`voice_escape`), and given back at the end. The page renews it on each
+      step and a watchdog in the player drops it two minutes after the last
+      ask, so a page that never says "done" cannot keep Escape hostage.
+      `set_shortcuts` unregisters everything, Escape included
+      (`forget_escape`). Another app holding Escape is not an error: it then
+      works inside the island only.
+ 845. ⚠️ **Sentences play in (turn, seq) order whatever order their commands
+      land in.** Two `voice_say`s sent back to back are two tasks on the
+      runtime and the second can reach the player first; a sentence waits up to
+      400 ms for the one before it (`pick`). The next sentence is fetched while
+      this one plays, so there is no gap but the natural one.
+ 846. **Never out loud while presenting, in a call or in a meeting**, or with
+      Spoken replies off (`quiet`, the curtain's rule, 835). Checked by
+      `voice_say` before each sentence and every half second while one plays:
+      a call starting mid-sentence hushes it and says `voice:muted`. The strip
+      shows why (a mark with its reason) and the island stays up longer to read.
+ 847. **Barge-in stops the voice on the press, a tap included** — the one place
+      a short press does something, because talking over it is the gesture and
+      waiting half a second while it keeps talking would be wrong. What is left
+      of that reply arrives as text only. ⚠️ One chat turn at a time (794): the
+      new words wait for the old reply to finish streaming before they go.
+ 848. **The strip stands in for the composer** (`.g-foot.is-talking`), at the
+      well's height so nothing jumps, and the island is `held` for the turn
+      (`IslandSurface.held`: nothing folds it, the pointer leaving included).
+ 849. ⚠️ **OpenAI shuts gpt-4o-mini-tts down on 6 Jan 2027** (with tts-1).
+      Their replacement, gpt-realtime-2.1-mini, is Realtime-only, so moving
+      means a new `speak` in Helm's `lib/ai/openai.ts`, not a new model name.
+      Nothing here changes: codenotch only ever asks `/api/speak` for PCM.
+ 850. **Staged:** in the preview `Alt+Q` held in the page stands in for the
+      key; `voice_say` keeps time (45 ms a letter, its level on `previewBus`)
+      and a hush cuts it short; `?call` and `?event=now` are a call and a
+      meeting, `?spoken=off` the switch. `voice_*` calls are recorded in
+      `window.__helmCalls` with Helm's. `tests/browser/voice.spec.ts` walks the
+      turn, a tap, barge-in, Escape, a call and the switch.

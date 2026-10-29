@@ -89,6 +89,15 @@ pub const DEFAULT_RING: &str = "Alt+W";
 /// here it is one chord and the field. J because Helm's own Guardian panel is
 /// Ctrl+J, and J is not one of the letters AltGr types (see `eats_a_letter`).
 pub const DEFAULT_CAPTURE: &str = "Ctrl+Alt+J";
+/// Hold to talk to the Guardian, from any app (voice.rs, 29 Oct).
+///
+/// ⚠️ A FOURTH key, for capture's reason: the point is not leaving what you
+/// are in. Two keys, not three, because it is HELD for as long as he speaks,
+/// and a three-finger chord held for ten seconds is a cramp. `Alt` rather than
+/// `Ctrl+Alt` so it can never be AltGr (see `eats_a_letter`), and Q because it
+/// sits beside the ring's W under the same hand, is not a letter AltGr types,
+/// and opens no menu in VS Code, a browser or Explorer.
+pub const DEFAULT_TALK: &str = "Alt+Q";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +109,9 @@ pub struct Shortcuts {
     /// Opens the island on one line for the Guardian (quick capture).
     #[serde(default)]
     pub capture: String,
+    /// Held, the microphone for the Guardian; let go, it is sent (voice.rs).
+    #[serde(default)]
+    pub talk: String,
 }
 
 impl Default for Shortcuts {
@@ -108,6 +120,7 @@ impl Default for Shortcuts {
             hide: DEFAULT_HIDE.into(),
             ring: DEFAULT_RING.into(),
             capture: DEFAULT_CAPTURE.into(),
+            talk: DEFAULT_TALK.into(),
         }
     }
 }
@@ -133,7 +146,7 @@ pub struct ShortcutState_(pub Mutex<Shortcuts>);
 /// read and written from the shortcut handler, which must not block.
 static RING_DOWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     use std::sync::OnceLock;
     static START: OnceLock<std::time::Instant> = OnceLock::new();
     START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
@@ -159,7 +172,7 @@ fn now_ms() -> u64 {
 /// them comes up — letting go of Ctrl is letting go, whatever the letter is
 /// still doing — and watching only the letter would leave the ring up for
 /// anybody who releases the modifier first, which is most people.
-fn keys_of(shortcut: &str) -> Vec<i32> {
+pub(crate) fn keys_of(shortcut: &str) -> Vec<i32> {
     let mut out = Vec::new();
     /* ⚠️ On `+` only. A hyphen is a KEY — `Ctrl+-` is a real shortcut — and
      * splitting on it would leave two empty parts and watch nothing. */
@@ -210,7 +223,7 @@ fn keys_of(shortcut: &str) -> Vec<i32> {
 /// The fix everyone uses (AutoHotkey's "menu mask key", PowerToys): send a key
 /// that means nothing, `vkE8` (unassigned), while the modifier is still down.
 /// Alt is then no longer pressed alone, and nothing reacts to the E8 itself.
-fn mask_menu_key(shortcut: &str) {
+pub(crate) fn mask_menu_key(shortcut: &str) {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
@@ -237,7 +250,7 @@ fn mask_menu_key(shortcut: &str) {
 }
 
 /// Is every one of them still held?
-fn all_down(keys: &[i32]) -> bool {
+pub(crate) fn all_down(keys: &[i32]) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
     !keys.is_empty()
         && keys
@@ -431,19 +444,25 @@ pub fn get_shortcuts(app: AppHandle) -> Shortcuts {
     app.state::<ShortcutState_>().0.lock().unwrap().clone()
 }
 
-/// Replace all three bindings.
+/// Replace all the bindings.
 ///
 /// Registration is all-or-nothing on purpose: a half-applied set leaves the
 /// user with one working key and no way to tell which, so a rejected binding
 /// puts the previous set back before returning the error.
+///
+/// ⚠️ `talk` is optional, unlike the rest: a settings page that predates it
+/// would otherwise fail on the missing argument and save nothing. Left out,
+/// the current one stays.
 #[tauri::command]
-pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String) -> Result<(), String> {
+pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String, talk: Option<String>) -> Result<(), String> {
+    let previous = app.state::<ShortcutState_>().0.lock().unwrap().clone();
     let next = Shortcuts {
         hide: hide.trim().into(),
         ring: ring.trim().into(),
         capture: capture.trim().into(),
+        talk: talk.map(|t| t.trim().to_string()).unwrap_or_else(|| previous.talk.clone()),
     };
-    let all = [&next.hide, &next.ring, &next.capture];
+    let all = [&next.hide, &next.ring, &next.capture, &next.talk];
     if all.iter().any(|value| value.is_empty()) {
         return Err("Every shortcut needs a key combination.".into());
     }
@@ -458,9 +477,13 @@ pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String
             bad.rsplit('+').next().unwrap_or("?")
         ));
     }
-    let previous = app.state::<ShortcutState_>().0.lock().unwrap().clone();
+    if !watchable(&next.talk) {
+        return Err(format!("{} can't be watched while it's held. Hold to talk needs a letter, a digit or an F key with Ctrl, Alt, Shift or Win.", next.talk));
+    }
     let manager = app.global_shortcut();
     let _ = manager.unregister_all();
+    // A live voice turn's Escape went with them; voice.rs takes it again on the next one.
+    crate::voice::forget_escape();
     match apply(&app, &next) {
         Ok(()) => {
             *app.state::<ShortcutState_>().0.lock().unwrap() = next.clone();
@@ -468,6 +491,7 @@ pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String
             config.shortcut_hide = next.hide;
             config.shortcut_ring = next.ring;
             config.shortcut_capture = next.capture;
+            config.shortcut_talk = next.talk;
             crate::config::save(&config);
             Ok(())
         }
@@ -485,6 +509,14 @@ pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String
 /// invisible from inside the app: the shortcut works perfectly, and somewhere
 /// else on the machine a letter has quietly stopped existing.
 const ALTGR_LETTERS: [&str; 9] = ["A", "C", "E", "L", "N", "O", "S", "X", "Z"];
+
+/// Whether every key of a binding can be watched going up (`keys_of`), which a
+/// HELD key needs: hold to talk ends when any of them is let go, and a part this
+/// file cannot name would leave the microphone open with nothing to end it.
+pub fn watchable(binding: &str) -> bool {
+    let parts = binding.split('+').filter(|part| !part.trim().is_empty()).count();
+    parts > 1 && keys_of(binding).len() == parts
+}
 
 pub fn eats_a_letter(binding: &str) -> bool {
     let lower = binding.to_ascii_lowercase();
@@ -504,7 +536,7 @@ pub fn eats_a_letter(binding: &str) -> bool {
 
 fn apply(app: &AppHandle, shortcuts: &Shortcuts) -> Result<(), String> {
     let manager = app.global_shortcut();
-    for (name, binding) in [("Hide", &shortcuts.hide), ("Ring", &shortcuts.ring), ("Capture", &shortcuts.capture)] {
+    for (name, binding) in [("Hide", &shortcuts.hide), ("Ring", &shortcuts.ring), ("Capture", &shortcuts.capture), ("Hold to talk", &shortcuts.talk)] {
         manager.register(binding.as_str()).map_err(|_| {
             // Almost always another app holding the combination; Windows gives
             // no way to say which, so the message must not pretend it can.
@@ -540,10 +572,18 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         config.shortcut_capture = DEFAULT_CAPTURE.to_string();
         moved.push(format!("capture: none -> {DEFAULT_CAPTURE}"));
     }
+    // The same for hold to talk (a config from before it), and for one that
+    // cannot be watched while it is held.
+    if !watchable(&config.shortcut_talk) {
+        let was = if config.shortcut_talk.trim().is_empty() { "none".to_string() } else { config.shortcut_talk.clone() };
+        moved.push(format!("talk: {was} -> {DEFAULT_TALK}"));
+        config.shortcut_talk = DEFAULT_TALK.to_string();
+    }
     for (field, fallback, name) in [
         (&mut config.shortcut_hide, DEFAULT_HIDE, "hide"),
         (&mut config.shortcut_ring, DEFAULT_RING, "ring"),
         (&mut config.shortcut_capture, DEFAULT_CAPTURE, "capture"),
+        (&mut config.shortcut_talk, DEFAULT_TALK, "talk"),
     ] {
         if eats_a_letter(field) {
             moved.push(format!("{name}: {field} -> {fallback}"));
@@ -559,6 +599,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         hide: config.shortcut_hide,
         ring: config.shortcut_ring,
         capture: config.shortcut_capture,
+        talk: config.shortcut_talk,
     };
 
     let handler = app.clone();
@@ -567,6 +608,14 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
             .with_handler(move |_app, shortcut, event| {
                 let current = handler.state::<ShortcutState_>().0.lock().unwrap().clone();
                 let pressed = shortcut.into_string();
+                /* Escape, registered only while a voice turn is live (voice.rs):
+                 * it stops the turn from whatever app has the keyboard. */
+                if matches(&pressed, crate::voice::ESCAPE) {
+                    if event.state() == ShortcutState::Pressed {
+                        let _ = handler.emit_to("tasks", "voice:escape", ());
+                    }
+                    return;
+                }
                 /* ⚠️ The ring is the one shortcut that cares about the RELEASE.
                  * Held and let go it is a single gesture — press, flick, let go
                  * — and tapped it opens the ring and leaves it up for somebody
@@ -628,6 +677,11 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                     set_chrome_hidden(&handler, !hidden);
                 } else if matches(&pressed, &current.capture) {
                     capture(&handler);
+                } else if matches(&pressed, &current.talk) {
+                    /* ⚠️ On the press like the rest; the release is watched in
+                     * voice.rs, for the ring's reason (the plugin never reports
+                     * one here). Its auto-repeat lands there too. */
+                    crate::voice::pressed(&handler, &current.talk);
                 }
             })
             .build(),
@@ -708,19 +762,39 @@ mod tests {
     #[test]
     fn no_shipped_default_eats_a_letter() {
         let defaults = Shortcuts::default();
-        for binding in [&defaults.hide, &defaults.ring, &defaults.capture] {
+        for binding in [&defaults.hide, &defaults.ring, &defaults.capture, &defaults.talk] {
             assert!(!eats_a_letter(binding), "{binding}");
         }
     }
 
     #[test]
-    fn the_three_defaults_are_three_different_keys() {
+    fn the_defaults_are_all_different_keys() {
         /* ⚠️ `set_shortcuts` refuses a set with two the same, and the
          * defaults are what "Back to the defaults" sends — a clash here would
          * be a reset button that always fails. */
         let d = Shortcuts::default();
-        assert!(!d.hide.eq_ignore_ascii_case(&d.ring));
-        assert!(!d.hide.eq_ignore_ascii_case(&d.capture));
-        assert!(!d.ring.eq_ignore_ascii_case(&d.capture));
+        let all = [&d.hide, &d.ring, &d.capture, &d.talk];
+        for (i, a) in all.iter().enumerate() {
+            for b in all.iter().skip(i + 1) {
+                assert!(!a.eq_ignore_ascii_case(b), "{a} and {b}");
+            }
+        }
+    }
+
+    /// ⚠️ Hold to talk ends when a key of it comes up, so every key has to be
+    /// one `GetAsyncKeyState` can be asked about: a part `keys_of` drops would
+    /// leave the microphone open with nothing to close it.
+    #[test]
+    fn the_talk_key_can_be_watched_while_held() {
+        assert!(watchable(DEFAULT_TALK));
+        assert_eq!(keys_of(DEFAULT_TALK), vec![0x12, 0x51], "Alt and Q");
+        for fine in ["Ctrl+Shift+F9", "Alt+Digit5", "Super+KeyG", "Ctrl+Alt+G"] {
+            assert!(watchable(fine), "{fine}");
+        }
+        for not in ["Ctrl+Space", "Alt+Backquote", "Q", "", "Alt+"] {
+            assert!(!watchable(not), "{not}");
+        }
+        // And Escape, which a live turn takes for itself, is not one he could pick.
+        assert!(!watchable(crate::voice::ESCAPE));
     }
 }

@@ -107,7 +107,7 @@ type ChatEvent =
   | { t: "error"; message: string };
 
 interface Live { text: string; status: string | null; receipts: Receipt[]; cards: Card[]; error: string | null; done?: boolean; id?: number | null }
-export type { Live, Receipt };
+export type { ChatEvent, Live, Receipt };
 export type { Picture } from "./kit/composer";
 
 /** What a message carries besides its words (Helm's chat contract, 28 Oct). */
@@ -115,6 +115,8 @@ export interface Extra {
   focus?: number | null;
   command?: Command | null;
   mentions?: { projectId: number }[];
+  /** He said it (hold to talk, voice-talk.ts): Helm answers short and speakable. */
+  voice?: boolean;
 }
 
 export interface HistoryDay { day: string; count: number; preview: string }
@@ -157,6 +159,9 @@ export class GuardianChat {
   live: Live | null = null;
   /** The live reply's text changed: written in place rather than redrawn. */
   onText: (() => void) | null = null;
+  /** Every event of a chat turn as it arrives, for the spoken turn, which says
+   *  the reply sentence by sentence while it streams (voice-talk.ts). */
+  watch: ((event: ChatEvent) => void) | null = null;
   /** Quick capture's turn, kept apart from the chat's. */
   captured: Live | null = null;
   onCapture: (() => void) | null = null;
@@ -287,6 +292,8 @@ export class GuardianChat {
       await call("helm_send", {
         text: text.trim(), images: images.map(({ mediaType, data }) => ({ mediaType, data })),
         focus: extra.focus ?? null, command: extra.command ?? null, mentions: extra.mentions?.length ? extra.mentions.map(m => m.projectId) : null,
+        // Only on a spoken turn: every other message goes exactly as before.
+        ...(extra.voice ? { voice: true } : {}),
       });
     } catch (error) {
       this.event({ t: "error", message: clean(error) });
@@ -317,6 +324,7 @@ export class GuardianChat {
 
   private event(event: ChatEvent) {
     if (this.turn === "capture") return this.captureEvent(event);
+    this.watch?.(event);
     const live = this.live;
     if (!live) return;
     switch (event.t) {

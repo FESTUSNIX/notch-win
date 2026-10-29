@@ -34,6 +34,9 @@ export class IslandSurface {
   open = false;
   pinned = false;
   editing = false;
+  /** A spoken turn is live (voice-talk.ts): nothing folds the island under it,
+   *  the pointer leaving included. Given back when the turn ends. */
+  held = false;
   private hovering = false;
   /** Slid out of the way — by the shortcut, or because something is fullscreen. */
   private hidden = false;
@@ -523,7 +526,7 @@ export class IslandSurface {
      * length of the fold. The question is "will it end up collapsed", not
      * "did I fold it". */
     if (!this.open) return true;
-    if (this.pinned || this.hovering || this.editing) return false;
+    if (this.pinned || this.hovering || this.editing || this.held) return false;
     clearTimeout(this.timer);
     this.show(false);
     return true;
@@ -620,7 +623,7 @@ export class IslandSurface {
   }
 
   show(value: boolean) {
-    if (!value && (this.pinned || this.editing)) return;
+    if (!value && (this.pinned || this.editing || this.held)) return;
     if (this.open === value) return;
     this.open = value;
     /* Opening from a glance: the glance's own spring goes back to zero while
