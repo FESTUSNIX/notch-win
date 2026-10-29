@@ -358,6 +358,39 @@ function demoProjects() {
     { id: 30, name: "Codenotch", client: null, logoVersion: null, hue: "aqua", personal: true, live: true },
   ] };
 }
+/* The Guardian's chips, staged: `/api/guardian/suggestions` as Helm picks them
+   for a moment of the day. `&suggest=morning` / `evening` are other moments,
+   `&suggest=off` the 404 of a Helm without the endpoint (helm.rs: null — no
+   row at all). ⚠️ The hints are READ like Helm reads them: a finished run's
+   request leads with "Zrobione: …", the project in focus gets its chip — so a
+   test can see this machine's facts reach Helm, not just a fixed list. */
+function demoSuggestions(args: Record<string, unknown>) {
+  const flag = params.get("suggest");
+  if (flag === "off") return null;
+  const chip = (id: string, label: string, prompt: string, icon: string, kind: string) => ({ id, label, prompt, icon, kind });
+  if (flag === "morning") return { suggestions: [
+    chip("today", "Co mam dziś?", "Co mam dziś? Pokaż kolejkę i spotkania.", "today", "day"),
+    chip("pick-three", "Wybierz trzy na dziś", "Wybierz mi trzy rzeczy na dziś i wstaw je do Dziś.", "plan", "day"),
+    chip("week", "Co w tym tygodniu?", "Co mam w tym tygodniu? Terminy, spotkania i co jest zagrożone.", "week", "day"),
+  ] };
+  if (flag === "evening") return { suggestions: [
+    chip("log-code", "Zaloguj 2 h 15 na Esono", "Zaloguj dzisiejszy kod: 2 h 15 min na Esono Rozwój.", "time", "time"),
+    chip("wrap", "Podsumuj dzień", "Podsumuj mój dzień: co zrobione, ile czasu i co przechodzi na jutro.", "close", "wrap"),
+    chip("tomorrow", "Plan na jutro", "Co jutro na start? Wybierz pierwszą rzecz na rano.", "tomorrow", "day"),
+    chip("week", "Co w tym tygodniu?", "Co mam w tym tygodniu? Terminy, spotkania i co jest zagrożone.", "week", "day"),
+  ] };
+  const finished = Array.isArray(args.finished) ? args.finished.map(Number) : [];
+  const done = finished.map(id => demoNotch()?.folders.flatMap(f => f.requests.map(r => ({ r, project: f.project.name }))).find(one => one.r.id === id)).find(Boolean);
+  const focus = demoProjects()?.projects.find(p => p.id === args.project);
+  return { suggestions: [
+    ...(done ? [chip(`agent-done:${done.r.id}`, `Zrobione: ${done.r.title}`, `Agent skończył „${done.r.title}” (${done.project}). Oznacz to zgłoszenie jako zrobione.`, "done", "agents")] : []),
+    chip("prep:900", "Przygotuj: Call z Piotrem", "Przygotuj mnie na „Call z Piotrem” o 15:00: z kim, o czym i co jest otwarte.", "call", "meeting"),
+    chip("log:1", "Zaloguj 1 h 30", "Zaloguj 1 h 30 min na zgłoszenie „Rynek Czeski — poprawki w koszyku” (Esono Rozwój), tyle pokazuje praca.", "time", "time"),
+    ...(focus ? [chip(`project:${focus.id}`, `${focus.name}: co dalej?`, `Co jest otwarte w projekcie „${focus.name}” i od czego zacząć?`, "here", "here")] : []),
+    chip("what-now", "Co teraz?", "Co teraz? Daj mi jedną rzecz do zrobienia od razu.", "next", "now"),
+    chip("remind", "Przypomnij: Ubrania", "Ubrania: 1 200 zł, 4 dni po terminie. Pokaż przypomnienie do wysłania.", "money", "money"),
+  ].slice(0, 4) };
+}
 /* The cockpit, staged: `/api/notch` as Helm will send it — his clock and the
    agents', what needs him, and the projects with folders on this PC.
    ⚠️ `&notch=off` is the OTHER state, and the one the deployed Helm is in
@@ -931,6 +964,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return structuredClone(typeof args.q === "string" && args.q ? demoSearch(args.q) : demoHistory()) as T;
   }
   if (command === "helm_projects") return structuredClone(demoProjects()) as T;
+  if (command === "helm_suggestions") return (params.has("helm") ? structuredClone(demoSuggestions(args)) : null) as T;
   if (command === "helm_transcribe_ready") return (params.get("speech") !== "off") as T;
   if (command === "helm_transcribe") {
     if (params.get("speech") === "off") return { unavailable: true } as T;

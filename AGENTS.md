@@ -5354,3 +5354,95 @@ menu), `parts.ts` (blocks that fold, side panels, the segmented control, chips),
       of a Helm without it), `&remind=sent` (Helm's 409). Tests mock the
       microphone with an oscillator (`fakeMic`), created inside the press — an
       AudioContext needs the gesture.
+
+### The Guardian's chips are Helm's (28 Oct, later)
+
+His words: the three fixed suggestions looked bad, were not context aware and
+only fitted the morning. Helm now picks three or four for the moment
+(`/api/guardian/suggestions`, rules not Claude): a session running, an agent's
+run finished, time to log, a call coming up, the end of the day, the week's
+review, what the Guardian just asked. `helm_suggestions` reads it,
+`readSuggestions` (helm-link) checks it, kit `actionChip` draws each.
+
+ 824. ⚠️ **A 404 is NO ROW, never the old three.** `helm_suggestions` maps
+      404/503 to `None` (`optional`), `readSuggestions(null)` is null, and the
+      foot draws nothing. The fixed three were the complaint; a Helm without
+      the endpoint showing them again would bring it back. `&suggest=off`
+      stages it.
+ 825. ⚠️ **`agents` and `finished` ALWAYS go, even as 0 and empty**
+      (`suggestions_path`). Without them Helm guesses the agents from their
+      minutes (a session gone quiet may be waiting, not done); this machine
+      SEES the sessions and the finished runs' "done?" questions
+      (`HelmSource.finishedRequests`). The focus goes as `project`.
+ 826. **Asked with the thread** (`GuardianChat.load`: opening the screen and
+      every finished reply both come through it) and when the focus changes;
+      a generation counter drops an older answer. A failed ask keeps the last
+      chips.
+ 827. **Chips wrap, never scroll** (`.g-foot .g-chips`). There are at most
+      four; one cut off at the foot's edge cannot be read at a glance, which
+      is the whole point of them. A disc tinted for what it is about (iris
+      his move: what now, a client's request; the agents' mark, green time,
+      amber money, the calendar's blue, violet the day's end) — tinted,
+      never filled (815). ⚠️ Not the accent for "now": beside time's green
+      the two read as one colour. Hidden while a nudge waits, as before: its
+      own replies would be repeated. `&suggest=morning|evening` stage other
+      moments; the default reads the hints (a finished run leads, the focus
+      gets its chip) so a test sees them reach Helm.
+
+### The curtain (Guardian stage 3, 28 Oct)
+
+His words, 27 Oct: the blocker extension is easy to beat — disable it. The decision
+was the codenotch curtain only: no locking the extension, no noticing codenotch
+being quit. `curtain.rs` watches the window in front; `helm.rs` hands it Helm's
+`/api/desktop/blocker` each poll; `curtain.html` is the dim.
+
+ 828. ⚠️ **A window title is all there is.** codenotch never sees a URL, so Helm
+      sends each locked domain with the words its pages carry in titles, and a
+      title matches only when one of its PARTS (split on " - ", " | ", " / ",
+      " : " and kin) equals the word. A substring match would cover the
+      extension's own "YouTube is locked" page — the curtain fighting the thing
+      it backs up — and "Why I quit X - Medium". Whole domains only; a title
+      says nothing about `/shorts`.
+ 829. ⚠️ **Edge writes "Microsoft\u{200b} Edge" and sites write "(3) Home".** The
+      zero-width space and the unread count are taken off before comparing, or
+      the part that names the site never equals its word (`title_parts`).
+ 830. **Three seconds in front first** (`DWELL`). Alt-Tabbing past YouTube is not
+      watching it, and a curtain that flashes on the way past is a punishment,
+      not a pause.
+ 831. ⚠️ **It must never trap him, and every way down is independent of the
+      others:** Escape (the page), the way out after four seconds (the page),
+      the hide key (`shortcuts.rs`, no page needed), any other window coming to
+      the front (the watch), and the page not saying it drew within six seconds
+      (the watch puts the window away). A broken webview must not be a black wall.
+ 832. ⚠️ **Nothing in front is not "moved on".** The foreground is briefly
+      nobody's while it changes hands — including the moment the curtain takes
+      it — and lifting on that dropped the curtain as it appeared.
+ 833. ⚠️ **`set_focus` is not enough to take the keyboard from the browser.** It is
+      `SetForegroundWindow`, which Windows refuses silently to a process that
+      doesn't own the foreground; `win::force_foreground` is the way past it, and
+      without it Escape goes to YouTube.
+ 834. **Never on a guess.** A reading older than `STALE` (150 s; Helm is read every
+      20) neither raises nor keeps a curtain; a Helm without the route (404) or a
+      disconnected one clears the reading. Offline is not a reason to cover a screen.
+ 835. ⚠️ **Never while presenting, in a call or in a meeting — and the call needs
+      in-call mode.** Presenting is `SHQueryUserNotificationState`; the call is
+      `call.rs`'s microphone reading, which only runs with in-call mode on; the
+      meeting is a timed, not-declined event under way on his own calendar, Helm's
+      calendar (focus blocks) aside — Helm's own rule for holding a nudge. A
+      full-screen browser is QUNS_BUSY and still gets the curtain: YouTube full
+      screen is the case it exists for.
+ 836. ⚠️ **Money only where it buys something.** Five bought minutes and spent
+      earned minutes are earned time; a site a locked rule also holds stays shut,
+      so Helm marks each site `earn` and the buttons show only on those
+      (`offerOf`). Both go through his own session (`helm_blocker`), never the
+      device key, and the blocker is read again at once so the curtain lifts on
+      Helm's answer (`Lift::Open`, no quiet, the paused video plays on).
+ 837. **Closed is a decision; lifted is not.** Back to work, Escape, the way out and
+      the hide key start `QUIET` (90 s); moving to another window, a call, the
+      site opening or the window going away don't, so coming back to YouTube a
+      minute later brings it back after the dwell.
+ 838. **The page fades, then the window hides** (`FADE`), for ambient's reason
+      (763): a hidden webview keeps its last frame. A page-initiated close has
+      faded already and hides at once.
+ 839. **`win::harden` stands aside while it is up**, as for ambient mode (761):
+      re-asserting topmost on the island would lift it over the dim.

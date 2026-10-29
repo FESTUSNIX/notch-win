@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   readNotch, folderFor, doingRequest, projectById, folderOfRequest, spoken, monogram,
-  hueOf, requestIdOf, chipFor, needSide, pathKey,
+  hueOf, requestIdOf, chipFor, needSide, pathKey, readSuggestions,
 } from '../src/helm-link.ts';
 
 const project = (id, name) => ({ id, name, logoVersion: null, hue: 'blue', client: null, personal: false });
@@ -96,4 +96,23 @@ test('a need says when, or how much, beside its title', () => {
   assert.deepEqual(needSide({ kind: 'renewal', at: '2026-10-20', amount: 1200 }, today), { text: '1\u00a0200\u00a0zł', late: true });
   assert.deepEqual(needSide({ kind: 'reminder', at: '2026-10-28', amount: null }, today), { text: 'today', late: false });
   assert.equal(needSide({ kind: 'request', at: null, amount: null }, today), null);
+});
+
+test("the Guardian's chips are read, not trusted: whole ones only, at most four, none for no endpoint", () => {
+  const chip = (label, more = {}) => ({ id: label, label, prompt: `${label}.`, icon: 'next', kind: 'now', ...more });
+  // A Helm without the endpoint (helm.rs: null) or a foreign answer: no row at all, never the old three.
+  assert.equal(readSuggestions(null), null);
+  assert.equal(readSuggestions('<html>404</html>'), null);
+  assert.equal(readSuggestions({ chips: [] }), null);
+  assert.deepEqual(readSuggestions({ suggestions: [] }), []);
+  // A chip without words or a sentence is dropped; a repeated label once; an id falls back to the label.
+  const read = readSuggestions({ suggestions: [
+    chip('Co teraz?'), chip(''), { label: 'Bez zdania' }, chip('Co teraz?'), chip('Podsumuj dzień', { id: '' }),
+    chip('Plan na jutro'), chip('Przegląd tygodnia'), chip('Piąty'), 7, null,
+  ] });
+  assert.deepEqual(read.map(s => s.label), ['Co teraz?', 'Podsumuj dzień', 'Plan na jutro', 'Przegląd tygodnia']);
+  assert.equal(read[1].id, 'Podsumuj dzień');
+  // Strings are trimmed; an unknown icon or kind is kept as said (the island maps it, or falls back).
+  assert.deepEqual(readSuggestions({ suggestions: [{ id: ' a ', label: ' Tak, zrób to ', prompt: ' Tak, zrób to. ', icon: 7, kind: 'nowe' }] }),
+    [{ id: 'a', label: 'Tak, zrób to', prompt: 'Tak, zrób to.', icon: '', kind: 'nowe' }]);
 });

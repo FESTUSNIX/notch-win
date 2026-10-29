@@ -618,6 +618,12 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
                     return;
                 }
                 if matches(&pressed, &current.hide) {
+                    /* The hide key takes the curtain down first: one more way
+                     * out that needs nothing from its page (curtain.rs). */
+                    if crate::curtain::OPEN.load(Ordering::SeqCst) {
+                        crate::curtain::lift(&handler, crate::curtain::Lift::Closed);
+                        return;
+                    }
                     let hidden = crate::config::load().chrome_hidden;
                     set_chrome_hidden(&handler, !hidden);
                 } else if matches(&pressed, &current.capture) {

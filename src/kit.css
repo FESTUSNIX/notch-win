@@ -620,6 +620,91 @@
 	display: none;
 }
 
+/* A chip that DOES something (the Guardian's suggestions): raised like a
+   project's chip, a disc tinted for what it is about, light words. ⚠️ Tinted,
+   never filled (AGENTS 815). The colours are the ones each fact already has:
+   iris for his move (what to do now, a client's request waiting on him: the
+   needs strip's own), the agents' mark, green for time, amber for money owed,
+   the calendar's blue, violet for the end of the day and the week. ⚠️ Not
+   the accent for "now": beside time's green the two read as one colour. */
+.k-act {
+	--k-act: #d2d2d2;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	padding: 0 12px 0 3px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 0;
+	color: #ececec;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	transition:
+		background-color var(--duration-quick) var(--ease-smooth-out),
+		color var(--duration-quick) var(--ease-smooth-out),
+		scale var(--duration-quick) var(--ease-smooth-out);
+}
+.k-act:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+}
+.k-act:active:not(:disabled) {
+	scale: 0.96;
+	transition-duration: 90ms;
+}
+.k-act:disabled {
+	opacity: 0.5;
+}
+.k-act-mark {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	color: var(--k-act);
+	background-color: color-mix(in srgb, var(--k-act) 15%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k-act) 22%, transparent);
+}
+.k-act-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.k-act-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.k-act.is-now {
+	--k-act: var(--iris);
+}
+.k-act.is-agents {
+	--k-act: var(--mark-claude);
+}
+.k-act.is-time {
+	--k-act: var(--good);
+}
+.k-act.is-money {
+	--k-act: var(--warn);
+}
+.k-act.is-meeting {
+	--k-act: var(--cool);
+}
+.k-act.is-client {
+	--k-act: var(--iris);
+}
+.k-act.is-wrap {
+	--k-act: var(--calm);
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .k-act {
+		transition: none;
+	}
+}
+
 /* A project's chip: its face, its name, × to let go. Raised: it is an object. */
 .k-pchip {
 	display: inline-flex;

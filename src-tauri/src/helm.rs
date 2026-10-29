@@ -34,6 +34,13 @@
 //! the next minute's read once Helm answers. Nothing about it is ever said on
 //! the pill.
 //!
+//! - **The curtain** (Guardian stage 3, 28 Oct): with today, `/api/desktop/blocker`
+//!   on the device key — the sites locked right now as whole domains with the words
+//!   their pages put in their titles, the Guardian's line, the earned time by the
+//!   hour — handed to `curtain`, which dims the screen while a browser in front
+//!   shows one of them. Read-only: `helm_blocker` spends earned minutes or buys five
+//!   from the reward fund as him (`/api/notch/blocker`). A Helm without the route
+//!   (404) simply never puts a curtain up.
 //! - **Round 2** (28 Oct, later): the chat takes `focus`, `command` and
 //!   `mentions` (`chat_body`); the thread can be read for another day and
 //!   searched (`helm_thread(day)`, `helm_history(q)`); `/api/notch/projects`
@@ -254,7 +261,7 @@ fn publish(app: &AppHandle, next: Helm) {
     let _ = app.emit_to("tasks", "helm:changed", &next);
 }
 
-fn presenting() -> bool {
+pub(crate) fn presenting() -> bool {
     matches!(unsafe { SHQueryUserNotificationState() }, Ok(state) if state == QUNS_PRESENTATION_MODE)
 }
 
@@ -275,6 +282,45 @@ async fn read_today(url: &str, key: &str) -> Result<(Today, i64), String> {
         .map(|server| Local::now().timestamp_millis() - server.timestamp_millis())
         .unwrap_or(0);
     Ok((today, skew))
+}
+
+/// What the curtain covers and says (`/api/desktop/blocker`), on the device key.
+/// `None` for a Helm without the route (404): no curtain, and nothing said.
+///
+/// ⚠️ Anything else that isn't a 200 is an error, and the caller keeps the last
+/// reading — the curtain itself stops trusting a reading once it is a few
+/// minutes old, so a Helm that went away cannot leave a curtain standing.
+async fn read_blocker(url: &str, key: &str) -> Result<Option<serde_json::Value>, String> {
+    let response = http()
+        .get(format!("{url}/api/desktop/blocker"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Can't reach Helm.".to_string())?;
+    match response.status().as_u16() {
+        200 => {}
+        404 => return Ok(None),
+        status => return Err(format!("Helm answered {status}.")),
+    }
+    let body: serde_json::Value = response.json().await.map_err(|_| "Helm sent something unexpected.".to_string())?;
+    Ok(body.is_object().then_some(body))
+}
+
+/// Read what's locked now and hand it to the curtain. Failures go to the log
+/// once per run of them, like the cockpit's.
+async fn refresh_blocker(config: &Config, failing: &mut bool) {
+    match read_blocker(&config.url, &config.key).await {
+        Ok(reading) => {
+            *failing = false;
+            crate::curtain::receive(reading);
+        }
+        Err(message) => {
+            if !*failing {
+                crate::log::note(&format!("helm: /api/desktop/blocker not read ({message}), keeping the last reading"));
+            }
+            *failing = true;
+        }
+    }
 }
 
 /* ── Nudges that must not be missed ──────────────────────────────────── */
@@ -355,12 +401,13 @@ fn notch_reading(body: serde_json::Value) -> Result<Option<serde_json::Value>, S
     }
 }
 
-async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: &mut bool) {
+async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: &mut bool, blocker_failing: &mut bool) {
     let Some(config) = connected() else {
         if current(app).connected {
             publish(app, Helm::default());
             crate::shortcuts::set_nudge_up(app, false, false);
         }
+        crate::curtain::receive(None);
         return;
     };
     let mut next = current(app);
@@ -393,6 +440,9 @@ async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: 
             publish(app, next);
         }
     }
+    /* The curtain's reading on today's beat: what's locked changes when an
+     * unlock or a rule ends, and twenty seconds late is fine for a curtain. */
+    refresh_blocker(&config, blocker_failing).await;
     /* After today is out, so the timer and the nudges never wait on the
      * heavier read. */
     if queue_due && config.refresh.is_some() {
@@ -652,6 +702,31 @@ pub async fn helm_queue(action: serde_json::Value) -> Result<(), String> {
     } else {
         Err(refusal(response, "Helm said no.").await)
     }
+}
+
+/// From the curtain, as him: `{action: "spend", minutes}` opens earned minutes,
+/// `{action: "buy"}` five from the reward fund (`/api/notch/blocker`). Helm
+/// checks it again. The blocker is read at once afterwards, so the curtain lifts
+/// on Helm's answer — not on its own guess that it worked.
+#[tauri::command]
+pub async fn helm_blocker(action: serde_json::Value) -> Result<serde_json::Value, String> {
+    if !matches!(action["action"].as_str(), Some("spend" | "buy")) {
+        return Err("The curtain spends earned time or buys five minutes, nothing else.".into());
+    }
+    let response = as_him(http(), reqwest::Method::POST, "/api/notch/blocker", Some(action)).await?;
+    let status = response.status().as_u16();
+    if status == 404 {
+        return Err("This Helm can't open the sites from here yet.".into());
+    }
+    if !(200..300).contains(&status) {
+        return Err(refusal(response, "Helm said no.").await);
+    }
+    let answer: serde_json::Value = response.json().await.unwrap_or_else(|_| json!({ "ok": true }));
+    if let Some(config) = connected() {
+        let mut failing = false;
+        refresh_blocker(&config, &mut failing).await;
+    }
+    Ok(answer)
 }
 
 /// A Helm page in the browser, where he's signed in: the check-in, the end of
@@ -945,6 +1020,33 @@ pub async fn helm_projects() -> Result<Option<serde_json::Value>, String> {
     optional("/api/notch/projects").await
 }
 
+/// `/api/guardian/suggestions` with what this machine knows and Helm doesn't:
+/// the project in focus, how many agents are working or waiting, and the
+/// requests a run has just finished on. ⚠️ `agents` and `finished` always go,
+/// even as `0` and empty: without them Helm guesses the agents from their
+/// minutes, and this side SEES the sessions.
+fn suggestions_path(project: Option<i64>, agents: u32, finished: &[i64]) -> String {
+    let mut ids: Vec<i64> = Vec::new();
+    for id in finished.iter().copied().filter(|id| *id > 0) {
+        if !ids.contains(&id) && ids.len() < 10 {
+            ids.push(id);
+        }
+    }
+    let mut path = format!("/api/guardian/suggestions?agents={}&finished={}", agents.min(999), ids.iter().map(i64::to_string).collect::<Vec<_>>().join(","));
+    if let Some(project) = project.filter(|id| *id > 0) {
+        path.push_str(&format!("&project={project}"));
+    }
+    path
+}
+
+/// The chips over the Guardian's composer, picked by Helm for now. `None` for
+/// a Helm without the endpoint (404): the row stays empty — never the old
+/// three fixed ones, which only ever fitted the morning.
+#[tauri::command]
+pub async fn helm_suggestions(project: Option<i64>, agents: Option<u32>, finished: Option<Vec<i64>>) -> Result<Option<serde_json::Value>, String> {
+    optional(&suggestions_path(project, agents.unwrap_or(0), finished.as_deref().unwrap_or(&[]))).await
+}
+
 /// The most audio Helm takes. ⚠️ Not the route's own 15 MB: the deployed Helm
 /// sits behind Vercel, which refuses any request body over 4.5 MB before the
 /// route sees it. Opus at 32 kbit/s is about 1.2 MB for the five minutes the
@@ -1154,12 +1256,13 @@ pub fn spawn(app: AppHandle) {
         let mut queued: Option<Instant> = None;
         let mut poked = true;
         let mut notch_failing = false;
+        let mut blocker_failing = false;
         loop {
             let queue_due = poked || queued.is_none_or(|at| at.elapsed() >= QUEUE_EVERY);
             if queue_due {
                 queued = Some(Instant::now());
             }
-            poll(&app, &mut bell, queue_due, &mut notch_failing).await;
+            poll(&app, &mut bell, queue_due, &mut notch_failing, &mut blocker_failing).await;
             poked = tokio::select! {
                 _ = tokio::time::sleep(POLL) => false,
                 _ = poke().notified() => true,
@@ -1211,6 +1314,18 @@ mod tests {
         assert_eq!(history_path(Some("faktura Ubrania")), "/api/guardian/history?q=faktura+Ubrania");
         assert_eq!(history_path(Some("a&b=c")), "/api/guardian/history?q=a%26b%3Dc", "the query cannot add a parameter");
         assert!(history_path(Some("ż")).contains("%C5%BC"), "Polish letters are encoded");
+    }
+
+    #[test]
+    fn the_suggestions_carry_the_agents_and_the_focus() {
+        // Nothing known still says so: no agents, nothing finished (Helm would guess otherwise).
+        assert_eq!(suggestions_path(None, 0, &[]), "/api/guardian/suggestions?agents=0&finished=");
+        assert_eq!(suggestions_path(Some(3), 2, &[21, 7]), "/api/guardian/suggestions?agents=2&finished=21,7&project=3");
+        // Ids are positive, deduped and at most ten; a non-id focus isn't sent.
+        assert_eq!(suggestions_path(Some(0), 1, &[5, 5, -1, 0, 6]), "/api/guardian/suggestions?agents=1&finished=5,6");
+        let many: Vec<i64> = (1..=14).collect();
+        assert!(suggestions_path(None, 0, &many).ends_with("finished=1,2,3,4,5,6,7,8,9,10"));
+        assert_eq!(suggestions_path(None, 5000, &[]), "/api/guardian/suggestions?agents=999&finished=", "capped to what the route reads");
     }
 
     #[test]

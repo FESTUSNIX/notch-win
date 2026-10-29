@@ -1,0 +1,145 @@
+/* The curtain: a calm dim over a locked site in front (curtain.rs).
+ *
+ * ⚠️ The island's design system, not a lookalike: tokens from `tokens.css` —
+ * the tile, sheen, hairline, gloss, lift, motion scale, the accent and what it
+ * implies, `--iris` for his own time. The ground is the one difference: the dim
+ * is the room, and the column sits in it with no card around it — a card would
+ * read as a dialog to dismiss, and this is a pause, not a form.
+ *
+ * ⚠️ Transparent all the way down, like ambient mode: the dim fades IN over the
+ * page he was on, so the window must be the desktop until it has.
+ */
+@import "./tokens.css";
+
+:root {
+  color-scheme: dark;
+  /* The fallback until prefs arrive; curtain.ts writes the real one. */
+  --accent: #00ff88;
+  --sys: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --display: 'Segoe UI Variable Display', var(--sys);
+  --ink-soft: rgba(255, 255, 255, 0.72);
+  --ink-faint: rgba(255, 255, 255, 0.5);
+}
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+* { box-sizing: border-box; }
+button { font: inherit; }
+[hidden] { display: none !important; }
+
+.curtain {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  color: #fff; font-family: var(--sys);
+  user-select: none;
+}
+
+/* Deep, not black: what's behind should still be faintly there, so it reads as
+   the same screen with the lights down rather than a different one. */
+.dim {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 42%, rgba(12, 14, 20, 0.78), rgba(4, 5, 8, 0.94) 70%),
+    rgba(4, 5, 8, 0.4);
+  opacity: 0;
+  transition: opacity 700ms var(--ease-smooth-out);
+}
+.curtain.is-up .dim { opacity: 1; }
+
+.column {
+  position: relative;
+  width: min(560px, calc(100vw - 48px));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+  opacity: 0; translate: 0 var(--distance-medium);
+  transition: opacity var(--duration-slow) var(--ease-smooth-out) 160ms, translate var(--duration-slow) var(--ease-smooth-out) 160ms;
+}
+.curtain.is-up .column { opacity: 1; translate: 0 0; }
+/* Closing is quicker than opening, and the column goes first. */
+.curtain.is-closing .dim { opacity: 0; transition-duration: 300ms; }
+.curtain.is-closing .column { opacity: 0; translate: 0 calc(var(--distance-small) * -1); transition-delay: 0ms; transition-duration: var(--duration-fast); }
+
+.who { display: flex; align-items: center; gap: 12px; }
+/* The Guardian: Helm's shield, on the island's tile. */
+.mark {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  color: #fff;
+  background-color: var(--tile-hi); background-image: var(--sheen);
+  box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.mark svg { width: 20px; height: 20px; }
+.where { font-size: 14px; font-weight: 500; color: var(--ink-soft); }
+
+h1 {
+  margin: 22px 0 0;
+  font: 600 34px/1.15 var(--display); letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.body { margin: 10px 0 0; font-size: 17px; line-height: 1.45; color: var(--ink-soft); text-wrap: pretty; }
+
+/* Earned time, the same bar as Helm's Focus page: spent (pale), left (his iris),
+   and the next hour's minutes filling as he works. */
+.earn { width: 100%; margin-top: 28px; }
+.bar { display: flex; gap: 4px; height: 10px; }
+.bar span { flex: 0 1 auto; min-width: 6px; height: 100%; border-radius: var(--r-pip); }
+.bar .spent { background: color-mix(in srgb, var(--iris) 34%, transparent); }
+.bar .left { background: var(--iris); box-shadow: 0 0 14px -6px var(--iris); }
+.bar .next { position: relative; overflow: hidden; background: var(--tile); box-shadow: var(--hairline); }
+.bar .next i { position: absolute; inset: 0 auto 0 0; border-radius: var(--r-pip); background: color-mix(in srgb, var(--iris) 58%, transparent); }
+.facts { display: flex; justify-content: space-between; gap: 16px; margin: 10px 0 0; font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.facts b { font-weight: 600; color: var(--iris); }
+
+.ways { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+/* The island's buttons: a translucent tile with thickness; the one filled accent
+   is going back to work. */
+.way {
+  height: 46px; padding: 0 20px; border: 0; border-radius: 14px; cursor: pointer;
+  font-size: 15px; font-weight: 600; color: #fff;
+  background-color: var(--tile); background-image: var(--sheen);
+  box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+  transition-property: background-color, box-shadow, color, scale, opacity;
+  transition-duration: var(--duration-quick); transition-timing-function: var(--ease-smooth-out);
+}
+.way:hover:not(:disabled) { background-color: var(--tile-hi); box-shadow: var(--hairline), var(--gloss), var(--lift-2); }
+.way:active:not(:disabled) { scale: 0.96; transition-duration: 90ms; }
+.way:disabled { opacity: 0.5; cursor: progress; }
+/* White, not the accent: an accent ring round the accent button is a halo, not a focus. */
+.way:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.42); outline-offset: 3px; }
+.way.is-main { color: var(--on-accent); background-color: var(--accent); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--lift-1), var(--glow-accent); }
+.way.is-main:hover:not(:disabled) { background-color: var(--accent-hi); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--lift-2), var(--glow-accent-hover); }
+.way .price { margin-left: 2px; color: var(--warn); }
+
+.note { margin: 14px 0 0; font-size: 14px; color: var(--warn); }
+.note.is-good { color: var(--good); }
+
+.free { display: flex; align-items: center; gap: 8px; margin: 26px 0 0; font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.free [data-glyph] { display: grid; color: var(--ink-faint); }
+.free [data-glyph] svg { width: 16px; height: 16px; }
+.free .wait { color: var(--ink-faint); }
+
+/* The way out: quiet, top right, after a few seconds. */
+.out {
+  position: absolute; top: 28px; right: 28px;
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 10px 0 12px; border: 0; border-radius: 12px; cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--ink-soft);
+  background-color: var(--tile); background-image: var(--sheen);
+  box-shadow: var(--hairline), var(--gloss);
+  opacity: 0; transition: opacity var(--duration-slow) var(--ease-smooth-out), background-color var(--duration-quick), color var(--duration-quick);
+}
+.out.is-shown { opacity: 1; }
+.out:hover { color: #fff; background-color: var(--tile-hi); }
+.out [data-glyph] { display: grid; }
+.out svg { width: 16px; height: 16px; }
+.out kbd { font: 500 12px/1 var(--sys); padding: 4px 6px; border-radius: 6px; color: var(--ink-faint); box-shadow: var(--hairline); }
+
+/* The browser preview only: something to dim, so the picture is the real one. */
+body.is-preview { background: #e9ebef; }
+.backdrop { position: fixed; inset: 0; display: grid; grid-template-rows: 44px 1fr; background: #f7f7f8; }
+.backdrop .chrome { background: #dfe1e5; border-bottom: 1px solid #cfd2d8; }
+.backdrop .page { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; padding: 24px 40px; }
+.backdrop .video { border-radius: 14px; background: linear-gradient(135deg, #1d3557, #e63946 60%, #f1a208); }
+.backdrop .side { display: flex; flex-direction: column; gap: 14px; }
+.backdrop .side i { height: 94px; border-radius: 10px; background: #e3e5e9; }
+
+[data-motion="never"] .dim, [data-motion="never"] .column, [data-motion="never"] .out { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="always"]) .dim, :root:not([data-motion="always"]) .column, :root:not([data-motion="always"]) .out { transition: none !important; }
+}

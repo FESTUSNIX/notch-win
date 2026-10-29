@@ -17,6 +17,8 @@ import {
   Shield01Icon, UserIcon, ArrowTurnForwardIcon, Invoice01Icon, Message01Icon, MinusSignIcon,
   ArrowUp02Icon, ImageAdd01Icon, SidebarLeftIcon, SidebarRightIcon, HistoryIcon, AtIcon, CommandLineIcon,
   ArrowReloadHorizontalIcon, DashboardSquare01Icon, ViewIcon, MoreHorizontalIcon, Mail01Icon, UndoIcon, Coins01Icon,
+  Calendar03Icon, TaskDaily01Icon, Target02Icon, Timer02Icon, RoboticIcon, MoonIcon, SunriseIcon, ThumbsUpIcon,
+  ScissorIcon, Briefcase01Icon,
 } from "@hugeicons/core-free-icons";
 
 /* ── The agents' own marks ──────────────────────────────────
@@ -169,6 +171,10 @@ const icons = {
   history: HistoryIcon, at: AtIcon, slash: CommandLineIcon, retry: ArrowReloadHorizontalIcon,
   blocks: DashboardSquare01Icon, view: ViewIcon, more: MoreHorizontalIcon, mail: Mail01Icon, undo: UndoIcon,
   coins: Coins01Icon,
+  /* The Guardian's chips (28 Oct): Helm's own glyphs for them, the same set
+     its panel draws, so a chip reads alike in both apps. */
+  day: Calendar03Icon, plan: TaskDaily01Icon, aim: Target02Icon, stopwatch: Timer02Icon, robot: RoboticIcon,
+  moon: MoonIcon, sunrise: SunriseIcon, thumbsUp: ThumbsUpIcon, scissor: ScissorIcon, briefcase: Briefcase01Icon,
   // Whose agent it is. See the marks above.
   claude: CLAUDE_MARK,
   codex: CODEX_MARK,

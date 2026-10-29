@@ -210,6 +210,21 @@ export function projectChip(face: Face | null, name: string, clear: (() => void)
   return chip;
 }
 
+/** A chip that DOES something — the Guardian's suggestions: a tinted disc for
+ *  what it is about, a few words, raised like a project's chip because it is
+ *  an object to press. ⚠️ The tone tints only the disc, never fills the chip
+ *  (AGENTS 815): the composer's Send stays the screen's one filled accent. */
+export function actionChip(label: string, icon: TaskIcon, tone: string, run: () => void, tip?: string): HTMLButtonElement {
+  const chip = element("button", `k-act${tone ? ` is-${tone}` : ""}`) as HTMLButtonElement;
+  chip.type = "button";
+  const mark = element("span", "k-act-mark");
+  paintIcon(mark, icon);
+  chip.append(mark, element("span", "k-act-label", label));
+  if (tip) chip.dataset.tip = tip;
+  chip.onclick = event => { event.stopPropagation(); run(); };
+  return chip;
+}
+
 /** A neutral chip with a glyph and a word or a number. */
 export function kchip(label: string, icon?: TaskIcon, tone = ""): HTMLElement {
   const chip = element("span", `k-chip${tone ? ` is-${tone}` : ""}`);

@@ -27,6 +27,8 @@ export default defineConfig({
         dragzone: resolve(__dirname, "dragzone.html"),
         // The player, full screen — see ambient.rs.
         ambient: resolve(__dirname, "ambient.html"),
+        // The dim over a locked site in front — see curtain.rs.
+        curtain: resolve(__dirname, "curtain.html"),
       },
     },
   },

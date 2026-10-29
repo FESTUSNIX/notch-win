@@ -21,6 +21,12 @@
  *   happened, in place.
  * - A reply's changes are FOLDED ("4 zmiany ▾"), each with Cofnij inside.
  * - On hover a message offers copy, retry and "make it a request".
+ * - The CHIPS over the composer are Helm's (`/api/guardian/suggestions`):
+ *   three or four that fit now — a session running, an agent's run done, time
+ *   to log, a call coming up, the end of the day — each a tinted glyph and a
+ *   few words (kit `actionChip`). Asked for on open, after each reply and when
+ *   the focus changes, with what only this machine knows: the agents' sessions
+ *   and the project in focus. A Helm without the endpoint: no row at all.
  *
  * ⚠️ New paths may 404 or 503 until Helm ships them, and that is a STATE:
  * history hides its toggle, the mic hides, the `@` picker falls back to the
@@ -37,9 +43,9 @@ import { listen } from "@tauri-apps/api/event";
 import { render as renderNote } from "./note-live";
 import { nudgeAction, type HelmSource } from "./screen-helm";
 import { logControl, logoTile } from "./helm-parts";
-import { doingRequest, spoken, zloty } from "./helm-link";
+import { doingRequest, readSuggestions, spoken, zloty, type GuardianSuggestion } from "./helm-link";
 import { Composer, type Sent } from "./kit/composer";
-import { SidePanel, iconButton, kchip, projectChip, segmented, setToggle, toggleButton } from "./kit/parts";
+import { SidePanel, actionChip, iconButton, kchip, projectChip, segmented, setToggle, toggleButton } from "./kit/parts";
 import { dayName, isDay, marks, plural, type Command, type MentionProject } from "./kit/words";
 import { isVertical } from "./layout";
 import type { IslandSurface } from "./island-surface";
@@ -114,6 +120,10 @@ export interface Extra {
 export interface HistoryDay { day: string; count: number; preview: string }
 export interface Found { id: number; day: string; role: "guardian" | "me"; snippet: string; createdAt: string }
 
+/** What this machine tells Helm for the chips: the project in focus, the
+ *  agents working or waiting, and the requests a run just finished on. */
+export interface SuggestHints { focus: number | null; agents: number; finished: number[] }
+
 const RECEIPT_ICON: Record<string, TaskIcon> = {
   block: "target", start: "play", plan: "today", mode: "settings", request: "request", time: "clock",
   deal: "star", event: "calendar", note: "note", memory: "agent",
@@ -158,6 +168,13 @@ export class GuardianChat {
   hasHistory = true;
   found: Found[] | null = null;
   private searchGen = 0;
+  /** The chips over the composer, picked by Helm for NOW. null: not read, or
+   *  a Helm without `/api/guardian/suggestions` — then there is no row at all
+   *  (never the old three fixed ones, which only fitted the morning). */
+  suggestions: GuardianSuggestion[] | null = null;
+  /** What this machine adds to them; set by the shell. */
+  hints: (() => SuggestHints) | null = null;
+  private suggestGen = 0;
   /** Whose turn the events streaming in belong to.
    *
    * ⚠️ One stream, two readers. `helm:chat` carries no turn id, so a capture
@@ -180,8 +197,11 @@ export class GuardianChat {
     else previewBus.addEventListener("helm:chat", event => handle((event as CustomEvent<ChatEvent>).detail));
   }
 
-  /** The thread again, and everything the Guardian said is read (he's looking at it). */
+  /** The thread again, and everything the Guardian said is read (he's looking at it).
+   *  The chips are asked for again with it: opening the screen and every
+   *  finished reply both come through here. */
   async load() {
+    void this.loadSuggestions();
     try {
       this.thread = await call<Thread>("helm_thread");
       this.error = "";
@@ -208,6 +228,22 @@ export class GuardianChat {
   }
 
   today() { if (this.viewing) { this.viewing = null; this.changed(); } }
+
+  /** What's worth saying now, from Helm. ⚠️ A generation counter, like the
+   *  search: the answer to an older ask (before the focus changed) must not
+   *  land on top of the newer one. A failure keeps the last chips. */
+  async loadSuggestions() {
+    const gen = ++this.suggestGen;
+    const hints = this.hints?.() ?? { focus: null, agents: 0, finished: [] };
+    try {
+      const answer = await call<unknown>("helm_suggestions", { project: hints.focus, agents: hints.agents, finished: hints.finished });
+      if (gen !== this.suggestGen) return;
+      this.suggestions = readSuggestions(answer);
+    } catch {
+      return;
+    }
+    this.changed();
+  }
 
   /** The days with a count and a preview. A Helm without the endpoint answers
    *  null, and the panel's toggle goes away. */
@@ -347,7 +383,15 @@ type CardState =
   | { kind: "requests"; done: Set<number>; started: Set<number>; busy: number | null }
   | { kind: "day"; started: boolean };
 
-const CHIPS = ["Co mam dziś?", "Zaplanuj mój dzień", "Za duże, daj 10 minut"];
+/** Helm's names for a chip's glyph, in this app's icon set (the same
+ *  Hugeicons Helm's panel draws). Anything new on Helm's side gets the shield. */
+const CHIP_ICON: Record<string, TaskIcon> = {
+  today: "day", plan: "plan", next: "aim", split: "stopwatch", play: "play", agents: "robot", done: "check",
+  time: "clock", money: "coins", renewal: "repeat", request: "request", call: "join", note: "note", close: "moon",
+  tomorrow: "sunrise", week: "review", yes: "thumbsUp", no: "close", shorter: "scissor", here: "briefcase",
+};
+/** What a chip is about picks its disc's colour (kit.css `.k-act.is-*`); an unknown kind stays neutral. */
+const CHIP_KINDS = new Set(["now", "day", "agents", "time", "money", "client", "meeting", "wrap", "reply", "here"]);
 
 export class GuardianScreen {
   private host: HTMLElement;
@@ -525,6 +569,8 @@ export class GuardianScreen {
   private setFocus(id: number | null) {
     this.helm.setFocus(id);
     this.render();
+    // One chip is about the project in focus.
+    void this.chat.loadSuggestions();
   }
 
   /* ── History ─────────────────────────────────────────────────────────── */
@@ -728,7 +774,8 @@ export class GuardianScreen {
     const messages = viewing ? viewing.messages : thread?.messages ?? [];
     const key = JSON.stringify([this.helm.signedIn, error, pending, !!sent, live?.receipts.length, live?.cards.length, live?.error, viewing?.day,
       messages.map(m => [m.id, m.receipts.map(r => !!r.undoneAt)]), this.helm.nudges.map(n => n.id),
-      [...this.cards].map(([k, v]) => [k, JSON.stringify(v, (_, x) => x instanceof Set ? [...x] : x)]), [...this.unfolded], this.helm.starting.size]);
+      [...this.cards].map(([k, v]) => [k, JSON.stringify(v, (_, x) => x instanceof Set ? [...x] : x)]), [...this.unfolded], this.helm.starting.size,
+      this.chat.suggestions?.map(s => s.id + s.label)]);
     if (key === this.drawn) return;
     this.drawn = key;
     const scrolled = this.get(".g-thread").scrollTop;
@@ -783,10 +830,10 @@ export class GuardianScreen {
 
     // A nudge waiting for an answer carries its own replies; the chips would repeat them.
     if (!viewing && !pending && !actionable && this.composer.empty) {
-      for (const text of CHIPS) {
-        const chip = element("button", "g-chip", text);
-        chip.type = "button";
-        chip.onclick = () => this.say(text);
+      for (const one of this.chat.suggestions ?? []) {
+        const chip = actionChip(one.label, CHIP_ICON[one.icon] ?? "guardian", CHIP_KINDS.has(one.kind) ? one.kind : "", () => this.say(one.prompt), one.prompt);
+        chip.classList.add("g-suggest");
+        chip.dataset.kind = one.kind;
         chips.append(chip);
       }
     }

@@ -86,13 +86,14 @@ pub fn harden(window: &WebviewWindow) {
         };
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next as isize);
 
-        /* ⚠️ Not while ambient mode is up. This runs whenever the pointer
-         * crosses the island's edge, and re-asserting topmost here would lift
-         * the island and the usage notch back ABOVE a full-screen player —
-         * which is on top precisely because it was made topmost last. The
-         * style bits above still apply; only the re-ordering is held. */
-        if crate::ambient::OPEN.load(std::sync::atomic::Ordering::SeqCst)
-            && window.label() != crate::ambient::LABEL
+        /* ⚠️ Not while ambient mode or the curtain is up. This runs whenever
+         * the pointer crosses the island's edge, and re-asserting topmost here
+         * would lift the island and the usage notch back ABOVE a full-screen
+         * player or the curtain — each on top precisely because it was made
+         * topmost last. The style bits above still apply; only the re-ordering
+         * is held. */
+        if (crate::ambient::OPEN.load(std::sync::atomic::Ordering::SeqCst) && window.label() != crate::ambient::LABEL)
+            || (crate::curtain::OPEN.load(std::sync::atomic::Ordering::SeqCst) && window.label() != crate::curtain::LABEL)
         {
             return;
         }

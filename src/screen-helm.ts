@@ -541,6 +541,12 @@ export class HelmSource {
 
   askFor(session: string): Ask | null { return this.asks.get(session) ?? null; }
 
+  /** Requests a run has just finished on, still asking "done?": the
+   *  Guardian's chips offer to mark them done (sent to Helm as `finished`). */
+  get finishedRequests(): number[] {
+    return [...this.asks.values()].filter(ask => ask.stage === "ask").map(ask => ask.requestId);
+  }
+
   /** Sessions as they stand now. ⚠️ A question about a run is dropped when the
    *  session runs AGAIN (he carried on — the run did not end the work) or goes
    *  away; one being answered is left to finish. */

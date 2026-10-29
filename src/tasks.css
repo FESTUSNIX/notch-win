@@ -17339,6 +17339,10 @@ html[data-motion='never'] .notice-row {
 }
 .g-foot .g-chips {
 	padding: 0 2px;
+	/* Helm's suggestions (kit `.k-act`): three or four, so they WRAP rather
+	   than scroll — one cut off at the edge cannot be read at a glance. */
+	flex-wrap: wrap;
+	overflow: visible;
 }
 .g-foot .g-chips:empty {
 	display: none;

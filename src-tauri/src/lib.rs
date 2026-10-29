@@ -6,6 +6,7 @@ mod calendar;
 mod call;
 mod codex;
 mod config;
+mod curtain;
 mod credentials;
 mod drag;
 mod lyrics;
@@ -605,10 +606,15 @@ pub fn run() {
             helm::helm_logo,
             helm::helm_history,
             helm::helm_projects,
+            helm::helm_suggestions,
             helm::helm_transcribe,
             helm::helm_transcribe_ready,
             helm::helm_remind,
             helm::helm_renewal,
+            helm::helm_blocker,
+            curtain::curtain_pending,
+            curtain::curtain_ready,
+            curtain::curtain_close,
             crypto::set_wallet_quote,
             weather::get_weather,
             lyrics::get_lyrics,
@@ -770,6 +776,8 @@ pub fn run() {
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
             helm::spawn(app.handle().clone());
+            // The curtain watches the window in front; Helm's reading reaches it from helm.rs.
+            curtain::spawn(app.handle().clone());
             system::spawn(app.handle().clone());
             // Last, so a stolen key combination cannot stop the rest of setup.
             if let Err(message) = shortcuts::setup(app.handle()) {

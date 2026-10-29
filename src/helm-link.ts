@@ -224,3 +224,46 @@ export function needSide(need: NotchNeed, today: string): { text: string; late: 
   }
   return null;
 }
+
+/* ── The Guardian's chips (/api/guardian/suggestions, 28 Oct) ──────────────
+ *
+ * Helm picks three or four things worth saying to the Guardian NOW — the
+ * morning before work, a session running, an agent's run finished, time to
+ * log, a call coming up, the end of the day — by rules, not by Claude. Each is
+ * a short label and the full sentence its tap sends; `icon` and `kind` are
+ * Helm's names for its glyph and what it is about (the island maps both). */
+
+export interface GuardianSuggestion {
+  id: string;
+  /** Two to four Polish words, for the chip. */
+  label: string;
+  /** The sentence the tap sends. */
+  prompt: string;
+  /** Helm's glyph name: today, plan, next, split, play, agents, done, time… */
+  icon: string;
+  /** What it is about: now, day, agents, time, money, client, meeting, wrap, reply, here. */
+  kind: string;
+}
+
+/** The most chips the row draws, whatever Helm sends. */
+export const MAX_CHIPS = 4;
+
+/** Helm's answer, checked: only whole chips, at most four. Null for no answer
+ *  at all (a Helm without the endpoint) — then the row is EMPTY, never the old
+ *  three fixed ones. */
+export function readSuggestions(raw: unknown): GuardianSuggestion[] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const list = (raw as { suggestions?: unknown }).suggestions;
+  if (!Array.isArray(list)) return null;
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const out: GuardianSuggestion[] = [];
+  for (const one of list) {
+    if (!one || typeof one !== "object") continue;
+    const s = one as Record<string, unknown>;
+    const chip = { id: text(s.id), label: text(s.label), prompt: text(s.prompt), icon: text(s.icon), kind: text(s.kind) };
+    if (!chip.label || !chip.prompt || out.some(o => o.label === chip.label)) continue;
+    out.push({ ...chip, id: chip.id || chip.label });
+    if (out.length === MAX_CHIPS) break;
+  }
+  return out;
+}

@@ -764,3 +764,93 @@ test("quick capture takes / and @ too, under the field, and the island grows to 
   await page.keyboard.press("Enter");
   expect(await calls(page, "helm_send")).toContainEqual({ text: "Kupić tonery", images: [], capture: true, command: "request", mentions: null });
 });
+
+/* ── The Guardian's chips (28 Oct, later) ──────────────────────────────────
+ * Helm picks them for the moment (`/api/guardian/suggestions`, staged in
+ * task-client: `&suggest=morning|evening`, `&suggest=off` for the 404). */
+
+test("the Guardian's chips are Helm's: a glyph and a few words each, and a tap sends the whole sentence", async ({ page }) => {
+  await page.goto("/tasks.html?helm&noagents");
+  await open(page);
+  await goTo(page, "Guardian", "guardian");
+  const guardian = page.locator('.screen[data-screen="guardian"]');
+  const chips = guardian.locator(".g-chips .k-act");
+  await expect(chips).toHaveCount(4);
+  await expect(chips.locator(".k-act-label")).toHaveText(["Przygotuj: Call z Piotrem", "Zaloguj 1 h 30", "Co teraz?", "Przypomnij: Ubrania"]);
+  // Each carries its glyph, tinted for what it's about; the sentence is its tooltip.
+  await expect(chips.locator(".k-act-mark svg")).toHaveCount(4);
+  await expect(chips.first()).toHaveClass(/is-meeting/);
+  await expect(chips.nth(1)).toHaveClass(/is-time/);
+  await expect(chips.first()).toHaveAttribute("data-tip", /^Przygotuj mnie na „Call z Piotrem”/);
+  // The three fixed ones are gone for good.
+  await expect(guardian.locator(".g-chips")).not.toContainText("Zaplanuj mój dzień");
+  // ⚠️ They wrap, never scroll: every chip is inside the foot, none cut at its edge.
+  const foot = await guardian.locator(".g-foot").boundingBox();
+  for (const box of await Promise.all((await chips.all()).map(chip => chip.boundingBox())))
+    expect(box!.x + box!.width).toBeLessThanOrEqual(foot!.x + foot!.width + 0.5);
+  // Asked with what this machine knows: no agents, nothing finished, no focus.
+  expect((await calls(page, "helm_suggestions"))[0]).toEqual({ project: null, agents: 0, finished: [] });
+  await picture(page, "guardian-chips");
+
+  const asked = (await calls(page, "helm_suggestions")).length;
+  await chips.filter({ hasText: "Co teraz?" }).click();
+  expect((await calls(page, "helm_send")).at(-1)).toMatchObject({ text: "Co teraz? Daj mi jedną rzecz do zrobienia od razu." });
+  await expect(guardian.locator(".g-mine").last()).toContainText("Co teraz? Daj mi jedną rzecz");
+  // While it answers the row steps aside; after the reply Helm is asked again.
+  await expect.poll(async () => (await calls(page, "helm_suggestions")).length, { timeout: 6000 }).toBeGreaterThan(asked);
+  await expect(chips).toHaveCount(4);
+});
+
+test("a run just finished and the project in focus reach Helm, and lead the chips", async ({ page }) => {
+  await page.goto("/tasks.html?helm&agents&finished");
+  await open(page);
+  await goTo(page, "Guardian", "guardian");
+  const guardian = page.locator('.screen[data-screen="guardian"]');
+  const chips = guardian.locator(".g-chips .k-act");
+  // The finished run's request (akcesfonia's "Nowy koszyk B2B", id 21) goes as `finished`, the live sessions as `agents`.
+  await expect(chips.first().locator(".k-act-label")).toHaveText("Zrobione: Nowy koszyk B2B");
+  await expect(chips.first()).toHaveClass(/is-agents/);
+  const first = (await calls(page, "helm_suggestions"))[0];
+  expect(first.finished).toEqual([21]);
+  expect(first.agents as number).toBeGreaterThan(0);
+  // Focusing a project asks again, and one chip is about it.
+  await guardian.locator(".g-proj-toggle").click();
+  await guardian.locator(".g-pp-pick").filter({ hasText: "Esono Rozwój" }).click();
+  await expect(chips.filter({ hasText: "Esono Rozwój: co dalej?" })).toHaveCount(1);
+  expect((await calls(page, "helm_suggestions")).at(-1)).toMatchObject({ project: 3 });
+  await page.waitForTimeout(500);
+  await picture(page, "guardian-chips-agents");
+  // A chip's tap sends with the focus, like anything written.
+  await chips.filter({ hasText: "Zrobione: Nowy koszyk B2B" }).click();
+  expect((await calls(page, "helm_send")).at(-1)).toMatchObject({ text: "Agent skończył „Nowy koszyk B2B” (Akcesfonia). Oznacz to zgłoszenie jako zrobione.", focus: 3 });
+});
+
+test("other moments get other chips, and a Helm without the endpoint has no row at all", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/tasks.html?helm&noagents&suggest=morning");
+  await open(page);
+  await goTo(page, "Guardian", "guardian");
+  const guardian = page.locator('.screen[data-screen="guardian"]');
+  await expect(guardian.locator(".g-chips .k-act-label")).toHaveText(["Co mam dziś?", "Wybierz trzy na dziś", "Co w tym tygodniu?"]);
+  await picture(page, "guardian-chips-morning");
+
+  await page.goto("/tasks.html?helm&noagents&suggest=evening");
+  await open(page);
+  await goTo(page, "Guardian", "guardian");
+  await expect(guardian.locator(".g-chips .k-act-label")).toHaveText(["Zaloguj 2 h 15 na Esono", "Podsumuj dzień", "Plan na jutro", "Co w tym tygodniu?"]);
+  await expect(guardian.locator(".g-chips .k-act").last()).not.toHaveClass(/is-(now|agents|time|money|meeting|client|wrap)/);
+  await picture(page, "guardian-chips-evening");
+
+  // ⚠️ The 404 of a Helm that hasn't shipped it: nothing — not the old three, not an error on the pill.
+  await page.goto("/tasks.html?helm&noagents&suggest=off");
+  await open(page);
+  await goTo(page, "Guardian", "guardian");
+  await expect(guardian.locator(".g-msg").first()).toBeVisible();
+  expect((await calls(page, "helm_suggestions")).length).toBeGreaterThan(0);
+  await expect(guardian.locator(".g-chips .k-act")).toHaveCount(0);
+  await expect(guardian.locator(".g-chips")).toBeHidden();
+  await expect(guardian.locator(".g-foot")).not.toContainText("Co mam dziś?");
+  await expect(pillLabel(page)).not.toHaveText(/Helm|suggest/i);
+  expect(errors).toEqual([]);
+});

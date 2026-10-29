@@ -285,6 +285,27 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   its words — until it is answered. Again once after three minutes if still
   unread, and **the chrome stays up over a full-screen app or a manual hide**
   until it is read (`NUDGE_UP` in `shortcuts.rs`).
+- **The curtain** (Guardian stage 3, 28 Oct; `src-tauri/src/curtain.rs`,
+  `curtain.html`, `src/curtain.ts`, `src/curtain-view.ts`). Helm's blocker is a
+  browser extension, which is one click from being switched off. So every 20 s
+  codenotch reads `/api/desktop/blocker` (the device key, read-only): the sites
+  locked right now as whole domains, each with the words its pages carry in their
+  titles. When a **browser in front** has stayed on one for three seconds — a whole
+  part of its window title is the word, so "… - YouTube - Brave" matches and the
+  extension's own "YouTube is locked" never does — a calm dim covers that monitor:
+  the Guardian's line in Polish, the hours worked and the earned bar (spent, left,
+  the next hour filling), and the ways on: **Wracam do pracy** (closes it),
+  **Otwórz na 15 min** while earned minutes are left, **5 minut za X zł** once
+  they're spent and Helm's price rules allow it (both as you, through
+  `/api/notch/blocker`, and only on a site earned time opens), and when the sites
+  open by themselves. A video playing in that browser is paused (and plays on
+  after time bought or spent). **It never traps you:** Escape from the first
+  frame, a plain "Zamknij" after four seconds, the hide key, or any other window
+  in front takes it down; it stays down for 90 s after you close it; it never
+  comes while presenting, in a call (in-call mode's microphone reading) or in a
+  meeting on your calendar, nor on a Helm reading older than two and a half
+  minutes, and a page that doesn't draw is put away after six seconds. A Helm
+  without the route (404) never puts one up. Quitting codenotch removes it.
 - **The cockpit** (`/api/notch`, read with the queue every minute and after
   anything you do). codenotch is where the work is RUN; Helm's web is where it
   is managed. Today's header carries **your time and the agents'** for the day
@@ -348,6 +369,11 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   `&nudge` for the other states) with a scripted streaming reply and the cockpit;
   `&notch=off` is a Helm without `/api/notch`; `?helm&agents&finished` is a run
   that just ended on a request. `tests/browser/helm.spec.ts`.
+- **Preview, the curtain**: `curtain.html?why=earn` (and `first-block`, `spend`,
+  `focus`, `held`, `locked`, `limit`) over a stand-in page; `&buy=off` is a Helm
+  whose rules allow no buying, `&refuse` one that says no, `&nothing` a reading
+  without its line. `tests/browser/curtain.spec.ts` (pictures to `CURTAIN_SHOTS`)
+  and `tests/curtain.test.mjs`.
 
 ### Not now
 

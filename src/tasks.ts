@@ -567,6 +567,13 @@ const guardianScreen = new GuardianScreen(document.querySelector<HTMLElement>('[
 });
 /* Each session's Helm project and request, and "done?" when a run on one ends. */
 agentsScreen.helm = helmSource;
+/* The Guardian's chips are Helm's, told what only this machine sees: the
+ * project in focus, the agents working or waiting, the runs just finished. */
+guardianChat.hints = () => ({
+  focus: helmSource.focus,
+  agents: agentsScreen.sessions.filter(one => one.state === "working" || one.state === "waiting").length,
+  finished: helmSource.finishedRequests,
+});
 agentsScreen.widthChanged = () => { surface.capBody(cpx(widthOf(screen))); surface.deliberately(); };
 /* The screens' own widths, in CSS px, for the columns beside their panels. */
 guardianScreen.mainCss = cpx(WIDTH.guardian);

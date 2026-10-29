@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pl">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Curtain</title></head>
+<body>
+<!-- The dim over a locked site in front (curtain.rs). Every glyph is `data-glyph`,
+     painted at boot from the app's own icon set, as ambient.html does. -->
+<div class="curtain" id="curtain" hidden>
+  <div class="dim" aria-hidden="true"></div>
+
+  <!-- The plain way out, after a few seconds. Escape works from the first frame. -->
+  <button class="out" id="out" type="button" hidden>
+    <span data-glyph="close" aria-hidden="true"></span>
+    <span>Zamknij</span>
+    <kbd>Esc</kbd>
+  </button>
+
+  <main class="column" role="dialog" aria-modal="true" aria-labelledby="title" aria-describedby="body">
+    <div class="who">
+      <span class="mark" data-glyph="guardian" aria-hidden="true"></span>
+      <span class="where" id="where"></span>
+    </div>
+    <h1 id="title"></h1>
+    <p class="body" id="body"></p>
+
+    <section class="earn" id="earn" hidden>
+      <div class="bar" id="bar" aria-hidden="true"><span class="spent"></span><span class="left"></span><span class="next"><i></i></span></div>
+      <p class="facts"><span id="worked"></span><b id="next"></b></p>
+    </section>
+
+    <div class="ways">
+      <button class="way is-main" id="work" type="button">Wracam do pracy</button>
+      <button class="way" id="spend" type="button" hidden></button>
+      <button class="way" id="buy" type="button" hidden></button>
+    </div>
+    <p class="note" id="note" role="status" hidden></p>
+
+    <p class="free" id="free" hidden><span data-glyph="clock" aria-hidden="true"></span><span id="freeText"></span><span class="wait" id="wait"></span></p>
+  </main>
+</div>
+<script type="module" src="/src/curtain.ts"></script>
+</body>
+</html>
