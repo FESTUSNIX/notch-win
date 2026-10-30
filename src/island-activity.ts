@@ -124,7 +124,12 @@ export interface Activity {
    *  an app really has is `call.rs`'s answer, and `call-format` lays them out;
    *  the pill only draws what it was handed. */
   muted?: boolean;
+  /** The strip's own controls: a call's mute and leave, a Helm session's
+   *  pause or resume (AGENTS 878). Drawn by `paintActs` either way. */
   controls?: CallControl[];
+  /** What the pointer is told about the claim, when the strip says less than
+   *  there is (a Helm session's coarse time: the digits are off the strip). */
+  tip?: string;
   /** The wall clock, already formatted.
    *
    * ⚠️ Filled in by the SHELL, not by the screen that raised the claim. The
@@ -348,6 +353,10 @@ function build(host: HTMLElement, activity: Activity) {
   if (activity.bar) host.append(copy);
   else host.append(lead, copy);
   if (activity.kind === "media") host.append(equaliser());
+  /* A claim's own controls (a Helm session's pause), the call's pattern:
+   * `paintActs` draws them, the shell's capturing click runs them. ⚠️ Before
+   * the time and never shrunk — the title truncates, the button does not. */
+  if (activity.controls?.length) host.append(element("div", "pill-acts"));
   // A `t-digit-group`, so only the digits that changed re-enter. See setDigits.
   const clock = element("div", "pill-time t-digit-group");
   if (activity.bar) {
@@ -425,7 +434,7 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
    * sets of children for the same `focus` claim, so a preference changed
    * while a pomodoro is running has to rebuild — and keying on the kind
    * alone left the old furniture in place until the phase changed. */
-  const shape = activity.bar ? "bar" : "";
+  const shape = `${activity.bar ? "bar" : ""}${activity.controls?.length ? "acts" : ""}`;
   if (host.dataset.kind !== activity.kind || host.dataset.shape !== shape) {
     build(host, activity);
     host.dataset.shape = shape;
@@ -444,6 +453,13 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
   const count = host.querySelector<HTMLElement>(".pill-count");
   if (count) setDigits(count, activity.count ?? "");
   host.classList.toggle("is-held", !!activity.held);
+  const acts = host.querySelector<HTMLElement>(".pill-acts");
+  if (acts) paintActs(acts, activity.controls ?? []);
+  const copy = host.querySelector<HTMLElement>(".pill-copy");
+  if (copy) {
+    if (activity.tip) copy.dataset.tip = activity.tip;
+    else delete copy.dataset.tip;
+  }
   /* The fluid line. ⚠️ A width in per cent with a one-second linear
    * transition, so it CREEPS rather than stepping once a second — a bar that
    * jumps is a bar you notice, which is the whole thing this mode avoids. */

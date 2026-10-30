@@ -613,6 +613,8 @@ pub fn run() {
             helm::helm_remind,
             helm::helm_renewal,
             helm::helm_blocker,
+            helm::helm_notch_post,
+            helm::helm_close_day,
             voice::voice_say,
             voice::voice_hush,
             voice::voice_quiet,

@@ -40,7 +40,7 @@ async function calls(page: Page, command: string) {
 /** The pill's own line, which is where a toast lands (`say`). */
 const pillLabel = (page: Page) => page.locator("#island-collapsed .pill-label");
 
-test("with Helm connected, Today is Helm's Today, the suggestions folded under it", async ({ page }) => {
+test("with Helm connected, Today is Helm's Today, the suggestions in the rail beside it", async ({ page }) => {
   await page.goto("/tasks.html?helm&noagents");
   await open(page);
   await goTo(page, "Today", "helm");
@@ -54,8 +54,8 @@ test("with Helm connected, Today is Helm's Today, the suggestions folded under i
   await expect(today.locator(".helm-fig.is-done")).toHaveAttribute("aria-label", "3 done today");
   await expect(today.locator(".helm-fig.is-you .helm-fig-value")).toHaveText("3 h 10");
   await expect(today.locator(".helm-fig.is-agents .helm-fig-value")).toHaveText("1 h 25");
-  // The rest of Today as rows; the late request says so in a chip; the suggestions wait folded.
-  await expect(today.locator(".day-row")).toHaveCount(3);
+  // The rest of Today as rows in the main column; the late request says so in a chip.
+  await expect(today.locator(".helm-col .day-row")).toHaveCount(3);
   await expect(today.locator(".helm-chip.is-late")).toHaveText("2 days late");
   await expect(today.locator(".helm-block.is-suggested .k-count")).toHaveText("2");
   await expect(today.locator(".helm-tomorrow")).toHaveAttribute("aria-label", "2 moved to tomorrow");
@@ -64,9 +64,9 @@ test("with Helm connected, Today is Helm's Today, the suggestions folded under i
   await expect(today.locator(".helm-hero .hp-logo.has-logo img")).toHaveCount(1);
   await picture(page, "today");
 
-  // Unfolded, a suggestion's + puts it into Today at once.
-  await today.locator(".helm-block.is-suggested .k-block-head").click();
-  await expect(today.locator(".day-row.is-suggested")).toHaveCount(2);
+  // The suggestions live in the rail, with the Guardian's why; a + puts one into Today at once.
+  await expect(today.locator(".helm-side .day-row.is-suggested")).toHaveCount(2);
+  await expect(today.locator(".helm-side .helm-row-why").first()).toContainText("sonocars");
   await picture(page, "today-suggested");
   await today.locator(".day-row.is-suggested").filter({ hasText: "Galeria" }).locator(".task-focus").first().click();
   await expect(today.locator(".helm-must-text")).toHaveText("5 in Today");
@@ -82,6 +82,9 @@ test("the Suggested fold reveals its rows rather than opening into empty space",
   await open(page);
   await goTo(page, "Today", "helm");
   const today = page.locator('.screen[data-screen="helm"]');
+  // Open by default in the rail: fold it, then unfold it.
+  await today.locator(".helm-block.is-suggested .k-block-head").click();
+  await expect(today.locator(".day-row.is-suggested")).toHaveCount(0);
   await today.locator(".helm-block.is-suggested .k-block-head").click();
   /* ⚠️ Polled, and both rects in ONE round trip (AGENTS 473): the island
    * springs to its new height and the list scrolls smoothly, so a box read on
@@ -96,7 +99,7 @@ test("the Suggested fold reveals its rows rather than opening into empty space",
   }), { timeout: 4000 }).toBe(true);
 });
 
-test("a session started from the queue is Now, with its timer and ring", async ({ page }) => {
+test("a session started from the queue is Now, with its focus scale", async ({ page }) => {
   await page.goto("/tasks.html?helm&running&noagents");
   await open(page);
   await goTo(page, "Today", "helm");
@@ -104,13 +107,98 @@ test("a session started from the queue is Now, with its timer and ring", async (
   await expect(today.locator(".helm-hero-title")).toHaveText("Rynek Czeski — poprawki w koszyku");
   await expect(today.locator(".helm-toggle")).toHaveAttribute("aria-label", "Pause");
   await expect(today.locator(".helm-later")).toBeHidden();
-  await expect(today.locator(".helm-elapsed")).toHaveText(/^29:\d\d$/);
-  await expect(today.locator(".helm-of")).toHaveText("/ 2 h");
-  // While it runs, Done is the call; the ring has moved off zero.
+  // The time LEFT is the reading (2 h less 29 min), with when it ends and the clock at both ends.
+  await expect(today.locator(".helm-left")).toHaveText(/^1:3[01]:\d\d$/);
+  await page.screenshot({ path: `${shots}/today-running.png`, clip: (await page.locator("#island-expanded").boundingBox())! });
+  await expect(today.locator(".helm-state-word")).toHaveText(/^Until \d\d:\d\d$/);
+  await expect(today.locator(".helm-from")).toHaveText(/^\d\d:\d\d$/);
+  // While it runs, Done is the call; 30 segments of 4 min, the first seven lit.
   await expect(today.locator(".helm-finish")).toHaveClass(/is-primary/);
-  const offset = await today.locator(".hp-ring .arc").getAttribute("stroke-dashoffset");
-  expect(Number(offset)).toBeLessThan(94);
+  await expect(today.locator(".helm-seg")).toHaveCount(30);
+  await expect(today.locator(".helm-seg").nth(6).locator("i")).toHaveAttribute("style", "width: 100%;");
+  await expect(today.locator(".helm-seg").nth(7).locator("i")).not.toHaveAttribute("style", "width: 100%;");
+  // The entry running is not listed again under Today.
+  await expect(today.locator(".helm-rows .task-title").filter({ hasText: "Rynek Czeski" })).toHaveCount(0);
   await picture(page, "today-running");
+});
+
+test("a session past its length offers +5 min, and the bar's end moves at once", async ({ page }) => {
+  // `&over`: 29 minutes into a 20-minute session.
+  await page.goto("/tasks.html?helm&running&over&noagents");
+  await open(page);
+  await goTo(page, "Today", "helm");
+  const today = page.locator('.screen[data-screen="helm"]');
+  await expect(today.locator(".helm-now-bar")).toHaveAttribute("data-phase", "over");
+  const end = await today.locator(".helm-to").textContent();
+  await today.locator(".helm-more").click();
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "extend", block: 2, minutes: 5 } });
+  await expect(today.locator(".helm-to")).not.toHaveText(end ?? "");
+});
+
+/** Where the review pictures go (`B11_SHOTS`), else test-results. */
+const shots = process.env.B11_SHOTS ?? "test-results";
+
+test("the rail beside Today: the day, Needs you, Suggested, Agents; its toggle hides it, remembered", async ({ page }) => {
+  await page.goto("/tasks.html?helm&noagents");
+  await open(page);
+  await goTo(page, "Today", "helm");
+  const today = page.locator('.screen[data-screen="helm"]');
+  const rail = today.locator(".helm-side");
+  await expect(rail).toBeVisible();
+  // Now and Today in the main column; the read-only blocks in the rail.
+  await expect(today.locator(".helm-col .helm-block.is-now")).toBeVisible();
+  await expect(today.locator(".helm-col .helm-block.is-today")).toBeVisible();
+  for (const id of ["needs", "suggested"]) await expect(rail.locator(`.helm-block.is-${id}`)).toBeVisible();
+  await expect(rail.locator(".helm-glance .helm-load")).toBeVisible();
+  const toggle = today.locator(".helm-rail-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${shots}/today-rail.png`, clip: (await page.locator("#island-expanded").boundingBox())! });
+  await rail.locator(".day-row.is-suggested").last().scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${shots}/today-rail-suggested.png`, clip: (await page.locator("#island-expanded").boundingBox())! });
+  const wide = (await page.locator("#island-expanded").boundingBox())!.width;
+  // Hidden: the main column takes the width; the toggle carries what needs him.
+  await toggle.click();
+  await expect(rail).toBeHidden();
+  await expect(toggle.locator(".helm-rail-count")).toHaveText("4");
+  await expect(toggle).toHaveAttribute("aria-label", "Show the side · 4 need you");
+  await expect.poll(async () => (await page.locator("#island-expanded").boundingBox())!.width).toBeLessThan(wide - 80);
+  await expect(today.locator(".helm-col .day-row")).toHaveCount(3);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${shots}/today-norail.png`, clip: (await page.locator("#island-expanded").boundingBox())! });
+  // Remembered.
+  await page.reload();
+  await open(page);
+  await goTo(page, "Today", "helm");
+  await expect(today.locator(".helm-side")).toBeHidden();
+  await today.locator(".helm-rail-toggle").click();
+  await expect(today.locator(".helm-side")).toBeVisible();
+});
+
+test("the pill while a session runs: the ring and Pause, no ticking digits; paused reads Resume", async ({ page }) => {
+  // `?click`: the strip's controls are reachable in click mode (AGENTS 878).
+  await page.goto("/tasks.html?helm&running&noagents&click");
+  const pill = page.locator("#island-collapsed");
+  await expect(pill).toHaveAttribute("data-kind", "focus");
+  await expect(pill.locator(".pill-ring")).toHaveCount(1);
+  await expect(pill.locator(".pill-time")).toHaveCount(0);
+  const act = pill.locator(".pill-act");
+  await expect(act).toHaveAttribute("aria-label", "Pause");
+  await expect(pill.locator(".pill-copy")).toHaveAttribute("data-tip", /^29 min of 2 h$/);
+  const box = (await pill.boundingBox())!;
+  await page.screenshot({ path: `${shots}/pill-running.png`, clip: { x: box.x - 12, y: 0, width: box.width + 24, height: box.y + box.height + 12 } });
+  // Pause: Helm is told, the pill turns at once, and the island does not open.
+  await act.click();
+  expect(await calls(page, "helm_act")).toContainEqual({ action: { do: "pause", block: 2 } });
+  await expect(act).toHaveAttribute("aria-label", "Resume");
+  await expect(pill).toHaveClass(/is-held/);
+  await expect(pill.locator(".pill-value")).toHaveText("Paused");
+  await expect(page.locator("#island-expanded")).toBeHidden();
+  await page.screenshot({ path: `${shots}/pill-paused.png`, clip: { x: box.x - 12, y: 0, width: box.width + 24, height: box.y + box.height + 12 } });
+  await act.click();
+  expect(await calls(page, "helm_act")).toContainEqual({ action: { do: "start", block: 2 } });
+  await expect(act).toHaveAttribute("aria-label", "Pause");
 });
 
 test("a paused session waits in the hero with Resume", async ({ page }) => {
@@ -706,7 +794,6 @@ test("Add to today: the composer is pinned under the list, never over it; a plai
   await open(page);
   await goTo(page, "Today", "helm");
   const today = page.locator('.screen[data-screen="helm"]');
-  await today.locator(".helm-block.is-suggested .k-block-head").click();
   await page.waitForTimeout(900);
   // The list ends above the foot: no row is under the field.
   const overlap = await page.evaluate(() => {
@@ -721,6 +808,19 @@ test("Add to today: the composer is pinned under the list, never over it; a plai
   await page.keyboard.type("Zadzwonić do Piotra");
   await page.keyboard.press("Enter");
   expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "add", title: "Zadzwonić do Piotra" } });
+  // A project, a length and a day are read off the line; the title is what is left.
+  await page.keyboard.type("Poprawki w stopce @sono 45m jutro");
+  await page.keyboard.press("Enter");
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "add", title: "Poprawki w stopce", projectId: 5, minutes: 45, dueOn: await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toLocaleDateString("en-CA"); }) } });
+  // "log …" logs time on the project, the rest as the note; without a length it says so and keeps the words.
+  await page.keyboard.type("log 1,5h @sono galeria");
+  await page.keyboard.press("Enter");
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "log_time", projectId: 5, minutes: 90, note: "galeria" } });
+  await page.keyboard.type("log @sono galeria");
+  await page.keyboard.press("Enter");
+  await expect(pillLabel(page)).toHaveText("Today", { timeout: 5000 });
+  await expect(field).toHaveValue("log @sono galeria");
+  await field.fill("");
   await page.keyboard.type("/");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
@@ -855,4 +955,80 @@ test("other moments get other chips, and a Helm without the endpoint has no row 
   await expect(guardian.locator(".g-foot")).not.toContainText("Co mam dziś?");
   await expect(pillLabel(page)).not.toHaveText(/Helm|suggest/i);
   expect(errors).toEqual([]);
+});
+
+/** Drag one row onto another's place, with the pointer, in steps (helm-drag.ts). */
+async function drag(page: Page, from: import("@playwright/test").Locator, to: import("@playwright/test").Locator) {
+  await to.scrollIntoViewIfNeeded();
+  await from.scrollIntoViewIfNeeded();
+  const a = (await from.boundingBox())!;
+  const b = (await to.boundingBox())!;
+  await page.mouse.move(a.x + a.width * 0.45, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width * 0.45, a.y + a.height / 2 + 8, { steps: 3 });
+  await page.mouse.move(a.x + a.width * 0.45, b.y + b.height / 2 + (b.y > a.y ? 6 : -6), { steps: 8 });
+  await page.mouse.up();
+}
+
+test("the small things running are Now with their items, never listed again under Today", async ({ page }) => {
+  // ⚠️ `&small`: the session's title is older than the entry's ("2" vs "3 small things") and Helm sent no key.
+  await page.goto("/tasks.html?helm&small&noagents");
+  await open(page);
+  await goTo(page, "Today", "helm");
+  const today = page.locator('.screen[data-screen="helm"]');
+  await expect(today.locator(".helm-hero-title")).toHaveText("3 small things");
+  await expect(today.locator(".helm-toggle")).toHaveAttribute("aria-label", "Pause");
+  await expect(today.locator(".helm-now-items .day-row.nested")).toHaveCount(3);
+  await expect(today.locator(".helm-rows .task-title").filter({ hasText: "small things" })).toHaveCount(0);
+  // No "Your move" on an entry that is several things.
+  await expect(today.locator(".helm-hero .helm-chip.is-move")).toHaveCount(0);
+  // The header reads without guessing: the figures with their words, and the load.
+  await expect(today.locator(".helm-fig.is-agents")).toHaveAttribute("aria-label", "Claude's time today: 1 h 25");
+  await expect(today.locator(".helm-fig.is-agents .helm-fig-word")).toHaveText("Claude");
+  await expect(today.locator(".helm-load-text")).toHaveText(/ of ~5 h free$/);
+  // The day at a glance: a line with now on it, and the money due.
+  await expect(today.locator(".helm-day .helm-day-now")).toHaveCount(1);
+  await expect(today.locator(".helm-day-money")).toHaveText("1 200 zł");
+  await page.waitForTimeout(600);
+  await picture(page, "today-small-running");
+
+  // Drag the follow-up to the top: every item's key, in the new order.
+  const rows = today.locator(".helm-now-items > .slot");
+  await drag(page, rows.nth(2), rows.nth(0));
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "order_small", keys: ["followup:4@x", "attention:payment-9", "log:3@x"] } });
+  await expect(rows.nth(0)).toHaveAttribute("data-key", "followup:4@x");
+
+  // Not today on one item snoozes that item alone.
+  const item = rows.filter({ hasText: "Log 2 h 15 min" });
+  await item.hover();
+  await item.locator('.helm-row-acts button[data-tip="Not today"]').click();
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "snooze", key: "log:3@x" } });
+  await expect(today.locator(".helm-now-items .day-row.nested")).toHaveCount(2);
+});
+
+test("Today's rows drag to reorder (Now first), and go back to the suggestions", async ({ page }) => {
+  await page.goto("/tasks.html?helm&noagents&free=200");
+  await open(page);
+  await goTo(page, "Today", "helm");
+  const today = page.locator('.screen[data-screen="helm"]');
+  // Over the free time: the load says so in amber.
+  await expect(today.locator(".helm-load")).toHaveClass(/is-over/);
+  await page.waitForTimeout(600);
+  await picture(page, "today-idle");
+  const rows = today.locator(".helm-rows > .helm-entry");
+  await expect(rows).toHaveCount(3);
+  await drag(page, rows.nth(2), rows.nth(0));
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "order", keys: ["request:1", "request:5", "small", "todo:1"] } });
+  await expect(rows.nth(0)).toHaveAttribute("data-key", "request:5");
+  // A press that never travels is a click: the fold opens, nothing is sent.
+  const before = (await calls(page, "helm_queue")).length;
+  await rows.filter({ hasText: "small things" }).locator(".helm-open").click();
+  await expect(rows.filter({ hasText: "small things" }).locator(".day-row.nested")).toHaveCount(3);
+  expect((await calls(page, "helm_queue")).length).toBe(before);
+  // Back to suggestions takes it out of Today.
+  const blog = rows.filter({ hasText: "Napisać post" });
+  await blog.locator(".day-row").first().hover();
+  await blog.locator('.helm-row-acts button[data-tip="Back to suggestions"]').click();
+  expect(await calls(page, "helm_queue")).toContainEqual({ action: { act: "today", key: "todo:1", on: false } });
+  await expect(today.locator(".helm-must-text")).toHaveText("3 in Today");
 });

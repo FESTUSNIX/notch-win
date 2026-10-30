@@ -42,12 +42,17 @@ import { call, native, previewBus, previewFinished } from "./task-client";
 import { listen } from "@tauri-apps/api/event";
 import { timerText } from "./focus-timer";
 import { control } from "./task-day";
+import { HelmClose } from "./helm-close";
 import { localDay } from "./task-model";
 import {
-  chipFor, doingRequest, folderFor, folderOfRequest, needSide, projectById, readNotch, requestIdOf, spoken,
+  chipFor, doingRequest, folderFor, folderOfRequest, needSide, projectById, readNotch, requestIdOf, spoken, zloty,
+  type NotchMoment,
   type Notch, type NotchFolder, type NotchNeed, type NotchProject, type NotchRequest, type Suggestion,
 } from "./helm-link";
-import { agentMark, chip, faceOf, logoTile, setRing, timeRing, wordButton, type Face } from "./helm-parts";
+import { agentMark, chip, faceOf, logoTile, wordButton, type Face } from "./helm-parts";
+import { sortable } from "./helm-drag";
+import { parseQuick } from "./helm-quick";
+import { endOf, startOf, type CalEvent } from "./screen-calendar";
 import { Composer, type Sent, type Voice } from "./kit/composer";
 import { Dropdown } from "./kit/menu";
 import { Block, SidePanel } from "./kit/parts";
@@ -84,6 +89,8 @@ export interface HelmNudge {
 export interface HelmToday {
   now: string;
   day: { firstStep: string | null; closedAt: string | null; off: boolean } | null;
+  /** His working day in minutes since midnight, where Helm has it: the day strip's ends. */
+  rhythm?: { on?: boolean; start: number; close: number } | null;
   blocks: HelmBlock[];
   nudges: HelmNudge[];
   replies: string[];
@@ -141,6 +148,8 @@ export interface HelmQueue {
   workedMinutes: number;
   /** Running or paused sessions (block id) → the entry each is for. */
   sessions: Record<string, string>;
+  /** What is left of the day outside meetings, by Helm's rhythm; null where it can't say. */
+  freeMinutes?: number | null;
 }
 
 export interface Helm {
@@ -171,6 +180,12 @@ export function blockSeconds(block: HelmBlock, skewMs: number, now = Date.now())
 export function liveBlock(blocks: HelmBlock[]): HelmBlock | null {
   return blocks.find(b => b.status === "running") ?? blocks.find(b => b.status === "paused") ?? null;
 }
+
+/** A sort by a held order; keys it doesn't know keep their place at the end. */
+const byOrder = <T,>(order: string[], key: (one: T) => string) => (a: T, b: T) => {
+  const at = (one: T) => { const i = order.indexOf(key(one)); return i < 0 ? order.length : i; };
+  return at(a) - at(b);
+};
 
 /** Whether Done here would settle money, which only Helm does. */
 const isMoney = (item: HelmQueueItem) => item.done.kind === "mark-paid" || item.done.kind === "confirm" || item.done.kind === "remind";
@@ -281,6 +296,13 @@ export class HelmSource {
   private gone = new Set<string>();
   /** Entries put into Today here, shown there until the next reading agrees. */
   private into = new Set<string>();
+  /** Entries sent back to the suggestions here, the same way. */
+  private out = new Set<string>();
+  /** Today's keys and the small things' item keys as he dragged them, until the next reading. */
+  private order: string[] | null = null;
+  private smallOrder: string[] | null = null;
+  /** Order calls on their way: a reading taken before Helm applied one must not undo the drag. */
+  private ordering = 0;
   /** A block or entry action on its way, so its buttons do not take a second press. */
   pending: number | string | null = null;
   /** Set by the shell: a NEW nudge arrived. */
@@ -317,6 +339,10 @@ export class HelmSource {
         for (const key of this.gone) if (!present.has(key)) this.gone.delete(key);
         const inToday = new Set(q?.today.map(e => e.key) ?? []);
         for (const key of this.into) if (inToday.has(key)) this.into.delete(key);
+        for (const key of this.out) if (!inToday.has(key)) this.out.delete(key);
+        if (!this.ordering) { this.order = null; this.smallOrder = null; }
+        if (!this.extending) this.extra.clear();
+        this.flip.clear();
         this.pending = null;
         this.changed();
       });
@@ -339,7 +365,37 @@ export class HelmSource {
 
   get connected(): boolean { return this.helm.connected; }
   get signedIn(): boolean { return this.helm.signedIn; }
-  get blocks(): HelmBlock[] { return this.helm.today?.blocks ?? []; }
+  /** Minutes added here with +5 min, by block, until the next reading has them. */
+  private extra = new Map<number, number>();
+  private extending = 0;
+
+  /** Pause or resume pressed here, by block, until the next reading has it: the
+   *  hero and the pill turn at once (AGENTS 878). Cleared on every reading and on a failure. */
+  private flip = new Map<number, Partial<HelmBlock>>();
+
+  get blocks(): HelmBlock[] {
+    const blocks = this.helm.today?.blocks ?? [];
+    if (!this.extra.size && !this.flip.size) return blocks;
+    return blocks.map(b => {
+      let out = this.flip.has(b.id) ? { ...b, ...this.flip.get(b.id) } : b;
+      if (this.extra.has(b.id)) out = { ...out, minutes: Math.min(180, out.minutes + this.extra.get(b.id)!) };
+      return out;
+    });
+  }
+
+  /** +5 min on a session run past its length (`/api/queue` `extend`; Helm caps it at 180). */
+  extend(block: number, minutes = 5) {
+    this.extra.set(block, (this.extra.get(block) ?? 0) + minutes);
+    this.extending++;
+    this.changed();
+    void this.queueCall({ act: "extend", block, minutes })
+      .catch(error => this.fail(error, () => {
+        const left = (this.extra.get(block) ?? 0) - minutes;
+        if (left > 0) this.extra.set(block, left);
+        else this.extra.delete(block);
+      }))
+      .finally(() => { this.extending--; });
+  }
   get replies(): string[] { return this.helm.today?.replies ?? []; }
 
   /** The cockpit's reading, or null — absent, not read yet, or a Helm without it. */
@@ -349,22 +405,27 @@ export class HelmSource {
     return this.parsed.notch;
   }
 
-  /** An entry as it stands with what was done here: its items minus the ticked ones. */
+  /** An entry as it stands with what was done here: its items minus the ticked ones, the small
+   *  things in the order he dragged them. */
   private live(e: HelmEntry): HelmEntry | null {
     if (this.gone.has(e.key)) return null;
     const items = e.items.filter(i => !this.gone.has(i.key));
+    if (e.type === "small" && this.smallOrder) items.sort(byOrder(this.smallOrder, i => i.key));
     return items.length ? { ...e, items } : null;
   }
 
-  /** Today, with what was put in here at the end. */
+  /** Today, with what was put in here at the end, without what was sent back, in his order. */
   get today(): HelmEntry[] {
     const q = this.helm.queue;
     const moved = (q?.suggested ?? []).filter(e => this.into.has(e.key));
-    return [...(q?.today ?? []), ...moved].map(e => this.live(e)).filter((e): e is HelmEntry => !!e);
+    const list = [...(q?.today ?? []).filter(e => !this.out.has(e.key)), ...moved].map(e => this.live(e)).filter((e): e is HelmEntry => !!e);
+    return this.order ? list.sort(byOrder(this.order, e => e.key)) : list;
   }
 
   get suggested(): HelmEntry[] {
-    return (this.helm.queue?.suggested ?? []).filter(e => !this.into.has(e.key)).map(e => this.live(e)).filter((e): e is HelmEntry => !!e);
+    const q = this.helm.queue;
+    const back = (q?.today ?? []).filter(e => this.out.has(e.key));
+    return [...back, ...(q?.suggested ?? []).filter(e => !this.into.has(e.key))].map(e => this.live(e)).filter((e): e is HelmEntry => !!e);
   }
 
   /** The projects waiting on somebody else, by id: what the "Waiting" chip is for. */
@@ -377,7 +438,14 @@ export class HelmSource {
     if (!block) return null;
     const key = this.helm.queue?.sessions[String(block.id)];
     const all = [...this.today, ...this.suggested];
-    return (key ? all.find(e => e.key === key) : undefined) ?? all.find(e => e.title === block.title) ?? null;
+    /* ⚠️ The last fallback is the title with its counts taken out: Helm names a
+     * small-things or group session after the entry's title at the start ("12
+     * small things"), finds it again by that title, and an item added or ticked
+     * since makes it "13 small things" — no `sessions` key, no title match, and
+     * Now and Today both showed it. */
+    const loose = (title: string) => title.replace(/\d+/g, "#").trim().toLowerCase();
+    return (key ? all.find(e => e.key === key) : undefined) ?? all.find(e => e.title === block.title)
+      ?? all.find(e => e.type !== "item" && loose(e.title) === loose(block.title)) ?? null;
   }
 
   /** Unread, oldest first. */
@@ -387,6 +455,7 @@ export class HelmSource {
 
   private fail(error: unknown, undo?: () => void) {
     this.pending = null;
+    this.flip.clear();
     undo?.();
     this.say("Helm", String(error).replace(/^(invoke error|error): /i, "").slice(0, 120));
     this.changed();
@@ -402,8 +471,38 @@ export class HelmSource {
     return call("helm_queue", { action });
   }
 
-  start(block: number) { this.act({ do: "start", block }, block); }
-  pause(block: number) { this.act({ do: "pause", block }, block); }
+  /** The Guardian's moments in the cockpit's reading (batch 12); none without it. */
+  get moments(): NotchMoment[] { return this.notch?.moments ?? []; }
+
+  /** A queue act as Helm sent it on a moment's button. +N min goes through
+   *  `extend`, so the hero and the pill grow on the press (and shrink back on
+   *  a failure); anything else is sent as it is. */
+  queueAct(act: Record<string, unknown>): Promise<void> {
+    if (act.act === "extend" && Number(act.block) > 0) {
+      this.extend(Number(act.block), Math.max(1, Math.min(60, Number(act.minutes) || 5)));
+      return Promise.resolve();
+    }
+    return this.queueCall(act).then(() => undefined);
+  }
+
+  /* Optimistic: the block turns here at once, and the reading confirms it. */
+  start(block: number) {
+    const one = this.blocks.find(b => b.id === block);
+    if (one && one.status === "paused") this.flip.set(block, { status: "running", runStartedAt: new Date(Date.now() - this.helm.skewMs).toISOString() });
+    this.act({ do: "start", block }, block);
+  }
+  pause(block: number) {
+    const one = this.blocks.find(b => b.id === block);
+    if (one && one.status === "running") this.flip.set(block, { status: "paused", runStartedAt: null, elapsedSeconds: blockSeconds(one, this.helm.skewMs) });
+    this.act({ do: "pause", block }, block);
+  }
+  /** The pill's button: pause the live session, or resume it. */
+  toggleLive() {
+    const live = liveBlock(this.blocks);
+    if (!live) return;
+    if (live.status === "running") this.pause(live.id);
+    else this.start(live.id);
+  }
   /** Focus on a task from TickTick's Today: a Helm block of its own, started at once. */
   startNew(title: string) { this.act({ do: "new", title: title.slice(0, 120), minutes: 50 }); }
 
@@ -455,8 +554,49 @@ export class HelmSource {
       .catch(error => this.fail(error, () => this.gone.delete(entry.key)));
   }
 
-  add(title: string) {
-    void this.queueCall({ act: "add", title: title.slice(0, 280) }).catch(error => this.fail(error));
+  /** One of his own into Today: a title, and a project, a length and a day when the line had them. */
+  add(title: string, more: { projectId?: number; minutes?: number; dueOn?: string } = {}) {
+    void this.queueCall({ act: "add", title: title.slice(0, 280), ...more }).catch(error => this.fail(error));
+  }
+
+  /** Not today on one item of a group or the small things: that item back tomorrow. */
+  laterItem(item: HelmQueueItem) {
+    this.pending = item.key;
+    this.gone.add(item.key);
+    this.changed();
+    void this.queueCall({ act: "snooze", key: item.key }).catch(error => this.fail(error, () => this.gone.delete(item.key)));
+  }
+
+  /** Out of Today, back among the suggestions. */
+  toSuggested(entry: HelmEntry) {
+    this.pending = entry.key;
+    this.into.delete(entry.key);
+    this.out.add(entry.key);
+    this.changed();
+    void this.queueCall({ act: "today", key: entry.key, on: false }).catch(error => this.fail(error, () => this.out.delete(entry.key)));
+  }
+
+  /** Today in this order (Now's key first when Now is in Today, as Helm's board sends it). */
+  reorder(keys: string[]) { this.sendOrder("order", keys, () => this.order, value => { this.order = value; }); }
+
+  /** The small things in this order: every item's key. */
+  reorderSmall(keys: string[]) { this.sendOrder("order_small", keys, () => this.smallOrder, value => { this.smallOrder = value; }); }
+
+  private sendOrder(act: string, keys: string[], held: () => string[] | null, hold: (keys: string[] | null) => void) {
+    const before = held();
+    hold(keys);
+    this.ordering++;
+    this.changed();
+    void this.queueCall({ act, keys })
+      .catch(error => this.fail(error, () => hold(before)))
+      .finally(() => { this.ordering--; });
+  }
+
+  /** Time on a project, logged now ("log 1h @Esono poprawki"). */
+  logProject(projectId: number, minutes: number, note?: string, day?: string) {
+    void this.queueCall({ act: "log_time", projectId, minutes, ...(note ? { note } : {}), ...(day ? { day } : {}) })
+      .then(() => this.say("Logged", `${spoken(minutes)}${note ? ` · ${note.slice(0, 40)}` : ""}`))
+      .catch(error => this.fail(error));
   }
 
   /** Answered: off the pill now, and read in Helm. */
@@ -808,7 +948,10 @@ export class HelmSource {
   }
 
   /** The running (or paused) session, on the strip where the focus session was:
-   *  45, over music, under a meeting about to start. */
+   *  45, over music, under a meeting about to start.
+   *  ⚠️ No ticking digits (his call, 30 Oct: a number changing every second on
+   *  screen all day). The ring is the progress; the far slot is Pause or Resume,
+   *  the hero's own action; the coarse time is the tooltip (AGENTS 878). */
   blockClaim(): Activity | null {
     const block = liveBlock(this.blocks);
     if (!block) return null;
@@ -821,10 +964,13 @@ export class HelmSource {
       icon: "target",
       phase: "work",
       label: block.title,
-      value: held ? "paused" : block.project ?? "",
-      time: timerText(seconds),
+      value: held ? "Paused" : block.project ?? "",
       held,
       progress: Math.min(1, seconds / Math.max(60, block.minutes * 60)),
+      controls: [held
+        ? { action: "helm:start", icon: "play", label: "Resume" }
+        : { action: "helm:pause", icon: "pause", label: "Pause" }],
+      tip: `${spoken(Math.floor(seconds / 60))} of ${spoken(block.minutes)}`,
     };
   }
 }
@@ -846,6 +992,16 @@ export class HelmSource {
  * list fades only where there is more to scroll to.
  */
 type BlockId = "now" | "needs" | "agents" | "today" | "suggested";
+/* ── The rail (30 Oct, his call: "a long list with little to no hierarchy") ──
+ * Two columns in the ONE scroller: the main column is Now (the hero) and Today;
+ * the rail beside it — a hairline, not a card (AGENTS 698) — holds what is
+ * read rather than worked: the day at a glance, Needs you, Suggested, Agents.
+ * The header's toggle shows or hides it (remembered, `today-rail`). Shown, it
+ * is room ADDED to the panel (`extraWidth`, AGENTS 687), so Now keeps its
+ * width. ⚠️ One scroller holding a flex row, so `measure()` sums one child
+ * whose height is the taller column (AGENTS 789). */
+export const RAIL_W = 228;
+
 const BLOCKS: { id: BlockId; title: string; icon: TaskIcon }[] = [
   { id: "now", title: "Now", icon: "target" },
   { id: "needs", title: "Needs you", icon: "bell" },
@@ -860,18 +1016,24 @@ const HTML = `
   <div class="day-head helm-head">
     <div class="helm-must"><span class="helm-must-mark" aria-hidden="true"></span><span class="helm-must-text"></span></div>
     <div class="helm-figures">
-      <span class="helm-fig is-done" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b></span>
-      <span class="helm-fig is-you" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b></span>
-      <span class="helm-fig is-agents" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b></span>
+      <span class="helm-load" hidden><span class="helm-load-text"></span><span class="helm-load-bar" aria-hidden="true"><i></i></span></span>
+      <span class="helm-fig is-done" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b><span class="helm-fig-word">done</span></span>
+      <span class="helm-fig is-you" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b><span class="helm-fig-word">you</span></span>
+      <span class="helm-fig is-agents" hidden><span class="helm-fig-mark" aria-hidden="true"></span><b class="helm-fig-value"></b><span class="helm-fig-word">Claude</span></span>
     </div>
     <div class="helm-blocks-anchor"></div>
+    <button type="button" class="k-icon helm-close-day" aria-label="Zamknij dzień" data-tip="Zamknij dzień"></button>
+    <button type="button" class="k-icon helm-rail-toggle" aria-label="Show the side" data-tip="Show the side"><span class="helm-rail-toggle-mark" aria-hidden="true"></span><b class="helm-rail-count" hidden></b></button>
   </div>
   <div class="day-rail"><i class="helm-rail-fill"></i></div>
   </div>
-  <div class="task-list scrolls helm-list"></div>
+  <div class="task-list scrolls helm-list"><div class="helm-cols"><div class="helm-col"></div><aside class="helm-side" aria-label="The day"><section class="helm-glance"></section></aside></div></div>
   <div class="helm-foot"></div>
   </div></div>
 `;
+/* Now: the face and the title, the Guardian's why, then the focus scale — the
+ * reading, the segments with the clock at both ends, the actions — and a
+ * group's or the small things' items right under it. */
 const HERO = `
   <section class="helm-hero">
     <div class="helm-now-head">
@@ -882,17 +1044,54 @@ const HERO = `
       </div>
     </div>
     <p class="helm-why" hidden><span class="helm-why-mark" aria-hidden="true"></span><span class="helm-why-text"></span></p>
-    <div class="helm-now-bar">
-      <span class="helm-ring-wrap"></span>
-      <div class="helm-now-time"><time class="helm-elapsed"></time><span class="helm-of"></span></div>
+    <div class="helm-now-bar" role="timer">
+      <div class="helm-read"><time class="helm-left"></time><span class="helm-state"><span class="helm-state-mark" aria-hidden="true"></span><span class="helm-state-word"></span></span></div>
+      <div class="helm-scale" aria-hidden="true"><div class="helm-segs"></div><div class="helm-ends"><span class="helm-from"></span><span class="helm-to"></span></div></div>
       <div class="helm-now-acts">
         <button type="button" class="helm-claude" aria-label="Start with Claude" data-tip="Start with Claude" hidden></button>
         <button type="button" class="helm-later" aria-label="Not today" data-tip="Not today"></button>
         <button type="button" class="helm-finish" aria-label="Done" data-tip="Done"></button>
+        <button type="button" class="helm-more" aria-label="Add 5 minutes" data-tip="Add 5 minutes" hidden>+5 min</button>
         <button type="button" class="helm-toggle"><span class="hp-btn-mark helm-toggle-mark" aria-hidden="true"></span><span class="helm-toggle-word"></span></button>
       </div>
     </div>
+    <div class="helm-now-items" role="list"></div>
   </section>`;
+
+/** "24:05", "1:04:05" — the focus scale's reading, as Helm's FocusScale writes it. */
+export function reading(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
+  return `${h ? `${h}:` : ""}${mm}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Minutes per segment, Helm's: one a minute up to half an hour, so a session is 15 to 30 of them. */
+export const perSegment = (minutes: number) => (minutes <= 30 ? 1 : minutes <= 60 ? 2 : minutes <= 120 ? 4 : 6);
+
+/** "15:40" for minutes since midnight. */
+const clockAt = (minutes: number) => {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
+const minutesOf = (at: Date) => at.getHours() * 60 + at.getMinutes() + at.getSeconds() / 60;
+
+/** When the work committed to Today is done if he goes at it from now, around the
+ *  meetings: the day strip's projection. Minutes since midnight. */
+export function finishAt(now: number, committed: number, meetings: { from: number; to: number }[]): number {
+  let at = now;
+  let left = committed;
+  for (const m of [...meetings].sort((a, b) => a.from - b.from)) {
+    if (m.to <= at) continue;
+    if (m.from > at) {
+      const room = m.from - at;
+      if (left <= room) return at + left;
+      left -= room;
+    }
+    at = Math.max(at, m.to);
+  }
+  return at + left;
+}
 
 /** The minutes an entry runs for, when that is worth a figure on its row. */
 function rowMinutes(entry: HelmEntry): string {
@@ -919,8 +1118,12 @@ export interface TodayHooks {
   openSession: (id: string) => void;
   /** The project panel opened or shut: the shell re-applies the width cap (AGENTS 759). */
   width: () => void;
-  /** A line with a `/command` or an `@project` goes to the Guardian to file. */
+  /** A line with a `/command` goes to the Guardian to file. */
   file: (sent: Sent) => boolean;
+  /** Today's calendar, from the Calendar screen's feed (none while it isn't connected). */
+  events?: () => CalEvent[];
+  /** The day was closed in the close view (batch 12). */
+  closed?: (first: string | null) => void;
 }
 
 export class HelmTodayScreen {
@@ -934,8 +1137,14 @@ export class HelmTodayScreen {
   private open = new Set<string>();
   /** Set for ONE render: the Suggested block was just opened, so bring its rows into view. */
   private reveal = false;
-  private ring: SVGSVGElement;
   private blocks = new Map<BlockId, Block>();
+  /** On while a row is being dragged: the render waits, or the rebuilt list would drop it. */
+  private dragging = false;
+  /** The day at a glance, between Now and the rest — a strip, not a block. */
+  private day = element("div", "helm-day");
+  private dayDrawn = "";
+  /** The segments drawn for this length, so `tick` only moves their fill. */
+  private segsFor = "";
   /** Blocks switched off in the Blocks menu. ⚠️ Stored as what is HIDDEN, so
    *  an empty list means "all of them" for an older file (AGENTS 246). */
   private hidden = new Set<BlockId>(load<BlockId[]>("today-hidden", []).filter(id => BLOCKS.some(b => b.id === id)));
@@ -947,6 +1156,10 @@ export class HelmTodayScreen {
   private picked: string | null = null;
   /** The screen's own width in CSS px, without the panel — set by the shell. */
   mainCss = 680;
+  /** The rail beside Today, shown (remembered). */
+  private railOn = load<boolean>("today-rail", true);
+  /** Closing the day (batch 12): a focused view in place of Today's list. */
+  readonly close: HelmClose;
 
   constructor(host: HTMLElement, source: HelmSource, surface: IslandSurface, changed: () => void, hooks: TodayHooks) {
     this.host = host;
@@ -955,13 +1168,26 @@ export class HelmTodayScreen {
     this.changed = changed;
     this.hooks = hooks;
     host.innerHTML = HTML;
+    this.close = new HelmClose(source, {
+      back: () => this.closeDay(false),
+      // ⚠️ Through the shell, so the island measures again (AGENTS 788).
+      changed: () => { this.surface.deliberately(); this.changed(); },
+      input: on => { void surface.input(on).catch(() => {}); },
+      closed: first => hooks.closed?.(first),
+    });
+    this.get(".helm-main").insertBefore(this.close.el, this.get(".helm-foot"));
+    const closeDay = this.get<HTMLButtonElement>(".helm-close-day");
+    paintIcon(closeDay, "moon");
+    closeDay.onclick = () => this.closeDay(true);
     this.side.el.style.setProperty("--side-w", `${AGENT_PANEL_W}px`);
     this.get(".helm-shell").append(this.side.el);
     const list = this.get(".helm-list");
     list.addEventListener("scroll", () => this.edges(), { passive: true });
+    const col = this.get(".helm-col");
+    const rail = this.get(".helm-side");
     for (const def of BLOCKS) {
       const block = new Block({
-        id: `today-${def.id}`, title: def.title, icon: def.icon, open: def.id !== "suggested",
+        id: `today-${def.id}`, title: def.title, icon: def.icon, open: true,
         className: `helm-block is-${def.id}`,
         toggled: () => {
           if (def.id === "suggested") this.reveal = block.open;
@@ -972,9 +1198,23 @@ export class HelmTodayScreen {
         },
       });
       this.blocks.set(def.id, block);
-      list.append(block.el);
     }
+    // Main: Now, then Today. The rail: the day at a glance, Needs you, Suggested, Agents.
+    col.append(this.blocks.get("now")!.el, this.blocks.get("today")!.el);
+    rail.append(this.blocks.get("needs")!.el, this.blocks.get("suggested")!.el, this.blocks.get("agents")!.el);
     this.blocks.get("now")!.body.innerHTML = HERO;
+    this.get(".helm-glance").append(this.get(".helm-load"), this.day);
+    const railToggle = this.get<HTMLButtonElement>(".helm-rail-toggle");
+    paintIcon(this.get(".helm-rail-toggle-mark"), "sideRight");
+    railToggle.onclick = () => {
+      this.railOn = !this.railOn;
+      save("today-rail", this.railOn);
+      this.drawn = "";
+      // ⚠️ Through the shell: the width and the height both change (AGENTS 788).
+      this.surface.deliberately();
+      this.hooks.width();
+      this.changed();
+    };
     this.blocks.get("needs")!.body.append(element("div", "helm-needs"));
     this.blocks.get("agents")!.body.append(element("div", "helm-agents"));
     this.blocks.get("today")!.body.append(element("div", "helm-rows"));
@@ -1012,10 +1252,18 @@ export class HelmTodayScreen {
       lines: 4,
       lift: on => surface.input(on),
       editing: () => surface.editing,
+      /* A command is something for the Guardian to file. Anything else is read
+       * here (`helm-quick`): "log 1h @Esono poprawki" logs time on the project,
+       * any other line goes into Today with its project, length and day. */
       send: sent => {
-        // A command or a project is something for the Guardian to file; a plain line goes into Today.
-        if (sent.command || sent.mentions.length) return this.hooks.file(sent);
-        this.source.add(sent.text);
+        if (sent.command) return this.hooks.file(sent);
+        const quick = parseQuick(sent.text, { projects: source.projects, mentioned: sent.mentions.map(m => m.projectId), today: localDay() });
+        if ("error" in quick) { source.tell("Today", quick.error); return false; }
+        if (quick.act === "log_time") source.logProject(quick.projectId, quick.minutes, quick.note, quick.day);
+        else {
+          const { title, act: _act, ...more } = quick;
+          source.add(title, more);
+        }
         return true;
       },
       voice: source.voice,
@@ -1037,8 +1285,6 @@ export class HelmTodayScreen {
     paintIcon(this.get(".is-done .helm-fig-mark"), "check");
     paintIcon(this.get(".is-you .helm-fig-mark"), "you");
     paintIcon(this.get(".is-agents .helm-fig-mark"), "claude");
-    this.ring = timeRing();
-    this.get(".helm-ring-wrap").append(this.ring);
     this.wire();
   }
 
@@ -1069,6 +1315,10 @@ export class HelmTodayScreen {
       if (entry?.type === "item") this.source.doneItem(entry.items[0]);
       else if (live) this.source.doneBlock(live.id);
     };
+    this.get(".helm-more").onclick = () => {
+      const { live } = this.now();
+      if (live) this.source.extend(live.id);
+    };
     this.get(".helm-claude").onclick = () => {
       const { entry } = this.now();
       const request = entry ? this.source.requestOf(entry) : null;
@@ -1076,9 +1326,25 @@ export class HelmTodayScreen {
     };
   }
 
+  /** Closing the day, in place of Today's list (true), or back to Today. */
+  closeDay(on: boolean) {
+    if (on === this.close.open) return;
+    if (on) this.close.show();
+    else {
+      this.close.hide();
+      void this.surface.input(false).catch(() => {});
+    }
+    for (const sel of [".helm-top", ".helm-list", ".helm-foot"]) this.get(sel).classList.toggle("is-closing", on);
+    this.drawn = "";
+    this.surface.deliberately();
+    this.changed();
+  }
+
   /** Escape while the composer holds the caret: its own Escape first (a
-   *  picker, a recording, the words), then the caret is released. */
+   *  picker, a recording, the words), then the caret is released. Closing
+   *  the day: Escape goes back to Today. */
   escape(): boolean {
+    if (this.close.open) { this.closeDay(false); return true; }
     if (this.menu.open) { this.menu.close(); return true; }
     if (document.activeElement !== this.composer.field) return false;
     if (this.composer.escape()) return true;
@@ -1088,6 +1354,8 @@ export class HelmTodayScreen {
   }
 
   render() {
+    // ⚠️ Not mid-drag: the rows are the drag, and a rebuilt list would drop the one in hand.
+    if (this.dragging) return;
     const { helm, pending } = this.source;
     const today = this.source.today;
     const suggested = this.source.suggested;
@@ -1100,9 +1368,10 @@ export class HelmTodayScreen {
     const shape = (e: HelmEntry) => [e.key, e.title, e.dueOn, e.minutes, e.why, e.items.map(i => i.key).join()];
     const key = JSON.stringify([helm.connected, helm.signedIn, helm.error, helm.queueError, pending, [...this.open], [...this.hidden],
       [...this.blocks].map(([id, b]) => [id, b.open]),
-      live && [live.id, live.status, live.title, live.minutes, live.project], helm.queue?.doneToday, helm.queue?.snoozed, helm.queue?.workedMinutes,
+      live && [live.id, live.status, live.title, live.minutes, live.project], helm.queue?.doneToday, helm.queue?.snoozed, helm.queue?.workedMinutes, helm.queue?.freeMinutes,
       today.map(shape), suggested.map(shape), notch, this.source.logoTick, [...this.source.starting],
-      sessions.map(s => [s.id, s.state, s.doing, s.thinking, s.project]), this.side.open, this.picked, [...this.source.doneHere]]);
+      sessions.map(s => [s.id, s.state, s.doing, s.thinking, s.project]), this.side.open, this.picked, [...this.source.doneHere],
+      this.railShown, this.surface.edge]);
     if (key === this.drawn) return;
     this.drawn = key;
 
@@ -1119,7 +1388,8 @@ export class HelmTodayScreen {
       return;
     }
 
-    this.paintHead(today.length, notch);
+    this.paintHead(today, notch);
+    this.paintRail(notch?.needs.length ?? 0);
 
     // ── Now
     const now = this.blocks.get("now")!;
@@ -1141,16 +1411,28 @@ export class HelmTodayScreen {
     this.paintAgents(sessions);
     this.paintSide();
 
-    // ── Today: a group's or the small things' items first when it's Now, then the rest
+    /* ── Today: everything but Now, in his order, each dragged to reorder.
+     * ⚠️ Now is left out by KEY (`entryOf` found it by the session's key, or
+     * by its title with the counts taken out), so the entry running is never
+     * listed twice. Each entry is one box with its items, so an open group
+     * moves as one. */
     const todayBlock = this.blocks.get("today")!;
     const rows = this.get(".helm-rows");
     rows.replaceChildren();
-    if (entry && entry.type !== "item") for (const item of entry.items) rows.append(this.itemRow(item));
     const rest = today.filter(e => e.key !== entry?.key);
     if (!rest.length && !live && !entry) rows.append(this.empty("Today is empty", "Take one from the suggestions below, or add your own.", false));
+    const nowInToday = !!entry && today.some(e => e.key === entry.key);
     for (const e of rest) {
-      rows.append(this.entryRow(e, false));
-      if (e.type !== "item" && this.open.has(e.key)) for (const item of e.items) rows.append(this.itemRow(item));
+      const box = element("div", "helm-entry");
+      box.dataset.key = e.key;
+      box.append(this.entryRow(e, false));
+      if (e.type !== "item" && this.open.has(e.key)) box.append(this.itemList(e));
+      sortable(box, {
+        rows: () => [...rows.querySelectorAll<HTMLElement>(":scope > .helm-entry")],
+        moving: on => { this.dragging = on; },
+        dropped: keys => this.source.reorder(nowInToday && entry ? [entry.key, ...keys] : keys),
+      });
+      rows.append(box);
     }
     const error = helm.queueError ?? helm.error;
     if (error) rows.append(element("p", "helm-error", error));
@@ -1179,6 +1461,7 @@ export class HelmTodayScreen {
     suggRows.replaceChildren(...(sugg.open ? suggested.map(e => this.entryRow(e, true)) : []));
 
     this.menu.refresh();
+    this.dayDrawn = "";
     this.tick();
     requestAnimationFrame(() => this.edges());
 
@@ -1195,6 +1478,24 @@ export class HelmTodayScreen {
     }
   }
 
+  /** The rail shown or hidden, and its toggle. Hidden, the toggle carries what
+   *  needs him as a count, so a decision waiting is not hidden with it. */
+  private paintRail(needs: number) {
+    const shown = this.railShown;
+    this.get(".helm-side").hidden = !shown;
+    this.get(".helm-cols").classList.toggle("has-rail", shown);
+    const toggle = this.get(".helm-rail-toggle");
+    toggle.hidden = isVertical(this.surface.edge);
+    toggle.classList.toggle("is-on", shown);
+    toggle.setAttribute("aria-pressed", String(shown));
+    const tip = shown ? "Hide the side" : needs ? `Show the side · ${needs} need you` : "Show the side";
+    toggle.dataset.tip = tip;
+    toggle.setAttribute("aria-label", tip);
+    const count = this.get(".helm-rail-count");
+    count.hidden = shown || !needs;
+    count.textContent = String(needs);
+  }
+
   /** Fade the list's edges where there is more to scroll to (AGENTS 790). */
   edges() {
     const list = this.get(".helm-list");
@@ -1203,15 +1504,41 @@ export class HelmTodayScreen {
     list.classList.toggle("is-below", more > 1 && list.scrollTop < more - 1);
   }
 
-  /** The header: how much is in Today, and the day's figures — done, his own
-   *  time, the agents'. ⚠️ Figures with marks, not a line of grey words. */
-  private paintHead(count: number, notch: Notch | null) {
+  /** The work committed to Today, less what the running session has already done of its own. */
+  private committed(today: HelmEntry[]): number {
+    const { live, entry } = this.now();
+    const ran = live && entry ? Math.min(entry.minutes, blockSeconds(live, this.source.helm.skewMs) / 60) : 0;
+    return Math.max(0, today.reduce((total, e) => total + e.minutes, 0) - (entry && today.some(e => e.key === entry.key) ? ran : 0));
+  }
+
+  /** The header: how much is in Today, its load against the free time left (amber over), and the
+   *  day's figures — done, his own time, Claude's — each a mark, a figure and its word.
+   *  ⚠️ The word is the figure's name, not an explanation: a bare "1 h 25" beside a mark
+   *  he had to guess at was the complaint. */
+  private paintHead(today: HelmEntry[], notch: Notch | null) {
     const helm = this.source.helm;
+    const count = today.length;
     this.get(".helm-must-text").textContent = count ? `${count} in Today` : helm.queue ? "Today is empty" : "Reading Today…";
     this.get(".helm-must").classList.toggle("is-empty", !count);
     const done = helm.queue?.doneToday ?? 0;
     const total = done + count;
     this.get(".helm-rail-fill").style.width = total ? `${(done / total) * 100}%` : "0";
+
+    const free = helm.queue?.freeMinutes;
+    const load = this.get(".helm-load");
+    load.hidden = free == null || !count;
+    if (free != null) {
+      const committed = this.committed(today);
+      const over = committed > free;
+      const said = `${spoken(Math.round(committed / 5) * 5)} of ${free ? `~${spoken(Math.round(free / 15) * 15)}` : "0 min"} free`;
+      this.get(".helm-load-text").textContent = said;
+      this.get<HTMLElement>(".helm-load-bar i").style.width = `${free ? Math.min(1, committed / free) * 100 : 100}%`;
+      load.classList.toggle("is-over", over);
+      const tip = over ? `Today holds ${spoken(committed - free)} more than the free time left` : `Today's work against the free time left`;
+      load.dataset.tip = tip;
+      load.setAttribute("aria-label", `${said}. ${tip}`);
+    }
+
     const figure = (cls: string, show: boolean, value: string, tip: string) => {
       const fig = this.get(`.helm-fig.${cls}`);
       fig.hidden = !show;
@@ -1223,7 +1550,137 @@ export class HelmTodayScreen {
     const you = notch ? notch.clock.you : helm.queue?.workedMinutes ?? 0;
     figure("is-you", you > 0, spoken(you), `Your time today: ${spoken(you)}`);
     const agents = notch?.clock.agents ?? 0;
-    figure("is-agents", agents > 0, spoken(agents), `The agents today: ${spoken(agents)}`);
+    figure("is-agents", agents > 0, spoken(agents), `Claude's time today: ${spoken(agents)}`);
+  }
+
+  /** The day at a glance: today's meetings on a line from his day's start to its close, now on
+   *  it, the committed work projected from now around the meetings (amber past the close), and
+   *  the money due today. ⚠️ One line, under Now: a reading, not a block — it has no fold.
+   *  Painted from `tick` once a minute; the line moves with the clock. */
+  private paintDay() {
+    const strip = this.day;
+    const events = (this.hooks.events?.() ?? []).filter(e => !e.allDay && e.response !== "declined");
+    const today = localDay();
+    const at = new Date();
+    const meetings = events
+      .filter(e => localDay(startOf(e)) === today)
+      .map(e => ({ title: e.title, from: minutesOf(startOf(e)), to: Math.max(minutesOf(startOf(e)) + 5, localDay(endOf(e)) === today ? minutesOf(endOf(e)) : 1440), color: e.color }));
+    const money = this.moneyToday();
+    const committed = this.committed(this.source.today);
+    const key = JSON.stringify([Math.floor(at.getTime() / 60_000), meetings, money.map(m => m.title), committed, this.hidden.has("now")]);
+    if (key === this.dayDrawn) return;
+    this.dayDrawn = key;
+    strip.replaceChildren();
+    strip.hidden = !meetings.length && !money.length && !committed;
+    if (strip.hidden) return;
+
+    const now = minutesOf(at);
+    const rhythm = this.source.helm.today?.rhythm;
+    const from = Math.min(rhythm?.start ?? 8 * 60, ...meetings.map(m => m.from), now);
+    const close = rhythm?.close ?? 18 * 60;
+    const until = Math.max(close, ...meetings.map(m => m.to), now + 30);
+    const span = Math.max(60, until - from);
+    const x = (minutes: number) => `${((Math.min(until, Math.max(from, minutes)) - from) / span) * 100}%`;
+
+    // The next meeting, said; the rest are on the line with their names in the tooltip.
+    const next = meetings.filter(m => m.to > now).sort((a, b) => a.from - b.from)[0];
+    if (next) {
+      const lead = element("span", "helm-day-next");
+      const mark = element("span", "helm-day-mark");
+      paintIcon(mark, "calendar");
+      lead.append(mark, element("b", "", clockAt(next.from)), element("span", "helm-day-next-title", next.title));
+      lead.classList.toggle("is-now", next.from <= now);
+      lead.dataset.tip = `${clockAt(next.from)}–${clockAt(next.to)} ${next.title}`;
+      strip.append(lead);
+    }
+
+    /* The line, ONLY with meetings to put on it (his call: with none it was an
+     * empty bar from 09:15 to 17:45 saying nothing). The projection is said as
+     * a figure under it either way. */
+    const end = finishAt(now, committed, meetings);
+    if (meetings.length) {
+      const line = element("div", "helm-day-line");
+      const track = element("div", "helm-day-track");
+      const past = element("i", "helm-day-past");
+      past.style.width = x(now);
+      track.append(past);
+      if (committed) {
+        const work = element("i", `helm-day-work${end > close ? " is-over" : ""}`);
+        work.style.left = x(now);
+        work.style.width = `calc(${x(end)} - ${x(now)})`;
+        track.append(work);
+        if (end > close) {
+          const spill = element("i", "helm-day-spill");
+          spill.style.left = x(close);
+          spill.style.width = `calc(${x(end)} - ${x(close)})`;
+          track.append(spill);
+        }
+      }
+      for (const m of meetings) {
+        const block = element("i", `helm-day-meet${m.to <= now ? " is-past" : ""}`);
+        block.style.left = x(m.from);
+        block.style.width = `max(4px, calc(${x(m.to)} - ${x(m.from)}))`;
+        block.dataset.tip = `${clockAt(m.from)}–${clockAt(m.to)} ${m.title}`;
+        track.append(block);
+      }
+      const pin = element("i", "helm-day-now");
+      pin.style.left = x(now);
+      track.append(pin);
+      line.append(track);
+      const ends = element("div", "helm-day-ends");
+      ends.append(element("span", "", clockAt(from)), element("span", "", clockAt(until)));
+      line.append(ends);
+      line.dataset.tip = `${meetings.length} ${meetings.length === 1 ? "meeting" : "meetings"} today`;
+      strip.append(line);
+    }
+    const figures = element("div", "helm-day-figs");
+    if (committed) {
+      const over = end > close;
+      const fin = element("span", `helm-day-end${over ? " is-over" : ""}`);
+      const mark = element("span", "helm-day-mark");
+      paintIcon(mark, "clock");
+      fin.append(mark, element("b", "", `~${clockAt(end)}`));
+      const tip = over ? `Today's work runs to about ${clockAt(end)}, past ${clockAt(close)}` : `Today's work done about ${clockAt(end)}`;
+      fin.dataset.tip = tip;
+      fin.setAttribute("aria-label", tip);
+      figures.append(fin);
+    }
+    strip.append(figures);
+
+    if (money.length) {
+      const sum = money.reduce((total, m) => total + (m.amount ?? 0), 0);
+      const late = money.some(m => m.late);
+      const box = element("button", `helm-day-money${late ? " is-late" : ""}`) as HTMLButtonElement;
+      box.type = "button";
+      const mark = element("span", "helm-day-mark");
+      paintIcon(mark, "money");
+      box.append(mark, element("b", "", sum ? zloty(sum) : String(money.length)));
+      const tip = money.map(m => `${m.title}${m.amount ? ` · ${zloty(m.amount)}` : ""}${m.late ? " (late)" : ""}`).join("\n");
+      box.dataset.tip = tip;
+      box.setAttribute("aria-label", `Money due today: ${tip.replaceAll("\n", ", ")}`);
+      box.onclick = () => this.source.open("/money");
+      figures.append(box);
+    }
+  }
+
+  /** Money due today or late: the cockpit's reminders and renewals, and the queue's money items. */
+  private moneyToday(): { title: string; amount: number | null; late: boolean }[] {
+    const today = localDay();
+    const seen = new Set<string>();
+    const out: { title: string; amount: number | null; late: boolean }[] = [];
+    for (const need of this.source.notch?.needs ?? []) {
+      if ((need.kind !== "reminder" && need.kind !== "renewal") || !need.at) continue;
+      const day = need.at.slice(0, 10);
+      if (day > today) continue;
+      seen.add(need.title);
+      out.push({ title: need.title, amount: need.amount, late: day < today });
+    }
+    for (const e of [...this.source.today, ...this.source.suggested]) for (const item of e.items) {
+      if (item.kind !== "money" || !item.dueOn || item.dueOn > today || seen.has(item.title)) continue;
+      seen.add(item.title);
+      out.push({ title: item.title, amount: null, late: item.dueOn < today });
+    }
+    return out;
   }
 
   /** What needs him: a strip of objects, each opening itself in Helm. */
@@ -1263,7 +1720,13 @@ export class HelmTodayScreen {
 
   /** Width the panel adds while it is open and has something to show. */
   get extraWidth(): number {
-    return this.side.open && this.sideFor() ? AGENT_PANEL_W : 0;
+    return (this.side.open && this.sideFor() ? AGENT_PANEL_W : 0) + (this.railShown ? RAIL_W : 0);
+  }
+
+  /** The rail is drawn: on, connected, and not on a side edge (too narrow there). */
+  private get railShown(): boolean {
+    const helm = this.source.helm;
+    return this.railOn && helm.connected && helm.signedIn && !isVertical(this.surface.edge);
   }
 
   private sideFor(): { session: BriefSession; folder: NotchFolder } | null {
@@ -1285,7 +1748,7 @@ export class HelmTodayScreen {
     const shell = this.get(".helm-shell");
     const on = this.side.open && !!found;
     shell.classList.toggle("has-side", on && !isVertical(this.surface.edge));
-    shell.style.setProperty("--h-main-w", `${Math.round(this.mainCss)}px`);
+    shell.style.setProperty("--h-main-w", `${Math.round(this.mainCss + (this.railShown ? RAIL_W : 0))}px`);
     shell.dataset.floor = on ? "340" : "";
     this.side.el.hidden = !found;
     if (!found || !this.side.open) { this.side.inner.replaceChildren(); return; }
@@ -1328,8 +1791,8 @@ export class HelmTodayScreen {
     }));
   }
 
-  /** Now: the face, the title with its chip, the project, the Guardian's why,
-   *  and one bar holding the time against the estimate and the actions. */
+  /** Now: the face, the title with its chip, the project, the Guardian's why, the focus scale
+   *  holding the time and the actions, and a group's or the small things' items under it. */
   private paintNow(live: HelmBlock | null, entry: HelmEntry | null, pending: number | string | null) {
     const hero = this.get(".helm-hero");
     if (!live && !entry) return;
@@ -1340,14 +1803,15 @@ export class HelmTodayScreen {
 
     const marks = this.get(".helm-now-marks");
     marks.replaceChildren();
-    const chipNow = entry ? chipFor({ dueOn: entry.dueOn, kinds: entry.items.map(i => i.kind), projectId: entry.projectId }, localDay(), this.source.waitingProjects) : null;
+    const chipNow = entry ? chipFor({ dueOn: entry.dueOn, kinds: entry.items.map(i => i.kind), projectId: entry.projectId, type: entry.type }, localDay(), this.source.waitingProjects) : null;
     if (chipNow) marks.append(chip(chipNow.tone, chipNow.label));
     const request = entry ? this.source.requestOf(entry) : null;
     if (request?.folder && doingRequest(request.folder)?.id === request.id) marks.append(agentMark("Claude is on it"));
 
-    /* The project, and a due date the chip did not already say. */
+    /* The project, and a due date the chip did not already say. ⚠️ Not "3
+     * things" for the small things: they are listed right under the scale. */
     const due = dueLabel(entry?.dueOn ?? null);
-    const context = entry ? (entry.type === "small" ? `${entry.items.length} things` : entry.context) : live!.project;
+    const context = entry ? (entry.type === "small" ? null : entry.context) : live!.project;
     const sub = [context, due && !chipNow ? `Due ${due.label === "Tomorrow" ? "tomorrow" : due.label}` : null].filter(Boolean);
     const subLine = this.get(".helm-hero-sub");
     subLine.textContent = sub.join("   ");
@@ -1367,7 +1831,7 @@ export class HelmTodayScreen {
     toggle.dataset.tip = label;
     toggle.hidden = !live && !!entry && !hasSession(entry);
     toggle.disabled = busy;
-    /* ⚠️ ONE filled accent on the bar: Start before a session, Resume while
+    /* ⚠️ ONE filled accent on the screen: Start before a session, Resume while
      * paused — and while it runs, Done. */
     toggle.classList.toggle("is-primary", !running);
     const finish = this.get<HTMLButtonElement>(".helm-finish");
@@ -1387,6 +1851,14 @@ export class HelmTodayScreen {
     claude.disabled = !!request && this.source.starting.has(request.id);
     hero.classList.toggle("is-paused", !running);
     hero.classList.toggle("is-idle", !live);
+
+    // A group's or the small things' items, right under the scale: what Now is made of.
+    const items = this.get(".helm-now-items");
+    items.replaceChildren();
+    if (entry && entry.type !== "item") for (const item of entry.items) items.append(this.itemRow(item, entry.type === "small"));
+    items.hidden = !items.childElementCount;
+    hero.classList.toggle("has-items", !items.hidden);
+    if (entry?.type === "small") this.sortItems(items);
   }
 
   private empty(title: string, why: string, connect: boolean): HTMLElement {
@@ -1415,12 +1887,13 @@ export class HelmTodayScreen {
   /** An entry of Today (tick or open) or of the suggestions (`+`).
    *
    * ⚠️ One line: the face, the title, then at the end the chip and the
-   * minutes — which the row's actions REPLACE under the pointer. */
+   * minutes — which the row's actions REPLACE under the pointer. A Today row
+   * is dragged by any part that is not a button. */
   private entryRow(entry: HelmEntry, suggested: boolean): HTMLElement {
     const slot = element("div", "slot");
     const inner = element("div", "slot-inner");
     slot.append(inner);
-    const row = element("div", `day-row helm-row${suggested ? " is-suggested" : ""}`);
+    const row = element("div", `day-row helm-row${suggested ? " is-suggested" : " is-sortable"}`);
     row.style.setProperty("--list", "var(--accent)");
     const busy = this.source.pending === entry.key;
     const single = entry.type === "item" ? entry.items[0] : null;
@@ -1450,7 +1923,10 @@ export class HelmTodayScreen {
     row.append(tile);
 
     const main = element("div", "helm-row-main");
-    main.append(element("span", "task-title", entry.title));
+    const title = element("span", "task-title", entry.title);
+    // The rail truncates a suggestion's title; the whole of it is in the hover.
+    if (suggested) title.dataset.tip = entry.title;
+    main.append(title);
     const request = this.source.requestOf(entry);
     const doing = !!request?.folder && doingRequest(request.folder)?.id === request.id;
     if (doing) main.append(agentMark("Claude is on it"));
@@ -1460,11 +1936,13 @@ export class HelmTodayScreen {
       pick.dataset.tip = entry.why ? `The Guardian's pick: ${entry.why}` : "The Guardian's pick";
       main.append(pick);
     }
+    // In the rail, a suggestion says why under its title: it is what the Guardian is arguing.
+    if (suggested && entry.why) main.append(element("span", "helm-row-why", entry.why));
     row.append(main);
 
     const end = element("div", "helm-row-end");
     const meta = element("div", "helm-row-meta");
-    const tone = chipFor({ dueOn: entry.dueOn, kinds: entry.items.map(i => i.kind), projectId: entry.projectId }, localDay(), this.source.waitingProjects);
+    const tone = chipFor({ dueOn: entry.dueOn, kinds: entry.items.map(i => i.kind), projectId: entry.projectId, type: entry.type }, localDay(), this.source.waitingProjects);
     if (tone) meta.append(chip(tone.tone, tone.label));
     else {
       const due = dueLabel(entry.dueOn);
@@ -1480,58 +1958,112 @@ export class HelmTodayScreen {
     }
     if (hasSession(entry)) acts.append(this.button("play", "Start", entry.title, busy, () => this.source.startEntry(entry)));
     acts.append(this.button("later", "Not today", entry.title, busy, () => this.source.later(entry)));
+    if (!suggested) acts.append(this.button("undo", "Back to suggestions", entry.title, busy, () => this.source.toSuggested(entry)));
     end.append(meta, acts);
     row.append(end);
     inner.append(row);
     return slot;
   }
 
-  /** One of a group's or the small things' items, under it: its own tick. */
-  private itemRow(item: HelmQueueItem): HTMLElement {
+  /** A group's or the small things' items, each its own row; the small things' drag to reorder. */
+  private itemList(entry: HelmEntry): HTMLElement {
+    const box = element("div", "helm-items");
+    for (const item of entry.items) box.append(this.itemRow(item, entry.type === "small"));
+    if (entry.type === "small") this.sortItems(box);
+    return box;
+  }
+
+  /** The small things' rows in `box` drag among themselves; the drop sends every item's key. */
+  private sortItems(box: HTMLElement) {
+    const rows = () => [...box.querySelectorAll<HTMLElement>(":scope > .slot[data-key]")];
+    for (const row of rows()) {
+      if (row.dataset.sorts) continue;
+      row.dataset.sorts = "1";
+      sortable(row, { rows, moving: on => { this.dragging = on; }, dropped: keys => this.source.reorderSmall(keys) });
+    }
+  }
+
+  /** One of a group's or the small things' items: its own tick, and Not today on hover. */
+  private itemRow(item: HelmQueueItem, sorts = false): HTMLElement {
     const slot = element("div", "slot");
+    slot.dataset.key = item.key;
+    slot.setAttribute("role", "listitem");
     const inner = element("div", "slot-inner");
     slot.append(inner);
-    const row = element("div", "day-row helm-row nested");
+    const row = element("div", `day-row helm-row nested${sorts ? " is-sortable" : ""}`);
     row.style.setProperty("--list", "var(--accent)");
-    row.append(control("var(--accent)", false, isMoney(item) ? `Settle in Helm: ${item.title}` : `Done: ${item.title}`, this.source.pending === item.key, () => this.source.doneItem(item)));
+    const busy = this.source.pending === item.key;
+    row.append(control("var(--accent)", false, isMoney(item) ? `Settle in Helm: ${item.title}` : `Done: ${item.title}`, busy, () => this.source.doneItem(item)));
     const main = element("div", "helm-row-main");
     main.append(element("span", "task-title", item.title));
     row.append(main);
     const end = element("div", "helm-row-end");
     const meta = element("div", "helm-row-meta");
-    if (item.context) meta.append(element("span", "helm-row-due", item.context));
-    end.append(meta);
+    const due = dueLabel(item.dueOn);
+    if (due?.late) meta.append(chip("late", due.label));
+    else if (item.context) meta.append(element("span", "helm-row-due", item.context));
+    const acts = element("div", "helm-row-acts");
+    acts.append(this.button("later", "Not today", item.title, busy, () => this.source.laterItem(item)));
+    end.append(meta, acts);
     row.append(end);
     inner.append(row);
     return slot;
   }
 
-  /** The hero's clock and ring, in place — the rows themselves are keyed.
-   *  While nothing runs the ring is empty and says how long Start runs. */
+  /** The hero's focus scale and the day strip, in place — the rows themselves are keyed.
+   *  While nothing runs the scale is empty and its ends say when Start would end. */
   tick() {
+    const helm = this.source.helm;
+    if (!helm.connected || !helm.signedIn) { this.day.hidden = true; return; }
+    this.paintDay();
     const { live, entry } = this.now();
-    const clock = this.get(".helm-elapsed");
-    const of = this.get(".helm-of");
-    const wrap = this.get(".helm-ring-wrap");
+    const bar = this.get(".helm-now-bar");
     const now = this.blocks.get("now")!;
-    if (live) {
-      const seconds = blockSeconds(live, this.source.helm.skewMs);
-      const whole = Math.max(60, live.minutes * 60);
-      clock.textContent = timerText(seconds);
-      of.textContent = `/ ${spoken(live.minutes)}`;
-      setRing(this.ring, seconds / whole);
-      wrap.classList.toggle("is-over", seconds > whole);
-      wrap.hidden = false;
-      wrap.dataset.tip = `${timerText(seconds)} of ${spoken(live.minutes)}`;
-      // Folded, the header still says what is running and for how long.
-      now.summary(`${live.title}   ${timerText(seconds)}`);
-    } else if (entry) {
-      const runs = hasSession(entry) ? sessionFor(entry).minutes : 0;
-      clock.textContent = runs ? spoken(runs) : "";
-      of.textContent = "";
-      setRing(this.ring, 0);
-      wrap.classList.remove("is-over");
-      wrap.hidden = !runs;
+    const runs = live ? live.minutes : entry && hasSession(entry) ? sessionFor(entry).minutes : 0;
+    bar.hidden = !runs;
+    if (!runs) return;
+    const total = Math.max(60, runs * 60);
+    const seconds = live ? blockSeconds(live, helm.skewMs) : 0;
+    const over = !!live && seconds > total;
+    const phase = !live ? "idle" : over ? "over" : live.status === "running" ? "running" : "paused";
+    bar.dataset.phase = phase;
+    // +5 min once the session has run past its length, as Helm's Today offers it.
+    this.get(".helm-more").hidden = !over;
+
+    // The segments: one per `perSegment` minutes, grouped in fives like a ruler.
+    const per = perSegment(runs);
+    const count = Math.max(1, Math.ceil(runs / per));
+    const segs = this.get(".helm-segs");
+    if (this.segsFor !== `${count}`) {
+      this.segsFor = `${count}`;
+      segs.replaceChildren(...Array.from({ length: count }, (_, i) => {
+        const seg = element("span", `helm-seg${i > 0 && i % 5 === 0 ? " is-major" : ""}`);
+        seg.append(element("i"));
+        return seg;
+      }));
     }
+    [...segs.children].forEach((seg, i) => {
+      const from = i * per * 60;
+      const lit = over ? 1 : Math.min(1, Math.max(0, (seconds - from) / (per * 60)));
+      (seg.firstElementChild as HTMLElement).style.width = `${lit * 100}%`;
+      seg.classList.toggle("is-current", phase === "running" && lit > 0 && lit < 1);
+    });
+
+    const left = this.get(".helm-left");
+    const clockNow = minutesOf(new Date());
+    const startAt = clockNow - seconds / 60;
+    left.textContent = !live ? spoken(runs) : over ? `+${reading(seconds - total)}` : reading(total - seconds);
+    const state = phase === "idle" ? { icon: "play" as TaskIcon, word: "session" }
+      : phase === "paused" ? { icon: "pause" as TaskIcon, word: "Paused" }
+      : phase === "over" ? { icon: "timer" as TaskIcon, word: "Over time" }
+      : { icon: "clock" as TaskIcon, word: `Until ${clockAt(startAt + runs)}` };
+    paintIcon(this.get(".helm-state-mark"), state.icon);
+    this.get(".helm-state-word").textContent = state.word;
+    this.get(".helm-from").textContent = clockAt(startAt);
+    this.get(".helm-to").textContent = clockAt(startAt + runs);
+    bar.setAttribute("aria-label", !live ? `${spoken(runs)} session` : over ? `${reading(seconds - total)} over` : `${reading(total - seconds)} left`);
+    bar.dataset.tip = live ? `${timerText(seconds)} of ${spoken(live.minutes)}` : `Start runs ${clockAt(startAt)}–${clockAt(startAt + runs)}`;
+    // Folded, the header still says what is running and for how long.
+    if (live) now.summary(`${live.title}   ${timerText(seconds)}`);
   }
 }

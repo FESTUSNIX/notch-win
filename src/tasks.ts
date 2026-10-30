@@ -63,6 +63,11 @@ import { convertUnits, parseUnits, sayMeasure, sayUnit } from "./units";
 import { ShelfScreen } from "./screen-shelf";
 import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
+// Moments (30 Oct): the island's notifications — see moments.ts.
+import { MomentFeed } from "./moment-feed";
+import { nudgeAction } from "./screen-helm";
+import { agentName } from "./screen-agents";
+import "./moments.css";
 
 /* The screens. ⚠️ ONE list, in `screens.ts`, shared with the settings window
  * and the ring — it was two hand-kept copies until the ring made it three.
@@ -240,6 +245,7 @@ app.innerHTML = `<div id="notch-shell">
     <div id="island-collapsed"></div>
     <div id="island-glance" inert></div>
     <div id="island-voice" inert></div>
+    <div id="island-moment" inert></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
@@ -544,6 +550,9 @@ const helmSource = new HelmSource(() => render(), (what, why) => say(what, why))
 const guardianChat = new GuardianChat(() => render(), (what, why) => say(what, why));
 const helmScreen = new HelmTodayScreen(document.querySelector<HTMLElement>('[data-screen="helm"]')!, helmSource, surface, () => render(), {
   sessions: () => agentsScreen.sessions,
+  events: () => calendar.feed.connected ? calendar.feed.events : [],
+  /* Closing the day (batch 12): the moment goes, and the pill says so. */
+  closed: first => { moments.closed(); say("Dzień zamknięty", first ? `Jutro na start: ${first}` : "Do jutra"); },
   /* ⚠️ After `show`: walking to the Agents screen resets it to the overview,
    * so the session is opened once the screen is there. */
   openSession: id => { show("agents"); agentsScreen.openSession(id); },
@@ -614,15 +623,58 @@ const capture = new Capture(surface, guardianChat, {
   projects: () => helmSource.projects,
   face: project => helmSource.faceOfProject(project),
 });
-/* A NEW nudge drops the island open on the Guardian, the way a phone's island
- * opens for a call — his call: nudges must not be missed. ⚠️ Not while he is
- * typing in the palette or a field: taking the panel from under a sentence
- * would lose it. The pill and the sound still say it. */
-helmSource.onNudge = () => {
-  if (palette.open || surface.editing) return;
-  show("guardian");
-  surface.pinFor(8000);
-};
+/* ── Moments (30 Oct) ─────────────────────────────────────────────────────
+ * The island's notifications: an agent finished or asks, a limit is near, a
+ * Guardian nudge, a planned block or a meeting about to start — the island
+ * grows just enough to say it (moments.ts, moment-feed.ts). */
+const moments = new MomentFeed({
+  surface,
+  sessions: () => agentsScreen.sessions,
+  helm: {
+    nudges: () => helmSource.nudges,
+    blocks: () => helmSource.blocks,
+    replies: () => helmSource.replies,
+    action: nudge => nudgeAction(nudge, helmSource.blocks, [...helmSource.today, ...helmSource.suggested]),
+    start: block => helmSource.start(block),
+    startEntry: entry => helmSource.startEntry(entry),
+    open: path => helmSource.open(path),
+    read: ids => helmSource.read(ids),
+    reply: text => { if (!guardianChat.pending) void guardianChat.send(text, [], { focus: helmSource.focus }); },
+    /* Batch 12: the Guardian's own moments and their buttons. A chat line is
+     * answered on the voice glance (`ask`); Opowiedz is a hands-free turn as
+     * a tap of Alt+Q, sent with `command: "wrap"` and the meeting. */
+    moments: () => helmSource.moments,
+    queue: act => helmSource.queueAct(act),
+    post: (path, body) => call<{ ok?: boolean; error?: string }>("helm_notch_post", { path, body: body ?? null }),
+    chat: (text, command) => voiceTalk.ask(text, command),
+    talk: meeting => voiceTalk.talk({ command: "wrap", meeting }),
+    close: () => openCloseDay(),
+  },
+  events: () => calendar.feed.events,
+  eventQuiet: id => snooze.isQuiet(`event:${id}`),
+  busy: () => palette.open || capture.open || surface.editing || surface.pinned || callSource.call.active,
+  openScreen: name => {
+    steered = performance.now();
+    if (name === "guardian") guardianChat.today();
+    show(name);
+    surface.show(true);
+  },
+  agentName: provider => agentName(provider),
+  say: (what, why) => say(what, why),
+});
+/* Closing the day (batch 12): the Helm screen, in its close view. */
+function openCloseDay() {
+  if (!helmSource.signedIn) { say("Helm", "Sign in to Helm in Settings first"); return; }
+  steered = performance.now();
+  show("helm");
+  helmScreen.closeDay(true);
+  surface.show(true);
+}
+/* A NEW nudge is a moment now, not the Guardian's whole page (his call, 30
+ * Oct: "the island expands a bit and shows that the Guardian … wants me to do
+ * something"). Sticky — it waits for him — and it rings as before (helm.rs).
+ * ⚠️ Not while he is typing in the palette or a field: the queue holds it. */
+helmSource.onNudge = id => moments.nudge(id);
 /* ⚠️ Helm blocks take over focus while Helm is connected (his call): one
  * timer, one history, and the reward and the logged time keep working. The
  * local timer is for when it is not. */
@@ -1930,6 +1982,11 @@ palette.add(() => {
       icon: "guardian", hint: "Do", keep: { title: "Tell the Guardian", note: "command", icon: "guardian", kind: "", path: "" },
       run: () => tellTheGuardian() });
   }
+  if (helmSource.signedIn) {
+    acts.push({ id: "cmd:close-day", title: "Zamknij dzień", keywords: "close day review wrap end tomorrow zamknij dzień koniec",
+      icon: "moon", hint: "Do", keep: { title: "Zamknij dzień", note: "command", icon: "moon", kind: "", path: "" },
+      run: () => openCloseDay() });
+  }
   if (snooze.count()) {
     acts.push({ id: "cmd:unsnooze", title: "Bring back what is snoozed",
       note: `${snooze.count()} quiet`, keywords: "unmute wake",
@@ -2548,6 +2605,13 @@ collapsedLayer.addEventListener("click", event => {
   const act = (event.target as HTMLElement).closest<HTMLElement>(".pill-act");
   if (!act?.dataset.act) return;
   event.stopPropagation();
+  /* A Helm session's pause or resume (AGENTS 878): the hero's own action,
+   * optimistic, and like mute it must not open the island. */
+  if (act.dataset.act.startsWith("helm:")) {
+    helmSource.toggleLive();
+    render();
+    return;
+  }
   callSource.act(act.dataset.act);
 }, true);
 
@@ -2699,6 +2763,8 @@ document.addEventListener("keydown", event => {
     if (today.escape()) return;
     if (helmScreen.escape()) return;
     if (guardianScreen.escape()) return;
+    // A moment up over the pill: Escape is its ×, sticky or not (AGENTS 879).
+    if (moments.escape()) return;
     void surface.collapse();
     return;
   }
@@ -2871,6 +2937,8 @@ async function boot() {
       if (capture.open) { void capture.hide(); return; }
       // A voice glance up only to be read has been read.
       if (voiceTalk.dismiss()) return;
+      // A moment up only to be read has been read; a sticky one waits for its answer.
+      if (moments.dismissShown()) return;
       void surface.dismiss();
     });
   }
@@ -3075,6 +3143,7 @@ async function boot() {
   await helmSource.boot();
   await guardianChat.boot();
   await voiceTalk.boot();
+  await moments.boot();
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();

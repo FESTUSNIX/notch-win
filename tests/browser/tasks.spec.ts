@@ -803,11 +803,10 @@ test("Agents lists every session, whoever wants you first, and goes to it", asyn
   await expect(detail.locator(".agent-snooze")).toHaveCount(1);
   await detail.locator(".agent-snooze").click();
   await expect(page.locator(".agent-detail.is-quiet")).toHaveCount(1);
-  /* The pill goes to whatever it would otherwise show. ⚠️ Which is now the
-   * OTHER agent — two of them are working — rather than the player: snoozing
-   * one session does not snooze the rest of the machine. */
-  await expect(page.locator(".pill-label")).toHaveText("2 agents working");
-  await expect(page.locator(".pill-value")).toHaveText("codenotch-win");
+  /* The pill goes to whatever it would otherwise show. ⚠️ Never "agents
+   * working" (30 Oct): running is silent now, only waiting claims the strip
+   * (moments.ts says when one finishes or asks). */
+  await expect(page.locator(".pill-label")).not.toHaveText(/working/);
   /* ⚠️ Said out loud, with a way back. The failure mode of a mute button is
      forgetting you pressed it and wondering for a week why the app went quiet.
      The palette command carries the count, and the settings window says it. */

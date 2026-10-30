@@ -860,6 +860,28 @@ html[data-open='click'] .pill-eq:active {
 html[data-open='click'] .pill-acts {
 	pointer-events: auto;
 }
+/* A Helm session's pause, in the far slot where the ticking digits were
+   (AGENTS 878). Paused: the ring dims where it stopped and Resume is tinted
+   in the accent — the one thing on the strip asking to be pressed. */
+#island-collapsed[data-kind='focus'] .pill-acts {
+	margin-left: 2px;
+}
+#island-collapsed[data-kind='focus'] .pill-act {
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+}
+#island-collapsed.is-held .pill-ring .arc {
+	opacity: 0.45;
+}
+#island-collapsed.is-held .pill-act[data-act='helm:start'] {
+	color: color-mix(in srgb, var(--accent) 80%, #fff);
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+#island-collapsed.is-held .pill-value {
+	color: #b4b4b4;
+}
 html[data-open='click'] .pill-act {
 	cursor: pointer;
 }
@@ -15296,7 +15318,7 @@ html[data-motion='never'] .notice-row {
 }
 .helm-hero-title {
 	min-width: 0;
-	font-size: 19px;
+	font-size: 21px;
 	font-weight: 600;
 	letter-spacing: -0.02em;
 	line-height: 1.3;
@@ -15352,24 +15374,113 @@ html[data-motion='never'] .notice-row {
 .helm-now-bar {
 	display: flex;
 	align-items: center;
-	gap: 11px;
-	margin-top: 12px;
-	padding: 6px 6px 6px 8px;
-	border-radius: 13px;
+	gap: 18px;
+	margin-top: 14px;
+	padding: 12px 10px 10px 16px;
+	border-radius: 15px;
 	background: rgba(0, 0, 0, 0.3);
 	box-shadow:
 		inset 0 0 0 1px rgba(255, 255, 255, 0.045),
 		inset 0 2px 6px -3px rgba(0, 0, 0, 0.9);
+	--fill: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent));
 }
-.helm-ring-wrap {
-	display: grid;
-	flex-shrink: 0;
-	width: 34px;
-	height: 34px;
-}
-.helm-ring-wrap[hidden] {
+.helm-now-bar[hidden] {
 	display: none;
 }
+/* The fill says the state, as Helm's scale does: the accent runs, grey waits,
+   amber is over time. */
+.helm-now-bar[data-phase="paused"] {
+	--fill: linear-gradient(180deg, #b0b5c1, #8d94a3);
+}
+.helm-now-bar[data-phase="over"] {
+	--fill: linear-gradient(180deg, #fcc84e, var(--warn));
+}
+/* The one big reading: the time left (or over), its state under it. */
+.helm-read {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 104px;
+	flex-shrink: 0;
+}
+.helm-left {
+	font-size: 30px;
+	font-weight: 600;
+	line-height: 0.95;
+	letter-spacing: -0.04em;
+	font-variant-numeric: tabular-nums;
+	color: #f4f4f4;
+}
+.helm-now-bar[data-phase="paused"] .helm-left,
+.helm-now-bar[data-phase="idle"] .helm-left {
+	color: #bdbdbd;
+}
+.helm-now-bar[data-phase="over"] .helm-left {
+	color: var(--warn);
+}
+.helm-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12.5px;
+	font-weight: 550;
+	color: #b4b4b4;
+	white-space: nowrap;
+}
+.helm-now-bar[data-phase="over"] .helm-state {
+	color: var(--warn);
+}
+.helm-state-mark {
+	display: grid;
+}
+.helm-state-mark svg {
+	width: 13px;
+	height: 13px;
+}
+/* The segments, recessed slots each filling like a raised key, a wider gap
+   every five like a ruler's major marks; the clock at both ends under them. */
+.helm-scale {
+	flex: 1;
+	min-width: 0;
+}
+.helm-segs {
+	display: flex;
+	gap: 3px;
+	height: 30px;
+}
+.helm-seg {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	border-radius: 5px;
+	background: rgba(255, 255, 255, 0.07);
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.helm-seg.is-major {
+	margin-left: 4px;
+}
+.helm-seg > i {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 0;
+	border-radius: 5px;
+	background: var(--fill);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+	transition: width 1000ms linear, background 200ms ease-out;
+}
+.helm-seg.is-current > i {
+	box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.helm-ends {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 6px;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: #a6a6a6;
+}
+/* The shared ring (`timeRing`), kept for whichever screen draws one. */
 .hp-ring {
 	width: 100%;
 	height: 100%;
@@ -15386,37 +15497,6 @@ html[data-motion='never'] .notice-row {
 	stroke: var(--accent);
 	stroke-linecap: round;
 	transition: stroke-dashoffset 1s linear;
-}
-.helm-hero.is-paused:not(.is-idle) .hp-ring .arc {
-	stroke: #8e8e8e;
-}
-.helm-ring-wrap.is-over .hp-ring .arc {
-	stroke: var(--warn);
-}
-.helm-now-time {
-	display: flex;
-	align-items: baseline;
-	gap: 5px;
-	flex: 1;
-	min-width: 0;
-	font-variant-numeric: tabular-nums;
-}
-.helm-elapsed {
-	font-size: 17px;
-	font-weight: 500;
-	letter-spacing: -0.3px;
-	color: #f2f2f2;
-}
-.helm-hero.is-idle .helm-elapsed {
-	font-size: 15px;
-	color: #cfcfcf;
-}
-.helm-hero.is-paused:not(.is-idle) .helm-elapsed {
-	color: #a9a9a9;
-}
-.helm-of {
-	font-size: 13px;
-	color: #949494;
 }
 .helm-now-acts {
 	display: flex;
@@ -15458,6 +15538,22 @@ html[data-motion='never'] .notice-row {
 }
 .helm-claude:hover {
 	background-color: color-mix(in srgb, var(--mark-claude) 16%, transparent) !important;
+}
+/* +5 min: a word, tinted amber like the overrun it answers (never a second fill). */
+.helm-now-acts > button.helm-more {
+	width: auto;
+	padding: 0 11px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 12%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 26%, transparent);
+}
+.helm-now-acts > button.helm-more:hover {
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 20%, transparent);
 }
 /* Pause, Resume, Start: an icon when it is the quiet one, an icon and a word
    when it is the call. */
@@ -15649,6 +15745,222 @@ html[data-motion='never'] .notice-row {
 }
 .day-row .task-focus.helm-open {
 	color: #bdbdbd;
+}
+
+/* ── Now's items: a group's or the small things', right under the scale ── */
+.helm-now-items {
+	margin: 8px -8px 0 0;
+}
+.helm-now-items[hidden] {
+	display: none;
+}
+.helm-now-items .day-row.helm-row.nested {
+	padding-left: 53px;
+}
+
+/* ── Drag to reorder (helm-drag.ts) ──
+   ⚠️ The lifted row is raised (it is in hand) and its neighbours slide by
+   transform; nothing reflows until the drop. */
+.helm-row.is-sortable {
+	cursor: grab;
+}
+.helm-row.is-sortable .task-title {
+	cursor: inherit;
+}
+.helm-entry,
+.helm-items > .slot,
+.helm-now-items > .slot {
+	position: relative;
+}
+.is-sorting:not(.is-lifting) {
+	transition: translate var(--duration-quick) var(--ease-smooth-out);
+}
+.is-lifting {
+	z-index: 2;
+	cursor: grabbing;
+}
+.is-lifting .day-row {
+	background: #1c1c1c;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.08),
+		0 8px 22px -6px rgba(0, 0, 0, 0.9);
+}
+
+/* ── The header's load: Today's work against the free time left ── */
+.helm-load {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	font-weight: 550;
+	font-variant-numeric: tabular-nums;
+	color: #d6d6d6;
+	cursor: default;
+}
+.helm-load[hidden] {
+	display: none;
+}
+.helm-load-bar {
+	position: relative;
+	width: 52px;
+	height: 6px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.08);
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.helm-load-bar i {
+	position: absolute;
+	inset: 0 auto 0 0;
+	border-radius: 999px;
+	background: var(--iris);
+}
+.helm-load.is-over {
+	color: var(--warn);
+}
+.helm-load.is-over .helm-load-bar i {
+	background: var(--warn);
+}
+/* A figure's word is its name, quieter than the figure but never grey micro-text. */
+.helm-fig-word {
+	font-weight: 500;
+	color: #c9c9c9;
+}
+
+/* ── The day at a glance: one line under Now ──
+   ⚠️ A strip, not a card (AGENTS 567): no box of its own, a hairline above
+   it as the boundary with Now. */
+.helm-day {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin: 0 16px;
+	padding: 10px 0 12px;
+	border-top: 1px solid rgba(255, 255, 255, 0.07);
+	min-height: 24px;
+}
+.helm-day[hidden] {
+	display: none;
+}
+.helm-day-mark {
+	display: grid;
+	flex-shrink: 0;
+}
+.helm-day-mark svg {
+	width: 14px;
+	height: 14px;
+}
+.helm-day-next {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 30%;
+	min-width: 0;
+	font-size: 13px;
+	color: #dcdcdc;
+	cursor: default;
+}
+.helm-day-next .helm-day-mark {
+	color: #5ac8fa;
+}
+.helm-day-next b {
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.helm-day-next-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-day-next.is-now b {
+	color: #5ac8fa;
+}
+.helm-day-line {
+	flex: 1;
+	min-width: 120px;
+	cursor: default;
+}
+.helm-day-track {
+	position: relative;
+	height: 10px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.helm-day-track > i {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	border-radius: 999px;
+}
+.helm-day-past {
+	left: 0;
+	background: rgba(255, 255, 255, 0.05);
+}
+/* The work committed, projected from now: the accent, tinted, never a fill
+   that competes with Start. Past the day's close it turns amber. */
+.helm-day-work {
+	top: 2px !important;
+	bottom: 2px !important;
+	background: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.helm-day-spill {
+	top: 2px !important;
+	bottom: 2px !important;
+	background: color-mix(in srgb, var(--warn) 70%, transparent);
+}
+.helm-day-meet {
+	top: -2px !important;
+	bottom: -2px !important;
+	border-radius: 4px !important;
+	background: #5ac8fa;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1.5px #000;
+}
+.helm-day-meet.is-past {
+	background: #3d5f70;
+}
+.helm-day-now {
+	top: -4px !important;
+	bottom: -4px !important;
+	width: 2px;
+	margin-left: -1px;
+	border-radius: 1px !important;
+	background: #fff;
+	box-shadow: 0 0 0 1.5px #000;
+}
+.helm-day-ends {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 5px;
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	color: #9d9d9d;
+}
+.helm-day-money {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	height: 26px;
+	padding: 0 10px 0 8px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	--tone: var(--warn);
+	color: var(--tone);
+	background: color-mix(in srgb, var(--tone) 12%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 24%, transparent);
+	transition: background-color var(--duration-quick) var(--ease-smooth-out);
+}
+.helm-day-money.is-late {
+	--tone: var(--hot);
+}
+.helm-day-money:hover {
+	background: color-mix(in srgb, var(--tone) 20%, transparent);
+}
+.helm-day-money b {
+	font-weight: 600;
 }
 
 /* ── The chip: one per row, only for status, always with its word ── */
@@ -18016,4 +18328,268 @@ input.k-field.cal-tasks-field:focus {
 	margin-left: auto;
 	padding: 0 10px 0 8px;
 	font-size: 12px;
+}
+
+/* ── Today in two columns: Now and Today, the rail beside (30 Oct) ────────
+   His words: "a long list with little to no hierarchy". The main column is
+   the work (Now the hero, Today's rows under it); the rail is what is READ —
+   the day at a glance, Needs you, Suggested, Agents — smaller and quieter, a
+   hairline from the main column, never a card (AGENTS 567, 698). ⚠️ Both in
+   the one scroller: `.helm-cols` is its only child, so `measure()` reads the
+   taller column (AGENTS 789). The width is ADDED (`RAIL_W`, AGENTS 880). */
+.helm-cols {
+	display: flex;
+	align-items: flex-start;
+	min-width: 0;
+}
+.helm-col {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.helm-side {
+	flex: 0 0 228px;
+	box-sizing: border-box;
+	width: 228px;
+	min-width: 0;
+	margin: 0 -10px 0 12px;
+	padding: 2px 10px 6px 12px;
+	border-left: 1px solid rgba(255, 255, 255, 0.07);
+	align-self: stretch;
+}
+.helm-side[hidden] {
+	display: none;
+}
+/* Main: Now leads by size, Today's rows are clear lines with their tile. */
+.helm-col .helm-block.is-now .helm-hero-title {
+	font-size: 23px;
+}
+.helm-col .helm-block.is-today {
+	margin-top: 10px;
+}
+.helm-col .helm-block.is-today .k-block-title {
+	font-size: 14px;
+}
+.helm-col .day-row.helm-row {
+	min-height: 46px;
+}
+.helm-col .day-row.helm-row .task-title {
+	font-size: 14px;
+}
+/* The rail: smaller type, muted headers. */
+.helm-side .helm-block:not([hidden]) ~ .helm-block:not([hidden]),
+.helm-side .helm-glance:not(:empty) ~ .helm-block:not([hidden]) {
+	margin-top: 8px;
+}
+.helm-side .k-block-bar {
+	min-height: 28px;
+}
+.helm-side .k-block-head {
+	height: 28px;
+	color: #bdbdbd;
+}
+.helm-side .k-block-title {
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+.helm-side .k-block-mark {
+	color: #9a9a9a;
+}
+.helm-side .day-row.helm-row {
+	min-height: 36px;
+	gap: 9px;
+	padding: 4px 6px;
+}
+.helm-side .day-row.helm-row .task-title {
+	font-size: 12.5px;
+}
+.helm-side .helm-row.is-suggested .helm-row-main {
+	flex-wrap: wrap;
+	row-gap: 1px;
+}
+.helm-row-why {
+	flex-basis: 100%;
+	min-width: 0;
+	font-size: 12px;
+	line-height: 1.35;
+	color: #bcbcbc;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+/* Needs you in the rail: flat rows, never raised tiles (no card inside the panel). */
+.helm-side .helm-needs {
+	flex-direction: column;
+	gap: 0;
+	padding: 0;
+	overflow: visible;
+	mask-image: none;
+}
+.helm-side .helm-need {
+	display: flex;
+	height: 30px;
+	border-radius: 8px;
+	background: none;
+	box-shadow: none;
+}
+.helm-side .helm-need:hover {
+	background-color: rgba(255, 255, 255, 0.05);
+	box-shadow: none;
+}
+.helm-side .helm-need-main {
+	flex: 1;
+	min-width: 0;
+	padding: 0 6px;
+}
+.helm-side .helm-need-title {
+	flex: 1;
+	max-width: none;
+	font-size: 12.5px;
+}
+/* The day at a glance, stacked for the rail: the load, the next meeting and
+   the line (only with meetings), then the figures. */
+.helm-glance {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	padding: 8px 6px 10px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.helm-glance:not(:has(> :not([hidden]))) {
+	display: none;
+}
+.helm-glance .helm-load {
+	justify-content: space-between;
+}
+.helm-glance .helm-load-bar {
+	flex: 1;
+	max-width: 70px;
+}
+.helm-side .helm-day {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	border-top: 0;
+	min-height: 0;
+}
+.helm-side .helm-day-next {
+	max-width: none;
+	font-size: 12.5px;
+}
+.helm-side .helm-day-line {
+	min-width: 0;
+}
+.helm-day-figs {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.helm-day-figs:empty {
+	display: none;
+}
+.helm-day-end {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	color: #d6d6d6;
+	cursor: default;
+}
+.helm-day-end b {
+	font-weight: 600;
+}
+.helm-day-end .helm-day-mark {
+	color: color-mix(in srgb, var(--accent) 70%, #fff);
+}
+.helm-day-end.is-over,
+.helm-day-end.is-over .helm-day-mark {
+	color: var(--warn);
+}
+/* The header's toggle: the same quiet icon button as Blocks; on, it is lit.
+   Hidden with something waiting on him, it carries the count in amber. */
+.helm-rail-toggle {
+	position: relative;
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	margin-right: -6px;
+	color: #a9a9a9;
+}
+.helm-rail-toggle svg {
+	width: 16px;
+	height: 16px;
+}
+.helm-rail-toggle.is-on {
+	color: #fff;
+	background-color: var(--tile-on);
+}
+.helm-rail-toggle[hidden] {
+	display: none;
+}
+.helm-rail-count {
+	position: absolute;
+	top: -3px;
+	right: -4px;
+	display: grid;
+	place-items: center;
+	min-width: 15px;
+	height: 15px;
+	padding: 0 4px;
+	box-sizing: border-box;
+	border-radius: 999px;
+	font-size: 10px;
+	font-weight: 700;
+	color: #1a1205;
+	background: var(--warn);
+	box-shadow: 0 0 0 2px #000;
+}
+.helm-rail-count[hidden] {
+	display: none;
+}
+/* The rail is narrow: a row's title gives way (ellipsis, the full one in the
+   hover), the length goes, the one chip stays (AGENTS 791). */
+.helm-side .slot,
+.helm-side .day-row.helm-row {
+	min-width: 0;
+}
+.helm-side .helm-row-minutes {
+	display: none;
+}
+.helm-side .helm-row-main .task-title {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.helm-side .helm-row-end {
+	flex-shrink: 0;
+}
+/* ⚠️ The slot is a grid whose auto column takes the row's min-content, and a
+   row's end stacks the hidden actions over the chip in one cell, so the end
+   was as wide as three buttons. In the rail the actions lie OVER the end
+   on hover, on the panel's black, and the column may shrink. */
+.helm-side .slot {
+	grid-template-columns: minmax(0, 1fr);
+}
+.helm-side .slot-inner {
+	min-width: 0;
+}
+.helm-side .helm-row-end {
+	position: relative;
+}
+.helm-side .helm-row-acts {
+	position: absolute;
+	right: 0;
+	top: 50%;
+	translate: 0 -50%;
+	padding-left: 6px;
+	background: #0b0b0b;
+	box-shadow: -10px 0 10px -4px #0b0b0b;
+	border-radius: 8px;
 }

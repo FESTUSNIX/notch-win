@@ -104,8 +104,19 @@ export class IslandSurface {
   private glanceLong = new Spring(cpx(FRAME.islandGlanceLong), 0.34, 0.92);
   private glanceThin = new Spring(cpx(FRAME.islandGlanceThin), 0.34, 0.92);
   /** Which content the glance is showing. Stays "voice" until it has folded. */
-  private glanceKind: "media" | "voice" = "media";
+  private glanceKind: "media" | "voice" | "moment" = "media";
   private voiceOn = false;
+  /* ── Moments (30 Oct) ────────────────────────────────────────────────
+   * A notification in the glance (moments.ts, moment-glance.ts): the same
+   * spring and collapsed end of the lerp as the voice glance, a layer and a
+   * size of its own. ⚠️ The voice WINS: while a spoken turn is up the moment
+   * waits under it (the shell's queue holds it), and when the voice folds a
+   * moment still up takes the glance over instead of folding to the pill. */
+  private momentOn = false;
+  private momentDepth = cpx(FRAME.islandMomentThinMin);
+  private momentLayer = document.getElementById("island-moment");
+  /** Told when the pointer arrives on or leaves a moment: it holds it up. */
+  onMomentHover: ((on: boolean) => void) | null = null;
   /** The depth the voice layer's content asked for, in CSS px. */
   private voiceDepth = cpx(FRAME.islandVoiceThinMin);
   private voiceLayer = document.getElementById("island-voice");
@@ -508,6 +519,11 @@ export class IslandSurface {
       this.onVoiceHover?.(value);
       return;
     }
+    // A moment likewise: the pointer holds it up to read, a click opens.
+    if (this.momentOn && !this.open) {
+      this.onMomentHover?.(value);
+      return;
+    }
     /* The glance: in click mode, while music plays. ⚠️ An intent delay each
      * way — in, so the pill does not swell every time the pointer crosses the
      * top of the screen on its way somewhere; out, so grazing its edge while
@@ -593,7 +609,7 @@ export class IslandSurface {
    *  the pill is showing; this only knows the shape. */
   setGlanceable(on: boolean) {
     this.glanceable = on;
-    if (!on && !this.voiceOn) this.setGlance(false);
+    if (!on && !this.voiceOn && !this.momentOn) this.setGlance(false);
   }
 
   private setGlance(on: boolean) {
@@ -606,7 +622,7 @@ export class IslandSurface {
     /* Music's glance comes back at music's size. ⚠️ Snapped only from the
      * pill; caught while the voice glance is still folding, the size springs
      * across instead of jumping mid-fold. */
-    if (on && !this.voiceOn && this.glanceKind === "voice") {
+    if (on && !this.voiceOn && !this.momentOn && this.glanceKind !== "media") {
       this.glanceKind = "media";
       const [long, thin] = [cpx(FRAME.islandGlanceLong), cpx(FRAME.islandGlanceThin)];
       if (this.glance.value < 0.01 || still()) { this.glanceLong.snap(long); this.glanceThin.snap(thin); }
@@ -621,6 +637,7 @@ export class IslandSurface {
   private layerInert() {
     this.glanceLayer?.toggleAttribute("inert", !(this.glanceOn && this.glanceKind === "media"));
     this.voiceLayer?.toggleAttribute("inert", !(this.glanceOn && this.glanceKind === "voice"));
+    this.momentLayer?.toggleAttribute("inert", !(this.glanceOn && this.glanceKind === "moment"));
   }
 
   /** A spoken turn (voice-talk.ts): the glance comes up with the voice layer,
@@ -636,11 +653,64 @@ export class IslandSurface {
       this.glanceKind = "voice";
       this.sizeVoice();
       if (!this.open && !this.ambient) this.setGlance(true);
+    } else if (this.momentOn) {
+      // The voice is done; a moment that waited under it takes the glance.
+      this.glanceKind = "moment";
+      this.sizeMoment();
+      if (!this.open && !this.ambient) this.setGlance(true);
     } else {
       this.setGlance(false);
     }
     this.layerInert();
     this.paint();
+  }
+
+  /** Whether a spoken turn holds the glance: moments wait while it does. */
+  get voiceUp(): boolean { return this.voiceOn; }
+  /** Slid out of the way and not being peeked at: nothing to announce on. */
+  get away(): boolean { return this.hidden && !this.peeking; }
+
+  /** A moment (moments.ts): the glance comes up with the moment layer, or
+   *  folds back to the pill. ⚠️ Never over the voice glance, and never while
+   *  the panel is open — the shell's queue does not ask then, and this
+   *  refuses anyway. */
+  setMoment(on: boolean) {
+    if (this.momentOn === on) return;
+    this.momentOn = on;
+    if (on) {
+      if (!this.voiceOn) {
+        this.glanceKind = "moment";
+        this.sizeMoment();
+        if (!this.open && !this.ambient) this.setGlance(true);
+      }
+    } else if (!this.voiceOn && this.glanceKind === "moment") {
+      this.setGlance(false);
+    }
+    this.layerInert();
+    this.paint();
+  }
+
+  /** How deep the moment layer's content wants the glance, in CSS px. */
+  setMomentDepth(px: number) {
+    const next = Math.max(cpx(FRAME.islandMomentThinMin), Math.min(cpx(FRAME.islandMomentThinMax), Math.ceil(px)));
+    if (Math.abs(next - this.momentDepth) < 0.5) return;
+    this.momentDepth = next;
+    if (this.glanceKind === "moment") this.sizeMoment();
+  }
+
+  /** The moment glance's size, on the calm pair like the voice's. */
+  private sizeMoment() {
+    const long = cpx(FRAME.islandMomentLong);
+    const thin = isVertical(this.edge) ? cpx(FRAME.islandMomentThinMax) : this.momentDepth;
+    if (still() || this.glance.value < 0.01) {
+      this.glanceLong.snap(long);
+      this.glanceThin.snap(thin);
+      this.paint();
+      return;
+    }
+    this.glanceLong.setTarget(long);
+    this.glanceThin.setTarget(thin);
+    this.wake();
   }
 
   /** How deep the voice layer's content wants the glance, in CSS px. */
@@ -721,6 +791,7 @@ export class IslandSurface {
      * a spoken turn is still up folds INTO the voice glance instead. */
     if (value) this.setGlance(false);
     else if (this.voiceOn && !this.ambient) this.setGlance(true);
+    else if (this.momentOn && !this.ambient) { this.glanceKind = "moment"; this.sizeMoment(); this.setGlance(true); }
     this.expanded.inert = !value;
     this.shell.classList.toggle("is-open", value);
     this.island.setAttribute("aria-expanded", String(value));
@@ -933,6 +1004,19 @@ export class IslandSurface {
       const mine = this.glanceKind === "voice" ? seen : 0;
       this.voiceLayer.style.opacity = String(mine);
       this.voiceLayer.style.visibility = mine > 0 ? "visible" : "hidden";
+    }
+    // The moment layer: the voice layer's rule, at the moment's target size.
+    if (this.momentLayer) {
+      const long = cpx(FRAME.islandMomentLong);
+      const thin = vertical ? cpx(FRAME.islandMomentThinMax) : this.momentDepth;
+      const mw = vertical ? thin : long;
+      const mh = vertical ? long : thin;
+      this.momentLayer.style.width = `${mw}px`;
+      this.momentLayer.style.height = `${mh}px`;
+      place(this.momentLayer, mw, mh);
+      const mine = this.glanceKind === "moment" ? seen : 0;
+      this.momentLayer.style.opacity = String(mine);
+      this.momentLayer.style.visibility = mine > 0 ? "visible" : "hidden";
     }
     // Cross-fade. The collapsed layer is gone before the expanded one arrives,
     // so the two are never legible at once over each other.

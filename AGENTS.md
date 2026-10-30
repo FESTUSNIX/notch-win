@@ -5647,3 +5647,209 @@ for it." `voice-glance.ts` is the new look, `voice-turn.ts` gained hands-free,
       after turn with a 700 ms microphone (a tap then a hold at once, a lost
       track), the pointer, a click and Escape, Cofnij, a call and the switch,
       and writes a picture of each moment where `VOICE_SHOTS` says.
+
+### Helm's Today, worked from the notch (30 Oct)
+
+His words: Today "looks like a disaster" and lacks what he needs to work the
+day from here. Now is the hero with Helm's focus scale (segments that fill,
+the clock at both ends), the day at a glance is one strip under it, Today's
+rows drag to reorder, and the foot reads one line as an add or a log
+(`src/helm-quick.ts`, node-tested in `tests/helm-quick.test.mjs`;
+`src/helm-drag.ts` the drag).
+
+ 864. ⚠️⚠️ **The entry Now shows is never listed under Today, matched by KEY.**
+      Helm builds `sessions` by the session's item, else by the entry's TITLE —
+      and a small-things or group session is named after the entry's title at
+      the start ("12 small things"). An item added or ticked since makes it
+      "13 small things": no key, no title match, and Now and Today both showed
+      it. `entryOf` falls back to the title with its counts taken out; the
+      lasting fix is Helm's (store the entry key on the block). `&small` stages
+      exactly that state.
+ 865. ⚠️ **"Your move" is a chip for ONE item** (`chipFor` takes `type`). On a
+      group or the small things it said every line was waiting on him.
+ 866. **The header's figures carry their word** ("3 done", "3 h 10 you",
+      "1 h 25 Claude") and the load reads committed against `freeMinutes`
+      ("4 h 25 of ~5 h free", a short bar, amber over) as Helm's Today header
+      does. A word naming a figure is not micro-copy; a bare figure beside a
+      mark he had to guess at was the complaint.
+ 867. ⚠️ **Reordering is pointer events with `sortable`, never HTML5 drag**
+      (400). The row follows the pointer and its neighbours slide by
+      `translate`; nothing moves in the DOM until the drop, and then only the
+      source's held order re-renders it. The render WAITS while a row is up
+      (`dragging`) — a reading arriving mid-drag rebuilt the list and dropped
+      the row. A press under 5 px is a click; the click ending a real drag is
+      swallowed. Today's `order` sends Now's key first when Now is in Today
+      (Helm's board does the same); `order_small` sends every item's key.
+ 868. **Held orders and moves clear on the next reading, except while an order
+      call is in flight** (`ordering`) — a reading taken before Helm applied
+      the drag would otherwise put the rows back for a minute.
+ 869. **The foot: a `/command` still goes to the Guardian; everything else is
+      parsed here** (replaces 820's `@project` rule now that `add` takes
+      `projectId`, `minutes` and `dueOn`). `log `/`zaloguj ` needs a project
+      and a length or the pill says which is missing and the words stay.
+ 870. **The day strip is a reading, not a block**: no fold, a hairline above
+      it, painted from `tick` once a minute. Meetings come from the Calendar
+      screen's feed (`hooks.events`), not from Helm; the committed work is
+      projected from now around them and turns amber past his close.
+ 871. **+5 min shows only once the session has run past its length** (Helm's
+      `elapsed > total`), sent as `/api/queue` `{act: "extend", block,
+      minutes: 5}`; the bar's end moves at once (`extra`, cleared on the next
+      reading unless a call is in flight) and comes back on a failure. Tinted
+      amber, never a second fill. `&over` stages a 20-minute session at 29.
+### Moments, the island's notifications (30 Oct)
+
+ 872. **Moments (30 Oct): the island's notifications, a THIRD glance.** The
+      pill says what is going on, a glance shows one thing at a size between
+      the pill and the panel, the panel is where work is done. A moment is
+      the glance for news: a tile (whose — the agent's mark, the Guardian's
+      shield, the calendar), a kicker and a title, one line, the buttons.
+      Queue, priorities and timing are pure in `moments.ts` (node-tested);
+      the feed (`moment-feed.ts`) turns readings into moments and runs the
+      buttons; `moment-glance.ts` draws one; the surface sizes it on the
+      glance springs (`setMoment`, `setMomentDepth`, `islandMoment*`).
+ 873. **What is a moment, and what is sticky.** Agents: FINISHED (working →
+      idle after ≥ 60 s of work; Open = `focus_session`; folds), ASKED
+      (→ waiting; sticky). Usage: the five-hour or weekly window at ≥ 90 %
+      from the providers' own readings (`notch:readings`), once per window
+      (the reset is in the key, kept across launches); folds. Guardian: a NEW
+      nudge (`helm:nudge`) — Helm's quick replies as chips, its action filled,
+      Open; sticky. A planned block 2 min before `plannedAt` — Start, Później;
+      sticky until it starts. A meeting 5 min out — Dołącz; folds, and the
+      calendar's pill claim carries on after it. ⚠️ A nudge NO LONGER opens
+      the Guardian's page (his call): the moment is the announcement.
+ 874. **One at a time, by priority** (meeting 90, block 85, nudge 80,
+      question 70, usage 50, finished 40). A higher one arriving puts the
+      current one BACK in the queue; it comes back after, never lost. A
+      non-sticky one folds after 6 s; the pointer holds it, leaving gives it
+      2.5 s; a click elsewhere (`island:dismiss`) folds it; the panel opening
+      over it counts as seen. Sticky ones have a close key and fold when they
+      stop being true (the agent answered, the nudge read elsewhere, the block
+      started).
+ 875. **Held back, never dropped,** while the voice glance is up (⚠️ the
+      voice WINS — the moment folds and comes back after it), while the panel,
+      the palette or capture is up, while pinned or typing, while the island
+      is slid away, and while presenting, in a call or a meeting (polled
+      `voice_quiet` reasons). ⚠️ With spoken replies OFF `voice_quiet` answers
+      "off" first and hides presenting and the meeting; a call is still
+      caught, from the call source (`callSource.call.active` is in `busy`).
+ 876. **Running is silent.** The agents' pill claim is WAITING only now
+      (55); "agents working" no longer holds the strip (his call: he is
+      almost always coding). Colour carries the news: good = finished, warn =
+      asks or low, the accent = the Guardian, the calendar's own = a meeting;
+      it tints the tile, a wash from its corner and the ONE filled button.
+      With no quick replies the buttons sit at the end of the top row.
+ 877. **Staged:** `&moment=finished,question,usage,nudge,block,meeting`
+      (comma-separated to queue several; `nudge` needs `?helm&nudge`).
+      `moments.spec.ts` walks each, the fold (page.clock), stickiness, the
+      buttons (`__helmCalls` also records `focus_session` and
+      `open_external` now), the queue order and the voice winning; a picture
+      of each goes where `MOMENT_SHOTS` says.
+
+### The pill's pause, sticky finishes, the rail (30 Oct, round 2)
+
+ 878. ⚠️ **A Helm session on the pill has NO ticking digits** (his call: a
+      number changing every second on screen all day). `blockClaim` carries
+      the ring (progress), the title and the project ("Paused" when held) and
+      ONE control, Pause or Resume (`helm:pause` / `helm:start`), drawn by the
+      call's own `paintActs` and run by the same capturing click in tasks.ts
+      (`helmSource.toggleLive()`, never reaching the pill underneath). The
+      coarse time is the copy's tooltip ("29 min of 2 h"). `Activity` grew
+      `tip`, and any claim may now carry `controls`; the shape key includes
+      them, and the title truncates before the button ever does. Like the
+      call's controls it is reachable in CLICK mode only; with hover opening,
+      Now's own Pause is one move away. Paused: the ring dims where it
+      stopped and Resume is tinted in the accent. ⚠️ Pause/Resume are
+      OPTIMISTIC now (`flip` in HelmSource, cleared on every reading and on a
+      failure), so the hero and the pill turn on the press, not on Helm's echo.
+ 879. ⚠️ **An agent done is STICKY, in the agent's colour, and several fold
+      into one.** It went too fast and he is often away when one finishes, so
+      FINISHED waits until Open, × or Escape (Escape is now every moment's ×
+      while the panel is shut: `MomentFeed.escape`). Its `--m` is the agent's
+      mark (`--mark-claude`, codex's for codex) — green fought the orange
+      mark — and Open is TINTED, not filled (815). A second agent finishing
+      while one is up or waiting JOINS it (`joinFinished` in
+      `MomentQueue.push`): "2 done", the projects, "Open <first>"; Open takes
+      the first and the rest stays up (`restAfterOpen`). Staged with
+      `&moment=finished,finished2`. Supersedes 873's "folds" for FINISHED and
+      876's "good = finished".
+ 880. **Today is two columns in the one scroller: Now and Today, and the rail.**
+      `.helm-list > .helm-cols` holds `.helm-col` (Now, the hero, a size up;
+      Today's rows) and `.helm-side` (the day at a glance with the load moved
+      out of the header, Needs you as flat rows, Suggested OPEN by default
+      with the Guardian's why under each title, Agents): a hairline, smaller
+      type, muted headers — never a card (567, 698). ⚠️ One child in the
+      scroller, so `measure()` reads the taller column (789). The rail's
+      width is ADDED (`RAIL_W` 228 CSS px in `extraWidth` and `--h-main-w`,
+      687), so Now keeps its 680. The header's toggle (`.helm-rail-toggle`,
+      remembered as `today-rail`) hides it; hidden, it carries the Needs-you
+      count in amber so a decision is not hidden with the rail. Not drawn on
+      a side edge. In the rail a row drops its length and its title gives way.
+ 881. **The day line is drawn only when there are meetings to put on it.**
+      With none it was a bare bar from the day's start to its close. The
+      projection is a figure instead (`.helm-day-end`, "~16:40", amber past
+      the close, the sentence in its tooltip), beside the money chip.
+
+### The Guardian speaks first, and closing the day (30 Oct, batch 12)
+
+ 882. **Helm's own moments ride `/api/notch`'s `moments`** (contract-b12):
+      prep, wrap, drift, remind, request, close. `readMoments` (helm-link.ts)
+      checks them — an unknown `do`, a non-http url or a `post` outside
+      `/api/notch/` drops the ACTION, an unknown kind the moment — and
+      `helmMoment` (moments.ts) makes each a `helm`-kind moment with Helm's
+      OWN priority (`rank`: `priority ?? PRIORITY[kind]`), stickiness, body
+      (`\n` kept), detail lines (`.m-detail`, label in the moment's colour,
+      max 3) and actions (`h:<i>`, the first filled). The tile is always the
+      Guardian's shield; the badge says the kind. **Colour = `data-tone`:**
+      guardian → the accent (the Guardian's colour, 876), warn → amber, good →
+      green. ⚠️ The default accent is green too, so a `close` (good) and a
+      prep (guardian) read alike until he picks another accent — by design,
+      the tone is meaning, not decoration. A moment Helm stops sending leaves
+      the queue; one already up is redrawn in place ("Za 10 min" → "Za 9").
+ 883. **Once means once, across launches** (`moment-helm-seen`, `remember`,
+      60 ids, not saved in the preview like the usage ids): a NON-sticky one is
+      seen when it goes up; a STICKY one only when acted on or dismissed — it
+      "stays until acted on", across a restart too. × (and Escape) posts
+      `{id, action:"dismiss"}` to `/api/notch/moments` and is remembered here
+      whatever Helm answers. **When Helm's prep is about a meeting, the
+      notch's own "Za 5 min" for it is skipped** (and dropped if queued
+      first): `prepCovers` matches Helm's `<calendar id>:<event id>` against
+      Google's id, else the client name in the title, else the event's title
+      in the body.
+ 884. **The actions:** `open_url` → `open_external`; `queue` → the act as-is
+      through `HelmSource.queueAct` (`extend` goes through `extend`, so the
+      hero grows on the press); `post` → the new `helm_notch_post(path, body)`,
+      which REFUSES any path not under `/api/notch/` (letters, digits, `-_./%`,
+      no `..`, no encoded dot/slash/backslash, no query — `notch_path`,
+      cargo-tested), answers Helm's `{ok, …}` or `{ok:false,error}`; `chat` →
+      `VoiceTalk.ask`: a written line run as a turn on the VOICE GLANCE, read
+      there and never spoken (`muted: "typed"`, no icon); `talk` →
+      `VoiceTalk.talk({command:"wrap", meeting})`: exactly a tap of Alt+Q
+      (hands-free; Enter or a tap sends), and the send carries the two fields
+      (`Extra.meeting`; `helm_send` and `chat_body` gained `meeting`, sent only
+      with `command:"wrap"`); `close` → the close view. ⚠️ Every action is
+      optimistic: the moment goes on the press and a failure (a throw, or
+      `ok:false`) brings it back with Helm's words on the pill.
+ 885. **Closing the day is a VIEW of the Helm screen, not a screen**
+      (helm-close.ts, helm-close.css): `HelmTodayScreen.closeDay(true)` puts
+      `.helm-close` (a `task-list scrolls`, so `measure()` reads it) in place
+      of the header, the list and the composer (`.is-closing`); Escape or the
+      back arrow returns. Opened from the close moment, the moon in Today's
+      header (`.helm-close-day`, tooltip "Zamknij dzień") and the palette
+      ("Zamknij dzień", signed in only). Top to bottom: the reading in a WELL
+      (you iris, Claude terracotta, done green, the Guardian's two lines),
+      Czas z kodu (a sunk minutes field, Zaloguj tinted green, Pomiń ghost),
+      Zostało (Zrobione / Jutro / Odpuść as icons), Jutro na start (radio rows,
+      the first picked, a second press lets go), and ONE filled button pinned
+      to the scroller's bottom over a fade. Rows settle at once (dimmed, the
+      outcome in a word) and turn back on a refusal; the acts are pure
+      (`leftActs`, `logAct`: a group's Jutro carries its item keys, its
+      Zrobione marks each item). `helm_close_day` reads `GET /api/notch/close`
+      (null for a Helm without it: said in one line). Finishing posts
+      `{first}`, drops the close moment for good (`MomentFeed.closed`) and says
+      "Dzień zamknięty" on the pill.
+ 886. **Staged:** `&hmoment=prep,wrap,drift,idle,remind,request,close` (needs
+      `?helm`; `prep` is about `&moment=meeting`'s event, so the two stage the
+      dedupe), `&hpost=fail` (a moment's post refused, 409), `&close=off|done`,
+      `&queue=fail` (every queue act refused). moments.spec.ts walks each
+      kind and action; close.spec.ts the flow; tests/helm-moments.test.mjs the
+      pure half.

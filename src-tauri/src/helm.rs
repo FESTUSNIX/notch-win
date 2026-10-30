@@ -800,8 +800,9 @@ pub async fn helm_send(
     command: Option<String>,
     mentions: Option<Vec<i64>>,
     voice: Option<bool>,
+    meeting: Option<String>,
 ) -> Result<(), String> {
-    let body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]), voice == Some(true));
+    let body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]), voice == Some(true), meeting.as_deref());
     let mut response = as_him(chat_http(), reqwest::Method::POST, "/api/guardian/chat", Some(body)).await?;
     if !response.status().is_success() {
         return Err(refusal(response, "The Guardian didn't answer.").await);
@@ -851,6 +852,46 @@ pub async fn helm_read() -> Result<(), String> {
     } else {
         Err(refusal(response, "Couldn't mark it read.").await)
     }
+}
+
+/* ── Batch 12: the Guardian's moments and closing the day ─────────── */
+
+/// A Helm path the notch may POST to as him: under `/api/notch/` and nothing
+/// else. ⚠️ The path comes from Helm's own reading (a moment's `post`
+/// action), so it is checked like a card's id (`segment`): letters, digits,
+/// `-_.%` and slashes only, no `..` (not even encoded — a URL parser reads
+/// `%2e%2e` as one), no encoded slash, no query. Untrimmed on purpose: a path
+/// with a space is not one Helm sent.
+fn notch_path(path: &str) -> Result<String, String> {
+    let refused = || Err("That isn't a Helm path the notch may post to.".to_string());
+    let lower = path.to_ascii_lowercase();
+    if !path.starts_with("/api/notch/") || path.len() > 300 || path.contains("..") || path.contains("//")
+        || lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c")
+        || !path.chars().all(|c| c.is_ascii_alphanumeric() || "-_./%".contains(c))
+    {
+        return refused();
+    }
+    Ok(path.to_string())
+}
+
+/// POST to a Helm path under `/api/notch/` as him — a moment's `post` action
+/// (send a reminder, send a triage reply, log a meeting's time), a dismissal
+/// (`/api/notch/moments`), closing the day (`/api/notch/close`). Helm's own
+/// `{ok, …}` comes back, or `{ok: false, error}` in words.
+#[tauri::command]
+pub async fn helm_notch_post(path: String, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+    let path = notch_path(&path)?;
+    let body = body.filter(serde_json::Value::is_object).unwrap_or_else(|| json!({}));
+    let response = as_him(http(), reqwest::Method::POST, &path, Some(body)).await?;
+    poke().notify_one();
+    Ok(card_answer(response, "This Helm can't do that yet.").await)
+}
+
+/// `GET /api/notch/close`: the day's reading for closing it. `None` for a Helm
+/// without the endpoint.
+#[tauri::command]
+pub async fn helm_close_day() -> Result<Option<serde_json::Value>, String> {
+    optional("/api/notch/close").await
 }
 
 /* ── The cockpit: requests, the time they took, Claude on them ─────── */
@@ -941,7 +982,12 @@ pub async fn helm_start_claude(id: i64) -> Result<String, String> {
 /// checked here: a command it does not know, a non-positive project id or a
 /// flood of mentions is dropped rather than sent — the chat must not fail
 /// because a draft carried something odd.
-fn chat_body(text: &str, images: &[Picture], capture: bool, focus: Option<i64>, command: Option<&str>, mentions: &[i64], voice: bool) -> serde_json::Value {
+///
+/// `meeting` (batch 12) is the calendar event a wrap-up is about (`command:
+/// "wrap"`, a moment's Opowiedz): sent only with that command, as Helm reads
+/// it only then.
+#[allow(clippy::too_many_arguments)]
+fn chat_body(text: &str, images: &[Picture], capture: bool, focus: Option<i64>, command: Option<&str>, mentions: &[i64], voice: bool, meeting: Option<&str>) -> serde_json::Value {
     let mut body = json!({ "text": text, "images": images, "page": null });
     if capture {
         body["capture"] = json!(true);
@@ -952,8 +998,11 @@ fn chat_body(text: &str, images: &[Picture], capture: bool, focus: Option<i64>, 
     if let Some(id) = focus.filter(|id| *id > 0) {
         body["focus"] = json!({ "projectId": id });
     }
-    if let Some(command) = command.filter(|c| matches!(*c, "request" | "note" | "log" | "todo")) {
+    if let Some(command) = command.filter(|c| matches!(*c, "request" | "note" | "log" | "todo" | "wrap")) {
         body["command"] = json!(command);
+        if let Some(meeting) = meeting.map(str::trim).filter(|m| command == "wrap" && !m.is_empty() && m.len() <= 300) {
+            body["meeting"] = json!(meeting);
+        }
     }
     let mut seen = Vec::new();
     for id in mentions.iter().copied().filter(|id| *id > 0) {
@@ -1306,17 +1355,32 @@ mod tests {
 
     #[test]
     fn the_chat_body_carries_only_what_the_contract_names() {
-        let plain = chat_body("hej", &[], false, None, None, &[], false);
+        let plain = chat_body("hej", &[], false, None, None, &[], false, None);
         assert_eq!(plain, json!({ "text": "hej", "images": [], "page": null }));
-        let full = chat_body("napraw koszyk", &[], true, Some(3), Some("request"), &[3, 5, 3, -1, 0], true);
+        let full = chat_body("napraw koszyk", &[], true, Some(3), Some("request"), &[3, 5, 3, -1, 0], true, Some("cal:ev"));
         assert_eq!(full["capture"], json!(true));
         assert_eq!(full["voice"], json!(true), "a hold to talk says so");
         assert_eq!(full["focus"], json!({ "projectId": 3 }));
         assert_eq!(full["command"], json!("request"));
         assert_eq!(full["mentions"], json!([{ "projectId": 3 }, { "projectId": 5 }]), "deduped, positive ids only");
         // A command Helm does not know, or a non-id focus, is not sent at all.
-        let odd = chat_body("x", &[], false, Some(0), Some("delete"), &[], false);
+        let odd = chat_body("x", &[], false, Some(0), Some("delete"), &[], false, Some("cal:ev"));
         assert!(odd.get("focus").is_none() && odd.get("command").is_none() && odd.get("mentions").is_none());
+        // The meeting goes with a wrap-up only (batch 12).
+        assert!(full.get("meeting").is_none() && odd.get("meeting").is_none());
+        let wrap = chat_body("poszło dobrze", &[], false, None, Some("wrap"), &[], true, Some(" primary:abc@x "));
+        assert_eq!(wrap["command"], json!("wrap"));
+        assert_eq!(wrap["meeting"], json!("primary:abc@x"));
+    }
+
+    #[test]
+    fn the_notch_posts_only_under_api_notch() {
+        assert_eq!(notch_path("/api/notch/moments").unwrap(), "/api/notch/moments");
+        assert_eq!(notch_path("/api/notch/meetings/primary%3Aabc%40google.com/log").unwrap(), "/api/notch/meetings/primary%3Aabc%40google.com/log");
+        for bad in ["/api/queue", "/api/notch", "/api/notchx/a", "/api/notch/../queue", "/api/notch/%2e%2e/queue", "/api/notch/a%2Fb",
+            "/api/notch//x", "/api/notch/a?b=1", "https://evil/api/notch/x", r"/api/notch/a\b", " /api/notch/moments"] {
+            assert!(notch_path(bad).is_err(), "{bad} must be refused");
+        }
     }
 
     #[test]

@@ -1,0 +1,360 @@
+/* ── The moment glance (moment-glance.ts, 30 Oct) ──────────────────────────
+   One notification in the island's glance. Sized and faded by
+   island-surface.ts on the glance's springs, like the voice glance; this is
+   only what is inside it.
+
+   ⚠️ The glance grammar, kept: ONE inset (`--glance-pad`) on every side,
+   corners concentric with the shape's curl (`--glance-curl`, 25 CSS px), so
+   a button's radius is curl − pad. `--m-min` is `islandMomentThinMin` (180
+   design px = 86 CSS px): change it in layout.ts and it must follow.
+
+   Colour carries the news, one colour per moment (`--m`): the agent's mark colour when one
+   finished, warn when one asks or a limit is near, the accent for the
+   Guardian (its shield, Helm's blocks), the calendar's own for a meeting.
+   It TINTS (AGENTS 230): the tile, a wash from the tile's corner, the one
+   filled button (AGENTS 815). Whose agent it is stays in the agent's own
+   mark colour, as everywhere. */
+
+#island-moment {
+	--glance-pad: 14px;
+	--glance-curl: 25px;
+	--m-min: 86px;
+	--m: var(--accent);
+	--m-r: calc(var(--glance-curl) - var(--glance-pad));
+	position: absolute;
+	left: 0;
+	top: 0;
+	box-sizing: border-box;
+	padding: var(--glance-pad);
+	opacity: 0;
+	visibility: hidden;
+	cursor: pointer;
+	background: radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--m) 13%, transparent), transparent 58%);
+}
+/* An agent done is in the AGENT's colour, not green (his call, 30 Oct: the
+   Claude mark's orange and a green check fought). AGENTS 879. */
+#island-moment[data-kind='finished'] {
+	--m: var(--mark-claude);
+}
+#island-moment[data-kind='finished'][data-agent='codex'] {
+	--m: var(--mark-codex);
+}
+#island-moment[data-kind='question'],
+#island-moment[data-kind='usage'] {
+	--m: var(--warn);
+}
+/* The Guardian's own moments (batch 12): its colour is what it means — the
+   accent is the Guardian's (its shield, a prep, a wrap-up, a request), amber
+   a warning (a block run over, a payment late), green good news (the day
+   done). AGENTS 882. */
+#island-moment[data-tone='guardian'] {
+	--m: var(--accent);
+}
+#island-moment[data-tone='warn'] {
+	--m: var(--warn);
+}
+#island-moment[data-tone='good'] {
+	--m: var(--good);
+}
+
+.m-inner {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 12px;
+	min-height: calc(var(--m-min) - 2 * var(--glance-pad));
+}
+.m-inner.is-new > * {
+	animation: m-in var(--duration-fast) var(--ease-smooth-out) both;
+}
+.m-inner.is-new > .m-acts {
+	animation-delay: 40ms;
+}
+@keyframes m-in {
+	from {
+		opacity: 0;
+		translate: 0 var(--distance-micro);
+		filter: blur(var(--blur-small));
+	}
+}
+.m-inner [hidden] {
+	display: none !important;
+}
+
+.m-top {
+	display: flex;
+	align-items: center;
+	gap: 13px;
+	min-width: 0;
+}
+
+/* The tile: an object, raised, in the colour of the news (AGENTS 188). */
+.m-tile {
+	position: relative;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 46px;
+	height: 46px;
+	border-radius: 14px;
+	color: color-mix(in srgb, var(--m) 70%, #fff);
+	background-color: color-mix(in srgb, var(--m) 20%, #0c0c0c);
+	background-image: var(--sheen);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--m) 38%, transparent),
+		var(--gloss),
+		var(--lift-1),
+		0 0 22px -8px color-mix(in srgb, var(--m) 70%, transparent);
+}
+.m-tile > svg {
+	width: 22px;
+	height: 22px;
+}
+/* An agent's mark in its own colour; the tile's tint says what happened. */
+.m-tile[data-agent='claude'] {
+	color: var(--mark-claude);
+}
+.m-tile[data-agent='codex'] {
+	color: var(--mark-codex);
+}
+/* What happened, as a filled disc on the tile's corner. */
+.m-badge {
+	position: absolute;
+	right: -5px;
+	bottom: -5px;
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	color: var(--on-m, #0b0b0b);
+	background: var(--m);
+	box-shadow: 0 0 0 2.5px #000, 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.m-badge > svg {
+	width: 12px;
+	height: 12px;
+	stroke-width: 2.4;
+}
+
+.m-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+.m-head {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+	min-width: 0;
+}
+.m-kicker {
+	flex-shrink: 0;
+	font-size: 12.5px;
+	font-weight: 650;
+	letter-spacing: 0.01em;
+	color: color-mix(in srgb, var(--m) 82%, #fff);
+	font-variant-numeric: tabular-nums;
+}
+.m-title {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: 15.5px;
+	font-weight: 640;
+	color: #fff;
+}
+.m-line {
+	margin: 0;
+	font-size: 13.5px;
+	line-height: 18px;
+	color: rgba(255, 255, 255, 0.74);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+/* Helm's body may be two lines of its own (`
+`). */
+#island-moment[data-kind='helm'] .m-line {
+	white-space: pre-line;
+}
+
+/* The Guardian's labelled lines: the label in the moment's colour, a fixed
+   column so the texts line up, one line each. A reading, not a list of
+   cards: no boxes, a hairline in front. */
+.m-detail {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 10px;
+	row-gap: 2px;
+	margin: 5px 0 0;
+	padding-left: 10px;
+	border-left: 2px solid color-mix(in srgb, var(--m) 45%, transparent);
+}
+.m-detail-row {
+	display: contents;
+}
+.m-detail dt {
+	font-size: 12.5px;
+	line-height: 18px;
+	font-weight: 650;
+	color: color-mix(in srgb, var(--m) 78%, #fff);
+}
+.m-detail dd {
+	margin: 0;
+	min-width: 0;
+	font-size: 13px;
+	line-height: 18px;
+	color: rgba(255, 255, 255, 0.84);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Close: only on a sticky moment, quiet until pointed at. */
+.m-close {
+	align-self: flex-start;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	margin: -2px -2px 0 0;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	color: rgba(255, 255, 255, 0.6);
+	background: rgba(255, 255, 255, 0.06);
+	cursor: pointer;
+	transition: background-color var(--duration-fast) var(--ease-smooth-out), color var(--duration-fast) var(--ease-smooth-out);
+}
+.m-close:hover {
+	color: #fff;
+	background: rgba(255, 255, 255, 0.14);
+}
+.m-close > svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ── The buttons ───────────────────────────────────────────────────────── */
+
+.m-acts {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	min-width: 0;
+}
+#island-moment[data-inline='true'] .m-acts {
+	flex-shrink: 0;
+}
+#island-moment[data-inline='true'] .m-close {
+	align-self: center;
+	margin: 0;
+}
+.m-chips,
+.m-buttons {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+/* Quick replies wrap to a second row rather than cut a word (AGENTS 827). */
+.m-chips {
+	flex-wrap: wrap;
+}
+.m-buttons {
+	margin-left: auto;
+	flex-shrink: 0;
+}
+.m-chip,
+.m-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 11px;
+	border: 0;
+	border-radius: var(--m-r);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 560;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background-color var(--duration-fast) var(--ease-smooth-out),
+		box-shadow var(--duration-fast) var(--ease-smooth-out),
+		scale 120ms var(--ease-smooth-out);
+}
+.m-chip:active,
+.m-btn:active {
+	scale: 0.96;
+}
+/* A quick reply: sunk, it is something he says rather than an object. */
+.m-chip {
+	flex-shrink: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: rgba(255, 255, 255, 0.86);
+	background: rgba(255, 255, 255, 0.05);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.m-chip:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+.m-chip .m-btn-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.m-btn {
+	color: #f1f1f1;
+	background-color: #1d1d1f;
+	background-image: var(--sheen);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09), var(--gloss), var(--lift-1);
+}
+.m-btn:hover {
+	background-color: #2a2a2d;
+}
+.m-btn.is-primary {
+	color: color-mix(in srgb, var(--m) 16%, #05070a);
+	background-color: var(--m);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--m) 70%, #fff),
+		var(--gloss),
+		0 4px 14px -8px color-mix(in srgb, var(--m) 60%, transparent);
+}
+.m-btn.is-primary:hover {
+	background-color: color-mix(in srgb, var(--m) 86%, #fff);
+}
+/* Finished: Open is TINTED in the agent's colour (AGENTS 815) — a moment that
+   waits for him all afternoon should not be the brightest thing on screen. */
+#island-moment[data-kind='finished'] .m-btn.is-primary {
+	color: color-mix(in srgb, var(--m) 72%, #fff);
+	background-color: color-mix(in srgb, var(--m) 20%, #121212);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--m) 40%, transparent), var(--gloss), var(--lift-1);
+}
+#island-moment[data-kind='finished'] .m-btn.is-primary:hover {
+	background-color: color-mix(in srgb, var(--m) 30%, #121212);
+}
+.m-btn-icon {
+	display: grid;
+	place-items: center;
+}
+.m-btn-icon > svg {
+	width: 15px;
+	height: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) #island-moment * {
+		animation: none !important;
+		transition: none !important;
+	}
+}

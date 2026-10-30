@@ -86,6 +86,7 @@ test('a row carries one chip, and only when it says something', () => {
   assert.deepEqual(chipFor({ dueOn: '2026-10-26', kinds: ['request'], projectId: 3 }, today, new Set([3])), { tone: 'late', label: '2 days late' });
   assert.deepEqual(chipFor({ dueOn: today, kinds: ['followup'], projectId: null }, today, none), { tone: 'today', label: 'Today' });
   assert.deepEqual(chipFor({ dueOn: null, kinds: ['followup'], projectId: null }, today, none), { tone: 'move', label: 'Your move' });
+  assert.equal(chipFor({ dueOn: null, kinds: ['money', 'followup'], projectId: null, type: 'small' }, today, none), null);
   assert.deepEqual(chipFor({ dueOn: '2026-11-02', kinds: ['request'], projectId: 3 }, today, new Set([3])), { tone: 'wait', label: 'Waiting' });
   assert.equal(chipFor({ dueOn: '2026-11-02', kinds: ['request'], projectId: 3 }, today, none), null);
 });

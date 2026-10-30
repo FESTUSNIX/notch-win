@@ -113,7 +113,10 @@ export type { Picture } from "./kit/composer";
 /** What a message carries besides its words (Helm's chat contract, 28 Oct). */
 export interface Extra {
   focus?: number | null;
-  command?: Command | null;
+  /** `wrap` (batch 12): a meeting's wrap-up, said after it; `meeting` names it. */
+  command?: Command | "wrap" | null;
+  /** The calendar event a `wrap` is about (Helm's `<calendar id>:<event id>`). */
+  meeting?: string | null;
   mentions?: { projectId: number }[];
   /** He said it (hold to talk, voice-talk.ts): Helm answers short and speakable. */
   voice?: boolean;
@@ -294,6 +297,7 @@ export class GuardianChat {
         focus: extra.focus ?? null, command: extra.command ?? null, mentions: extra.mentions?.length ? extra.mentions.map(m => m.projectId) : null,
         // Only on a spoken turn: every other message goes exactly as before.
         ...(extra.voice ? { voice: true } : {}),
+        ...(extra.meeting ? { meeting: extra.meeting } : {}),
       });
     } catch (error) {
       this.event({ t: "error", message: clean(error) });

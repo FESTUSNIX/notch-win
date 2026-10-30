@@ -42,7 +42,7 @@ import { call, native, previewBus } from "./task-client";
 import { Recorder, base64Of, voiceProblem, MAX_SECONDS } from "./kit/voice";
 import { HOLD_MS, idle, step, type Effect, type Phase, type TurnEvent, type TurnState } from "./voice-turn";
 import { VoiceGlance, emptyReply, type GlanceReply } from "./voice-glance";
-import type { ChatEvent, GuardianChat } from "./screen-guardian";
+import type { ChatEvent, Extra, GuardianChat } from "./screen-guardian";
 import type { HelmSource } from "./screen-helm";
 import type { IslandSurface } from "./island-surface";
 
@@ -112,6 +112,11 @@ export class VoiceTalk {
   private lingering = false;
   /** Why this turn's reply was text only, kept for the glance after the turn is over. */
   private quiet: string | null = null;
+  /** What the next send carries besides the words: a moment's wrap-up (`command`,
+   *  `meeting`) or its chat line's command (batch 12). Cleared once sent or dropped. */
+  private extra: Pick<Extra, "command" | "meeting"> | null = null;
+  /** This turn was a line written for him (a moment's chat action), not said: shown, never spoken. */
+  private typed = false;
 
   constructor(private chat: GuardianChat, private helm: HelmSource, private surface: IslandSurface, private hooks: TalkHooks) {
     const host = document.getElementById("island-voice")!;
@@ -153,6 +158,33 @@ export class VoiceTalk {
 
   /** Whether a turn is under way. */
   get live(): boolean { return this.state.phase !== "idle"; }
+
+  /** A hands-free turn started FOR him — a moment's Opowiedz (batch 12): just as
+   *  a tap of Alt+Q, and what he says goes with `extra` (`command: "wrap"`,
+   *  `meeting`). False when a turn is already live or Helm isn't signed in. */
+  talk(extra: Pick<Extra, "command" | "meeting">): boolean {
+    if (this.live || !this.helm.signedIn) return false;
+    this.extra = extra;
+    this.typed = false;
+    this.down();
+    this.up(60);
+    return true;
+  }
+
+  /** A line to the Guardian from a moment's chat button: the turn runs on the
+   *  glance like a spoken one, its answer read there, never said aloud. */
+  ask(text: string, command?: string): boolean {
+    if (this.live || this.chat.pending || !this.helm.signedIn || !text.trim()) return false;
+    const known = ["request", "note", "log", "todo", "wrap"];
+    this.extra = command && known.includes(command) ? { command: command as Extra["command"] } : null;
+    this.typed = true;
+    this.fresh();
+    this.state = { ...idle(this.state.turn), phase: "transcribing" };
+    this.raise();
+    this.reply = emptyReply(text.trim());
+    this.feed({ t: "heard", text });
+    return true;
+  }
 
   /** A click somewhere else: a glance up only to be read has been read. */
   dismiss(): boolean {
@@ -257,6 +289,9 @@ export class VoiceTalk {
         void this.say(effect.text, effect.turn, effect.seq);
         return;
       case "end":
+        // A turn dropped before it was sent takes its wrap-up with it.
+        this.extra = null;
+        this.typed = false;
         this.linger(before);
         return;
     }
@@ -304,13 +339,18 @@ export class VoiceTalk {
     }
     if (performance.now() - waited > 500) this.log(`waited ${Math.round(performance.now() - waited)} ms for the last reply`);
     // Text only, said before the reply comes: the switch here, presenting, a call, a meeting (voice.rs).
-    if (!this.hooks.spoken()) this.feed({ t: "muted", why: "off" });
+    // A written line (`ask`) is read, not heard: muted with no reason to show.
+    if (this.typed) this.feed({ t: "muted", why: "typed" });
+    else if (!this.hooks.spoken()) this.feed({ t: "muted", why: "off" });
     else void call<string | null>("voice_quiet").then(why => { if (why && this.state.turn === turn) this.feed({ t: "muted", why }); }).catch(() => {});
     this.ours = true;
     this.reading = true;
     this.reply = emptyReply(text);
     this.paint();
-    const started = await this.chat.send(text, [], { focus: this.helm.focus, voice: true });
+    const extra = this.extra ?? {};
+    this.extra = null;
+    this.typed = false;
+    const started = await this.chat.send(text, [], { focus: this.helm.focus, voice: true, ...extra });
     if (!started) {
       this.ours = false;
       this.reading = false;

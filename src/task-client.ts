@@ -235,7 +235,12 @@ function demoHelmQueue() {
     /* ⚠️ On the online store's project, so its group in the suggestions wears
        the "Waiting" chip — a fixture where no row is waiting tests none of it. */
     waiting: [item("attention:waiting-12", "Waiting on the client", "Online store", 15, { projectId: 9 })],
-    snoozed: 2, doneToday: 3, workedMinutes: 190, freeMinutes: null,
+    /* `&free=n` sets the free time left (`&free=off`: a Helm that can't say).
+       ⚠️ `&small` runs a session on the small things under an OLDER title
+       ("2 small things") with no `sessions` key — what Helm sends once an item
+       was added after the start — so Now must still find its entry. */
+    snoozed: 2, doneToday: 3, workedMinutes: 190,
+    freeMinutes: params.get("free") === "off" ? null : Number(params.get("free") ?? 300),
     sessions: params.has("running") || params.has("paused") ? { "2": "request:1" } : {},
   };
 }
@@ -252,7 +257,8 @@ function demoHelm() {
       rhythm: { on: true, wake: 465, start: 540, close: 1065 },
       blocks: [
         { id: 1, title: "Zestawienie prac NXM Artech", status: "done", plannedAt: null, minutes: 15, runStartedAt: null, elapsedSeconds: 900, project: "NXM" },
-        ...(live ? [{ id: 2, title: "Rynek Czeski — poprawki w koszyku", status: params.has("paused") ? "paused" : "running", plannedAt: null, minutes: 120, runStartedAt: params.has("paused") ? null : minutesAgo(29), elapsedSeconds: params.has("paused") ? 1740 : 0, project: "Esono Rozwój" }] : []),
+        ...(live ? [{ id: 2, title: "Rynek Czeski — poprawki w koszyku", status: params.has("paused") ? "paused" : "running", plannedAt: null, minutes: params.has("over") ? 20 : 120, runStartedAt: params.has("paused") ? null : minutesAgo(29), elapsedSeconds: params.has("paused") ? 1740 : 0, project: "Esono Rozwój" }] : []),
+        ...(params.has("small") ? [{ id: 3, title: "2 small things", status: "running", plannedAt: null, minutes: 30, runStartedAt: minutesAgo(12), elapsedSeconds: 0, project: null }] : []),
       ],
       nudges: params.has("nudge") ? [{ id: 91, kind: "idle", title: "Przerwa trwa 40 minut", body: "Następne w kolejce: Rynek Czeski — poprawki w koszyku (Esono Rozwój). Wracamy?", url: "/", at: minutesAgo(2) }] : [],
       replies: ["Zaczynam", "Za duże, daj 10 minut", "Dziś wolne"],
@@ -409,6 +415,7 @@ function demoNotch() {
   return {
     day: localDay(),
     clock: { you: 190, agents: 85 },
+    moments: demoMoments(),
     needs: params.has("noneeds") ? [] : [
       { key: "meeting:1", kind: "meeting", title: "Call z Piotrem", context: "Południowa Służba Ratownicza", amount: null,
         at: hoursFromNowIso(0.7), href: "/calendar", join: "https://meet.google.com/demo" },
@@ -444,6 +451,65 @@ function demoNotch() {
         request(2, "Galeria: nowe zdjęcia aut", "todo", 60),
       ] },
     ],
+  };
+}
+/* Batch 12: the Guardian's own moments, staged with `&hmoment=prep,wrap,drift,
+   idle,remind,request,close` (comma-separated, best first as Helm sends them).
+   ⚠️ `prep` is about the staged meeting `&moment=meeting` adds (its id ends in
+   that event's), so the two together stage the dedupe: Helm's prep wins. */
+function demoMoments() {
+  const kinds = (params.get("hmoment") ?? "").split(",").filter(Boolean);
+  const all: Record<string, unknown> = {
+    prep: { id: "prep:work:staged-meeting", kind: "prep", tone: "guardian", sticky: false, priority: 88,
+      title: "Za 5 min: Esono", body: "Sprint zamknięty w 80%, koszyk czeski czeka na akcept.",
+      detail: [{ label: "Status", text: "Repricer gotowy, koszyk CZ w testach" }, { label: "Zapytaj", text: "Czy wycena filtrów idzie w tym miesiącu?" }, { label: "Uważaj", text: "Faktura z września 2 dni po terminie" }],
+      actions: [{ label: "Dołącz", do: "open_url", url: "https://meet.google.com/demo" }, { label: "Otwórz w Helm", do: "open_url", url: "https://crm.hadastudios.com/clients/3" }] },
+    wrap: { id: "wrap:work:kowalski-1", kind: "wrap", tone: "guardian", sticky: true, priority: 72,
+      title: "Jak poszło z Kowalski Studio?", body: "Powiedz w dwóch zdaniach, zapiszę resztę.",
+      actions: [{ label: "Opowiedz", do: "talk", command: "wrap", meeting: "work:kowalski-1" }, { label: "Tylko czas", do: "post", path: "/api/notch/meetings/work%3Akowalski-1/log" }] },
+    drift: { id: "drift:2:over", kind: "drift", tone: "warn", sticky: true, priority: 78,
+      title: "Rynek Czeski: +14 min ponad plan", body: "Plan był na 50 min.",
+      actions: [{ label: "+15 min", do: "queue", act: { act: "extend", block: 2, minutes: 15 } }, { label: "Zrobione", do: "queue", act: { act: "done", key: "block:2" } }, { label: "Nie dziś", do: "queue", act: { act: "snooze", key: "request:1" } }] },
+    idle: { id: "drift:2:idle", kind: "drift", tone: "warn", sticky: true, priority: 78,
+      title: "Utknąłeś przy Rynek Czeski?", body: "Od 20 minut cisza. Pierwszy krok na 10 minut?",
+      actions: [{ label: "10 minut", do: "chat", text: "Rozbij to na pierwszy krok na 10 minut" }, { label: "Pauza", do: "queue", act: { act: "pause", block: 2 } }, { label: "Nie dziś", do: "queue", act: { act: "snooze", key: "request:1" } }] },
+    remind: { id: "remind:7", kind: "remind", tone: "warn", sticky: true, priority: 60,
+      title: "Ubrania: 1 200 zł, 2 dni po terminie", body: "Przypominam o fakturze FV/09/2026 z terminem 28 października.",
+      actions: [{ label: "Wyślij", do: "post", path: "/api/notch/reminders/7" }, { label: "Otwórz", do: "open_url", url: "https://crm.hadastudios.com/money?remind=7" }] },
+    request: { id: "request:9", kind: "request", tone: "guardian", sticky: true, priority: 62,
+      title: "Ubrania: Nowy filtr rozmiarów", body: "~2 h, 600 zł\nWycena obejmuje: filtr rozmiarów w kategorii",
+      actions: [{ label: "Wyślij", do: "post", path: "/api/notch/requests/9/reply" }, { label: "Otwórz", do: "open_url", url: "https://crm.hadastudios.com/projects/12?request=9" }] },
+    close: { id: `close:${localDay()}`, kind: "close", tone: "good", sticky: true, priority: 75,
+      title: "Zamykamy dzień?", body: "5 h 10 pracy, 6 zrobione, 3 zostało.",
+      actions: [{ label: "Zamknij dzień", do: "close" }] },
+  };
+  return kinds.map(k => all[k]).filter(Boolean);
+}
+/* `GET /api/notch/close`, staged. `&close=off` is a Helm without it (null),
+   `&close=done` the review already done today, `&queue=fail` a Helm refusing
+   the row actions (they must turn back). */
+let demoClosed = false;
+function demoCloseDay() {
+  if (params.get("close") === "off") return null;
+  return {
+    day: localDay(), worked: { you: 310, agents: 85 },
+    done: { count: 6, titles: ["Repricer — reguły cen", "Faktura dla Ubrania", "Mapa strony dla Google"] },
+    logs: [
+      { key: "log:3:" + localDay(), projectId: 3, project: "Esono Rozwój", minutes: 95 },
+      { key: "log:30:" + localDay(), projectId: 30, project: "Codenotch", minutes: 40 },
+    ],
+    left: [
+      { key: "request:1", type: "item", title: "Rynek Czeski — poprawki w koszyku", context: "Esono Rozwój", minutes: 120, itemKeys: ["request:1"] },
+      { key: "small", type: "small", title: "3 małe rzeczy", context: null, minutes: 30, itemKeys: ["todo:4", "todo:5", "todo:6"] },
+      { key: "request:22", type: "item", title: "Eksport faktur do CSV", context: "Akcesfonia", minutes: 60, itemKeys: ["request:22"] },
+    ],
+    firsts: [
+      { key: "request:1", title: "Rynek Czeski — poprawki w koszyku", context: "Esono Rozwój" },
+      { key: "request:11", title: "Filtry kategorii w sklepie", context: "Esono Rozwój" },
+      { key: "request:32", title: "Tryb ambient: nowe sceny", context: "Codenotch" },
+    ],
+    summary: "Repricer domknięty i faktura wysłana, dobry dzień.\nKoszyk czeski znów przesunięty: jutro jako pierwszy.",
+    closed: params.get("close") === "done" || demoClosed,
   };
 }
 /** Two staged logos, as Helm serves them: an image, by project and version. */
@@ -556,6 +622,8 @@ if (preview) (window as unknown as { __helmCalls: typeof helmCalls }).__helmCall
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
   if (command.startsWith("helm_") || command.startsWith("voice_")) helmCalls.push({ command, args: structuredClone(args) });
+  /* ── Moments (30 Oct) ── the jumps and links a moment's buttons make, read back by moments.spec.ts. */
+  if (command === "focus_session" || command === "open_external") helmCalls.push({ command, args: structuredClone(args) });
   if (command === "get_tasks") return structuredClone(demo) as T;
   if (command === "get_task_placement") return {
     /* ⚠️ Staged from the query string. The island lost its own edge and clock
@@ -1059,6 +1127,19 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return `${folder.path.split("/").pop()} · Windows Terminal` as T;
   }
   if (command === "helm_logo") return (demoLogos[`${args.id}:${args.version}`] ?? null) as T;
+  /* Batch 12. `&hpost=fail` is Helm refusing a moment's post (it must come back). */
+  if (command === "helm_close_day") { await new Promise(done => setTimeout(done, 120)); return structuredClone(demoCloseDay()) as T; }
+  if (command === "helm_notch_post") {
+    const path = String(args.path ?? "");
+    if (!path.startsWith("/api/notch/")) throw new Error("That isn't a Helm path the notch may post to.");
+    if (path === "/api/notch/close") { demoClosed = true; return { ok: true } as T; }
+    if (params.get("hpost") === "fail" && path !== "/api/notch/moments") return { ok: false, status: 409, error: "Odpowiedź nie jest jeszcze gotowa" } as T;
+    return { ok: true } as T;
+  }
+  if (command === "helm_queue" && params.get("queue") === "fail") {
+    await new Promise(done => setTimeout(done, 150));
+    throw new Error("Helm said no.");
+  }
   if (["helm_act", "helm_queue", "helm_read", "helm_undo", "helm_open", "helm_send_code", "disconnect_helm"].includes(command)) return undefined as T;
   if (command === "connect_ticktick") throw new Error("Connect TickTick in the desktop app. This is sample data.");
   if (command === "disconnect_ticktick") { demo = emptySnapshot(); emit(); return undefined as T; }

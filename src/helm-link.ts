@@ -68,6 +68,154 @@ export interface Notch {
   /** Most urgent first, at most eight. */
   needs: NotchNeed[];
   folders: NotchFolder[];
+  /** The Guardian's moments (batch 12), best first; none from a Helm without them. */
+  moments: NotchMoment[];
+}
+
+/* ── Batch 12: the Guardian speaks first, in the notch ─────────────────── */
+
+export type NotchAction =
+  | { label: string; do: "open_url"; url: string }
+  | { label: string; do: "queue"; act: Record<string, unknown> }
+  | { label: string; do: "chat"; text: string; command?: string }
+  | { label: string; do: "talk"; command: "wrap"; meeting: string }
+  | { label: string; do: "post"; path: string; body?: Record<string, unknown> }
+  | { label: string; do: "close" };
+
+export type NotchMomentKind = "prep" | "wrap" | "drift" | "remind" | "request" | "close";
+
+/** One of the Guardian's moments, as `/api/notch` sends it (contract-b12). */
+export interface NotchMoment {
+  /** Stable: "prep:<eventId>", "close:<YYYY-MM-DD>"… — shown once, a dismissal sticks. */
+  id: string;
+  kind: NotchMomentKind;
+  tone: "guardian" | "warn" | "good";
+  title: string;
+  body: string;
+  detail: { label: string; text: string }[];
+  sticky: boolean;
+  priority: number;
+  actions: NotchAction[];
+}
+
+const KINDS: NotchMomentKind[] = ["prep", "wrap", "drift", "remind", "request", "close"];
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** One action, checked: an unknown `do` or a missing field drops the ACTION, not the moment. */
+function readAction(raw: unknown): NotchAction | null {
+  if (!isObject(raw) || typeof raw.label !== "string" || !raw.label.trim()) return null;
+  const label = raw.label.trim().slice(0, 40);
+  switch (raw.do) {
+    case "open_url": return typeof raw.url === "string" && /^https?:\/\//.test(raw.url) ? { label, do: "open_url", url: raw.url } : null;
+    case "queue": return isObject(raw.act) && typeof raw.act.act === "string" ? { label, do: "queue", act: raw.act } : null;
+    case "chat": return typeof raw.text === "string" && raw.text.trim()
+      ? { label, do: "chat", text: raw.text, ...(typeof raw.command === "string" ? { command: raw.command } : {}) } : null;
+    case "talk": return typeof raw.meeting === "string" && raw.meeting ? { label, do: "talk", command: "wrap", meeting: raw.meeting } : null;
+    case "post": return typeof raw.path === "string" && raw.path.startsWith("/api/notch/")
+      ? { label, do: "post", path: raw.path, ...(isObject(raw.body) ? { body: raw.body } : {}) } : null;
+    case "close": return { label, do: "close" };
+    default: return null;
+  }
+}
+
+/** `moments`, checked: at most six, each with an id, a known kind and a title;
+ *  detail at most three lines, actions at most three. Missing: none. */
+export function readMoments(raw: unknown): NotchMoment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: NotchMoment[] = [];
+  for (const one of raw) {
+    if (!isObject(one) || typeof one.id !== "string" || !one.id || typeof one.title !== "string") continue;
+    const kind = KINDS.includes(one.kind as NotchMomentKind) ? one.kind as NotchMomentKind : null;
+    if (!kind) continue;
+    const tone = one.tone === "warn" || one.tone === "good" ? one.tone : "guardian";
+    const detail = (Array.isArray(one.detail) ? one.detail : [])
+      .filter((d): d is { label: string; text: string } => isObject(d) && typeof d.label === "string" && typeof d.text === "string" && !!d.text.trim())
+      .slice(0, 3).map(d => ({ label: d.label.trim(), text: d.text.trim() }));
+    const actions = (Array.isArray(one.actions) ? one.actions : []).map(readAction).filter((a): a is NotchAction => !!a).slice(0, 3);
+    out.push({
+      id: one.id, kind, tone, title: one.title.trim(), body: typeof one.body === "string" ? one.body.trim() : "",
+      detail, sticky: one.sticky === true, priority: Number.isFinite(Number(one.priority)) ? Number(one.priority) : 60, actions,
+    });
+    if (out.length === 6) break;
+  }
+  return out;
+}
+
+/** The calendar event a `prep:`/`wrap:` id is about: Helm's `<calendar id>:<event id>`. */
+export function momentEvent(id: string): string | null {
+  const m = /^(?:prep|wrap):(.+)$/.exec(id);
+  return m ? m[1] : null;
+}
+
+/** Whether Helm's prep moment is about this calendar event: the id (Helm's
+ *  carries the calendar in front of Google's own), else the name in its title
+ *  ("Za 10 min: Kowalski Studio") inside the event's, or the event's title in
+ *  its body ("10:00–10:30 Kowalski — przegląd"). */
+export function prepCovers(moment: Pick<NotchMoment, "id" | "kind" | "title" | "body">, event: { id: string; title: string }): boolean {
+  if (moment.kind !== "prep") return false;
+  const ref = momentEvent(moment.id);
+  if (ref && (ref === event.id || ref.endsWith(`:${event.id}`))) return true;
+  const title = event.title.trim().toLowerCase();
+  if (!title) return false;
+  const name = moment.title.replace(/^[^:]*:\s*/, "").trim().toLowerCase();
+  return (name.length >= 3 && title.includes(name)) || moment.body.toLowerCase().includes(title);
+}
+
+/* ── Batch 12: closing the day ─────────────────────────────────────────── */
+
+export interface CloseLog { key: string; projectId: number; project: string; minutes: number }
+export interface CloseLeft { key: string; type: "item" | "group" | "small"; title: string; context: string | null; minutes: number; itemKeys: string[] }
+export interface CloseFirst { key: string; title: string; context: string | null }
+
+/** `GET /api/notch/close`. */
+export interface CloseDay {
+  day: string;
+  worked: { you: number; agents: number };
+  done: { count: number; titles: string[] };
+  logs: CloseLog[];
+  left: CloseLeft[];
+  firsts: CloseFirst[];
+  summary: string | null;
+  closed: boolean;
+}
+
+/** The close reading, checked; null when it is not one. */
+export function readClose(raw: unknown): CloseDay | null {
+  if (!isObject(raw) || !isObject(raw.worked)) return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const ctx = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const done = isObject(raw.done) ? raw.done : {};
+  const list = (v: unknown) => (Array.isArray(v) ? v : []).filter(isObject).filter(one => typeof one.key === "string" && !!one.key);
+  return {
+    day: str(raw.day),
+    worked: { you: Number(raw.worked.you) || 0, agents: Number(raw.worked.agents) || 0 },
+    done: { count: Number(done.count) || 0, titles: (Array.isArray(done.titles) ? done.titles : []).filter((t): t is string => typeof t === "string").slice(0, 8) },
+    logs: list(raw.logs).map(l => ({ key: str(l.key), projectId: Number(l.projectId) || 0, project: str(l.project), minutes: Math.max(0, Math.round(Number(l.minutes) || 0)) })),
+    left: list(raw.left).map(l => ({
+      key: str(l.key), type: l.type === "group" || l.type === "small" ? l.type : "item", title: str(l.title),
+      context: ctx(l.context), minutes: Number(l.minutes) || 0,
+      itemKeys: (Array.isArray(l.itemKeys) ? l.itemKeys : []).filter((k): k is string => typeof k === "string"),
+    })),
+    firsts: list(raw.firsts).slice(0, 4).map(f => ({ key: str(f.key), title: str(f.title), context: ctx(f.context) })),
+    summary: typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim() : null,
+    closed: raw.closed === true,
+  };
+}
+
+/** What a choice on a row of the close flow sends to `/api/queue`.
+ *  ⚠️ Jutro on a group or the small things carries their item keys, as Not
+ *  today does in Today (`HelmSource.later`); Zrobione on one marks each item. */
+export type LeftChoice = "done" | "tomorrow" | "drop";
+export function leftActs(row: CloseLeft, choice: LeftChoice): Record<string, unknown>[] {
+  const group = row.type !== "item";
+  if (choice === "drop") return [{ act: "today", key: row.key, on: false }];
+  if (choice === "tomorrow") return [group ? { act: "snooze", key: row.key, keys: row.itemKeys } : { act: "snooze", key: row.key }];
+  return group && row.itemKeys.length ? row.itemKeys.map(key => ({ act: "done", key })) : [{ act: "done", key: row.key }];
+}
+
+/** Zaloguj on a coded-time row: its log key with the minutes left in the field. */
+export function logAct(row: CloseLog, minutes: number): Record<string, unknown> {
+  return { act: "done", key: row.key, minutes: Math.max(1, Math.min(24 * 60, Math.round(minutes))) };
 }
 
 /** What Done on a request answers: the time Helm suggests logging. */
@@ -94,6 +242,7 @@ export function readNotch(raw: unknown): Notch | null {
     clock: { you: Number(value.clock.you) || 0, agents: Number(value.clock.agents) || 0 },
     needs: Array.isArray(value.needs) ? value.needs.slice(0, 8) : [],
     folders: value.folders.filter(f => f && typeof f.folder === "string" && f.project),
+    moments: readMoments((value as { moments?: unknown }).moments),
   };
 }
 
@@ -190,14 +339,17 @@ export type ChipTone = "late" | "today" | "move" | "wait";
  *
  * ⚠️ ONE, in this order. Helm's own rule — at most one chip per row, and only
  * when it carries status — because two chips side by side read as a tag cloud,
- * and the row's job is its title. Late beats due-today beats whose move it is. */
-export function chipFor(entry: { dueOn: string | null; kinds: string[]; projectId: number | null }, today: string, waiting: Set<number>): { tone: ChipTone; label: string } | null {
+ * and the row's job is its title. Late beats due-today beats whose move it is.
+ * ⚠️ "Your move" only on ONE item: a group or the small things hold a
+ * follow-up among other things, and the chip on the whole entry said every
+ * line of it was waiting on him. */
+export function chipFor(entry: { dueOn: string | null; kinds: string[]; projectId: number | null; type?: string }, today: string, waiting: Set<number>): { tone: ChipTone; label: string } | null {
   if (entry.dueOn && entry.dueOn < today) {
     const days = Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${entry.dueOn}T12:00:00Z`)) / 86_400_000);
     return { tone: "late", label: days === 1 ? "1 day late" : `${days} days late` };
   }
   if (entry.dueOn === today) return { tone: "today", label: "Today" };
-  if (entry.kinds.some(kind => kind === "attention" || kind === "followup")) return { tone: "move", label: "Your move" };
+  if ((entry.type ?? "item") === "item" && entry.kinds.some(kind => kind === "attention" || kind === "followup")) return { tone: "move", label: "Your move" };
   if (entry.projectId != null && waiting.has(entry.projectId)) return { tone: "wait", label: "Waiting" };
   return null;
 }

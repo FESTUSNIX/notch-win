@@ -282,8 +282,12 @@ export class AgentsScreen {
   activity(): Activity | null {
     const mine = this.sessions.filter(one => !isQuiet(`agent:${one.id}`));
     const waiting = mine.filter(one => one.state === "waiting");
-    const working = mine.filter(one => one.state === "working");
-    const first = waiting[0] ?? working[0];
+    /* ⚠️ (30 Oct, his call) Working claims NOTHING again. He is almost always
+     * coding, so "agent working" held the strip all day and said nothing he
+     * did not know; what he wants from an agent is that it FINISHED or ASKED,
+     * and those are moments now (moments.ts). Waiting still claims: it is
+     * what is left on the strip after its moment is dismissed. */
+    const first = waiting[0];
     if (!first) return null;
 
     /* ⚠️ The AGENT'S OWN mark, not a generic brain. The strip says one thing
@@ -306,27 +310,7 @@ export class AgentsScreen {
         count: short(first.input + first.output),
       };
     }
-    const many = working.length > 1;
-    return {
-      priority: 46,
-      screen: "agents",
-      kind: "event",
-      icon,
-      label: many ? `${working.length} agents working` : first.project,
-      /* What it is doing, or failing that which model is doing it. ⚠️ Not the
-       * word "working": the strip is the most valuable space in the app and
-       * "working" is the one thing the mark beside it already says.
-       *
-       * ⚠️ And with several running, WHICH one — a phrase with no project
-       * attached is a fact about a session the strip has not named, which is
-       * worse than the plain name of the one it means. */
-      value: many
-        ? first.project
-        : (first.doing || first.thinking || modelName(first.model) || WORDS.working),
-      /* The far slot, where a countdown sits on a timer claim. Tokens are the
-       * other number that climbs while you are not looking. */
-      count: short(first.input + first.output),
-    };
+    return null;
   }
 
   /** The elapsed figures, in place. The list itself is only redrawn when the

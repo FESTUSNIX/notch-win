@@ -147,6 +147,13 @@ export const FRAME = {
   islandVoiceLong: 1090,
   islandVoiceThinMin: 200,
   islandVoiceThinMax: 480,
+  /** The MOMENT glance (30 Oct): one notification — a tile, a title, a line,
+   *  a row of buttons (moments.ts). Wider than the voice glance
+   *  so a nudge's quick replies and its action share one row (~600 CSS px); as deep as its
+   *  content, ~86 to ~190 CSS px. */
+  islandMomentLong: 1260,
+  islandMomentThinMin: 180,
+  islandMomentThinMax: 400,
   /** Wider than it is tall, on purpose: the island is read at a glance across,
    *  and a tall narrow panel wastes the one dimension a top edge has to give. */
   islandBodyLong: 1900,
