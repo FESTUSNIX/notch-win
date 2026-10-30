@@ -18593,3 +18593,204 @@ input.k-field.cal-tasks-field:focus {
 	box-shadow: -10px 0 10px -4px #0b0b0b;
 	border-radius: 8px;
 }
+
+/* ── Peeks, second place (batch 13, peeks.ts) ─────────────────────────────
+   A peek is the pill's own shape — lead, copy, far end — so its arrival is
+   the content rising in, not a new surface. ⚠️ The tone is a TINT on the
+   glyph and the level, from the one --accent or the semantic good/warn,
+   never a stripe or a filled pill (AGENTS 230, 257). */
+#island-collapsed[data-kind='peek'] .pill-lead {
+	position: relative;
+	color: #d6d6d6;
+}
+#island-collapsed[data-kind='peek'][data-tone='accent'] .pill-lead {
+	color: var(--accent);
+}
+#island-collapsed[data-kind='peek'][data-tone='good'] .pill-lead {
+	color: var(--good);
+}
+#island-collapsed[data-kind='peek'][data-tone='warn'] .pill-lead {
+	color: var(--warn);
+}
+/* The glyph sits in a soft recessed well tinted by the tone: depth, and
+   the colour reads before the words do. */
+#island-collapsed[data-kind='peek'] .pill-lead:not(:has(.pill-art)) {
+	border-radius: 8px;
+	background: color-mix(in srgb, currentColor 14%, #0b0b0b);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 2px rgba(0, 0, 0, 0.5);
+}
+#island-collapsed[data-kind='peek'] .pill-lead svg {
+	width: 15px;
+	height: 15px;
+}
+#island-collapsed[data-kind='peek'] .pill-art {
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+#island-collapsed[data-kind='peek'] .pill-label {
+	color: #f2f2f2;
+}
+.pill-level {
+	width: 46px;
+	height: 4px;
+	flex-shrink: 0;
+	border-radius: 2px;
+	background: #262626;
+	box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+	overflow: hidden;
+}
+.pill-level i {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: color-mix(in srgb, var(--accent) 85%, #ffffff);
+	transition: width var(--duration-fast) var(--ease-smooth-out);
+}
+.pill-peek-act {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 16%, #141414);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.pill-peek-act.is-secondary {
+	cursor: pointer;
+	transition: background-color var(--duration-fast) var(--ease-smooth-out);
+}
+.pill-peek-act.is-secondary:hover {
+	background: color-mix(in srgb, var(--accent) 28%, #141414);
+}
+.pill-peek-act svg {
+	width: 13px;
+	height: 13px;
+}
+/* The arrival: up and in, no overshoot. */
+#island-collapsed.peek-in > * {
+	animation: peek-rise var(--duration-fast) var(--ease-smooth-out) both;
+}
+@keyframes peek-rise {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+		filter: blur(2px);
+	}
+}
+/* Running over: ONE amber ring out of the glyph, then still. */
+#island-collapsed.peek-pulse .pill-lead::after {
+	content: '';
+	position: absolute;
+	inset: -2px;
+	border-radius: 9px;
+	box-shadow: 0 0 0 2px var(--warn);
+	opacity: 0;
+	animation: peek-pulse 1100ms var(--ease-smooth-out) 120ms 1;
+}
+@keyframes peek-pulse {
+	0% {
+		opacity: 0.9;
+		transform: scale(0.9);
+	}
+	100% {
+		opacity: 0;
+		transform: scale(1.5);
+	}
+}
+
+/* Second place: a small mark at the trailing edge. Quiet on purpose — the
+   owner is the headline; this says "there is more, wheel or point". */
+.pill-second {
+	display: grid;
+	place-items: center;
+	width: 14px;
+	height: 18px;
+	flex-shrink: 0;
+	margin-left: -4px;
+	color: rgba(255, 255, 255, 0.4);
+	/* ⚠️ No well, no fill: beside the pause button a boxed mark read as a
+	   second button. It is an indicator — the bars or a glyph, nothing else. */
+}
+.pill-second svg {
+	width: 12px;
+	height: 12px;
+}
+.pill-second.is-eq {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1.5px;
+}
+.pill-second.is-eq i {
+	width: 2px;
+	height: 8px;
+	border-radius: 1px;
+	background: rgba(255, 255, 255, 0.42);
+	transform: scaleY(0.4);
+	transform-origin: center;
+}
+.pill-second.is-eq.on i {
+	background: color-mix(in srgb, var(--accent) 55%, #5a5a5a);
+	animation: second-eq 900ms ease-in-out infinite;
+}
+.pill-second.is-eq.on i:nth-child(2) {
+	animation-delay: -300ms;
+}
+.pill-second.is-eq.on i:nth-child(3) {
+	animation-delay: -600ms;
+}
+@keyframes second-eq {
+	0%,
+	100% {
+		transform: scaleY(0.4);
+	}
+	50% {
+		transform: scaleY(1);
+	}
+}
+[data-edge='left'] .pill-second,
+[data-edge='right'] .pill-second,
+[data-edge='left'] .pill-level,
+[data-edge='right'] .pill-level {
+	display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) #island-collapsed.peek-in > *,
+	html:not([data-motion='always']) .pill-second.is-eq.on i {
+		animation: none;
+	}
+	html:not([data-motion='always']) #island-collapsed.peek-pulse .pill-lead::after {
+		animation-duration: 1ms;
+	}
+}
+html[data-motion='never'] #island-collapsed.peek-in > *,
+html[data-motion='never'] .pill-second.is-eq.on i {
+	animation: none;
+}
+
+/* ── Settings → Peeks (batch 13): each kind's icon in its group's colour;
+   switched off, it goes grey with the switch. ─────────────────────────── */
+.peek-row svg {
+	color: var(--peek-hue, #8a8a8a);
+	transition: color 160ms ease, opacity 160ms ease;
+}
+.peek-row.is-off svg {
+	color: #8a8a8a;
+	opacity: 0.55;
+}
+.peek-dash {
+	color: #8a8a8a;
+	padding: 0 2px;
+}
+.settings-page input[type='time'] {
+	width: 8rem;
+	color-scheme: dark;
+}
+.settings-page input[type='time']:disabled {
+	opacity: 0.45;
+}
+/* The groups are the pane's own children as far as its spacing goes. */
+#peek-groups {
+	display: contents;
+}

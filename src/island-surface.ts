@@ -117,6 +117,10 @@ export class IslandSurface {
   private momentLayer = document.getElementById("island-moment");
   /** Told when the pointer arrives on or leaves a moment: it holds it up. */
   onMomentHover: ((on: boolean) => void) | null = null;
+  /** The pointer on the collapsed PILL in click mode, when nothing else claims
+   *  the hover (no glance, no moment, no voice): the shell shows second place
+   *  there while it stays (peeks.ts, batch 13). */
+  onPillHover: ((on: boolean) => void) | null = null;
   /** The depth the voice layer's content asked for, in CSS px. */
   private voiceDepth = cpx(FRAME.islandVoiceThinMin);
   private voiceLayer = document.getElementById("island-voice");
@@ -532,6 +536,8 @@ export class IslandSurface {
      * pointer every 100ms for as long as it is on the island, and re-arming a
      * 140ms timer on each report cancelled it every time — the glance never
      * came up at all, and nothing said why. */
+    if (!this.openOnHover && !this.glanceable && !this.open) this.onPillHover?.(value);
+    else if (!value) this.onPillHover?.(false);
     if (!this.openOnHover && this.glanceable && !this.open && value !== this.glanceWant) {
       this.glanceWant = value;
       clearTimeout(this.glanceTimer);
@@ -665,6 +671,10 @@ export class IslandSurface {
     this.paint();
   }
 
+  /** Whether a moment holds the glance: peeks wait while it does. */
+  get momentUp(): boolean { return this.momentOn; }
+  /** Whether ambient mode has the screen: peeks wait while it does. */
+  get inAmbient(): boolean { return this.ambient; }
   /** Whether a spoken turn holds the glance: moments wait while it does. */
   get voiceUp(): boolean { return this.voiceOn; }
   /** Slid out of the way and not being peeked at: nothing to announce on. */

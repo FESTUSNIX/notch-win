@@ -14,6 +14,7 @@ import { paintIcon, type TaskIcon } from "./task-icons";
 import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";
 import type { CallControl } from "./call-format";
+import type { Peek } from "./peeks";
 
 /** A board somebody built, by its id.
  *
@@ -503,4 +504,110 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
     const mark = eq.querySelector<HTMLElement>(".pill-eq-mark");
     if (mark) paintIcon(mark, activity.playing ? "pause" : "play");
   }
+}
+
+/* ── A peek (batch 13, peeks.ts) ──────────────────────────────────────────
+ *
+ * `[ art | glyph ]  title / line  [ level ] [ action ]`: news borrowing the
+ * strip for a few seconds. The pill's own shape — lead, copy, far end — so a
+ * peek coming and going is the same claim transition the strip already makes,
+ * not a new surface. ⚠️ The tone is an ATTRIBUTE (`data-tone`), coloured in
+ * CSS from the one `--accent` and the semantic `--good`/`--warn` — a tint on
+ * the glyph and the level, never a stripe (AGENTS 230, 257). */
+export function renderPeek(host: HTMLElement, peek: Peek) {
+  const shape = `${peek.art ? "art" : "icon"}${peek.level !== undefined ? "level" : ""}${peek.secondary ? "second" : peek.action ? "act" : ""}`;
+  if (host.dataset.kind !== "peek" || host.dataset.shape !== shape || host.dataset.peek !== peek.id) {
+    const fresh = host.dataset.kind !== "peek";
+    host.replaceChildren();
+    const lead = element("div", "pill-lead");
+    if (peek.art) {
+      const image = element("img", "pill-art") as HTMLImageElement;
+      image.alt = "";
+      image.src = peek.art;
+      lead.append(image);
+    } else {
+      paintIcon(lead, peek.icon as TaskIcon);
+    }
+    const copy = element("div", "pill-copy");
+    copy.append(element("span", "pill-label", peek.title));
+    if (peek.line) copy.append(element("span", "pill-value", peek.line));
+    host.append(lead, copy);
+    if (peek.level !== undefined) {
+      const level = element("div", "pill-level");
+      level.append(element("i"));
+      host.append(level);
+    }
+    // The small icon: the peek's secondary when it has one (pressed on its own, see
+    // tasks.ts), else a hint of what the click does.
+    if (peek.secondary) {
+      const act = element("span", "pill-peek-act is-secondary");
+      act.dataset.secondary = "";
+      act.title = peek.secondary.label;
+      paintIcon(act, peek.secondary.icon as TaskIcon);
+      host.append(act);
+    } else if (peek.action) {
+      const act = element("span", "pill-peek-act");
+      paintIcon(act, peek.action.label.toLowerCase() === "join" ? "join" : "open");
+      host.append(act);
+    }
+    host.dataset.kind = "peek";
+    host.dataset.shape = shape;
+    host.dataset.peek = peek.id;
+    host.classList.remove("is-clock", "is-held", "is-muted");
+    host.dataset.phase = "";
+    host.removeAttribute("aria-label");
+    /* The arrival: the content rises in, the shape does not move. ⚠️ Only
+     * when a peek REPLACES something else; one peek swapping for the next of
+     * the same kind (a fourth song) is the text changing, not an arrival. */
+    if (fresh) {
+      host.classList.remove("peek-in");
+      void host.offsetWidth;
+      host.classList.add("peek-in");
+    }
+    host.classList.toggle("peek-pulse", !!peek.pulse);
+  }
+  host.dataset.tone = peek.tone ?? "neutral";
+  host.setAttribute("aria-label", peek.line ? `${peek.title} — ${peek.line}` : peek.title);
+  const bar = host.querySelector<HTMLElement>(".pill-level i");
+  if (bar) bar.style.width = `${Math.max(0, Math.min(1, peek.level ?? 0)) * 100}%`;
+}
+
+/** Leaving a peek: the attributes a claim's own render does not know to clear. */
+export function clearPeek(host: HTMLElement) {
+  delete host.dataset.tone;
+  delete host.dataset.peek;
+  host.classList.remove("peek-in", "peek-pulse");
+}
+
+/* ── Second place ─────────────────────────────────────────────────────────
+ * The next claim after the owner, as one small mark at the strip's trailing
+ * edge: equaliser bars for music (moving while it plays), the claim's own
+ * glyph otherwise (an agent's mark, the target of a block, the calendar).
+ * ⚠️ Re-appended on every paint — a claim's rebuild clears the host's
+ * children — and built only when what it stands for changes. */
+export function paintSecond(host: HTMLElement, second: Activity | null) {
+  let mark = host.querySelector<HTMLElement>(":scope > .pill-second");
+  if (!second) {
+    mark?.remove();
+    host.classList.remove("has-second");
+    return;
+  }
+  const key = `${second.kind}:${second.icon ?? ""}`;
+  if (!mark) mark = element("span", "pill-second");
+  if (mark.dataset.key !== key) {
+    mark.replaceChildren();
+    delete mark.dataset.icon;
+    if (second.kind === "media") {
+      mark.classList.add("is-eq");
+      for (let i = 0; i < 3; i++) mark.append(element("i"));
+    } else {
+      mark.classList.remove("is-eq");
+      paintIcon(mark, second.icon ?? "media");
+    }
+    mark.dataset.key = key;
+  }
+  mark.classList.toggle("on", second.kind === "media" && !!second.playing);
+  mark.dataset.screen = second.screen;
+  if (mark.parentElement !== host || host.lastElementChild !== mark) host.append(mark);
+  host.classList.add("has-second");
 }

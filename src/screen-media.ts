@@ -4,7 +4,7 @@
  * GlobalSystemMediaTransportControls, which is what the media keys drive, so a
  * YouTube tab and a desktop player look identical from up here.
  */
-import { call, native } from "./task-client";
+import { call, native, previewBus } from "./task-client";
 import { clock, sourceName } from "./media-format";
 import { element } from "./dom";
 import { paintIcon } from "./task-icons";
@@ -76,6 +76,8 @@ export class MediaSource {
 
   async boot() {
     if (native) await listen<Media>("media:changed", e => this.receive(e.payload));
+    // The preview's staged track changes (`?peek=music`, task-client.ts).
+    else previewBus.addEventListener("media:changed", e => this.receive((e as CustomEvent<Media>).detail));
     try { this.receive(await call<Media>("get_media")); } catch { /* no session yet */ }
   }
 

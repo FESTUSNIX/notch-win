@@ -265,6 +265,47 @@ function demoHelm() {
     },
   };
 }
+/* ── Peeks, staged (batch 13, builder P) ───────────────────────────────
+   `?peek=` takes a comma list; each crosses into its window a few seconds
+   after load, so it arrives through the real readers (peek-feed.ts), never
+   at launch (a first reading is not news):
+   - `music`: the track changes at `peekat` ms (default 2500); `play`: it pauses.
+   - `block5` / `over`: with `?helm&running`, the block is 5 min + 4 s from
+     its end / 4 s from it; `done`: it is marked done at `peekat`.
+   - `meeting`: one 10 min + 4 s out with a Meet link (Join); `leave`: one
+     20 min + 4 s out at a street address; `&rain` makes the next hours wet.
+   Stage a block owner with music second with `?helm&running` alone. */
+const peekFlags = new Set((params.get("peek") ?? "").split(",").filter(Boolean));
+const peekAt = Number(params.get("peekat")) || 2500;
+let peekDone = false;
+function peekStageHelm<T>(helm: T): T {
+  const blocks = (helm as { today?: { blocks?: Record<string, unknown>[] } | null }).today?.blocks;
+  const live = blocks?.find(b => b.id === 2);
+  if (!live) return helm;
+  const endIn = peekFlags.has("block5") ? 304 : peekFlags.has("over") ? 4 : null;
+  if (endIn !== null) Object.assign(live, { minutes: 30, runStartedAt: new Date(Date.now() - (1800 - endIn) * 1000).toISOString() });
+  if (peekDone) Object.assign(live, { status: "done", runStartedAt: null, elapsedSeconds: 1740 });
+  return helm;
+}
+if (peekFlags.has("meeting")) demoCalendar.events.push({ id: "pm", title: "Standup NXM", start: hoursFromNow((600 + 4) / 3600),
+  end: hoursFromNow(1), allDay: false, location: "", meetingUrl: "https://meet.google.com/peek", calendar: "Work", color: "#5ac8fa", response: "accepted" });
+if (peekFlags.has("leave")) demoCalendar.events.push({ id: "pl", title: "Dentysta", start: hoursFromNow((1200 + 4) / 3600),
+  end: hoursFromNow(1.5), allDay: false, location: "ul. Długa 12, Kraków", meetingUrl: "", calendar: "Personal", color: "#ff9f0a", response: "accepted" });
+if (preview && peekFlags.size) window.setTimeout(() => {
+  if (peekFlags.has("music")) {
+    demoMedia = { ...demoMedia, title: "Midnight City", artist: "M83", position: 0, duration: 244 };
+    previewBus.dispatchEvent(new CustomEvent("media:changed", { detail: structuredClone(demoMedia) }));
+  }
+  if (peekFlags.has("play")) {
+    demoMedia = { ...demoMedia, playing: false };
+    previewBus.dispatchEvent(new CustomEvent("media:changed", { detail: structuredClone(demoMedia) }));
+  }
+  if (peekFlags.has("done")) {
+    peekDone = true;
+    previewBus.dispatchEvent(new CustomEvent("helm:changed", { detail: structuredClone(peekStageHelm(demoHelm())) }));
+  }
+}, peekAt);
+/* ── end of the peeks block ── */
 function demoThread() {
   const day = localDay();
   const msg = (id: number, role: string, kind: string, title: string | null, body: string, time: string, extra: Record<string, unknown> = {}) =>
@@ -619,6 +660,43 @@ async function scriptReply(text: string, capture = false, voice = false) {
 const helmCalls: { command: string; args: Record<string, unknown> }[] = [];
 if (preview) (window as unknown as { __helmCalls: typeof helmCalls }).__helmCalls = helmCalls;
 
+/* ── Batch 13 peek SOURCES, staged (builder S) ──────────────────────────
+   `&src=volume,buds,mic,power,download,screenshot,paid,logged,focus` fires each
+   source's event once, in that order, ~1.2 s apart from 1.5 s after load, on
+   `previewBus` under the names Rust emits (`peek:buds`, `peek:mic`, …;
+   paid/logged as `peek:helm`, the shape of `/api/notch` `peeks`). `focus`
+   counts only during a running block, so stage it with `&helm&running`.
+   ⚠️ Separate from P's peek flags on purpose: these stage the SOURCES, P's
+   the engine. Settings → Peeks in the preview keeps `peeks`/`peekQuiet` in
+   sessionStorage so a reload shows what was switched (tests/browser/peeks.spec). */
+const PREVIEW_SHOT = "data:image/svg+xml;utf8," + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="160" height="100" fill="#20242c"/><rect x="10" y="10" width="90" height="12" rx="3" fill="#5ac8fa"/><rect x="10" y="30" width="140" height="60" rx="4" fill="#2f3542"/></svg>`);
+const previewSources: Record<string, [string, unknown]> = {
+  buds: ["peek:buds", { name: "Mateusz's Buds3 Pro", connected: true, battery: 80 }],
+  mic: ["peek:mic", true],
+  volume: ["peek:volume", { level: 64, muted: false }],
+  power: ["peek:power", { what: "low", percent: 12, urgent: false }],
+  download: ["peek:file", { token: "d1", kind: "download", name: "faktura_wrzesien_2026.pdf", thumb: null }],
+  screenshot: ["peek:file", { token: "s1", kind: "screenshot", name: "Zrzut ekranu 2026-10-30 151204.png", thumb: PREVIEW_SHOT }],
+  paid: ["peek:helm", [{ id: "paid:41", kind: "paid", title: "+4 795 zł · NXM", at: new Date().toISOString() }]],
+  logged: ["peek:helm", [{ id: "logged:907", kind: "logged", title: "1 h 20 min na Atelier, zalogowane", at: new Date().toISOString() }]],
+  focus: ["peek:focus", "youtube.com"],
+};
+if (preview) {
+  (params.get("src") ?? "").split(",").filter(k => k in previewSources).forEach((kind, i) => {
+    const [name, detail] = previewSources[kind];
+    setTimeout(() => previewBus.dispatchEvent(new CustomEvent(name, { detail: structuredClone(detail) })), 1500 + i * 1200);
+  });
+  try {
+    const kept = JSON.parse(sessionStorage.getItem("preview-peek-prefs") ?? "null") as { peeks?: unknown; peekQuiet?: unknown } | null;
+    if (kept) Object.assign(demoPrefs, kept);
+  } catch { /* none kept */ }
+}
+const keepPeekPrefs = (prefs: Record<string, unknown>) => {
+  try { sessionStorage.setItem("preview-peek-prefs", JSON.stringify({ peeks: prefs.peeks ?? {}, peekQuiet: prefs.peekQuiet ?? null })); } catch { /* forgotten */ }
+};
+/* ── end of batch 13 sources ── */
+
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
   if (command.startsWith("helm_") || command.startsWith("voice_")) helmCalls.push({ command, args: structuredClone(args) });
@@ -640,6 +718,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "get_prefs") return structuredClone(demoPrefs) as T;
   if (command === "set_prefs") {
     demoPrefs = args.prefs as Record<string, unknown>;
+    keepPeekPrefs(demoPrefs);
     return structuredClone(demoPrefs) as T;
   }
   if (command === "get_displays") return {screens:[
@@ -845,7 +924,8 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     hours: Array.from({ length: 12 }, (_, at) => ({
       at: `${String((new Date().getHours() + at) % 24).padStart(2, "0")}:00`,
       celsius: Math.round(12 + Math.sin(at / 2.4) * 7),
-      icon: at % 4 === 0 ? "wxClear" : at % 3 === 0 ? "wxRain" : "wxPartly",
+      // `&rain` (peeks block): the next hours wet, for "weź parasol".
+      icon: params.has("rain") ? "wxRain" : at % 4 === 0 ? "wxClear" : at % 3 === 0 ? "wxRain" : "wxPartly",
     })),
     days: Array.from({ length: 6 }, (_, at) => ({
       date: new Date(Date.now() + at * 86400000).toISOString().slice(0, 10),
@@ -1068,7 +1148,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   /* Helm, staged. ⚠️ Disconnected unless `?helm`: a connected Helm adds a
      running block to the pill and, with `?nudge`, a nudge at priority 80 —
      which would take the strip from every other test. */
-  if (command === "get_helm") return structuredClone(demoHelm()) as T;
+  if (command === "get_helm") return structuredClone(peekStageHelm(demoHelm())) as T;
   if (command === "helm_thread") {
     if (!params.has("helm")) throw new Error("Sign in to Helm in Settings to talk to the Guardian.");
     if (typeof args.day === "string" && args.day) return structuredClone(demoDay(args.day)) as T;

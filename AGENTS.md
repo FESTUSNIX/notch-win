@@ -5853,3 +5853,141 @@ rows drag to reorder, and the foot reads one line as an add or a log
       `&queue=fail` (every queue act refused). moments.spec.ts walks each
       kind and action; close.spec.ts the flow; tests/helm-moments.test.mjs the
       pure half.
+ 887. **Four ways the island speaks, and which wins** (batch 13). The OWNER
+      holds the collapsed pill: the highest `Activity` claim (`pick`), as
+      before. A PEEK (peeks.ts) borrows the PILL — not a glance, no growth —
+      for ~4 s and hands it back: news (a song change, 5 min left, a meeting
+      in 10). A MOMENT (moments.ts) grows the island into the glance and is
+      actionable/sticky. The VOICE GLANCE is a spoken turn. Peeks wait while
+      a moment or the voice glance is up, the panel/palette/capture is open,
+      the island is away (fullscreen) or ambient, in a call, or while
+      `voice_quiet` says `presenting`/`call` (asked every 3 s only while a peek
+      waits); a hold arriving mid-peek ENDS it (it is in the replay). One at a
+      time; the newest of a kind replaces an older one, waiting or up; one that
+      waited 90 s is dropped; quiet hours (`prefs.peekQuiet`) drop non-urgent
+      ones and `prefs.peeks[kind] === false` turns a kind off (`peekOn`).
+      `peek()` is the one door, for every source.
+ 888. **A peek in the pill** (`renderPeek`, island-activity.ts): the claim's own
+      shape — art or a glyph in a recessed well, title, quieter line, optional
+      level bar, at most one action icon (`.pill-peek-act`; the click runs
+      `action.run`, otherwise the click is the pill's). `data-tone` tints the
+      glyph from `--accent`/`--good`/`--warn` (AGENTS 230, 257), never a stripe.
+      Arrival = `peek-rise` (opacity, 4 px, blur; no overshoot) only when a
+      peek replaces a claim; `pulse` = one amber ring (a block running over).
+      Reduced motion drops both. `clearPeek` runs before any claim render.
+ 889. **Second place** = the next claim with priority > 0 after the owner, a
+      small UNBOXED mark at the trailing edge (`paintSecond`): bars for music
+      (moving while playing), the claim's glyph otherwise. ⚠️ No well: beside a
+      block's pause button a boxed mark read as a second button. Hover (CLICK
+      MODE ONLY — `IslandSurface.onPillHover`, fired when no glance, moment or
+      voice owns the hover; in hover mode the pointer opens the panel) shows
+      second place in the pill while the pointer stays; the mark then stands
+      for the owner. `#island-collapsed[data-view]` = owner | second | replay
+      | peek, for tests.
+ 890. **The wheel over the COLLAPSED pill** cycles owner → second → the last 3
+      peeks (newest first) → owner (`PillCycle`); 5 s idle returns to the
+      owner; one mouse notch (90 px gathered in 400 ms) is one step; a turn
+      while a peek is up dismisses it. It never steps screens — the panel's
+      wheel (`#island-expanded`) is unchanged — and it only runs while the
+      panel is shut (so, in practice, click mode).
+ 891. **P's peeks** (peek-feed.ts, pure readers, primed on the first call):
+      music — a track change from one track to ANOTHER (not music starting,
+      not when music is the owner), play/pause (2.5 s); block — "Zostało N min"
+      at ≤5 min (once, running), "Czas minął" at 0 (once, amber pulse),
+      "Zrobione · <time>" when the live block turns done (Helm sends no
+      earned figure to the notch yet); meeting — 10 min out (until 5, where
+      the meeting claim takes over), Join as the click when there is a link;
+      leave — "Czas wyjść" at start − 20 min (a FIXED default) for an event
+      with a place and no call link, "· weź parasol" (rain glyph) when any of
+      the next 3 forecast hours is rain/drizzle/storm. Volume is S's: nothing
+      in Rust emits system-volume changes today.
+ 892. **Staged:** `?helm&running` = a block owner with music second; `&peek=`
+      music, play, block5, over, done, meeting, leave (`&rain`), `&peekat=ms`
+      (task-client.ts, the peeks block: each crosses into its window seconds
+      after load, through the real readers; media and Helm readings go out on
+      `previewBus` as `media:changed`/`helm:changed`). peeks.spec.ts (click
+      mode) and tests/peeks.test.mjs.
+
+### The island's event sources and Settings → Peeks (30 Oct)
+
+ 893. **Batch 13 peek sources (builder S): Rust emits, `peek-sources.ts`
+      peeks.** Every source emits to the island (`tasks`) only on a CHANGE,
+      and every first read seeds — what is connected, muted or unplugged at
+      launch is never announced. Copy and ids are pure in `peek-logic.ts`
+      (tests/peek-sources.test.mjs); `peek()` (peeks.ts, P's) decides whether a
+      kind shows. Events: `peek:buds`, `peek:mic`, `peek:power`, `peek:file`,
+      `peek:focus`; Helm's paid/logged come in the raw `helm:changed` reading.
+ 894. **Buds** (devices.rs): every 3 s, connected Bluetooth devices whose
+      class of device is Audio/Video (`is_audio_class`; mice, phones ignored).
+      On arrival the battery is `DEVPKEY_Bluetooth_Battery`
+      ({104EA319-…}, pid 2) read with SetupAPI off the BTHENUM/BTHLE nodes,
+      matched by friendly name STARTING with the device name (the hands-free
+      node is "<name> Hands-Free AG"); highest figure wins; asked again 4 s
+      later because the hands-free profile reports it after the link is up.
+      ⚠️ Windows keeps the last figure on a node that is present but not
+      connected, so it is only read on a connect. No figure → "podłączone"
+      without a %. `system:connected` (system.rs) still fires for any device.
+ 895. **Mic** (devices.rs): the default capture endpoint (`eCapture`,
+      `eConsole`) polled every 0.8 s for its mute; a change of DEVICE (the
+      default moved, a headset plugged in) says nothing (`mic_change`).
+      ⚠️ The call's own "mute the microphone too" (call.rs) also flips it, so
+      a call's start can queue a "Mikrofon wyciszony" — the peek engine holds
+      peeks during a call. Polling, not `IAudioEndpointVolumeCallback`: no COM
+      object to keep registered across default-device changes.
+ 896. **Power** (devices.rs): `GetSystemPowerStatus` every 3 s. A desktop
+      (BatteryFlag 128/255, percent 255) ends the thread silently. Charger in
+      → "Ładowanie · N%", out → "Na baterii · N%"; on battery, crossing 15 %
+      → "Bateria N%", 5 % → urgent (shows in quiet hours, ttl 8 s), each once
+      until charging or back above 20 % (`power_events`). Already low at launch
+      counts as said.
+ 897. **Downloads and screenshots** (arrivals.rs): `Downloads` and
+      `Pictures\Screenshots` listed every 2 s (no ReadDirectoryChangesW: a
+      listing cannot miss a rename). A file counts once: not a partial name
+      (`.crdownload .part .partial .tmp .download .opdownload`, `~$`, dot
+      files, desktop.ini), not empty, no Firefox `<name>.part` beside it, and
+      the same size on two reads; folders never. ⚠️ The page gets a TOKEN,
+      never the path (as thumbs.rs): `arrival_open`/`arrival_reveal`/
+      `arrival_copy` take it, the last 16 are held. Download: click opens,
+      the small action shows it in its folder. Screenshot: the shell's
+      thumbnail as `art`, click copies the FILE (CF_HDROP, pastes into chats
+      and uploads, not into Paint), the small action opens it. "Do Guardiana"
+      skipped: the composer has no pending-attachment slot (`send()` sends
+      images at once), so attaching would mean building one. A Screenshots
+      folder that does not exist yet is an empty listing until it does.
+ 898. **Helm paid/logged** (peek-sources.ts): from the RAW `/api/notch` in
+      `helm:changed` / `get_helm` — `readNotch` drops fields it does not know.
+      Each id once, oldest first, remembered across launches
+      (`kit:peek-helm-seen`, last 80); a missing `peeks` is none.
+ 899. **Focus** (curtain.rs → peek-sources.ts): the curtain's watch emits
+      `peek:focus` with the domain the moment a locked site comes to the front
+      and its DWELL starts — three seconds before the dim. "Wracamy? ·
+      <site>" once per site per running Helm block (session memory); no
+      running block, no peek; click opens Helm. The curtain itself is unchanged.
+ 900. **Settings → Peeks** (settings-peeks.ts, mounted by task-editor.ts):
+      every PeekKind grouped (Music, Your block, Calendar, Devices, Files,
+      Money and work, Focus), its icon in the group's hue (grey when off), a
+      switch; quiet hours (moon, from–to, off by default, 22:00–07:00 when
+      first switched on). Stored in prefs.rs as `peeks` (only `false` kept;
+      missing = on) and `peekQuiet` (`clean_quiet`: real HH:MM, not equal, or
+      null). **Staged:** `&src=buds,mic,power,download,screenshot,paid,logged,
+      focus` (focus needs `?helm&running`) fires each source on `previewBus`;
+      the preview keeps `peeks`/`peekQuiet` in sessionStorage across reloads
+      (peeks-settings.spec.ts). Native check by hand:
+      `cargo test --lib devices::tests::reads_the_real_machine -- --ignored --nocapture`.
+ 901. **Volume** (devices.rs, left to S by P): the default OUTPUT endpoint's
+      level and mute polled every 0.4 s on the mic thread (the mic every
+      other tick); a change on the same device emits `peek:volume {level,
+      muted}` → "Głośność N%" / "Wyciszono", one id (`volume`) so a held key
+      replaces itself, ttl 1.8 s. A change of default device says nothing.
+      It also fires for the island's own volume slider — that is the HUD
+      doing its job, not an echo.
+
+ 902. ⚠️ **The pointer on the pill wins over news** (merge of batch 13). A peek
+      never STARTS under the pointer, and the one already up stays while the
+      pointer is on it (its time stops, so it can be clicked): `peeks.step(now,
+      held, pointer)`. And second place shows only while the pointer is on ITS
+      mark at the strip's end (`.pill-second`), never on the pill as a whole —
+      hovering the pill swapped the running block (and its Pause) out from
+      under the click aiming at it. Both are DOM pointer events on
+      `#island-collapsed` (click mode); `surface.onPillHover` no longer drives
+      second place.

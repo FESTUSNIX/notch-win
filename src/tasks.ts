@@ -11,7 +11,11 @@ import { SCREENS, withBoards } from "./screens";
 import { cpx } from "./layout";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
-import { pick, renderActivity, renderResting, type Activity, type FixedScreen, type ScreenName } from "./island-activity";
+import { pick, renderActivity, renderResting, renderPeek, clearPeek, paintSecond, type Activity, type FixedScreen, type ScreenName } from "./island-activity";
+// Peeks (batch 13): news that borrows the pill — peeks.ts, peek-feed.ts.
+import { peek, peeks, onPeek, setPeekPrefs, PillCycle, type Peek } from "./peeks";
+import { BlockPeeks, CalendarPeeks, MusicPeeks } from "./peek-feed";
+import { blockSeconds } from "./screen-helm";
 import { choose, decay, readings, type HoldState, type ModuleContext, type ModuleReading } from "./pill-modules";
 import { clockText } from "./tween";
 import { setMotion } from "./motion-pref";
@@ -65,6 +69,7 @@ import { ReviewScreen } from "./screen-review";
 import "./tasks.css";
 // Moments (30 Oct): the island's notifications — see moments.ts.
 import { MomentFeed } from "./moment-feed";
+import { bootPeekSources } from "./peek-sources";
 import { nudgeAction } from "./screen-helm";
 import { agentName } from "./screen-agents";
 import "./moments.css";
@@ -1610,6 +1615,53 @@ function paintGlance() {
   glance.line.style.setProperty("--p", `${m.duration > 0 ? (media.position() / m.duration) * 100 : 0}%`);
 }
 
+/* ── Peeks, second place and the wheel (batch 13) ─────────────────────────
+ * The OWNER is the highest claim, as before. A peek borrows the strip for a
+ * few seconds (peeks.ts), second place is a small mark at the trailing edge,
+ * the pointer on the pill (click mode) shows second place while it stays, and
+ * the wheel over the pill cycles owner → second → the last peeks → back. */
+const pillCycle = new PillCycle();
+const musicPeeks = new MusicPeeks();
+const blockPeeks = new BlockPeeks();
+const calendarPeeks = new CalendarPeeks();
+let pillHovered = false;
+/** `voice_quiet`'s answer, asked only while a peek waits (moment-feed's rule). */
+let peekQuietWhy: string | null = null;
+let peekQuietAt = 0;
+/** What the strip drew last paint: the click needs to know if it was a peek. */
+let pillPeek: Peek | null = null;
+
+/* The pointer on the collapsed pill: a peek waits rather than swap the strip
+ * out from under a click (Pause, Join) that is about to land. */
+let pillPointer = false;
+collapsedLayer.addEventListener("pointerenter", () => { pillPointer = true; });
+collapsedLayer.addEventListener("pointerleave", () => { pillPointer = false; });
+
+function peekHeld(): boolean {
+  if (peeks.size && Date.now() - peekQuietAt > 3000) {
+    peekQuietAt = Date.now();
+    void call<string | null>("voice_quiet").then(why => { peekQuietWhy = why ?? null; }).catch(() => { peekQuietWhy = null; });
+  }
+  return surface.open || surface.voiceUp || surface.momentUp || surface.isHidden || surface.inAmbient
+    || palette.open || capture.open || callSource.call.active
+    || peekQuietWhy === "presenting" || peekQuietWhy === "call";
+}
+
+/** Raise this side's peeks from what the screens already read. */
+function feedPeeks(owner: Activity | null) {
+  for (const one of [
+    musicPeeks.read(media.media, owner?.kind === "media"),
+    ...blockPeeks.read(helmSource.blocks, b => blockSeconds(b as never, helmSource.helm.skewMs)),
+    ...calendarPeeks.read(calendar.feed.events, Date.now(),
+      (weather as { hours?: { icon: string }[] } | null)?.hours ?? null,
+      url => { void call("open_external", { url }).catch(() => {}); }),
+  ]) {
+    // The meeting already holds the strip (its own claim): saying it again is noise.
+    if (one && !(one.kind === "meeting" && owner?.kind === "event")) peek(one);
+  }
+}
+onPeek(() => paintPill());
+
 /** Draw the collapsed pill: the live claim if there is one, the resting three
  *  slots otherwise. Split because at rest the pill is not one claim with its
  *  parts blank — it is three independent things sharing a strip. */
@@ -1623,6 +1675,38 @@ function paintPill(live = claims()) {
     ? { through: runThrough(lead), phase: pom.phase, held: pom.endsAt === null }
     : null);
   const best = pick(live);
+  /* Second place: the next claim down that has something to say. */
+  const owner = best && best.priority > 0 ? best : null;
+  const second = owner
+    ? live.filter((one): one is Activity => !!one && one !== owner && one.priority > 0)
+      .sort((a, b) => b.priority - a.priority)[0] ?? null
+    : null;
+  feedPeeks(owner);
+  const nowMs = Date.now();
+  const up = peeks.step(nowMs, peekHeld(), pillPointer);
+  /* The wheel's stops: owner, second, the replay (newest first). */
+  const stops: (Activity | Peek)[] = [...(owner ? [owner] : []), ...(second ? [second] : []), ...peeks.recent];
+  const at = up ? 0 : pillCycle.index(stops.length, nowMs);
+  const shown: Activity | Peek | null = up
+    ?? (pillHovered && second && !surface.open ? second : at > 0 ? stops[at] : null);
+  pillPeek = shown && "kind" in shown && "id" in shown ? shown as Peek : null;
+  collapsedLayer.dataset.view = up ? "peek" : shown === second && second ? "second" : at > 0 ? "replay" : "owner";
+  if (pillPeek) {
+    surface.setGlanceable(false);
+    paintGlance();
+    renderPeek(collapsedLayer, pillPeek);
+    paintSecond(collapsedLayer, null);
+    return;
+  }
+  clearPeek(collapsedLayer);
+  if (shown) {
+    surface.setGlanceable(false);
+    paintGlance();
+    renderActivity(collapsedLayer, shown as Activity);
+    // Showing second place: the mark at the end stands for the owner it hides.
+    paintSecond(collapsedLayer, owner);
+    return;
+  }
   /* The glance is for music only. ⚠️ Keyed on what the pill is SHOWING, not
    * on whether anything is playing: a pill showing a call that swelled into a
    * track on hover would be answering a question nobody asked. */
@@ -1635,6 +1719,7 @@ function paintPill(live = claims()) {
     renderActivity(collapsedLayer, best.kind === "call"
       ? { ...best, clock: clockText(new Date(), clock24) }
       : best);
+    paintSecond(collapsedLayer, best.kind === "call" ? null : second);
     return;
   }
   const now = new Date();
@@ -2466,6 +2551,8 @@ function applyPrefs(next: Prefs) {
   document.documentElement.style.setProperty("--accent", next.accent);
   setMotion(next.motion);
   surface.setOpenOnHover(next.openOnHover);
+  // Settings → Peeks (batch 13): which kinds, and the quiet hours.
+  setPeekPrefs(next as unknown as Parameters<typeof setPeekPrefs>[0]);
   /* ⚠️ On <html>, where the stylesheet can read it. Click mode is not only a
    * behaviour — it is what makes the pill able to hold controls at all, because
    * the pointer resting on it no longer means "open". */
@@ -2614,6 +2701,63 @@ collapsedLayer.addEventListener("click", event => {
   }
   callSource.act(act.dataset.act);
 }, true);
+
+/* A peek's click does its own action (Join), and the strip goes back to the
+ * owner. ⚠️ Capturing, and only when there IS an action: a peek without one is
+ * the pill, and pressing the pill opens the island as it always has. */
+collapsedLayer.addEventListener("click", event => {
+  const shown = pillPeek;
+  // Its small icon runs the secondary (Pokaż w folderze) instead of the click's action.
+  const second = shown?.secondary && (event.target as Element | null)?.closest("[data-secondary]");
+  if (!shown || (!shown.action && !second)) return;
+  event.stopPropagation();
+  peeks.drop(shown.kind);
+  if (second) shown.secondary!.run();
+  else shown.action!.run();
+  paintPill();
+}, true);
+/* Second place shows while the pointer is on ITS mark at the strip's end, not
+ * anywhere on the pill: the pill hovered as a whole swapped the owner (and its
+ * Pause) out from under the click aiming at it. */
+const hoverSecond = (on: boolean) => {
+  if (pillHovered === on) return;
+  pillHovered = on;
+  paintPill();
+};
+collapsedLayer.addEventListener("pointerover", event => {
+  if ((event.target as Element | null)?.closest(".pill-second")) hoverSecond(true);
+});
+collapsedLayer.addEventListener("pointerout", event => {
+  const to = event.relatedTarget as Element | null;
+  if ((event.target as Element | null)?.closest(".pill-second") && !to?.closest(".pill-second")) hoverSecond(false);
+});
+collapsedLayer.addEventListener("pointerleave", () => hoverSecond(false));
+/* The wheel over the COLLAPSED pill cycles what it shows (owner → second →
+ * the last peeks → back; 5 s idle returns to the owner). ⚠️ The panel's own
+ * wheel (below) still steps screens; this one never does — and it gathers
+ * the same way, so a trackpad's drift is not a turn. */
+let pillWheeled = 0;
+let pillWheeledAt = 0;
+collapsedLayer.addEventListener("wheel", event => {
+  if (surface.open) return;
+  event.preventDefault();
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+  const now = performance.now();
+  if (now - pillWheeledAt > WHEEL_WINDOW || Math.sign(delta) !== Math.sign(pillWheeled)) pillWheeled = 0;
+  pillWheeled += delta;
+  pillWheeledAt = now;
+  if (Math.abs(pillWheeled) < 90) return;
+  const dir = Math.sign(pillWheeled);
+  pillWheeled = 0;
+  // A peek up is dismissed by the turn: the wheel is him taking the strip back.
+  if (pillPeek && peeks.showing) peeks.drop(peeks.showing.kind);
+  const live = claims();
+  const best = pick(live);
+  const owner = best && best.priority > 0 ? best : null;
+  const seconds = live.filter(one => !!one && one !== owner && one.priority > 0).length ? 1 : 0;
+  pillCycle.wheel(dir, (owner ? 1 : 0) + seconds + peeks.recent.length, Date.now());
+  paintPill(live);
+}, { passive: false });
 
 /* ── Changing screens with a wheel ────────────────────────────────────────
  * A wheel anywhere in the panel changes screen, UNLESS the pointer is over
@@ -3144,6 +3288,11 @@ async function boot() {
   await guardianChat.boot();
   await voiceTalk.boot();
   await moments.boot();
+  /* Batch 13 (builder S): devices, files, Helm's paid/logged and the focus peek. */
+  await bootPeekSources({
+    runningBlock: () => helmSource.blocks.find(b => b.status === "running")?.id ?? null,
+    open: name => { steered = performance.now(); show(name); surface.show(true); },
+  });
 
   await watchTasks(value => { today.reconcile(value); today.snapshot = value; render(); });
   render();

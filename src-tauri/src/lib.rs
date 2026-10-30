@@ -1,4 +1,6 @@
 mod ambient;
+mod arrivals;
+mod devices;
 mod apptime;
 mod audio;
 mod autostart;
@@ -554,6 +556,9 @@ pub fn run() {
             shelf::shelf_copy,
             shelf::copy_text,
             shelf::shelf_open,
+            arrivals::arrival_open,
+            arrivals::arrival_reveal,
+            arrivals::arrival_copy,
             shelf::shelf_reveal,
             shelf::shelf_capture,
             log::open_log,
@@ -788,6 +793,9 @@ pub fn run() {
             // The curtain watches the window in front; Helm's reading reaches it from helm.rs.
             curtain::spawn(app.handle().clone());
             system::spawn(app.handle().clone());
+            // Batch 13 peek sources: earbuds, the mic, the battery; new downloads and screenshots.
+            devices::spawn(app.handle().clone());
+            arrivals::spawn(app.handle().clone());
             // Last, so a stolen key combination cannot stop the rest of setup.
             if let Err(message) = shortcuts::setup(app.handle()) {
                 eprintln!("global shortcuts: {message}");

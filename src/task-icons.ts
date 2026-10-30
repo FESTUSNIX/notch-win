@@ -20,6 +20,10 @@ import {
   Calendar03Icon, TaskDaily01Icon, Target02Icon, Timer02Icon, RoboticIcon, MoonIcon, SunriseIcon, ThumbsUpIcon,
   ScissorIcon, Briefcase01Icon,
 } from "@hugeicons/core-free-icons";
+/* Batch 13 peeks (builder S): the devices and files the island now reports. */
+import {
+  Airpod03Icon, BatteryMedium01Icon, BatteryLowIcon, BatteryCharging01Icon, Download04Icon,
+} from "@hugeicons/core-free-icons";
 
 /* ── The agents' own marks ──────────────────────────────────
    The REAL ones, taken from each vendor's own VS Code extension on this
@@ -175,6 +179,9 @@ const icons = {
      its panel draws, so a chip reads alike in both apps. */
   day: Calendar03Icon, plan: TaskDaily01Icon, aim: Target02Icon, stopwatch: Timer02Icon, robot: RoboticIcon,
   moon: MoonIcon, sunrise: SunriseIcon, thumbsUp: ThumbsUpIcon, scissor: ScissorIcon, briefcase: Briefcase01Icon,
+  /* Batch 13 peeks: earbuds, a battery (low, charging), a finished download. */
+  buds: Airpod03Icon, battery: BatteryMedium01Icon, batteryLow: BatteryLowIcon, charging: BatteryCharging01Icon,
+  download: Download04Icon,
   // Whose agent it is. See the marks above.
   claude: CLAUDE_MARK,
   codex: CODEX_MARK,

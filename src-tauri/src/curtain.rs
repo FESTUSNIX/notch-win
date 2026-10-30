@@ -436,10 +436,21 @@ fn tick(app: &AppHandle, exes: &mut HashMap<u32, String>) {
         held: held(app),
     };
 
+    let mut soon: Option<String> = None;
     let decided = {
         let mut watch = watch();
         let now = Instant::now();
-        match step(&mut watch, &sense, now) {
+        let was = watch.seen.as_ref().map(|(h, d, _)| (*h, d.clone()));
+        let stepped = step(&mut watch, &sense, now);
+        /* Batch 13 (focus peek): a locked site just came to the front and the
+         * dwell has started — the curtain is DWELL away. The island peeks
+         * "Wracamy?" first, so the nudge can be heeded before the dim. */
+        if let Some((h, d, _)) = &watch.seen {
+            if was.as_ref() != Some(&(*h, d.clone())) {
+                soon = Some(d.clone());
+            }
+        }
+        match stepped {
             Step::Show(index, window) => {
                 let reading = watch.reading.as_ref().expect("a show needs a reading");
                 let showing = Showing {
@@ -457,6 +468,9 @@ fn tick(app: &AppHandle, exes: &mut HashMap<u32, String>) {
             Step::Stay => None,
         }
     };
+    if let Some(domain) = soon {
+        let _ = app.emit_to("tasks", "peek:focus", domain);
+    }
     match decided {
         Some(Ok((window, showing, paused))) => {
             crate::log::note(&format!("curtain: over {} in {}", showing.site.domain, showing.browser));

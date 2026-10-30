@@ -323,6 +323,34 @@ pub struct Prefs {
     /// while presenting, in a call or in a meeting either way — that is not a
     /// preference, it is `voice::quiet`.
     pub spoken_replies: bool,
+
+    /* ── Peeks (batch 13) ──────────────────────────────────────────────── */
+    /// Settings → Peeks: a kind switched OFF is `false`; missing is on, so a
+    /// kind added later starts on without a migration (the contract's rule).
+    pub peeks: BTreeMap<String, bool>,
+    /// Quiet hours for non-urgent peeks, `HH:MM` to `HH:MM` (may cross
+    /// midnight). `None` is off, the default.
+    pub peek_quiet: Option<PeekQuiet>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PeekQuiet {
+    pub from: String,
+    pub to: String,
+}
+
+/// A clock time as `HH:MM`, or `None`.
+fn hhmm(value: &str) -> Option<String> {
+    let (h, m) = value.trim().split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then(|| format!("{h:02}:{m:02}"))
+}
+
+/// Quiet hours with both ends real times and not the same minute; else off.
+pub fn clean_quiet(quiet: Option<PeekQuiet>) -> Option<PeekQuiet> {
+    let quiet = quiet?;
+    let (from, to) = (hhmm(&quiet.from)?, hhmm(&quiet.to)?);
+    (from != to).then_some(PeekQuiet { from, to })
 }
 
 impl Default for Prefs {
@@ -371,6 +399,8 @@ impl Default for Prefs {
             task_view: "day".into(),
             helm_sound: "Notification.Reminder".into(),
             spoken_replies: true,
+            peeks: BTreeMap::new(),
+            peek_quiet: None,
         }
     }
 }
@@ -437,6 +467,9 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
          * than a hand is accurate, and a list that is longer than the thing it
          * describes is a setting that silently does nothing. */
         ring_stops: prefs.ring_stops.into_iter().take(8).collect(),
+        // Only switched-off kinds are worth keeping: on is the default.
+        peeks: prefs.peeks.into_iter().filter(|(k, on)| !on && k.len() <= 24).collect(),
+        peek_quiet: clean_quiet(prefs.peek_quiet),
         helm_sound: if crate::sound::is_known(&prefs.helm_sound) {
             prefs.helm_sound
         } else {
@@ -466,6 +499,17 @@ fn is_hex(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_hours_are_real_times_or_off() {
+        let q = |from: &str, to: &str| Some(PeekQuiet { from: from.into(), to: to.into() });
+        assert_eq!(clean_quiet(q("22:00", "7:30")), q("22:00", "07:30"));
+        assert_eq!(clean_quiet(q("25:00", "07:00")), None);
+        assert_eq!(clean_quiet(q("08:00", "08:00")), None);
+        assert_eq!(clean_quiet(None), None);
+        let old: Prefs = serde_json::from_str("{}").unwrap();
+        assert!(old.peeks.is_empty() && old.peek_quiet.is_none());
+    }
 
     /// ⚠️ A file written by an older build is missing whatever was added since.
     /// A parse error here would throw away every preference to add one.

@@ -353,6 +353,8 @@ export class HelmSource {
       await listen<Finish>("notch:finished", event => finished(event.payload));
     } else {
       previewBus.addEventListener("notch:finished", event => finished((event as CustomEvent<Finish>).detail));
+      // The preview's staged readings (`?peek=done`, task-client.ts).
+      previewBus.addEventListener("helm:changed", event => { this.helm = (event as CustomEvent<Helm>).detail; this.changed(); });
     }
     /* ⚠️ Asked for once at boot: the first reading may have been emitted
      * before this page was listening. See AGENTS on events. */
