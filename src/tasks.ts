@@ -239,6 +239,7 @@ app.innerHTML = `<div id="notch-shell">
   <div id="island" role="group" aria-label="Codenotch" aria-expanded="false">
     <div id="island-collapsed"></div>
     <div id="island-glance" inert></div>
+    <div id="island-voice" inert></div>
     <div id="drop-veil" aria-hidden="true"><div class="drop-frame"><span class="drop-mark"></span><span class="drop-say">Drop to shelve</span></div></div>
     <div id="island-expanded" inert>
       <header class="island-head">
@@ -585,21 +586,25 @@ agentsScreen.mainCss = cpx(WIDTH.agents);
 /* The agents' time on a project today, from this machine's own runs. */
 helmSource.agentMinutes = folders => agentsScreen.minutesToday(folders);
 /* Hold to talk from anywhere (Alt+Q, voice.rs): the Guardian answers out
- * loud, in this same thread. ⚠️ It opens the screen itself, out from under the
- * palette or capture, and holds the island up until the turn is over. */
+ * loud, in this same thread. ⚠️ In the island's GLANCE, never on the
+ * Guardian's screen (round 2, his call): the palette, capture and an open
+ * panel make way for it, and only a click on it opens the Guardian. */
 const voiceTalk = new VoiceTalk(guardianChat, helmSource, surface, {
-  open: () => {
-    steered = performance.now();
+  prepare: () => {
     if (palette.open) void palette.hide();
     if (capture.open) void capture.hide();
+    /* ⚠️ Not over a pin or a caret: a panel he pinned or is typing in stays,
+     * and the glance waits under it for the fold. */
+    if (surface.open && !surface.pinned && !surface.editing) surface.show(false);
+  },
+  openGuardian: () => {
+    steered = performance.now();
     guardianChat.today();
     show("guardian");
     surface.show(true);
   },
-  foot: () => document.querySelector<HTMLElement>('[data-screen="guardian"] .g-foot'),
   spoken: () => prefs.spokenReplies !== false,
 });
-document.querySelector('[data-screen="guardian"] .g-foot')?.prepend(voiceTalk.el);
 /* Quick capture: one line to the Guardian (Ctrl+Alt+J, or the palette). */
 const capture = new Capture(surface, guardianChat, {
   signedIn: () => helmSource.signedIn,
@@ -1746,8 +1751,9 @@ if (preview) {
     event.preventDefault();
     void tellTheGuardian();
   }, true);
-  /* And hold to talk's (Alt+Q held): `voice:down` and `voice:up` are native too.
-   * Let go of either key and the hold is over, as in voice.rs. */
+  /* And hold to talk's (Alt+Q held, or tapped for hands-free): `voice:down`
+   * and `voice:up` are native too. Let go of either key and the hold is over,
+   * as in voice.rs; Enter and Escape reach the turn through the page itself. */
   let talkDown = 0;
   document.addEventListener("keydown", event => {
     if (!event.altKey || event.ctrlKey || event.code !== "KeyQ") return;
@@ -2863,6 +2869,8 @@ async function boot() {
     await listen("island:dismiss", () => {
       if (palette.open) { void palette.hide(); return; }
       if (capture.open) { void capture.hide(); return; }
+      // A voice glance up only to be read has been read.
+      if (voiceTalk.dismiss()) return;
       void surface.dismiss();
     });
   }

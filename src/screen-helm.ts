@@ -756,8 +756,9 @@ export class HelmSource {
       }
       return this.speech === "yes";
     },
+    // No `lang`: Helm hears Polish or English and writes each down as it was said.
     transcribe: async (audio: string, mime: string) => {
-      const answer = await call<{ text?: string; unavailable?: boolean } | null>("helm_transcribe", { audio, mime, lang: "pl" });
+      const answer = await call<{ text?: string; unavailable?: boolean } | null>("helm_transcribe", { audio, mime });
       if (answer?.unavailable) {
         this.speech = "no";
         this.changed();

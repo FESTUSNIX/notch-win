@@ -142,8 +142,8 @@ notch off screen — the island sits where an editor keeps its tab strip, so
 getting it out of the way had to be one key. **`Ctrl+Alt+J` tells the Guardian**
 one line from wherever you are (quick capture, below) — J because Helm's own
 Guardian panel is `Ctrl+J`. **Hold `Alt+Q` to talk to the Guardian** from any
-app (below, "Helm"): two keys because it is held while you speak, and `Alt`
-rather than `Ctrl+Alt` so it can never be AltGr. All four are rebindable in
+app, or tap it to talk hands-free (below, "Helm"): two keys because it is held
+while you speak, and `Alt` rather than `Ctrl+Alt` so it can never be AltGr. All four are rebindable in
 Settings → Shortcuts, and the choice to hide survives a restart.
 
 ⚠️ **Nine letters are unavailable, and the reason is not obvious.**
@@ -344,21 +344,33 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   `mic.rs` allows the microphone for this app's own pages; Windows' own switch
   (Settings › Privacy › Microphone › desktop apps) still has to be on.
 - **Talk to the Guardian from anywhere** (29 Oct): **hold `Alt+Q`** in any app
-  and speak. Past half a second the island opens on the Guardian, listening
-  (a hot strip with your voice as bars, over the composer); let go and the
-  words go to Helm's `/api/transcribe` (OpenAI), then to the Guardian's chat
-  with `voice: true`, so it answers in one to three short Polish sentences. Its
-  tools, receipts and cards are the chat's as ever, in the same thread. The
-  reply is **said out loud** sentence by sentence while it streams (Helm's
-  `/api/speak`, OpenAI's voice, played natively by `voice.rs`), with the text
-  in the thread. Hold again to answer; **holding while it speaks stops it and
-  listens**; **Escape** (taken from every app only while a turn is live) or the
-  strip's × stops everything. A press under half a second does nothing. It is
-  **never said out loud while presenting, in a call (in-call mode) or in a
-  meeting on your calendar**, or with **Settings → Connections → Helm → Spoken
-  replies** off: the strip shows why and the reply is text only (the island
-  stays up longer to read it). Needs Helm with `OPENAI_API_KEY`; without it the
-  replies are text only.
+  and speak, or **tap it for hands-free** when you have a lot to say. It never
+  opens the Guardian's screen: the island grows to its **voice glance**, the
+  size between the pill and the panel. Held past half a second it listens (your
+  voice as red bars, the time); let go and it sends. Tapped, it listens with a
+  lock on the mic and **Enter** and **Esc** drawn as keys: **Enter or another
+  tap sends, Escape drops it**, five minutes at most (the time turns warm in
+  the last half minute). The words go to Helm's `/api/transcribe` (OpenAI),
+  then to the Guardian's chat with `voice: true`, so it answers in one to three
+  short Polish sentences; its tools, receipts and cards are the chat's as ever,
+  in the same thread. On the glance: the bars settle into a shimmer while Helm
+  writes your words down, your words appear as one line, the Guardian's shield
+  pulses while it thinks, and **its reply is written in word by word** while it
+  is **said out loud** sentence by sentence (Helm's `/api/speak`, OpenAI's
+  voice, played natively by `voice.rs`). What it changed shows as chips with
+  **Cofnij**; cards don't fit, so an open key (with their count) grows the
+  island into the Guardian with the thread — as does a click anywhere on the
+  glance. **Holding while it speaks stops it and listens**; a tap while it
+  speaks only stops it. Afterwards the glance stays a few seconds to read
+  (longer when it was text only, as long as the pointer is on it) and folds on
+  its own; **Escape** folds it at once. Escape is taken from every app only
+  while the glance is up, Enter only while hands-free listens, and both come
+  back by themselves if the island ever stops asking for them. It is **never
+  said out loud while presenting, in a call (in-call mode) or in a meeting on
+  your calendar**, or with **Settings → Connections → Helm → Spoken replies**
+  off: the glance shows why and the reply is text only. Needs Helm with
+  `OPENAI_API_KEY`; without it the replies are text only. Every turn's steps
+  (no words, only sizes and states) are in the app's log (tray → Open log).
 - **The Guardian** has a **project focus** (a chip on its bar, set from the
   project panel, a card or `@`, sent as `focus` with every message), a
   **history** panel on the left (the days, a search across every message),

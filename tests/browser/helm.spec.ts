@@ -614,7 +614,9 @@ test("hold to talk: recording shows its time and level, letting go puts the word
   await expect(page.locator(".g-composer .k-input")).toHaveValue("Przesuń Repricer na jutro rano", { timeout: 5000 });
   const sent = await calls(page, "helm_transcribe");
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toMatchObject({ mime: expect.stringMatching(/^audio\/(webm|ogg)$/), lang: "pl" });
+  expect(sent[0]).toMatchObject({ mime: expect.stringMatching(/^audio\/(webm|ogg)$/) });
+  // No language: Helm hears Polish or English.
+  expect(sent[0]).not.toHaveProperty("lang");
   expect(String(sent[0].audio).length).toBeGreaterThan(100);
   // Read before sending: nothing went to the Guardian.
   expect(await calls(page, "helm_send")).toEqual([]);

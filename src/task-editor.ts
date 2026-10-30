@@ -142,7 +142,7 @@ const KEYS = [
   { id: "capture", title: "Tell the Guardian", note: "One line to Helm from anywhere." },
   /* Held, not pressed (29 Oct): see DEFAULT_TALK in shortcuts.rs on why it is
    * two keys and never Ctrl+Alt. */
-  { id: "talk", title: "Talk to the Guardian", note: "Hold it in any app and speak; let go to send." },
+  { id: "talk", title: "Talk to the Guardian", note: "Hold it in any app and speak, let go to send; tap it to talk hands-free." },
 ] as const;
 type KeyId = (typeof KEYS)[number]["id"];
 type Shortcuts = Record<KeyId, string>;

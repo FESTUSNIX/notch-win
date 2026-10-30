@@ -34,9 +34,6 @@ export class IslandSurface {
   open = false;
   pinned = false;
   editing = false;
-  /** A spoken turn is live (voice-talk.ts): nothing folds the island under it,
-   *  the pointer leaving included. Given back when the turn ends. */
-  held = false;
   private hovering = false;
   /** Slid out of the way — by the shortcut, or because something is fullscreen. */
   private hidden = false;
@@ -92,6 +89,28 @@ export class IslandSurface {
   private glanceTimer = 0;
   /** Where the pending intent timer is heading. See `hover()`. */
   private glanceWant = false;
+  /* ── The voice glance (29 Oct, round 2) ──────────────────────────────
+   * A spoken turn shows in the glance, never on the Guardian's screen (his
+   * call: "I wouldn't display the whole guardian chat page just for speech").
+   * The same spring, the same collapsed end of the lerp — so a click grows it
+   * into the panel without a jump — but a layer of its own and a size of its
+   * own: wider than the music glance, and as deep as what it is showing, from
+   * one listening row up to a few lines of answer and a row of receipts.
+   *
+   * ⚠️ The glance's size is SPRUNG now, not read off FRAME. An answer grows
+   * the glance a line at a time while he reads, so these move on the calm
+   * pair (`sizing()`'s second), never with a bounce; switching between the
+   * music glance and the voice one moves them too, while the shape is up. */
+  private glanceLong = new Spring(cpx(FRAME.islandGlanceLong), 0.34, 0.92);
+  private glanceThin = new Spring(cpx(FRAME.islandGlanceThin), 0.34, 0.92);
+  /** Which content the glance is showing. Stays "voice" until it has folded. */
+  private glanceKind: "media" | "voice" = "media";
+  private voiceOn = false;
+  /** The depth the voice layer's content asked for, in CSS px. */
+  private voiceDepth = cpx(FRAME.islandVoiceThinMin);
+  private voiceLayer = document.getElementById("island-voice");
+  /** Told when the pointer arrives on or leaves the voice glance: it holds it up. */
+  onVoiceHover: ((on: boolean) => void) | null = null;
   /** Ambient mode is up: the island is covered, and must neither open nor
    *  glance under a player that is not even looking at it. */
   private ambient = false;
@@ -221,11 +240,12 @@ export class IslandSurface {
    * flare at each end, which is what the element actually measures along its
    * edge. The same relationship `shapeLength()` describes for the usage notch. */
   private geometry(t: number) {
-    /* The collapsed end of the lerp is the pill GROWN by the glance. */
+    /* The collapsed end of the lerp is the pill GROWN by the glance — to the
+     * size the glance's own springs have got to (music's, or the voice's). */
     const gl = Math.max(0, this.glance.value);
     const restCurl = lerp(cpx(FRAME.islandPillThin) / 2, cpx(FRAME.islandGlanceCurl), gl);
-    const restLong = lerp(cpx(FRAME.islandPillLong), cpx(FRAME.islandGlanceLong), gl);
-    const restThin = lerp(cpx(FRAME.islandPillThin), cpx(FRAME.islandGlanceThin), gl);
+    const restLong = lerp(cpx(FRAME.islandPillLong), this.glanceLong.value, gl);
+    const restThin = lerp(cpx(FRAME.islandPillThin), this.glanceThin.value, gl);
     const curl = lerp(restCurl, cpx(FRAME.islandCurl), t);
     const body = lerp(restLong, this.widen.value, t);
     const depth = lerp(restThin, this.grow.value, t);
@@ -481,6 +501,13 @@ export class IslandSurface {
     }
     clearTimeout(this.timer);
     if (this.ambient) return;
+    /* ⚠️ The voice glance is not a pill to be opened by pointing at it, in
+     * either hover mode: the pointer on it holds it up to read (voice-talk.ts
+     * folds it later), and a click is what opens the Guardian. */
+    if (this.voiceOn && !this.open) {
+      this.onVoiceHover?.(value);
+      return;
+    }
     /* The glance: in click mode, while music plays. ⚠️ An intent delay each
      * way — in, so the pill does not swell every time the pointer crosses the
      * top of the screen on its way somewhere; out, so grazing its edge while
@@ -526,11 +553,14 @@ export class IslandSurface {
      * length of the fold. The question is "will it end up collapsed", not
      * "did I fold it". */
     if (!this.open) return true;
-    if (this.pinned || this.hovering || this.editing || this.held) return false;
+    if (this.pinned || this.hovering || this.editing) return false;
     clearTimeout(this.timer);
     this.show(false);
     return true;
   }
+
+  /** Whether the pointer is on the island (the panel or a glance). */
+  get pointed(): boolean { return this.hovering; }
 
   /** A click somewhere else on the screen.
    *
@@ -563,7 +593,7 @@ export class IslandSurface {
    *  the pill is showing; this only knows the shape. */
   setGlanceable(on: boolean) {
     this.glanceable = on;
-    if (!on) this.setGlance(false);
+    if (!on && !this.voiceOn) this.setGlance(false);
   }
 
   private setGlance(on: boolean) {
@@ -573,15 +603,74 @@ export class IslandSurface {
     this.glanceOn = on;
     const target = on ? 1 : 0;
     this.glance.setTarget(target);
-    this.glanceLayer?.toggleAttribute("inert", !on);
+    /* Music's glance comes back at music's size. ⚠️ Snapped only from the
+     * pill; caught while the voice glance is still folding, the size springs
+     * across instead of jumping mid-fold. */
+    if (on && !this.voiceOn && this.glanceKind === "voice") {
+      this.glanceKind = "media";
+      const [long, thin] = [cpx(FRAME.islandGlanceLong), cpx(FRAME.islandGlanceThin)];
+      if (this.glance.value < 0.01 || still()) { this.glanceLong.snap(long); this.glanceThin.snap(thin); }
+      else { this.glanceLong.setTarget(long); this.glanceThin.setTarget(thin); }
+    }
+    this.layerInert();
     if (still()) { this.glance.snap(target); this.paint(); return; }
-    if (!this.frame) { this.last = 0; this.frame = requestAnimationFrame(t => this.tick(t)); }
+    this.wake();
+  }
+
+  /** Only the layer being shown takes the pointer. */
+  private layerInert() {
+    this.glanceLayer?.toggleAttribute("inert", !(this.glanceOn && this.glanceKind === "media"));
+    this.voiceLayer?.toggleAttribute("inert", !(this.glanceOn && this.glanceKind === "voice"));
+  }
+
+  /** A spoken turn (voice-talk.ts): the glance comes up with the voice layer,
+   *  whatever the hover mode, or folds back to the pill.
+   *
+   * ⚠️ Not while the panel is open: the panel IS the island then, and the
+   * glance waits under it — `show(false)` brings it back if the voice is still
+   * up, so opening the Guardian mid-reply and leaving returns to the glance. */
+  setVoice(on: boolean) {
+    if (this.voiceOn === on) return;
+    this.voiceOn = on;
+    if (on) {
+      this.glanceKind = "voice";
+      this.sizeVoice();
+      if (!this.open && !this.ambient) this.setGlance(true);
+    } else {
+      this.setGlance(false);
+    }
+    this.layerInert();
+    this.paint();
+  }
+
+  /** How deep the voice layer's content wants the glance, in CSS px. */
+  setVoiceDepth(px: number) {
+    const next = Math.max(cpx(FRAME.islandVoiceThinMin), Math.min(cpx(FRAME.islandVoiceThinMax), Math.ceil(px)));
+    if (Math.abs(next - this.voiceDepth) < 0.5) return;
+    this.voiceDepth = next;
+    if (this.glanceKind === "voice") this.sizeVoice();
+  }
+
+  /** The voice glance's size. ⚠️ Fixed on a left or right edge, where its
+   *  depth is a WIDTH and the content cannot grow it line by line. */
+  private sizeVoice() {
+    const long = cpx(FRAME.islandVoiceLong);
+    const thin = isVertical(this.edge) ? cpx(FRAME.islandVoiceThinMax) : this.voiceDepth;
+    if (still() || this.glance.value < 0.01) {
+      this.glanceLong.snap(long);
+      this.glanceThin.snap(thin);
+      this.paint();
+      return;
+    }
+    this.glanceLong.setTarget(long);
+    this.glanceThin.setTarget(thin);
+    this.wake();
   }
 
   /** Ambient mode opened or closed. */
   setAmbient(on: boolean) {
     this.ambient = on;
-    if (on) { this.setGlance(false); this.show(false); }
+    if (on) { this.show(false); this.setGlance(false); }
   }
 
   /** Where the collapsed pill sits, in this window's CSS pixels — what ambient
@@ -623,13 +712,15 @@ export class IslandSurface {
   }
 
   show(value: boolean) {
-    if (!value && (this.pinned || this.editing || this.held)) return;
+    if (!value && (this.pinned || this.editing)) return;
     if (this.open === value) return;
     this.open = value;
     /* Opening from a glance: the glance's own spring goes back to zero while
      * the fold carries the shape on to the panel, so the panel grows from the
-     * glance's size rather than snapping back to the pill first. */
+     * glance's size rather than snapping back to the pill first. Folding while
+     * a spoken turn is still up folds INTO the voice glance instead. */
     if (value) this.setGlance(false);
+    else if (this.voiceOn && !this.ambient) this.setGlance(true);
     this.expanded.inert = !value;
     this.shell.classList.toggle("is-open", value);
     this.island.setAttribute("aria-expanded", String(value));
@@ -719,6 +810,8 @@ export class IslandSurface {
     const dt = this.last ? Math.min((now - this.last) / 1000, 0.05) : 0.016;
     this.fold.step(dt);
     this.glance.step(dt);
+    this.glanceLong.step(dt);
+    this.glanceThin.step(dt);
     this.grow.step(dt);
     this.widen.step(dt);
     this.tools.step(dt);
@@ -729,6 +822,7 @@ export class IslandSurface {
     // ⚠️ All three, not just the fold: a size change can outlast the opening,
     // and stopping on the fold alone leaves the panel frozen mid-resize.
     if (!this.fold.settled || !this.grow.settled || !this.widen.settled || !this.glance.settled
+      || !this.glanceLong.settled || !this.glanceThin.settled
       || !this.tools.settled || !this.global.settled || !this.rail.settled) {
       this.frame = requestAnimationFrame(t => this.tick(t));
     } else {
@@ -813,15 +907,32 @@ export class IslandSurface {
      * own size, and the two cross-fade on the glance's spring — the pill's
      * text is gone before the glance's arrives, the same rule as below. */
     const gl = Math.max(0, Math.min(1, this.glance.value));
+    const seen = Math.max(0, (gl - 0.5) / 0.5) * Math.max(0, 1 - shown / 0.3);
     if (this.glanceLayer) {
       const gw = vertical ? cpx(FRAME.islandGlanceThin) : cpx(FRAME.islandGlanceLong);
       const gh = vertical ? cpx(FRAME.islandGlanceLong) : cpx(FRAME.islandGlanceThin);
       this.glanceLayer.style.width = `${gw}px`;
       this.glanceLayer.style.height = `${gh}px`;
       place(this.glanceLayer, gw, gh);
-      const seen = Math.max(0, (gl - 0.5) / 0.5) * Math.max(0, 1 - shown / 0.3);
-      this.glanceLayer.style.opacity = String(seen);
-      this.glanceLayer.style.visibility = seen > 0 ? "visible" : "hidden";
+      const mine = this.glanceKind === "media" ? seen : 0;
+      this.glanceLayer.style.opacity = String(mine);
+      this.glanceLayer.style.visibility = mine > 0 ? "visible" : "hidden";
+    }
+    /* ⚠️ The voice layer is laid out at its TARGET size, not the sprung one:
+     * the width never changes and the height only when the content does, so
+     * nothing in it re-wraps per frame — the shape reveals it, as the panel's
+     * layers are revealed (the file note). */
+    if (this.voiceLayer) {
+      const long = cpx(FRAME.islandVoiceLong);
+      const thin = vertical ? cpx(FRAME.islandVoiceThinMax) : this.voiceDepth;
+      const vw = vertical ? thin : long;
+      const vh = vertical ? long : thin;
+      this.voiceLayer.style.width = `${vw}px`;
+      this.voiceLayer.style.height = `${vh}px`;
+      place(this.voiceLayer, vw, vh);
+      const mine = this.glanceKind === "voice" ? seen : 0;
+      this.voiceLayer.style.opacity = String(mine);
+      this.voiceLayer.style.visibility = mine > 0 ? "visible" : "hidden";
     }
     // Cross-fade. The collapsed layer is gone before the expanded one arrives,
     // so the two are never legible at once over each other.

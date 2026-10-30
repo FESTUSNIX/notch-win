@@ -1,66 +1,101 @@
-/* ── Talking with the Guardian (voice-talk.ts, 29 Oct) ────────────────────
-   The strip that stands in for the composer while a spoken turn is live: a
-   disc for what is happening, the voice as bars, a mark when the reply is
-   text only, and the way out. Hot while he speaks (the composer's own
-   recording colour), the Guardian's accent from then on: its tile in the
-   thread is the same green.
+/* ── The voice glance (voice-glance.ts, 29 Oct round 2) ───────────────────
+   A spoken turn in the island's glance: his voice, then his words, then the
+   Guardian's. Sized and faded by island-surface.ts on the glance's own
+   springs (its depth from what is in here); this is only what is inside it.
 
-   ⚠️ AGENTS 188: it RECEIVES his voice, so it is sunk like the composer's
-   well, at the well's height, so the island does not jump when one becomes
-   the other. The disc is an object and is raised. */
+   ⚠️ The music glance's grammar, kept: ONE inset (`--glance-pad`) on every
+   side, and corners concentric with the shape's curl (`--glance-curl`, the
+   25 CSS px of `islandGlanceCurl`). `--v-min` is `islandVoiceThinMin` (200
+   design px = 96 CSS px): change it in layout.ts and it must follow.
 
-.g-foot.is-talking .g-composer,
-.g-foot.is-talking .g-chips {
-	display: none;
-}
+   Colour with a job, and only three: hot while he speaks (the composer's own
+   recording red), the accent from the moment it is the Guardian's turn (its
+   shield, Enter that sends), iris for his own words (`--iris`, YOU in Helm).
 
-.v-strip {
+   ⚠️ AGENTS 188: what RECEIVES his voice is sunk, what IS an object — the
+   mic, the shield, a chip, a key — is raised. */
+
+#island-voice {
+	--glance-pad: 14px;
+	--glance-curl: 25px;
+	--v-min: 96px;
 	--v: var(--accent);
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	min-height: 44px;
-	padding: 5px 5px 5px 6px;
-	border-radius: 22px;
-	background-color: rgba(255, 255, 255, 0.06);
-	box-shadow:
-		inset 0 0 0 1px color-mix(in srgb, var(--v) 26%, rgba(255, 255, 255, 0.08)),
-		inset 0 2px 4px -2px rgba(0, 0, 0, 0.72),
-		0 0 0 3px color-mix(in srgb, var(--v) 8%, transparent),
-		0 0 26px -10px color-mix(in srgb, var(--v) 40%, transparent);
-	transition: box-shadow var(--duration-fast) var(--ease-smooth-out);
+	--lvl: 0;
+	position: absolute;
+	left: 0;
+	top: 0;
+	box-sizing: border-box;
+	padding: var(--glance-pad);
+	opacity: 0;
+	visibility: hidden;
+	cursor: pointer;
 }
-.v-strip[hidden] {
-	display: none;
-}
-.v-strip[data-phase='listening'] {
+#island-voice[data-phase='listening'],
+#island-voice[data-phase='pressed'] {
 	--v: var(--hot);
 }
 
-/* What is happening, at a glance: the mic, the shield thinking, the voice. */
+.v-inner {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 10px;
+	min-height: calc(var(--v-min) - 2 * var(--glance-pad));
+}
+.v-inner > [hidden] {
+	display: none !important;
+}
+/* A row arriving (his words after the bars, the answer after them) eases in
+   rather than appearing: the glance's depth springs under it at the same time. */
+.v-said:not([hidden]),
+.v-reply:not([hidden]),
+.v-chips:not([hidden]),
+.v-head:not([hidden]) {
+	animation: v-in var(--duration-fast) var(--ease-smooth-out) both;
+}
+@keyframes v-in {
+	from {
+		opacity: 0;
+		translate: 0 var(--distance-micro);
+		filter: blur(var(--blur-small));
+	}
+}
+
+/* ── Listening ─────────────────────────────────────────────────────────── */
+
+.v-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 44px;
+}
+/* The mic: an object, raised, in the colour of whose turn it is. */
 .v-disc {
 	position: relative;
 	display: grid;
 	place-items: center;
 	flex-shrink: 0;
-	width: 32px;
-	height: 32px;
+	width: 44px;
+	height: 44px;
 	border-radius: 50%;
-	color: var(--v);
-	background-color: color-mix(in srgb, var(--v) 17%, #0c0c0c);
+	color: #fff;
+	background-color: color-mix(in srgb, var(--v) 24%, #0c0c0c);
 	background-image: var(--sheen);
 	box-shadow:
-		inset 0 0 0 1px color-mix(in srgb, var(--v) 32%, transparent),
+		inset 0 0 0 1px color-mix(in srgb, var(--v) 42%, transparent),
 		var(--gloss),
 		var(--lift-1),
-		0 0 18px -6px color-mix(in srgb, var(--v) 60%, transparent);
+		0 0 20px -6px color-mix(in srgb, var(--v) 60%, transparent);
+	transition:
+		background-color var(--duration-fast) var(--ease-smooth-out),
+		box-shadow var(--duration-fast) var(--ease-smooth-out);
 }
-.v-disc svg {
-	width: 17px;
-	height: 17px;
+.v-disc > svg {
+	width: 20px;
+	height: 20px;
 }
 /* Listening breathes, like the composer's mic while held. */
-.v-strip[data-phase='listening'] .v-disc::after {
+#island-voice[data-phase='listening'] .v-disc::after {
 	content: '';
 	position: absolute;
 	inset: -5px;
@@ -69,26 +104,38 @@
 	background: color-mix(in srgb, var(--hot) 24%, transparent);
 	animation: k-breathe 1.4s var(--ease-in-out) infinite;
 }
-/* Thinking pulses quietly: the Guardian is acting, nothing to hear yet. */
-.v-strip[data-phase='thinking'] .v-disc,
-.v-strip[data-phase='transcribing'] .v-disc {
+#island-voice[data-phase='transcribing'] .v-disc {
 	animation: v-pulse 1.6s var(--ease-in-out) infinite;
 }
-@keyframes v-pulse {
-	50% {
-		box-shadow:
-			inset 0 0 0 1px color-mix(in srgb, var(--v) 50%, transparent),
-			var(--gloss),
-			var(--lift-1),
-			0 0 22px -4px color-mix(in srgb, var(--v) 75%, transparent);
-	}
+/* Hands-free: a lock on the mic, the way a voice memo says it is recording
+   without a finger on it. */
+.v-lock {
+	position: absolute;
+	right: -4px;
+	bottom: -4px;
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	color: #fff;
+	background-color: #1c1c1c;
+	background-image: var(--sheen);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), var(--gloss), var(--lift-1);
+}
+.v-lock[hidden] {
+	display: none;
+}
+.v-lock svg {
+	width: 11px;
+	height: 11px;
 }
 
-/* The voice: his while he holds, the Guardian's while it speaks. */
+/* His voice, the newest on the right. */
 .v-wave {
 	flex: 1;
 	min-width: 0;
-	height: 26px;
+	height: 40px;
 	display: flex;
 	align-items: center;
 	justify-content: flex-end;
@@ -97,68 +144,425 @@
 }
 .v-wave i {
 	flex: 0 0 3px;
-	height: calc(3px + var(--h, 0.06) * 23px);
+	height: calc(3px + var(--h, 0.06) * 34px);
 	border-radius: 2px;
-	background: color-mix(in srgb, var(--v) 62%, #fff);
+	background: color-mix(in srgb, var(--v) 64%, #fff);
 	transition: height 70ms linear;
 }
-/* Waiting on Helm: the wave goes quiet and a light runs along it (the composer's own). */
-.v-strip[data-phase='transcribing'] .v-wave i,
-.v-strip[data-phase='thinking'] .v-wave i {
+/* Sent for the words: the bars go quiet and a light runs along them (the composer's own). */
+#island-voice[data-phase='transcribing'] .v-wave i {
 	height: 4px;
 	background: color-mix(in srgb, var(--v) 40%, #333);
 	animation: k-wait 1.1s var(--ease-in-out) infinite;
 	animation-delay: calc(var(--i, 0) * 30ms);
+	transition: none;
 }
 
 .v-time {
 	flex-shrink: 0;
-	min-width: 34px;
-	font-size: 14px;
+	min-width: 38px;
+	font-size: 15px;
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
+	text-align: right;
 	color: #f4f4f4;
+	transition: color var(--duration-fast) var(--ease-smooth-out);
 }
 .v-time[hidden] {
 	display: none;
 }
+/* The last half-minute of five: warm, so the end is not a surprise. */
+.v-time.is-late {
+	color: var(--warn);
+}
 
-/* Text only, and why: a call, a meeting, presenting, switched off. A mark
-   with its reason on hover, raised like a chip — it is a fact, not a control. */
+/* The two keys hands-free listens for, drawn as keys: a cap with a lit top
+   edge and a dark lip under it, Enter in the accent because it sends. */
+.v-keys {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+.v-keys[hidden] {
+	display: none;
+}
+.v-key {
+	display: grid;
+	place-items: center;
+	height: 24px;
+	min-width: 26px;
+	padding: 0 8px;
+	border-radius: 7px;
+	font-family: inherit;
+	font-size: 11.5px;
+	font-weight: 650;
+	line-height: 1;
+	letter-spacing: 0.1px;
+	color: #ececec;
+	background: linear-gradient(180deg, #2c2c2c, #1c1c1c);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.13),
+		inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+		0 1px 0 rgba(0, 0, 0, 0.7),
+		0 3px 8px -3px rgba(0, 0, 0, 0.8);
+}
+.v-key.is-send {
+	color: #fff;
+	background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, #2c2c2c), color-mix(in srgb, var(--accent) 20%, #161616));
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.18),
+		inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent),
+		0 1px 0 rgba(0, 0, 0, 0.7),
+		0 3px 10px -3px color-mix(in srgb, var(--accent) 40%, rgba(0, 0, 0, 0.8));
+}
+
+/* ── His words ─────────────────────────────────────────────────────────── */
+
+.v-said {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 26px;
+	min-width: 0;
+}
+/* ⚠️ 24px in the shield's 28px column (the margin), so his mark and its sit
+   on one centre line and his words start where the answer does. */
+.v-said-mark {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	margin: 0 2px;
+	border-radius: 50%;
+	color: var(--iris);
+	background-color: color-mix(in srgb, var(--iris) 16%, #0c0c0c);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--iris) 30%, transparent), var(--gloss);
+}
+.v-said-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.v-said-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 520;
+	line-height: 1.3;
+	color: #d9d9d9;
+}
+/* Text only, and why: a fact, raised like a chip, not a control. */
 .v-quiet {
 	display: grid;
 	place-items: center;
 	flex-shrink: 0;
-	width: 28px;
-	height: 28px;
+	width: 26px;
+	height: 26px;
 	border-radius: 50%;
-	color: #e2e2e2;
+	color: #ececec;
 	background-color: var(--tile-hi);
 	background-image: var(--sheen);
 	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	cursor: default;
 }
 .v-quiet[hidden] {
 	display: none;
 }
 .v-quiet svg {
-	width: 15px;
-	height: 15px;
+	width: 14px;
+	height: 14px;
+}
+/* Into the Guardian, with the thread: for the cards a glance cannot hold. A
+   rounded square concentric with the shape's corner, like the music glance's
+   ambient key — it opens a bigger way of looking at the same thing. */
+.v-open {
+	position: relative;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border-radius: calc(var(--glance-curl) - var(--glance-pad) - 2px);
+	color: #e6e6e6;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+}
+.v-open[hidden] {
+	display: none;
+}
+.v-open svg {
+	width: 14px;
+	height: 14px;
+}
+.v-open:hover {
+	color: #fff;
+	background-color: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-2);
+}
+.v-open:active {
+	scale: 0.94;
+	transition-duration: 90ms;
+}
+/* How many cards are waiting there. */
+.v-open-count {
+	position: absolute;
+	top: -5px;
+	right: -5px;
+	display: grid;
+	place-items: center;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 8px;
+	font-size: 10.5px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--on-accent);
+	background: var(--accent);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.v-open-count[hidden] {
+	display: none;
 }
 
-.v-strip .v-stop {
-	width: 30px;
-	height: 30px;
+/* ── The Guardian's turn ───────────────────────────────────────────────── */
+
+.v-reply {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	min-width: 0;
 }
-.v-strip .v-stop svg {
+/* Its shield: the thread's own tile, raised. It pulses while it is thinking
+   and breathes with its voice while it speaks (`--lvl`, 0..1). */
+.v-shield {
+	position: relative;
+	isolation: isolate;
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 9px;
+	color: var(--accent);
+	background-color: color-mix(in srgb, var(--accent) 16%, #0c0c0c);
+	background-image: var(--sheen);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent),
+		var(--gloss),
+		var(--lift-1);
+}
+.v-shield svg {
 	width: 15px;
 	height: 15px;
+}
+/* ⚠️ Faint, and it was twice this: at full strength the halo read as a green
+   slab behind the shield rather than as its voice (AGENTS 190). */
+.v-shield::after {
+	content: '';
+	position: absolute;
+	inset: -2px;
+	z-index: -1;
+	border-radius: 11px;
+	background: color-mix(in srgb, var(--accent) 24%, transparent);
+	opacity: calc(var(--lvl) * 0.75);
+	scale: calc(1 + var(--lvl) * 0.22);
+	transition:
+		opacity 90ms linear,
+		scale 90ms linear;
+}
+#island-voice[data-phase='thinking'] .v-shield {
+	animation: v-pulse 1.6s var(--ease-in-out) infinite;
+}
+@keyframes v-pulse {
+	50% {
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+			var(--gloss),
+			var(--lift-1),
+			0 0 22px -4px color-mix(in srgb, var(--accent) 75%, transparent);
+	}
+}
+
+.v-body {
+	flex: 1;
+	min-width: 0;
+	padding-top: 4px;
+}
+.v-answer,
+.v-status,
+.v-error {
+	margin: 0;
+	font-size: 14.5px;
+	line-height: 20px;
+}
+/* The answer: four lines at most, the newest in view, the older ones fading
+   off the top edge once it scrolls. */
+.v-answer {
+	max-height: 80px;
+	overflow: hidden;
+	font-weight: 500;
+	color: #f3f3f3;
+	overflow-wrap: anywhere;
+}
+.v-answer:empty {
+	display: none;
+}
+.v-answer.is-scrolled {
+	mask-image: linear-gradient(to bottom, transparent, #000 18px);
+}
+/* Each word fades and un-blurs into place as it arrives (the file note on why not a slide). */
+.v-w {
+	animation: v-word 320ms var(--ease-smooth-out) both;
+}
+.v-w.is-now {
+	animation: none;
+}
+@keyframes v-word {
+	from {
+		opacity: 0;
+		filter: blur(4px);
+	}
+}
+/* What the Guardian is doing, before it says anything: Helm's own status line,
+   a light running through it; with no line yet, a soft bar in its place. */
+.v-status {
+	font-weight: 520;
+	color: transparent;
+	background: linear-gradient(90deg, #8f8f8f 0%, #8f8f8f 35%, #fff 50%, #8f8f8f 65%, #8f8f8f 100%);
+	background-size: 260% 100%;
+	background-clip: text;
+	-webkit-background-clip: text;
+	animation: v-shine 1.8s var(--ease-in-out) infinite;
+}
+.v-status[hidden] {
+	display: none;
+}
+.v-status.is-blank {
+	width: 62%;
+	height: 10px;
+	margin-top: 5px;
+	border-radius: 5px;
+	background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.06) 35%, rgba(255, 255, 255, 0.16) 50%, rgba(255, 255, 255, 0.06) 65%, rgba(255, 255, 255, 0.06) 100%);
+	background-size: 260% 100%;
+}
+@keyframes v-shine {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: 0 0;
+	}
+}
+.v-error {
+	color: color-mix(in srgb, var(--hot) 78%, #fff);
+}
+.v-error[hidden] {
+	display: none;
+}
+
+/* ── Receipts ──────────────────────────────────────────────────────────── */
+
+/* Under the answer, in line with its text: what the reply DID, each a chip. */
+.v-chips {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	padding-left: 38px;
+	overflow: hidden;
+}
+.v-rc {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 1;
+	min-width: 0;
+	height: 26px;
+	padding: 0 3px 0 8px;
+	border-radius: 13px;
+	font-size: 12.5px;
+	font-weight: 520;
+	color: #e4e4e4;
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	cursor: default;
+}
+.v-rc-mark {
+	display: grid;
+	flex-shrink: 0;
+	color: var(--good);
+}
+.v-rc-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.v-rc-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding-right: 5px;
+}
+.v-rc-undo {
+	flex-shrink: 0;
+	height: 20px;
+	padding: 0 8px;
+	border-radius: 10px;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: #d4d4d4;
+	background: rgba(255, 255, 255, 0.07);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.v-rc-undo:hover {
+	color: #fff;
+	background: rgba(255, 255, 255, 0.13);
+}
+.v-rc-undo:disabled {
+	opacity: 0.5;
+}
+.v-rc.is-undone .v-rc-label {
+	color: #a6a6a6;
+	text-decoration: line-through;
+}
+.v-rc.is-undone .v-rc-mark {
+	color: #a6a6a6;
+}
+.v-rc.is-more {
+	flex-shrink: 0;
+	padding: 0 10px;
+	font-weight: 650;
+	cursor: pointer;
+}
+.v-rc.is-more:hover {
+	background-color: var(--tile-hi);
+}
+
+/* On a left or right edge the glance is tall and narrow: the rows wrap. */
+#island[data-edge='left'] .v-head,
+#island[data-edge='right'] .v-head {
+	flex-wrap: wrap;
+	height: auto;
+}
+#island[data-edge='left'] .v-answer,
+#island[data-edge='right'] .v-answer {
+	max-height: 300px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	html:not([data-motion='always']) .v-disc,
-	html:not([data-motion='always']) .v-disc::after,
-	html:not([data-motion='always']) .v-wave i {
+	html:not([data-motion='always']) #island-voice *,
+	html:not([data-motion='always']) #island-voice *::after {
 		animation: none !important;
-		transition: none;
+		transition: none !important;
 	}
 }

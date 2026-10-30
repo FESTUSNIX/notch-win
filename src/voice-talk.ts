@@ -1,23 +1,26 @@
 /* Talking with the Guardian from anywhere (29 Oct): hold the talk key (Alt+Q
  * by default) in any app and speak; let go and the Guardian acts and answers
  * out loud, in the same thread as its screen. The state machine is
- * `voice-turn.ts`; this carries out what it says, and draws the strip.
+ * `voice-turn.ts`; this carries out what it says. The look is the voice
+ * glance (`voice-glance.ts`), which replaced the strip over the Guardian's
+ * composer the same day (round 2): the island opens to its glance, not to
+ * the Guardian's screen.
  *
  * - The key is native (`voice.rs`): `voice:down`, `voice:level` while held,
  *   `voice:up {ms}`. The microphone opens on the press (the kit's recorder, the
- *   composer's own); the island comes up only once it has been held half a
- *   second, so a tap does nothing at all.
+ *   composer's own); the glance comes up once it has been held half a second.
+ * - A TAP when nothing is being said is hands-free: it keeps listening until
+ *   Enter or another tap sends, or Escape drops it (round 2, his call). Enter
+ *   and Escape are taken from every app only while that lasts (`voice_keys`).
  * - The words go through Helm's `/api/transcribe` (OpenAI), then to the
  *   Guardian's chat with `voice: true`, which makes the reply short and
  *   speakable. Its tools, receipts and cards are the chat's as ever.
  * - The reply is said sentence by sentence as it streams (`voice_say`, played
- *   natively from Helm's `/api/speak`): the first is heard while the rest is
- *   still being written.
- * - The strip sits over the composer in the Guardian's foot: a disc for what is
- *   happening (listening hot, the Guardian's own accent for the rest), the
- *   voice as bars — his while he holds, the Guardian's while it speaks — and a
- *   mark when the reply is text only (a call, a meeting, presenting, switched
- *   off).
+ *   natively from Helm's `/api/speak`) and written into the glance word by
+ *   word at about the voice's pace.
+ * - When it is over the glance stays a few seconds to read (longer when it
+ *   was not heard), as long as the pointer is on it, and folds on its own. A
+ *   click opens the Guardian; Escape folds it at once.
  *
  * ⚠️ The level while he holds comes from Rust (Core Audio's meter) as well as
  * the recorder's analyser, and the louder of the two wins: an AudioContext the
@@ -26,42 +29,52 @@
  *
  * ⚠️ One chat turn at a time (AGENTS 794): a barge-in during a reply still
  * streaming waits for it to finish before the new words go.
+ *
+ * ⚠️⚠️ Nothing here may wait for ever (AGENTS 851): every phase has a limit
+ * (`LIMITS`), after which the turn ends and says so. The first build had none,
+ * and a microphone that stopped by itself left the turn in "transcribing"
+ * with every later press ignored — "it recorded the first time and now it
+ * doesn't". Each step is written to the app's log too (no words, only sizes).
  */
 import "./voice.css";
 import { listen } from "@tauri-apps/api/event";
-import { element } from "./dom";
-import { paintIcon, type TaskIcon } from "./task-icons";
 import { call, native, previewBus } from "./task-client";
-import { iconButton } from "./kit/parts";
-import { Recorder, base64Of, voiceProblem } from "./kit/voice";
-import { clockOf } from "./kit/words";
-import { HOLD_MS, idle, step, type Effect, type TurnEvent, type TurnState } from "./voice-turn";
+import { Recorder, base64Of, voiceProblem, MAX_SECONDS } from "./kit/voice";
+import { HOLD_MS, idle, step, type Effect, type Phase, type TurnEvent, type TurnState } from "./voice-turn";
+import { VoiceGlance, emptyReply, type GlanceReply } from "./voice-glance";
 import type { ChatEvent, GuardianChat } from "./screen-guardian";
 import type { HelmSource } from "./screen-helm";
 import type { IslandSurface } from "./island-surface";
 
 export interface TalkHooks {
-  /** Put the island on the Guardian's screen, open (the palette and capture out of the way). */
-  open: () => void;
-  /** The Guardian's foot, where the strip goes over the composer. */
-  foot: () => HTMLElement | null;
+  /** Clear the way for the glance: the palette and capture closed, an open panel folded. */
+  prepare: () => void;
+  /** Grow the island into the Guardian's screen, with the thread. */
+  openGuardian: () => void;
   /** Settings → Spoken replies. */
   spoken: () => boolean;
 }
 
-/** Why a reply is text only, as a glyph and its tooltip. */
-const QUIET: Record<string, { icon: TaskIcon; tip: string }> = {
-  off: { icon: "volumeOff", tip: "Text only: spoken replies are off" },
-  call: { icon: "join", tip: "Text only: you're in a call" },
-  meeting: { icon: "calendar", tip: "Text only: a meeting is on" },
-  presenting: { icon: "share", tip: "Text only: you're presenting" },
-  unavailable: { icon: "volumeOff", tip: "Text only: Helm can't speak yet (OPENAI_API_KEY)" },
-};
-const PHASE_ICON: Partial<Record<TurnState["phase"], TaskIcon>> = { listening: "mic", transcribing: "mic", thinking: "guardian", speaking: "volume" };
-/** How long the island stays up after a turn, to read it: longer when it was not heard. */
+/** How long the glance stays up after a turn, to read it: longer when it was not heard. */
 const READ_MS = 6000;
 const READ_QUIET_MS = 14_000;
-const BARS = 44;
+/** After the pointer leaves a glance it was holding up. */
+const READ_AFTER_HOVER_MS = 2500;
+/** A turn that ended with nothing to read folds this soon. */
+const NOTHING_MS = 350;
+/** How often the keys are asked for again while held (voice.rs drops them 30 s after the last ask). */
+const KEYS_EVERY = 10_000;
+/** The longest each phase may last with nothing happening, in ms: past it the
+ *  turn is over and says so. Listening is the recording's own five minutes
+ *  (the recorder ends it first), Helm answers a transcription inside 90 s and
+ *  a chat turn inside 120 s, and no sentence takes a minute and a half. */
+const LIMITS: Partial<Record<Phase, number>> = {
+  pressed: (MAX_SECONDS + 20) * 1000,
+  listening: (MAX_SECONDS + 20) * 1000,
+  transcribing: 100_000,
+  thinking: 130_000,
+  speaking: 90_000,
+};
 
 const clean = (error: unknown) => String((error as Error)?.message ?? error).replace(/^(invoke error|error): /i, "").slice(0, 120);
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
@@ -69,13 +82,19 @@ const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 interface SayAnswer { played?: boolean; hushed?: boolean; muted?: string; unavailable?: boolean }
 
 export class VoiceTalk {
-  readonly el: HTMLElement;
   private state: TurnState = idle();
   private recorder = new Recorder();
+  private glance: VoiceGlance;
   private heldTimer = 0;
-  private barTimer = 0;
-  /** The chat turn in flight is this voice turn's: its events are read. */
+  private tickTimer = 0;
+  private watchTimer = 0;
+  private keysTimer = 0;
+  private foldTimer = 0;
+  /** The chat turn in flight is this voice turn's: the machine reads its events. */
   private ours = false;
+  /** The glance is following the chat turn in flight — still after a barge-in hushed it. */
+  private reading = false;
+  private reply: GlanceReply = emptyReply();
   /** Pressed while it can't work (not signed in): said on the pill if held, and nothing else. */
   private refused: string | null = null;
   /** His level while he holds, the Guardian's while it speaks; both 0..1. */
@@ -84,28 +103,23 @@ export class VoiceTalk {
   private startedAt = 0;
   /** A failed sentence is said once per turn, not once per sentence. */
   private toldTurn = -1;
-  private bars: HTMLElement[] = [];
-  private disc: HTMLElement;
-  private time: HTMLElement;
-  private quiet: HTMLElement;
+  /** The keys the turn wants (the machine's), and what was last asked of Rust. */
+  private turnKeys = { escape: false, enter: false };
+  private askedKeys = "";
+  /** The glance is up: during a turn, and for a moment after it to read. */
+  private raised = false;
+  /** The turn is over and the glance is up only to be read. */
+  private lingering = false;
+  /** Why this turn's reply was text only, kept for the glance after the turn is over. */
+  private quiet: string | null = null;
 
   constructor(private chat: GuardianChat, private helm: HelmSource, private surface: IslandSurface, private hooks: TalkHooks) {
-    this.el = element("div", "v-strip");
-    this.el.hidden = true;
-    this.el.setAttribute("role", "status");
-    this.el.setAttribute("aria-live", "polite");
-    this.disc = element("span", "v-disc");
-    const wave = element("span", "v-wave");
-    for (let i = 0; i < BARS; i++) {
-      const bar = element("i");
-      bar.style.setProperty("--i", String(i));
-      wave.append(bar);
-      this.bars.push(bar);
-    }
-    this.time = element("span", "v-time");
-    this.quiet = element("span", "v-quiet");
-    const stop = iconButton("close", "Stop · Esc", "v-stop", () => this.feed({ t: "escape" }));
-    this.el.append(this.disc, wave, this.time, this.quiet, stop);
+    const host = document.getElementById("island-voice")!;
+    this.glance = new VoiceGlance(host, {
+      open: () => this.openGuardian(),
+      undo: (id, index) => this.undo(id, index),
+      measured: depth => surface.setVoiceDepth(depth),
+    });
   }
 
   async boot() {
@@ -117,20 +131,35 @@ export class VoiceTalk {
     await on<{ ms: number }>("voice:up", payload => this.up(Number(payload?.ms) || 0));
     await on<number>("voice:level", level => { this.mic = Math.max(this.mic, Math.min(1, Number(level) * 2.4)); });
     await on<number>("voice:out", level => { this.out = Math.min(1, Number(level) || 0); });
-    await on<null>("voice:escape", () => this.feed({ t: "escape" }));
+    await on<null>("voice:escape", () => this.escape());
+    await on<null>("voice:enter", () => this.feed({ t: "enter" }));
     await on<string>("voice:muted", why => this.feed({ t: "muted", why: String(why) }));
-    /* Escape in the island itself, when it has the keyboard. ⚠️ Captured, so it
-     * is the turn that stops rather than the island folding under it. */
+    /* Escape and Enter in the island itself, when it has the keyboard. ⚠️
+     * Captured, so it is the turn that stops rather than the island folding
+     * under it — and only while the glance is up, or a hands-free turn sends. */
     document.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || this.state.phase === "idle") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      this.feed({ t: "escape" });
+      if (event.key === "Escape" && (this.live || this.raised)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.escape();
+      } else if (event.key === "Enter" && this.state.phase === "listening" && this.state.free) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.feed({ t: "enter" });
+      }
     }, true);
+    this.surface.onVoiceHover = on => this.hovered(on);
   }
 
   /** Whether a turn is under way. */
   get live(): boolean { return this.state.phase !== "idle"; }
+
+  /** A click somewhere else: a glance up only to be read has been read. */
+  dismiss(): boolean {
+    if (!this.lingering) return false;
+    this.fold();
+    return true;
+  }
 
   /* ── The key ─────────────────────────────────────────────────────────── */
 
@@ -154,6 +183,12 @@ export class VoiceTalk {
     this.feed({ t: "up", ms });
   }
 
+  private escape() {
+    if (this.live) this.feed({ t: "escape" });
+    // Escape folds the glance at once: there is nothing to read in a turn he stopped.
+    if (this.raised) this.fold();
+  }
+
   /* ── The machine ─────────────────────────────────────────────────────── */
 
   private feed(event: TurnEvent) {
@@ -161,7 +196,11 @@ export class VoiceTalk {
     const [next, effects] = step(before, event);
     this.state = next;
     for (const effect of effects) this.run(effect, before);
-    if (next.phase !== before.phase || next.muted !== before.muted) this.paint();
+    if (next.phase !== before.phase || next.muted !== before.muted || next.free !== before.free) {
+      this.log(`${before.phase} → ${next.phase}${next.free ? " (hands-free)" : ""}${next.muted ? ` (text only: ${next.muted})` : ""}`);
+      this.paint();
+    }
+    if (next.phase !== before.phase || event.t === "text" || event.t === "said") this.watch();
   }
 
   private run(effect: Effect, before: TurnState) {
@@ -169,12 +208,22 @@ export class VoiceTalk {
       case "record":
         this.mic = 0;
         this.recorder.onLevel = level => { this.mic = Math.max(this.mic, level); };
-        this.recorder.onLimit = () => this.feed({ t: "up", ms: 5 * 60_000 });
+        this.recorder.onLimit = () => { this.log("five minutes: sent"); this.feed({ t: "stop" }); };
+        this.recorder.onLost = () => {
+          this.log("the microphone stopped by itself");
+          this.helm.tell("Microphone", "The microphone stopped — what it caught is sent");
+          this.feed({ t: "stop" });
+        };
         this.startedAt = performance.now();
-        void this.recorder.start().catch(error => {
-          this.helm.tell("Microphone", voiceProblem(error));
-          this.feed({ t: "failed" });
-        });
+        // A new turn on a glance still up: what it showed goes, unless this is maybe only a tap to stop the voice.
+        if (before.phase === "idle") this.fresh();
+        void this.recorder.start().then(
+          () => { if (this.recorder.state === "recording") this.log(`microphone open in ${this.recorder.openedIn} ms`); },
+          error => {
+            this.log(`microphone failed: ${(error as Error)?.name || "error"}`);
+            this.helm.tell("Microphone", voiceProblem(error));
+            this.feed({ t: "failed" });
+          });
         return;
       case "cancel":
         this.recorder.cancel();
@@ -185,38 +234,57 @@ export class VoiceTalk {
       case "hush":
         /* ⚠️ The reply in flight is no longer this turn's: what is left of it
          * must not be read into the NEXT turn, whose words may be heard before
-         * it has finished streaming. */
+         * it has finished streaming. The glance goes on showing it, as text. */
         this.ours = false;
         this.out = 0;
+        this.glance.speaking = false;
         void call("voice_hush").catch(() => {});
         return;
       case "open":
-        this.hooks.open();
-        this.surface.held = true;
+        // A barge-in that became a hold: the old answer gives way to his voice.
+        if (before.barge) this.fresh();
+        this.raise();
         return;
-      case "escape":
-        void call("voice_escape", { on: effect.on }).catch(() => {});
+      case "keys":
+        this.turnKeys = { escape: effect.escape, enter: effect.enter };
+        this.keys();
         return;
       case "send":
         void this.send(effect.text);
         return;
       case "say":
+        this.glance.speaking = true;
         void this.say(effect.text, effect.turn, effect.seq);
         return;
       case "end":
-        this.surface.held = false;
-        // Up a moment longer to read, and longer still when it went unheard.
-        if (this.surface.open) this.surface.pinFor(before.muted ? READ_QUIET_MS : READ_MS);
+        this.linger(before);
         return;
     }
   }
 
   private async transcribe() {
+    const held = (performance.now() - this.startedAt) / 1000;
+    const opening = this.recorder.state === "starting";
     const recording = await this.recorder.finish();
-    if (!recording) { this.feed({ t: "heard", text: "" }); return; }
+    if (!recording) {
+      /* ⚠️ Said, not swallowed. A real hold that came back with nothing is the
+       * failure this whole file is now written around, and the old answer to
+       * it was an island that quietly folded. */
+      this.log(`nothing recorded after ${held.toFixed(1)} s (${opening ? "the microphone was still opening" : "no audio"})`);
+      if (held >= 1) this.helm.tell("Microphone", opening ? "The microphone took too long to start" : "Nothing was recorded");
+      this.feed({ t: "heard", text: "" });
+      return;
+    }
+    this.log(`recorded ${recording.seconds.toFixed(1)} s, ${Math.round(recording.blob.size / 1024)} kB${this.recorder.lost ? ", cut short" : ""}`);
     try {
-      this.feed({ t: "heard", text: await this.helm.voice.transcribe(await base64Of(recording.blob), recording.mime) });
+      const text = await this.helm.voice.transcribe(await base64Of(recording.blob), recording.mime);
+      this.log(text.trim() ? `heard ${text.trim().length} characters` : "heard nothing");
+      if (!text.trim()) this.helm.tell("Speech", "Didn't catch that");
+      // His words on the glance at once, before the Guardian has said anything.
+      if (text.trim()) this.reply = emptyReply(text.trim());
+      this.feed({ t: "heard", text });
     } catch (error) {
+      this.log(`transcription failed: ${clean(error)}`);
       this.helm.tell("Speech", clean(error));
       this.feed({ t: "failed" });
     }
@@ -225,15 +293,27 @@ export class VoiceTalk {
   private async send(text: string) {
     const turn = this.state.turn;
     // A reply from before a barge-in may still be streaming: the chat takes one turn at a time.
+    const waited = performance.now();
     for (let i = 0; this.chat.pending && i < 480; i++) await sleep(250);
     if (this.state.phase !== "thinking" || this.state.turn !== turn) return;
+    if (this.chat.pending) {
+      this.log("the chat stayed busy for two minutes");
+      this.helm.tell("Guardian", "Still answering the last message");
+      this.feed({ t: "failed" });
+      return;
+    }
+    if (performance.now() - waited > 500) this.log(`waited ${Math.round(performance.now() - waited)} ms for the last reply`);
     // Text only, said before the reply comes: the switch here, presenting, a call, a meeting (voice.rs).
     if (!this.hooks.spoken()) this.feed({ t: "muted", why: "off" });
     else void call<string | null>("voice_quiet").then(why => { if (why && this.state.turn === turn) this.feed({ t: "muted", why }); }).catch(() => {});
     this.ours = true;
+    this.reading = true;
+    this.reply = emptyReply(text);
+    this.paint();
     const started = await this.chat.send(text, [], { focus: this.helm.focus, voice: true });
     if (!started) {
       this.ours = false;
+      this.reading = false;
       this.feed({ t: "failed" });
     }
   }
@@ -251,6 +331,7 @@ export class VoiceTalk {
   }
 
   private chatEvent(event: ChatEvent) {
+    if (this.reading) this.follow(event);
     if (!this.ours) return;
     if (event.t === "text") this.feed({ t: "text", d: event.d });
     // An error is followed by `done` from Helm, but a dropped connection sends only the error.
@@ -260,41 +341,161 @@ export class VoiceTalk {
     }
   }
 
-  /* ── The strip ───────────────────────────────────────────────────────── */
-
-  private paint() {
-    const { phase, muted } = this.state;
-    const shown = phase !== "idle" && phase !== "pressed";
-    this.el.hidden = !shown;
-    this.el.dataset.phase = phase;
-    this.hooks.foot()?.classList.toggle("is-talking", shown);
-    const icon = PHASE_ICON[phase];
-    if (icon) paintIcon(this.disc, phase === "speaking" && muted ? "volumeOff" : icon);
-    const why = muted ? QUIET[muted] : null;
-    this.quiet.hidden = !why || phase === "listening";
-    this.quiet.replaceChildren();
-    if (why) {
-      paintIcon(this.quiet, why.icon);
-      this.quiet.dataset.tip = why.tip;
-      this.quiet.setAttribute("aria-label", why.tip);
+  /** The reply on the glance, event by event. */
+  private follow(event: ChatEvent) {
+    const reply = this.reply;
+    switch (event.t) {
+      case "status": reply.status = event.text; break;
+      case "text": reply.status = null; reply.text += event.d; break;
+      case "receipt": reply.receipts.push(event.receipt); break;
+      case "card": reply.cards++; break;
+      case "error": reply.status = null; reply.error = event.message; reply.done = true; break;
+      case "done":
+        reply.done = true;
+        reply.id = event.id;
+        this.reading = false;
+        this.log(`reply done: ${reply.text.length} characters, ${reply.receipts.length} receipts, ${reply.cards} cards`);
+        // A turn already over (stopped by a tap) was waiting for this to start its reading time.
+        if (this.lingering) this.linger(this.state);
+        break;
+      default: return;
     }
-    this.time.hidden = phase !== "listening";
-    window.clearInterval(this.barTimer);
-    if (shown) this.barTimer = window.setInterval(() => this.paintBars(), 50);
-    else for (const bar of this.bars) bar.style.removeProperty("--h");
-    this.paintBars();
-    this.surface.measure();
+    this.glance.paintReply(reply);
   }
 
-  /** The voice as a moving wave, the newest on the right: his while he holds, the Guardian's while it speaks. */
-  private paintBars() {
+  private async undo(id: number, index: number): Promise<boolean> {
+    await this.chat.undo(id, index);
+    const message = this.chat.thread?.messages.find(m => m.id === id);
+    return !!message?.receipts[index]?.undoneAt;
+  }
+
+  /* ── The glance ──────────────────────────────────────────────────────── */
+
+  /** Up, for this turn. */
+  private raise() {
+    window.clearTimeout(this.foldTimer);
+    this.lingering = false;
+    if (!this.raised) this.hooks.prepare();
+    this.raised = true;
+    this.surface.setVoice(true);
+    this.keys();
+    this.paint();
+  }
+
+  /** A new turn: the last one's words off the glance. */
+  private fresh() {
+    this.reading = false;
+    this.quiet = null;
+    this.reply = emptyReply();
+    this.glance.reset();
+  }
+
+  /** The turn is over: up a moment to read it, longer when it went unheard, then folded. */
+  private linger(before: TurnState) {
+    window.clearTimeout(this.foldTimer);
+    if (!this.raised) return;
+    const something = !!(this.reply.heard && (this.reply.text || this.reply.receipts.length || this.reply.error));
+    if (!something && !this.reading) {
+      // A tap that stopped nothing, a turn nothing was heard in, a failure: nothing to read.
+      this.foldTimer = window.setTimeout(() => this.fold(), NOTHING_MS);
+      this.lingering = true;
+      return;
+    }
+    this.lingering = true;
+    this.paint();
+    // ⚠️ Counted from when the reply has FINISHED: a tap stops the voice, not the words still coming.
+    if (this.reading || this.surface.pointed) return;
+    this.foldTimer = window.setTimeout(() => this.fold(), this.quiet || before.muted ? READ_QUIET_MS : READ_MS);
+  }
+
+  private hovered(on: boolean) {
+    if (!this.lingering) return;
+    window.clearTimeout(this.foldTimer);
+    if (!on && !this.reading) this.foldTimer = window.setTimeout(() => this.fold(), READ_AFTER_HOVER_MS);
+  }
+
+  /** Down to the pill. */
+  private fold() {
+    window.clearTimeout(this.foldTimer);
+    if (!this.raised) return;
+    this.raised = false;
+    this.lingering = false;
+    this.glance.flush();
+    this.surface.setVoice(false);
+    this.keys();
+    this.paint();
+  }
+
+  /** The glance's open key, a click on it: the Guardian, with the thread. */
+  private openGuardian() {
+    this.glance.flush();
+    this.hooks.openGuardian();
+    // Read there from now on; a turn still live comes back to the glance when the panel folds.
+    if (!this.live) {
+      this.raised = false;
+      this.lingering = false;
+      window.clearTimeout(this.foldTimer);
+      this.surface.setVoice(false);
+      this.keys();
+    }
+  }
+
+  private paint() {
+    const { phase, free, barge, muted } = this.state;
+    // ⚠️ The machine forgets why at the end of the turn; the glance still says it while he reads.
+    if (muted) this.quiet = muted;
+    this.glance.speaking = this.ours && !muted && (phase === "speaking" || phase === "thinking");
+    this.glance.turn({ phase: phase === "idle" ? "done" : phase, free, barge, muted: muted ?? this.quiet }, this.reply.heard ? this.reply : null);
+    window.clearInterval(this.tickTimer);
+    this.tickTimer = 0;
+    if (this.raised) this.tickTimer = window.setInterval(() => this.tick(), 50);
+  }
+
+  /** The bars, the time and the voice's level, twenty times a second. */
+  private tick() {
     const phase = this.state.phase;
-    if (phase === "listening") this.time.textContent = clockOf((performance.now() - this.startedAt) / 1000);
-    const level = phase === "listening" ? this.mic : phase === "speaking" ? this.out : 0;
+    const level = phase === "listening" || phase === "pressed" ? this.mic : 0;
     // Gone in a few frames when the voice stops, rather than frozen at its last peak.
     this.mic *= 0.55;
-    const bars = this.bars;
-    for (let i = 0; i < bars.length - 1; i++) bars[i].style.setProperty("--h", bars[i + 1].style.getPropertyValue("--h") || "0.06");
-    bars[bars.length - 1].style.setProperty("--h", String(Math.max(0.06, Math.min(1, level))));
+    const seconds = phase === "listening" || phase === "pressed" ? (performance.now() - this.startedAt) / 1000 : 0;
+    this.glance.tick(level, seconds, phase === "speaking" ? this.out : 0);
+  }
+
+  /* ── Keeping it honest ───────────────────────────────────────────────── */
+
+  /** Escape while the glance is up, Enter while hands-free listens — asked
+   *  again every ten seconds, because voice.rs lets go of both half a minute
+   *  after the last ask (a page that died must not keep Enter). */
+  private keys() {
+    const want = { escape: this.turnKeys.escape || this.raised, enter: this.turnKeys.enter };
+    const key = JSON.stringify(want);
+    if (key !== this.askedKeys) {
+      this.askedKeys = key;
+      void call("voice_keys", want).catch(() => {});
+    }
+    window.clearInterval(this.keysTimer);
+    this.keysTimer = 0;
+    if (want.escape || want.enter) this.keysTimer = window.setInterval(() => { void call("voice_keys", want).catch(() => {}); }, KEYS_EVERY);
+  }
+
+  /** The phase's limit, re-armed whenever something happens in it. */
+  private watch() {
+    window.clearTimeout(this.watchTimer);
+    const phase = this.state.phase;
+    const limit = LIMITS[phase];
+    if (!limit) return;
+    this.watchTimer = window.setTimeout(() => {
+      if (this.state.phase !== phase) return;
+      this.log(`${phase} for ${Math.round(limit / 1000)} s with nothing happening: ending the turn`);
+      if (phase === "listening" || phase === "pressed") { this.feed({ t: "stop" }); return; }
+      this.helm.tell(phase === "transcribing" ? "Speech" : "Guardian", phase === "transcribing" ? "Helm didn't answer" : "The answer stopped coming");
+      this.ours = false;
+      this.feed({ t: "failed" });
+    }, limit);
+  }
+
+  /** One line in the app's log. ⚠️ Never his words or the Guardian's: sizes and states. */
+  private log(line: string) {
+    if (native) void call("log_line", { line: `voice: ${line}` }).catch(() => {});
   }
 }

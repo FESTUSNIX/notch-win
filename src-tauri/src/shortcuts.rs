@@ -482,8 +482,8 @@ pub fn set_shortcuts(app: AppHandle, hide: String, ring: String, capture: String
     }
     let manager = app.global_shortcut();
     let _ = manager.unregister_all();
-    // A live voice turn's Escape went with them; voice.rs takes it again on the next one.
-    crate::voice::forget_escape();
+    // A live voice turn's Escape and Enter went with them; voice.rs takes them again when asked.
+    crate::voice::forget_keys();
     match apply(&app, &next) {
         Ok(()) => {
             *app.state::<ShortcutState_>().0.lock().unwrap() = next.clone();
@@ -608,13 +608,17 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
             .with_handler(move |_app, shortcut, event| {
                 let current = handler.state::<ShortcutState_>().0.lock().unwrap().clone();
                 let pressed = shortcut.into_string();
-                /* Escape, registered only while a voice turn is live (voice.rs):
-                 * it stops the turn from whatever app has the keyboard. */
-                if matches(&pressed, crate::voice::ESCAPE) {
-                    if event.state() == ShortcutState::Pressed {
-                        let _ = handler.emit_to("tasks", "voice:escape", ());
+                /* Escape and Enter, registered only while the voice glance
+                 * needs them (voice.rs): Escape stops the turn or folds the
+                 * glance, Enter sends a hands-free one, from whatever app has
+                 * the keyboard. */
+                for (key, name) in [(crate::voice::ESCAPE, "voice:escape"), (crate::voice::ENTER, "voice:enter")] {
+                    if matches(&pressed, key) {
+                        if event.state() == ShortcutState::Pressed {
+                            let _ = handler.emit_to("tasks", name, ());
+                        }
+                        return;
                     }
-                    return;
                 }
                 /* ⚠️ The ring is the one shortcut that cares about the RELEASE.
                  * Held and let go it is a single gesture — press, flick, let go
@@ -794,7 +798,8 @@ mod tests {
         for not in ["Ctrl+Space", "Alt+Backquote", "Q", "", "Alt+"] {
             assert!(!watchable(not), "{not}");
         }
-        // And Escape, which a live turn takes for itself, is not one he could pick.
+        // And Escape and Enter, which the voice glance takes for itself, are not ones he could pick.
         assert!(!watchable(crate::voice::ESCAPE));
+        assert!(!watchable(crate::voice::ENTER));
     }
 }

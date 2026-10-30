@@ -467,6 +467,7 @@ export function previewFinished(): { session: string; project: string; folder: s
    `previewBus` as `voice:out`, and a hush cuts every one short. `?call` and
    `?event=now` are what voice.rs answers as a call and a meeting (text only). */
 let demoHushes = 0;
+const voicePace = Math.max(1, Number(new URLSearchParams(location.search).get("pace")) || 1);
 function demoQuiet(): string | null {
   if (demoPrefs.spokenReplies === false) return "off";
   if (callAsked) return "call";
@@ -506,16 +507,21 @@ async function scriptReply(text: string, capture = false, voice = false) {
     return;
   }
   /* A spoken turn's answer: two sentences, the first whole well before the
-     second, so a test sees it said while the rest is still being written. */
+     second, so a test sees it said while the rest is still being written. The
+     receipt comes first, as Helm's do (the tool runs, then it says so).
+     `&pace=n` slows the whole turn n times, for a picture of each moment;
+     `&voicecard` adds a card, which the voice glance cannot hold. */
   if (voice) {
+    const slow = (ms: number) => wait(ms * voicePace);
     send({ t: "status", text: "Sprawdzam kalendarz" });
-    await wait(400);
-    for (const part of ["Dobrze, ", "przesunąłem Repricer na siedemnastą. ", "Zostały ci ", "dziś ", "dwie rzeczy."]) {
-      send({ t: "text", d: part });
-      await wait(part.startsWith("Zostały") ? 900 : 200);
-    }
+    await slow(400);
     const receipt = { label: "Repricer: reguły cen, 17:00", icon: "block", undo: { op: "update", table: "focus_blocks", id: 3, values: {} } };
     send({ t: "receipt", index: 0, receipt });
+    if (params.has("voicecard")) send({ t: "card", card: { type: "requests", project: "Esono", projectId: 3, items: [] } });
+    for (const part of ["Dobrze, ", "przesunąłem Repricer na siedemnastą. ", "Zostały ci ", "dziś ", "dwie rzeczy."]) {
+      send({ t: "text", d: part });
+      await slow(part.startsWith("Zostały") ? 900 : 200);
+    }
     const id = 1000 + sentHere.length;
     keep(id, "me", text);
     keep(id + 1, "guardian", "Dobrze, przesunąłem Repricer na siedemnastą. Zostały ci dziś dwie rzeczy.", [receipt]);
@@ -1012,7 +1018,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "helm_transcribe_ready") return (params.get("speech") !== "off") as T;
   if (command === "helm_transcribe") {
     if (params.get("speech") === "off") return { unavailable: true } as T;
-    await new Promise(done => setTimeout(done, 450));
+    await new Promise(done => setTimeout(done, 450 * voicePace));
     return { text: "Przesuń Repricer na jutro rano" } as T;
   }
   /* `&remind=sent` is Helm's 409: that level went out before. */
@@ -1024,7 +1030,14 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "voice_say") return (await demoSay(String(args.text ?? ""))) as T;
   if (command === "voice_hush") { demoHushes++; return undefined as T; }
   if (command === "voice_quiet") return demoQuiet() as T;
-  if (command === "voice_escape") return undefined as T;
+  if (command === "voice_keys") return undefined as T;
+  /* Cofnij: the change is marked taken back in the thread, as Helm does. */
+  if (command === "helm_undo") {
+    const message = sentHere.find(m => m.id === args.messageId) as { receipts?: { undoneAt?: string }[] } | undefined;
+    const receipt = message?.receipts?.[Number(args.index)];
+    if (receipt) receipt.undoneAt = new Date().toISOString();
+    return undefined as T;
+  }
   /* The cockpit's commands. ⚠️ Under `notch=off` they answer as the deployed
      Helm would without the endpoint — but nothing should be calling them then,
      because nothing that calls them is drawn. */

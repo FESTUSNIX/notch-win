@@ -1,21 +1,28 @@
 /* A spoken turn with the Guardian, the pure half (`voice-talk.ts` runs it).
  *
- * Hold the talk key anywhere: the microphone opens on the press, the island
+ * Hold the talk key anywhere: the microphone opens on the press, the glance
  * comes up once it has been held half a second, letting go sends the words to
  * Helm, and the Guardian's reply is said sentence by sentence as it streams —
  * the first one while the rest is still being written. Holding the key while
  * it speaks stops it and listens (barge-in); Escape stops everything.
  *
+ * Hands-free (29 Oct, round 2, his call: "holding the combo gets tiring if I
+ * speak a lot"): a TAP of the key when nothing is being said keeps listening
+ * — the microphone that opened on the press stays open — until Enter or
+ * another tap sends it, or Escape drops it. Hold-and-release is untouched,
+ * for any length. A tap while it speaks still only stops the speech.
+ *
  * `step` is the whole state machine: an event in, the next state and what to
  * DO out (effects), so the order of things is under test (tests/voice.test.mjs)
  * and the shell only carries effects out. `takeSentences` and `speakable` are
- * what turns a streaming reply into things a voice can say.
+ * what turns a streaming reply into things a voice can say; `wordsOf` and
+ * `revealMs` are how the glance writes it in (`voice-glance.ts`).
  *
  * ⚠️ No runtime imports: `node --test` loads this file, and Node's resolver
  * adds no extensions (AGENTS 437).
  */
 
-/** A press shorter than this is a tap, and a tap does nothing. */
+/** A press shorter than this is a tap: hands-free when idle, a stop while it speaks. */
 export const HOLD_MS = 500;
 
 export type Phase =
@@ -23,7 +30,7 @@ export type Phase =
   | "idle"
   /** The key is down, under half a second: recording, nothing shown yet. */
   | "pressed"
-  /** Held: the island is up and listening. */
+  /** Held, or tapped into hands-free (`free`): the glance is up and listening. */
   | "listening"
   /** Let go: Helm is writing the words down. */
   | "transcribing"
@@ -46,6 +53,10 @@ export interface TurnState {
   buffer: string;
   /** Why this turn is text only (`off`, `call`, `meeting`, `presenting`, `unavailable`), or null. */
   muted: string | null;
+  /** Listening hands-free: no key is held, Enter or another tap sends. */
+  free: boolean;
+  /** This press interrupted a reply: a tap is then a stop, never hands-free. */
+  barge: boolean;
 }
 
 export type TurnEvent =
@@ -53,6 +64,10 @@ export type TurnEvent =
   /** Still down after `HOLD_MS`. */
   | { t: "held" }
   | { t: "up"; ms: number }
+  /** Enter, which sends a hands-free turn. */
+  | { t: "enter" }
+  /** The recording ended by itself — five minutes, or the microphone went away: what came is sent. */
+  | { t: "stop" }
   /** What Helm heard (empty: nothing). */
   | { t: "heard"; text: string }
   /** A delta of the Guardian's reply. */
@@ -72,52 +87,70 @@ export type Effect =
   | { do: "finish" }
   | { do: "hush" }
   | { do: "open" }
-  | { do: "escape"; on: boolean }
+  /** The keys taken from every app: Escape while the turn is live, Enter while hands-free listens. */
+  | { do: "keys"; escape: boolean; enter: boolean }
   | { do: "send"; text: string }
   | { do: "say"; text: string; turn: number; seq: number }
-  /** Back to idle: the strip goes, the island stays up a moment for reading. */
+  /** Back to idle: the glance stays up a moment for reading. */
   | { do: "end" };
 
-export const idle = (turn = 0): TurnState => ({ phase: "idle", turn, seq: 0, out: 0, done: false, buffer: "", muted: null });
+export const idle = (turn = 0): TurnState => ({ phase: "idle", turn, seq: 0, out: 0, done: false, buffer: "", muted: null, free: false, barge: false });
 
 /** The phases a reply is coming in. */
 const replying = (phase: Phase) => phase === "thinking" || phase === "speaking";
 
-/** Back to idle, giving Escape back. */
+const keys = (escape: boolean, enter = false): Effect => ({ do: "keys", escape, enter });
+
+/** Back to idle, giving the keys back. */
 const over = (state: TurnState, effects: Effect[] = []): [TurnState, Effect[]] =>
-  [idle(state.turn), [...effects, { do: "escape", on: false }, { do: "end" }]];
+  [idle(state.turn), [...effects, keys(false), { do: "end" }]];
+
+/** Let go, Enter, another tap, five minutes: the words go to Helm. */
+const send = (state: TurnState, effects: Effect[] = []): [TurnState, Effect[]] =>
+  [{ ...state, phase: "transcribing", free: false }, [...effects, keys(true), { do: "finish" }]];
 
 /** The next state, and what to do about it. */
 export function step(state: TurnState, event: TurnEvent): [TurnState, Effect[]] {
   switch (event.t) {
     case "down": {
-      if (state.phase === "idle") return [{ ...state, phase: "pressed" }, [{ do: "record" }]];
+      if (state.phase === "idle") return [{ ...state, phase: "pressed", barge: false }, [{ do: "record" }]];
       /* Barge-in: the voice stops at once, a tap included, and what is left of
        * the reply arrives as text only (no phase here listens for it). */
-      if (replying(state.phase)) return [{ ...state, phase: "pressed", buffer: "", out: 0 }, [{ do: "hush" }, { do: "record" }]];
+      if (replying(state.phase)) return [{ ...state, phase: "pressed", barge: true, buffer: "", out: 0 }, [{ do: "hush" }, { do: "record" }]];
+      // Hands-free: the next press sends what was said, on the press.
+      if (state.phase === "listening" && state.free) return send(state);
       // The key repeating while held, or a press while the words are on their way.
       return [state, []];
     }
     case "held":
       if (state.phase !== "pressed") return [state, []];
-      return [{ ...state, phase: "listening" }, [{ do: "open" }, { do: "escape", on: true }]];
+      return [{ ...state, phase: "listening" }, [{ do: "open" }, keys(true)]];
     case "up": {
       if (state.phase === "pressed" && event.ms < HOLD_MS) {
-        // A tap. After a barge-in the speech stays stopped; the reply goes on as text.
-        return over(state, [{ do: "cancel" }]);
+        // A tap while it spoke: the speech stays stopped, the reply goes on as text.
+        if (state.barge) return over(state, [{ do: "cancel" }]);
+        /* A tap otherwise: hands-free. ⚠️ The microphone that opened on the
+         * press is KEPT, so what he says straight after the tap is in it. */
+        return [{ ...state, phase: "listening", free: true }, [{ do: "open" }, keys(true, true)]];
       }
-      if (state.phase === "pressed" || state.phase === "listening") {
+      if (state.phase === "pressed") {
         // Held long enough even if the timer lost the race with the key.
-        const open: Effect[] = state.phase === "pressed" ? [{ do: "open" }, { do: "escape", on: true }] : [];
-        return [{ ...state, phase: "transcribing" }, [...open, { do: "finish" }]];
+        return send(state, [{ do: "open" }]);
       }
+      if (state.phase === "listening" && !state.free) return send(state);
       return [state, []];
     }
+    case "enter":
+      if (state.phase !== "listening" || !state.free) return [state, []];
+      return send(state);
+    case "stop":
+      if (state.phase !== "listening" && state.phase !== "pressed") return [state, []];
+      return send(state, state.phase === "pressed" ? [{ do: "open" }] : []);
     case "heard": {
       if (state.phase !== "transcribing") return [state, []];
       const text = event.text.trim();
       if (!text) return over(state);
-      return [{ ...idle(state.turn + 1), phase: "thinking" }, [{ do: "escape", on: true }, { do: "send", text }]];
+      return [{ ...idle(state.turn + 1), phase: "thinking" }, [keys(true), { do: "send", text }]];
     }
     case "text": {
       if (!replying(state.phase)) return [state, []];
@@ -207,6 +240,41 @@ export function takeSentences(buffer: string, final: boolean): { ready: string[]
     rest = "";
   }
   return { ready, rest };
+}
+
+/* ── Words, for the glance ───────────────────────────────────────────── */
+
+/**
+ * The reply as the glance writes it: plain words, each with the space after
+ * it, and whether the last one is whole yet. ⚠️ Markers are dropped one by
+ * one, never as pairs, so what is already on screen does not change shape
+ * when the closing `**` arrives two tokens later; a link keeps its words.
+ * Line breaks are spaces: the glance is a few lines, not a document.
+ */
+export function wordsOf(text: string, done: boolean): { words: string[]; whole: number } {
+  const plain = text
+    .replace(/\[([^\]]*)\]\([^)]*\)?/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}|[-*•]|\d+[.)])\s+/gm, "")
+    .replace(/[*_`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trimStart();
+  const words = plain.match(/\S+\s*/g) ?? [];
+  // The last word is whole once a space follows it, or once nothing more is coming.
+  const whole = done || /\s$/.test(plain) ? words.length : Math.max(0, words.length - 1);
+  return { words, whole };
+}
+
+/**
+ * How long a word is given before the next one appears. Read out loud, the
+ * words go in at about the voice's own pace (OpenAI's Polish voice says
+ * ~15 characters a second), so the text keeps roughly in step with what is
+ * heard; text only, they flow in quickly. ⚠️ A backlog is drained faster
+ * rather than let fall a sentence behind.
+ */
+export function revealMs(word: string, speaking: boolean, behind: number): number {
+  if (!speaking) return behind > 12 ? 16 : 34;
+  const pace = Math.max(110, word.trim().length * 62);
+  return behind > 24 ? Math.round(pace / 3) : behind > 12 ? Math.round(pace / 1.6) : pace;
 }
 
 /**

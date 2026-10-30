@@ -5521,3 +5521,129 @@ through OpenAI's voice, with the text in the island; hold again to answer it.
       meeting, `?spoken=off` the switch. `voice_*` calls are recorded in
       `window.__helmCalls` with Helm's. `tests/browser/voice.spec.ts` walks the
       turn, a tap, barge-in, Escape, a call and the switch.
+
+### Talking with the Guardian, round 2: the bug, hands-free, the glance (29 Oct, later)
+
+His words, after using it: "the hold Alt + Q worked the first time but now it
+just doesn't record my speech"; "holding the combo gets tiring if I speak a
+lot"; "I wouldn't display the whole guardian chat page just for speech, let's
+make it expand the notch (into the 50/50 state …) and display appropriate UI
+for it." `voice-glance.ts` is the new look, `voice-turn.ts` gained hands-free,
+`kit/voice.ts`'s recorder was the bug. 848 (the strip over the composer) and
+`IslandSurface.held` are gone; 844's two-minute Escape is now 856.
+
+ 851. ⚠️⚠️ **"It recorded the first time and then never again" was the
+      recorder, twice over.** The log had nothing (voice.rs only logged its
+      failures, the page nothing), so the cause came from driving the NATIVE
+      path in Chrome: `voice:down`/`voice:up` through `previewBus` (no gesture,
+      as from a key in another app) and a real `getUserMedia` on Chrome's fake
+      device, opening as slowly as his does — his default microphone AND
+      speakers are Galaxy Buds3 Pro, Bluetooth, which switch to the hands-free
+      profile when the mic opens (a second or more). Both reproduced:
+      (a) `Recorder.start()` returned at once while a start was in flight. A tap
+      (stopping the voice: the one thing a tap did) cancelled a start still
+      opening; the next press inside that second was skipped, and the skipped
+      open then saw the tap's `released` and closed itself. The island
+      listened, the bars lay flat (Core Audio's meter reads zero until
+      something records) and nothing was sent. A start now ADOPTS the one in
+      flight. (b) `finish()` set `onstop`, then called `stop()`. A recorder
+      whose track ends (a headset changing profile, another app taking the
+      device) stops BY ITSELF and fires `stop` then — to nobody — and `stop()`
+      on an inactive recorder fires nothing, so the promise never settled: the
+      turn sat in "transcribing" for good and every later press was "a press
+      while the words are on their way", ignored. `stopped` is now listened for
+      from the start, `finish` is bounded, and a track that ends sends what it
+      caught (`onLost` → `stop`). Both are in `tests/voice.test.mjs` with a
+      fake microphone and in `voice.spec.ts`, turn after turn.
+ 852. ⚠️ **Nothing in a turn may wait for ever** (`LIMITS`, voice-talk.ts):
+      every phase has a longest life, re-armed by anything happening in it,
+      past which the turn ends and says so on the pill. A microphone that never
+      opens is given up after `OPEN_SECONDS` (8 s, a `TimeoutError`, "The
+      microphone didn't start in time"); a hold that came back empty says
+      "Nothing was recorded" or "The microphone took too long to start"; an
+      empty transcript says "Didn't catch that". The old answer to all three
+      was an island that quietly folded, which is how (a) looked like "it
+      doesn't record" rather than like an error.
+ 853. **Every step of a turn is in the app's log** (`voice: …`, from the page
+      through `log_line` and from voice.rs): the key down and up with the
+      hold's length, each phase change, how long the microphone took to open,
+      the recording's seconds and size, how many characters were heard, the
+      reply's size, the keys taken and given back, a phase that stalled.
+      ⚠️ Never his words or the Guardian's — sizes and states only: the log is
+      plain text in %APPDATA%.
+ 854. **The speakers let go when the key goes down** (`Command::Free`, when
+      nothing is being said) and on every hush. His earbuds are both, and the
+      microphone opening flips them to the hands-free profile: a stereo
+      `waveOut` stream still open on them is a stream on an endpoint about to
+      stop answering. Reopened per reply (`WAVE_MAPPER`), it lands on whatever
+      is current. ⚠️ Reasoned, not measured: nothing here can play to his
+      earbuds from a test.
+ 855. **Hands-free is a TAP when nothing is being said** (his call). The
+      microphone that opened on the press is KEPT, so what he says straight
+      after the tap is in it; the turn listens until Enter or another tap (on
+      its PRESS) sends, or Escape drops it. Hold-and-release is untouched, for
+      any length. ⚠️ A tap while it speaks still only stops the speech: `barge`
+      on the state marks a press that interrupted a reply, and such a press
+      can never become hands-free. Five minutes at most (the recorder's own
+      `MAX_SECONDS`, Helm's limit), the time on screen, warm in the last half
+      minute.
+ 856. ⚠️ **Enter is taken from every app only while hands-free listens, Escape
+      while the glance is up** (`voice_keys {escape, enter}`, the whole set
+      each time, so a lost call cannot leave one held). The page asks again
+      every ten seconds and voice.rs gives both back thirty seconds after the
+      last ask — Escape's old watchdog was two minutes, which for ENTER would
+      be two minutes of not being able to press Enter anywhere if the page
+      died. Enter goes back the moment it sends; Escape stays through the reply
+      and the reading time, so Escape in his editor folds the glance. Another
+      app holding one is logged once per glance, not on every renewal.
+ 857. **A spoken turn lives in the glance, never on the Guardian's screen.**
+      `IslandSurface.setVoice` raises it whatever the hover mode, with a layer
+      of its own (`#island-voice`). A click on it — or its open key — grows it
+      into the Guardian with the thread, through the glance's own end of the
+      lerp (769), so there is no jump; opened mid-reply, folding the panel
+      returns to the glance while the turn is live. An open panel folds to make
+      way when a turn starts, unless it is pinned or has the caret: then the
+      glance waits under it. The turn still lands in the thread as before.
+ 858. ⚠️ **The glance's size is SPRUNG now** (`glanceLong`, `glanceThin`), not
+      read off FRAME. The voice glance is wider than music's
+      (`islandVoiceLong`, ~520 CSS px, so an answer line holds a sentence) and
+      as deep as its content (`islandVoiceThinMin`…`Max`, ~96…230 px), measured
+      off `.v-inner` and moved on the calm pair, never with a bounce: an answer
+      grows it a line at a time while he reads. Music's comes back at music's
+      size — snapped from the pill, sprung if caught mid-fold. The voice layer
+      is laid out at its TARGET size and the shape reveals it, the panel's own
+      rule (the file note): nothing in it re-wraps per frame. ⚠️ Re-measured on
+      every repaint, not only when a reply changes — back to one listening row
+      after a tall answer it has to shrink, and the first cut left it tall.
+      On a left or right edge it is fixed at the maximum depth.
+ 859. ⚠️ **Pointing at the voice glance never opens the panel, in either
+      mode.** It holds the glance up (`onVoiceHover`), and leaving folds it
+      2.5 s later; a click is what opens. A click anywhere else folds one that
+      is only up to be read (`island:dismiss` → `voiceTalk.dismiss`).
+ 860. **The words go in one by one, roughly as the voice says them**
+      (`wordsOf`, `revealMs`, node-tested): ~62 ms a letter while said out loud
+      (OpenAI's Polish voice says about fifteen characters a second), a quick
+      flow when text only, a backlog drained faster so the text never falls a
+      sentence behind. ⚠️ A word fades and un-blurs; it does not slide. The
+      words are INLINE so the reply wraps like prose, and `transform` does
+      nothing to an inline box. ⚠️ Markers are dropped one character at a
+      time, never as pairs, so a word already on screen keeps its shape when
+      the closing `**` arrives two tokens later.
+ 861. **The reading time starts when the reply has FINISHED**, not when the
+      turn ended — a tap stops the voice, not the words still coming. Six
+      seconds, fourteen when it was text only, for as long as the pointer is on
+      it; Escape folds it at once. ⚠️ The machine forgets `muted` at the end of
+      the turn, so the glance keeps its own copy (`quiet`) to go on saying why
+      while he reads — the first cut lost the mark exactly then.
+ 862. **Receipts are chips; Cofnij appears once Helm has sent the reply's id**
+      (with `done`), which is what `/api/guardian/undo` needs. Two chips, then
+      "+n", which opens the thread. Cards never fit a glance: the open key
+      carries their count.
+ 863. **Staged:** `&pace=n` slows the preview's whole turn n times (a picture
+      of each moment), `&voicecard` adds a card; the preview's receipt now
+      comes before the text, as Helm's do; `helm_undo` marks it taken back in
+      the staged thread. `voice.spec.ts` walks the glance, hands-free (Enter,
+      a second tap, Escape), barge-in and the stop-tap, the regression turn
+      after turn with a 700 ms microphone (a tap then a hold at once, a lost
+      track), the pointer, a click and Escape, Cofnij, a call and the switch,
+      and writes a picture of each moment where `VOICE_SHOTS` says.

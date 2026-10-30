@@ -616,7 +616,7 @@ pub fn run() {
             voice::voice_say,
             voice::voice_hush,
             voice::voice_quiet,
-            voice::voice_escape,
+            voice::voice_keys,
             curtain::curtain_pending,
             curtain::curtain_ready,
             curtain::curtain_close,

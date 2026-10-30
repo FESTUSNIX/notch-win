@@ -25,8 +25,15 @@
 //!   is text only. Checked before each sentence and every half second while
 //!   one plays, so a call starting mid-sentence silences it.
 //! - **Escape** stops everything from whatever app has the keyboard, so it is
-//!   registered globally while a turn is live and let go after (`voice_escape`,
-//!   with a watchdog so a page that never says "done" cannot keep it).
+//!   registered globally while the voice glance is up and let go after
+//!   (`voice_keys`); **Enter** too, only while hands-free listening is live
+//!   (a tap of the key, 29 Oct round 2), because there Enter sends. Both have
+//!   a watchdog, so a page that never says "done" cannot keep either.
+//! - **The output lets go when the key goes down.** His microphone and his
+//!   speakers are the same Bluetooth earbuds, and opening the microphone
+//!   switches them to the hands-free profile; a stereo stream still open on
+//!   them is a stream on an endpoint that is about to stop answering. Reopened
+//!   for the next sentence, it lands on whatever is current.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -50,8 +57,9 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, 
 /// OpenAI's PCM: 24 kHz, 16-bit signed little-endian, one channel.
 pub const RATE: u32 = 24_000;
 const BYTES_PER_SECOND: u64 = RATE as u64 * 2;
-/// The key a live turn takes for itself (shortcuts.rs hands it here).
+/// The keys the voice glance takes for itself (shortcuts.rs hands them here).
 pub const ESCAPE: &str = "Escape";
+pub const ENTER: &str = "Enter";
 /// Helm takes five minutes of recording; a hold past that is a key that stuck.
 const LONGEST_HOLD_MS: u64 = 5 * 60_000 + 5_000;
 /// How often the level is read while he holds the key, and sent while it speaks.
@@ -68,22 +76,30 @@ const GAP_WAIT: Duration = Duration::from_millis(400);
 const CLOSE_AFTER: Duration = Duration::from_secs(4);
 /// One sentence at most this long (Helm's own cap is 1000).
 const MAX_SAY: usize = 1000;
-/// Escape is held at most this long past the last time the page asked for it.
-const ESCAPE_FOR_MS: u64 = 120_000;
+/// The keys are held at most this long past the last time the page asked for
+/// them. ⚠️ Short, because one of them is ENTER: the page asks again every ten
+/// seconds while it wants them, so a page that died gives them back in half a
+/// minute rather than leaving him unable to press Enter anywhere.
+const KEYS_FOR_MS: u64 = 30_000;
 
 /* ── The hold ─────────────────────────────────────────────────────────── */
 
 /// When the key went down (ms since start, `shortcuts::now_ms`); zero when up.
 static TALK_DOWN: AtomicU64 = AtomicU64::new(0);
 
-/// The talk key was pressed. ⚠️ Windows repeats a held key, and every repeat
-/// is another press: only the first starts a hold. The flag is trusted only
-/// while it is young, for the ring's reason (a lost release must not leave the
-/// key dead for the rest of the session).
+/// Whether a press starts a hold, given when the last one went down (zero:
+/// it came up). ⚠️ Windows repeats a held key, and every repeat is another
+/// press: only the first starts a hold. The flag is trusted only while it is
+/// young, for the ring's reason (a lost release must not leave the key dead
+/// for the rest of the session). Pure, so turn after turn is under test.
+fn starts_hold(down: u64, now: u64) -> bool {
+    down == 0 || now.saturating_sub(down) >= LONGEST_HOLD_MS
+}
+
+/// The talk key was pressed.
 pub fn pressed(app: &AppHandle, shortcut: &str) {
     let now = crate::shortcuts::now_ms();
-    let down = TALK_DOWN.load(Ordering::SeqCst);
-    if down != 0 && now.saturating_sub(down) < LONGEST_HOLD_MS {
+    if !starts_hold(TALK_DOWN.load(Ordering::SeqCst), now) {
         return;
     }
     let keys = crate::shortcuts::keys_of(shortcut);
@@ -98,6 +114,11 @@ pub fn pressed(app: &AppHandle, shortcut: &str) {
     if crate::config::load().chrome_hidden {
         crate::shortcuts::set_chrome_hidden(app, false);
     }
+    // The microphone is about to open: the speakers let go if nothing is being said (module note).
+    if let Some(player) = PLAYER.get() {
+        let _ = player.send(Command::Free);
+    }
+    crate::log::note("voice: key down");
     let _ = app.emit_to("tasks", "voice:down", ());
     let app = app.clone();
     std::thread::spawn(move || {
@@ -113,6 +134,7 @@ pub fn pressed(app: &AppHandle, shortcut: &str) {
             }
         };
         TALK_DOWN.store(0, Ordering::SeqCst);
+        crate::log::note(&format!("voice: key up after {held} ms{}", if meter.is_none() { " (no level meter)" } else { "" }));
         let _ = app.emit_to("tasks", "voice:up", json!({ "ms": held }));
     });
 }
@@ -166,19 +188,68 @@ pub fn quiet(app: &AppHandle) -> Option<&'static str> {
     )
 }
 
-/* ── Escape, while a turn is live ─────────────────────────────────────── */
+/* ── Escape and Enter, while the voice glance is up ───────────────────── */
 
-static ESCAPE_ON: AtomicBool = AtomicBool::new(false);
-static ESCAPE_UNTIL: AtomicU64 = AtomicU64::new(0);
-
-/// `set_shortcuts` let every key go, Escape with them.
-pub fn forget_escape() {
-    ESCAPE_ON.store(false, Ordering::SeqCst);
+/// The keys taken from every app: Escape while the glance is up, Enter only
+/// while hands-free listening is live.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Keys {
+    pub escape: bool,
+    pub enter: bool,
 }
 
-fn release_escape(app: &AppHandle) {
-    if ESCAPE_ON.swap(false, Ordering::SeqCst) {
-        let _ = app.global_shortcut().unregister(ESCAPE);
+/// What to register and what to let go of, to get from `held` to `want`. Pure.
+fn plan(held: Keys, want: Keys) -> (Vec<&'static str>, Vec<&'static str>) {
+    let mut take = Vec::new();
+    let mut give = Vec::new();
+    for (key, had, wants) in [(ESCAPE, held.escape, want.escape), (ENTER, held.enter, want.enter)] {
+        if wants && !had {
+            take.push(key);
+        } else if had && !wants {
+            give.push(key);
+        }
+    }
+    (take, give)
+}
+
+/// Held past the last ask by more than the watchdog allows. Pure.
+fn overdue(held: Keys, until: u64, now: u64) -> bool {
+    held != Keys::default() && now > until
+}
+
+static HELD: std::sync::Mutex<Keys> = std::sync::Mutex::new(Keys { escape: false, enter: false });
+static KEYS_UNTIL: AtomicU64 = AtomicU64::new(0);
+/// A key another app holds was already said in the log, for this glance.
+static REFUSED: AtomicBool = AtomicBool::new(false);
+
+/// `set_shortcuts` let every key go, these with them.
+pub fn forget_keys() {
+    *HELD.lock().unwrap() = Keys::default();
+}
+
+/// Take or give back each key to match `want`. ⚠️ Another app holding one is
+/// not an error: that key then works inside the island only.
+fn grab(app: &AppHandle, want: Keys) {
+    let mut held = HELD.lock().unwrap();
+    let before = *held;
+    let (take, give) = plan(before, want);
+    for &key in &give {
+        let _ = app.global_shortcut().unregister(key);
+        if key == ESCAPE { held.escape = false } else { held.enter = false }
+    }
+    for &key in &take {
+        if app.global_shortcut().register(key).is_ok() {
+            if key == ESCAPE { held.escape = true } else { held.enter = true }
+        } else if !REFUSED.swap(true, Ordering::SeqCst) {
+            // Said once, not on every renewal ten seconds apart.
+            crate::log::note(&format!("voice: {key} is taken by another app; it works inside the island only"));
+        }
+    }
+    if want == Keys::default() {
+        REFUSED.store(false, Ordering::SeqCst);
+    }
+    if *held != before {
+        crate::log::note(&format!("voice: keys escape={} enter={}", held.escape, held.enter));
     }
 }
 
@@ -214,6 +285,8 @@ impl Slot {
 enum Command {
     Queue((u64, u32), Slot),
     Hush,
+    /// The talk key went down: let the speakers go if nothing is being said.
+    Free,
 }
 
 static PLAYER: OnceLock<Sender<Command>> = OnceLock::new();
@@ -393,9 +466,10 @@ fn run(app: &AppHandle, commands: &Receiver<Command>) {
     let mut checked = Instant::now();
 
     let hush = |out: &mut Option<Out>, waiting: &mut BTreeMap<(u64, u32), Slot>, playing: &mut Option<Playing>, loudness: &mut VecDeque<(u64, f32)>| {
-        if let Some(device) = out.as_mut() {
-            device.reset();
-        }
+        /* Stopped, and let go: a hush is a barge-in or Escape, and a barge-in
+         * opens the microphone (the module note on Bluetooth). Dropping the
+         * device resets it first, so every buffer comes back. */
+        *out = None;
         if let Some(mut now) = playing.take() {
             now.slot.finish(Outcome::Hushed);
         }
@@ -423,13 +497,26 @@ fn run(app: &AppHandle, commands: &Receiver<Command>) {
                     hush(&mut out, &mut waiting, &mut playing, &mut loudness);
                     last = None;
                 }
+                Command::Free => {
+                    if playing.is_none() && waiting.is_empty() {
+                        out = None;
+                    }
+                }
             }
             next = commands.try_recv().ok();
         }
 
-        // Escape, held past its time by a page that never let it go.
-        if ESCAPE_ON.load(Ordering::SeqCst) && crate::shortcuts::now_ms() > ESCAPE_UNTIL.load(Ordering::SeqCst) {
-            release_escape(app);
+        /* Escape and Enter, held past their time by a page that never let them
+         * go. ⚠️ Given back ON THE MAIN THREAD, never from here: `grab` holds
+         * the keys' lock while the plugin's `unregister` waits for the main
+         * thread, and a `voice_keys` running there at that moment would wait
+         * for the lock — the whole app frozen. Pushed out first, so the next
+         * pass does not post it again. */
+        if overdue(*HELD.lock().unwrap(), KEYS_UNTIL.load(Ordering::SeqCst), crate::shortcuts::now_ms()) {
+            KEYS_UNTIL.store(u64::MAX, Ordering::SeqCst);
+            crate::log::note("voice: the page stopped asking for the keys; giving them back");
+            let hand = app.clone();
+            let _ = app.run_on_main_thread(move || grab(&hand, Keys::default()));
         }
 
         // A call, a meeting or presenting began mid-sentence: silent at once, and the page is told why.
@@ -567,6 +654,7 @@ pub async fn voice_say(app: AppHandle, text: String, turn: u64, seq: u32) -> Res
     let mut response = match crate::helm::speak(&text).await {
         Ok(response) => response,
         Err(why) => {
+            crate::log::note(&format!("voice: sentence {turn}/{seq} not fetched: {why}"));
             let _ = pieces.send(Piece::Failed(why.clone()));
             return Err(why);
         }
@@ -622,21 +710,14 @@ pub fn voice_hush() {
     }
 }
 
-/// Take Escape for the turn (`on`), or give it back. ⚠️ Taken from every app
-/// while it is held, so it lasts two minutes past the last ask at most; the
-/// page asks again on every step of a turn. Another app holding Escape is not
-/// an error: Escape then works inside the island only.
+/// Take Escape (the glance is up) and Enter (hands-free listening) from every
+/// app, or give them back: the whole set each time, so a lost call cannot
+/// leave one held. ⚠️ Held for `KEYS_FOR_MS` past the last ask at most; the
+/// page asks again on every step and every ten seconds between.
 #[tauri::command]
-pub fn voice_escape(app: AppHandle, on: bool) {
-    if !on {
-        release_escape(&app);
-        return;
-    }
-    ESCAPE_UNTIL.store(crate::shortcuts::now_ms() + ESCAPE_FOR_MS, Ordering::SeqCst);
-    if !ESCAPE_ON.swap(true, Ordering::SeqCst) && app.global_shortcut().register(ESCAPE).is_err() {
-        ESCAPE_ON.store(false, Ordering::SeqCst);
-        crate::log::note("voice: Escape is taken by another app; it stops a turn inside the island only");
-    }
+pub fn voice_keys(app: AppHandle, escape: bool, enter: bool) {
+    KEYS_UNTIL.store(crate::shortcuts::now_ms() + KEYS_FOR_MS, Ordering::SeqCst);
+    grab(&app, Keys { escape, enter });
 }
 
 #[cfg(test)]
@@ -701,6 +782,80 @@ mod tests {
         assert_eq!(bytes_of(TIME_SAMPLES, 2400), 4800);
         assert_eq!(bytes_of(TIME_MS, 100), 4800);
         assert_eq!(bytes_of(0x40, 7), 0, "a unit it can't read is no progress, not a guess");
+    }
+
+    /// ⚠️ The regression for "it recorded the first time and then never
+    /// again": turn after turn — hold, the reply, hold again, a barge-in, a
+    /// hold Escape ended, a hold again — every press that comes after a
+    /// release starts a hold, and only a repeat of a key still down does not.
+    #[test]
+    fn every_press_after_a_release_starts_a_hold_turn_after_turn() {
+        let mut down = 0u64;
+        let mut holds = 0;
+        // (when, pressed or released) for five turns, with the key's own repeats in the first.
+        let script = [
+            (1_000, true), (1_030, true), (1_060, true), (3_400, false), // hold, speak, let go
+            (9_000, true), (11_200, false),                            // hold again after the reply
+            (12_500, true), (14_000, false),                           // barge-in while it speaks
+            (20_000, true), (20_900, false),                           // a hold Escape ended
+            (24_000, true), (24_150, false),                           // a tap: hands-free
+            (31_000, true), (31_100, false),                           // the tap that sends
+            (40_000, true), (43_000, false),                           // and a hold again
+        ];
+        for (now, pressed) in script {
+            if pressed {
+                if starts_hold(down, now) {
+                    holds += 1;
+                    down = now;
+                }
+            } else {
+                down = 0;
+            }
+        }
+        assert_eq!(holds, 7, "the two repeats of the first hold are not holds; every other press is");
+        // A release that never came still leaves the key alive once the longest hold has passed.
+        assert!(!starts_hold(1_000, 1_000 + LONGEST_HOLD_MS - 1));
+        assert!(starts_hold(1_000, 1_000 + LONGEST_HOLD_MS));
+    }
+
+    /// The keys across the same turns, as the page asks for them: Escape for
+    /// as long as the glance is up, Enter only while hands-free listens, and
+    /// both given back at the end — every turn, not just the first.
+    #[test]
+    fn escape_and_enter_are_taken_and_given_back_turn_after_turn() {
+        let none = Keys::default();
+        let esc = Keys { escape: true, enter: false };
+        let free = Keys { escape: true, enter: true };
+        let mut held = none;
+        let mut taken = Vec::new();
+        let mut given = Vec::new();
+        for want in [esc, esc, none, esc, none, esc, esc, none, free, esc, none, esc, none] {
+            let (take, give) = plan(held, want);
+            taken.extend(take);
+            given.extend(give);
+            held = want;
+        }
+        assert_eq!(held, none, "nothing is kept after the last turn");
+        assert_eq!(taken.iter().filter(|k| **k == ESCAPE).count(), 5, "Escape once per turn, not once per ask");
+        assert_eq!(taken.iter().filter(|k| **k == ENTER).count(), 1, "Enter only for the hands-free turn");
+        assert_eq!(taken.len(), given.len(), "everything taken is given back");
+        assert_eq!(plan(free, esc), (vec![], vec![ENTER]), "sent: Enter goes back, Escape stays for the reply");
+        // The watchdog: held keys past their time go back; nothing held is never overdue.
+        assert!(overdue(esc, 10_000, 10_001));
+        assert!(!overdue(esc, 10_000, 9_000));
+        assert!(!overdue(none, 10_000, 99_000));
+    }
+
+    /// A barge-in hushes and the next turn's sentences still play in order.
+    #[test]
+    fn a_second_turn_plays_from_its_first_sentence() {
+        let fresh = Duration::from_millis(10);
+        // Turn 1 played seq 0 and 1, then a hush (last forgotten): turn 2 starts at 0.
+        assert_eq!(pick(&[((2, 0), fresh)], None), Some((2, 0)));
+        assert_eq!(pick(&[((2, 1), fresh)], Some((2, 0))), Some((2, 1)));
+        // And a third turn after that, whatever the second left as `last`.
+        assert_eq!(pick(&[((3, 0), fresh), ((3, 1), fresh)], Some((2, 4))), Some((3, 0)));
+        assert_eq!(pick(&[((3, 1), fresh)], Some((3, 0))), Some((3, 1)));
     }
 
     #[test]

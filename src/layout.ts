@@ -139,6 +139,14 @@ export const FRAME = {
   islandGlanceLong: 760,
   islandGlanceThin: 236,
   islandGlanceCurl: 52,
+  /** The VOICE glance (29 Oct, round 2): a spoken turn, between the pill and
+   *  the panel — his "50/50 state". Wider than music's (~520 CSS px, so an
+   *  answer line holds a sentence) and as deep as it needs to be: one row
+   *  while he speaks (~96 px), up to a few lines of answer and a row of
+   *  receipts (~230 px). The panel's own body is ~910 by up to ~470. */
+  islandVoiceLong: 1090,
+  islandVoiceThinMin: 200,
+  islandVoiceThinMax: 480,
   /** Wider than it is tall, on purpose: the island is read at a glance across,
    *  and a tall narrow panel wastes the one dimension a top edge has to give. */
   islandBodyLong: 1900,
