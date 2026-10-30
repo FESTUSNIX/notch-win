@@ -358,6 +358,9 @@ interface Prefs {
   taskView: string;
   /** The Guardian's replies to a hold to talk, out loud (Settings → Helm). */
   spokenReplies: boolean;
+  /** Settings → Voice (wake.rs): the wake word, and the microphone every turn records from. */
+  wakeWord?: boolean;
+  wakeMicName?: string;
 }
 
 let prefs: Prefs = {
@@ -618,6 +621,9 @@ const voiceTalk = new VoiceTalk(guardianChat, helmSource, surface, {
     surface.show(true);
   },
   spoken: () => prefs.spokenReplies !== false,
+  micName: () => prefs.wakeMicName ?? "",
+  wakeOn: () => prefs.wakeWord === true,
+  inCall: () => callSource.call.active,
 });
 /* Quick capture: one line to the Guardian (Ctrl+Alt+J, or the palette). */
 const capture = new Capture(surface, guardianChat, {

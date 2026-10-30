@@ -23,6 +23,7 @@ mod guard;
 mod helm;
 mod mic;
 mod voice;
+mod wake;
 mod terminal;
 mod dropprobe;
 mod log;
@@ -624,6 +625,11 @@ pub fn run() {
             voice::voice_hush,
             voice::voice_quiet,
             voice::voice_keys,
+            wake::wake_mics,
+            wake::wake_key,
+            wake::wake_status,
+            wake::wake_turn,
+            wake::wake_snooze,
             curtain::curtain_pending,
             curtain::curtain_ready,
             curtain::curtain_close,
@@ -718,6 +724,7 @@ pub fn run() {
             let reset = MenuItem::with_id(app, "reset", "Reset position", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Codenotch", true, None::<&str>)?;
             let log_item = MenuItem::with_id(app, "log", "Open log", true, None::<&str>)?;
+            let wake_item = wake::tray_item(app.handle())?;
             // Enabled only where there is somewhere to move to: on one monitor
             // these do nothing, and a menu item that does nothing is worse than
             // one that is not there.
@@ -747,6 +754,7 @@ pub fn run() {
                     &move_island,
                     &move_notch,
                     &settings_item,
+                    &wake_item,
                     &log_item,
                     &reset,
                     &quit,
@@ -769,6 +777,7 @@ pub fn run() {
                         let _ = log::open_log();
                     }
                     "reset" => drag::reset_position(app.clone()),
+                    "wake-snooze" => wake::tray_toggle(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -780,6 +789,8 @@ pub fn run() {
             mic::allow(app.handle());
             // Hold to talk anywhere: the Guardian's replies said out loud (voice.rs).
             voice::spawn(app.handle().clone());
+            // The wake word: "Jarvis" on the microphone he picked, nothing until then (wake.rs).
+            wake::spawn(app.handle().clone());
             hover::spawn(app.handle().clone(), "notch");
             hover::spawn(app.handle().clone(), "tasks");
             tasks::spawn(app.handle().clone());

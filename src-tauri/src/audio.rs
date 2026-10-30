@@ -20,7 +20,7 @@ use windows::Win32::Devices::FunctionDiscovery::{
     PKEY_Device_FriendlyName,
 };
 use windows::Win32::Media::Audio::{
-    eConsole, eMultimedia, eRender, ERole, IMMDeviceEnumerator, MMDeviceEnumerator,
+    eCapture, eConsole, eMultimedia, eRender, EDataFlow, ERole, IMMDeviceEnumerator, MMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::Foundation::PROPERTYKEY;
@@ -42,7 +42,7 @@ pub struct Device {
     pub is_bluetooth: bool,
 }
 
-fn enter_apartment() {
+pub(crate) fn enter_apartment() {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
@@ -54,21 +54,27 @@ fn property(store: &IPropertyStore, key: &PROPERTYKEY) -> String {
 }
 
 fn collect() -> Result<Vec<Device>, String> {
+    endpoints(eRender).map(|list| list.into_iter().map(|(device, _)| device).collect())
+}
+
+/// Every active endpoint of one direction, with its enumerator name (`BTHHFENUM`
+/// is a Bluetooth hands-free one), default first.
+pub(crate) fn endpoints(flow: EDataFlow) -> Result<Vec<(Device, String)>, String> {
     unsafe {
         let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
             .map_err(|_| "Windows would not start the audio device service.".to_string())?;
 
         // The default may legitimately not exist — a machine with no output.
         let default_id = enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .GetDefaultAudioEndpoint(flow, eConsole)
             .ok()
             .and_then(|device| device.GetId().ok())
             .map(|id| id.to_string().unwrap_or_default())
             .unwrap_or_default();
 
         let collection = enumerator
-            .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
-            .map_err(|_| "Could not list the audio outputs.".to_string())?;
+            .EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
+            .map_err(|_| "Could not list the audio devices.".to_string())?;
         let count = collection.GetCount().unwrap_or(0);
 
         let mut devices = Vec::new();
@@ -90,19 +96,19 @@ fn collect() -> Result<Vec<Device>, String> {
                 name = property(&store, &PKEY_Device_DeviceDesc);
             }
             if name.is_empty() {
-                name = "Unknown output".into();
+                name = "Unknown device".into();
             }
             let enumerator_name = property(&store, &PKEY_Device_EnumeratorName);
-            devices.push(Device {
+            devices.push((Device {
                 is_default: id == default_id,
                 is_bluetooth: enumerator_name.to_ascii_uppercase().starts_with("BTH"),
                 id,
                 name,
-            });
+            }, enumerator_name));
         }
         // Default first, then alphabetical: the one in use is the one being
         // looked for, and the rest are a list to scan.
-        devices.sort_by(|a, b| b.is_default.cmp(&a.is_default).then_with(|| a.name.cmp(&b.name)));
+        devices.sort_by(|(a, _), (b, _)| b.is_default.cmp(&a.is_default).then_with(|| a.name.cmp(&b.name)));
         Ok(devices)
     }
 }
@@ -113,6 +119,16 @@ pub async fn get_audio_devices() -> Result<Vec<Device>, String> {
     std::thread::spawn(move || {
         enter_apartment();
         let _ = send.send(collect());
+    });
+    receive.await.unwrap_or_else(|_| Err("The audio thread stopped.".into()))
+}
+
+/// The microphones, for the wake word's picker (wake.rs), with their enumerators.
+pub async fn capture_devices() -> Result<Vec<(Device, String)>, String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        enter_apartment();
+        let _ = send.send(endpoints(eCapture));
     });
     receive.await.unwrap_or_else(|_| Err("The audio thread stopped.".into()))
 }

@@ -290,6 +290,15 @@ enum Command {
 }
 
 static PLAYER: OnceLock<Sender<Command>> = OnceLock::new();
+/// When the player last had something to say (`shortcuts::now_ms`), for the
+/// wake word, which must never hear the Guardian (wake.rs).
+static LAST_SOUND: AtomicU64 = AtomicU64::new(0);
+
+/// Whether the Guardian is speaking, or stopped less than `tail` ms ago.
+pub fn sounding_lately(now: u64, tail: u64) -> bool {
+    let last = LAST_SOUND.load(Ordering::SeqCst);
+    last != 0 && now.saturating_sub(last) < tail
+}
 /// Bumped by every hush, so a sentence still downloading stops.
 static HUSHES: AtomicU64 = AtomicU64::new(0);
 
@@ -482,6 +491,9 @@ fn run(app: &AppHandle, commands: &Receiver<Command>) {
 
     loop {
         let busy = playing.is_some() || !waiting.is_empty() || out.as_ref().is_some_and(Out::busy);
+        if busy {
+            LAST_SOUND.store(crate::shortcuts::now_ms(), Ordering::SeqCst);
+        }
         let first = commands.recv_timeout(if busy { Duration::from_millis(15) } else { Duration::from_millis(500) });
         let mut next = match first {
             Ok(command) => Some(command),

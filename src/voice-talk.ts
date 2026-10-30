@@ -42,6 +42,7 @@ import { call, native, previewBus } from "./task-client";
 import { Recorder, base64Of, voiceProblem, MAX_SECONDS } from "./kit/voice";
 import { HOLD_MS, idle, step, type Effect, type Phase, type TurnEvent, type TurnState } from "./voice-turn";
 import { VoiceGlance, emptyReply, type GlanceReply } from "./voice-glance";
+import { wakeRefused } from "./wake-rules";
 import type { ChatEvent, Extra, GuardianChat } from "./screen-guardian";
 import type { HelmSource } from "./screen-helm";
 import type { IslandSurface } from "./island-surface";
@@ -53,6 +54,13 @@ export interface TalkHooks {
   openGuardian: () => void;
   /** Settings → Spoken replies. */
   spoken: () => boolean;
+  /** Settings → Voice → Microphone, by name: every turn records from it when
+   *  set (Alt+Q's too), so his earbuds' microphone stays shut. Empty: the default. */
+  micName?: () => string;
+  /** Settings → Voice → Wake word. */
+  wakeOn?: () => boolean;
+  /** In a call: a heard word starts nothing. */
+  inCall?: () => boolean;
 }
 
 /** How long the glance stays up after a turn, to read it: longer when it was not heard. */
@@ -117,6 +125,8 @@ export class VoiceTalk {
   private extra: Pick<Extra, "command" | "meeting"> | null = null;
   /** This turn was a line written for him (a moment's chat action), not said: shown, never spoken. */
   private typed = false;
+  /** "Wycisz słowo" until this, ms since the epoch (wake.rs says so on `wake:snooze`). */
+  private snoozedUntil = 0;
 
   constructor(private chat: GuardianChat, private helm: HelmSource, private surface: IslandSurface, private hooks: TalkHooks) {
     const host = document.getElementById("island-voice")!;
@@ -139,6 +149,8 @@ export class VoiceTalk {
     await on<null>("voice:escape", () => this.escape());
     await on<null>("voice:enter", () => this.feed({ t: "enter" }));
     await on<string>("voice:muted", why => this.feed({ t: "muted", why: String(why) }));
+    await on<number>("wake:heard", () => { this.wake(); });
+    await on<number>("wake:snooze", until => { this.snoozedUntil = Number(until) || 0; });
     /* Escape and Enter in the island itself, when it has the keyboard. ⚠️
      * Captured, so it is the turn that stops rather than the island folding
      * under it — and only while the glance is up, or a hands-free turn sends. */
@@ -165,6 +177,28 @@ export class VoiceTalk {
   talk(extra: Pick<Extra, "command" | "meeting">): boolean {
     if (this.live || !this.helm.signedIn) return false;
     this.extra = extra;
+    this.typed = false;
+    this.down();
+    this.up(60);
+    return true;
+  }
+
+  /** "Jarvis", heard by wake.rs: exactly a tap of the talk key — a hands-free
+   *  turn that Enter or another tap sends and Escape drops. The glance coming
+   *  up is the sign it heard. False when it starts nothing (`wakeRefused`). */
+  wake(): boolean {
+    const why = wakeRefused({
+      enabled: this.hooks.wakeOn?.() ?? false,
+      signedIn: this.helm.signedIn,
+      live: this.live,
+      call: this.hooks.inCall?.() ?? false,
+      speaking: this.out > 0.02 || this.glance.speaking,
+      snoozedUntil: this.snoozedUntil,
+      now: Date.now(),
+    });
+    if (why) { this.log(`wake word: nothing started (${why})`); return false; }
+    this.log("wake word: a hands-free turn");
+    this.extra = null;
     this.typed = false;
     this.down();
     this.up(60);
@@ -228,6 +262,8 @@ export class VoiceTalk {
     const [next, effects] = step(before, event);
     this.state = next;
     for (const effect of effects) this.run(effect, before);
+    // The wake word is paused while a turn is live, so it never starts a second one (wake.rs).
+    if ((next.phase === "idle") !== (before.phase === "idle")) void call("wake_turn", { live: next.phase !== "idle" }).catch(() => {});
     if (next.phase !== before.phase || next.muted !== before.muted || next.free !== before.free) {
       this.log(`${before.phase} → ${next.phase}${next.free ? " (hands-free)" : ""}${next.muted ? ` (text only: ${next.muted})` : ""}`);
       this.paint();
@@ -247,10 +283,16 @@ export class VoiceTalk {
           this.feed({ t: "stop" });
         };
         this.startedAt = performance.now();
+        this.recorder.preferMic = this.hooks.micName?.() ?? "";
         // A new turn on a glance still up: what it showed goes, unless this is maybe only a tap to stop the voice.
         if (before.phase === "idle") this.fresh();
         void this.recorder.start().then(
-          () => { if (this.recorder.state === "recording") this.log(`microphone open in ${this.recorder.openedIn} ms`); },
+          () => {
+            if (this.recorder.state !== "recording") return;
+            this.log(`microphone open in ${this.recorder.openedIn} ms (${this.recorder.usedMic})`);
+            // ⚠️ Said once: the default may be his earbuds, which is what choosing one was for.
+            if (this.recorder.usedMic === "missing") this.helm.tell("Microphone", "The chosen microphone isn't plugged in — using the default");
+          },
           error => {
             this.log(`microphone failed: ${(error as Error)?.name || "error"}`);
             this.helm.tell("Microphone", voiceProblem(error));

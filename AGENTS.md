@@ -5991,3 +5991,76 @@ rows drag to reorder, and the foot reads one line as an add or a log
       under the click aiming at it. Both are DOM pointer events on
       `#island-collapsed` (click mode); `surface.onPillHover` no longer drives
       second place.
+
+### The wake word: "Jarvis" (30 Oct)
+
+His words: he wants to start a turn without the keyboard. His only microphones
+are his Galaxy Buds3 Pro, and an always-open mic on them forces the hands-free
+profile (music sounds like a phone call), so he is plugging in a USB
+microphone for it. `wake.rs` is the native half (engine, microphone, pauses),
+`wake-rules.ts` the page's check and the settings words (pure,
+`tests/wake.test.mjs`), `settings-wake.ts` Settings → Voice,
+`tests/browser/wake.spec.ts` the staged walk.
+
+ 903. **The engine is Picovoice Porcupine, built-in keyword `jarvis`, loaded
+      from its DLL — not a crate.** Picovoice yanked every Rust crate they had
+      (`pv_porcupine`, `pv_recorder`) in Aug 2025; the C API is five
+      functions. `resources/wake/` holds `libpv_porcupine.dll` (v4.0),
+      `pv_ypu_impl_cuda.dll` (it IMPORTS this, so it ships even though it runs
+      on the CPU, `cpu:1`), `porcupine_params.pv`, `jarvis_windows.ppn` and
+      their Apache-2.0 LICENSE, bundled by `tauri.conf.json` `resources`.
+      ⚠️ `LoadLibraryExW(LOAD_WITH_ALTERED_SEARCH_PATH)`: plain `LoadLibraryW`
+      looks for the companion DLL next to codenotch.exe and fails with
+      0x7E. It needs his AccessKey (console.picovoice.ai, free), kept as
+      `codenotch-win/picovoice` in Credential Manager (`wake_key`), never read
+      back to a page. Porcupine checks the key with Picovoice when it starts;
+      audio never leaves the machine. ⚠️ Its own error text QUOTES the key
+      ("Failed to parse AccessKey `…`") — `redact` before anything is logged.
+      Native check: `cargo test --lib wake:: -- --ignored --nocapture` loads
+      the library (512-sample frames, 16 kHz), refuses a made-up key in words,
+      and records 0.6 s from a microphone that is NOT hands-free.
+ 904. ⚠️⚠️ **The microphone is the one he picked, and nothing else — ever.**
+      No mic picked is not "the default", it is no listening; a picked mic that
+      is unplugged is no listening ("That microphone isn't plugged in"), never
+      a fall back to his earbuds. Opened with `waveIn` at 16 kHz mono 16-bit
+      (the audio engine converts), found by its Core Audio endpoint id via
+      `DRV_QUERYFUNCTIONINSTANCEID` because waveIn's own names stop at 31
+      characters. Buffers come back in queue order (front = oldest), the
+      `Out` rule: `waveInUnprepareHeader` answering STILLPLAYING is "not yet".
+ 905. **Every voice turn records from that microphone when one is chosen**,
+      Alt+Q's included, so the earbuds' mic is never opened and they stay in
+      high quality for the reply (`Recorder.preferMic`, from `wakeMicName`).
+      The webview's device ids are its own hashes, so it is matched by LABEL
+      (`pickMic`: Windows' name, a USB one with " (vid:pid)" after;
+      "Default - …"/"Communications - …" never match). Nothing chosen: the
+      default, as before. ⚠️ Unplugged: the default, and the pill says "The
+      chosen microphone isn't plugged in — using the default" — a turn that
+      refuses to record was judged worse. ⚠️ Labels are empty until the
+      profile has a microphone grant; then it opens the default once (logged
+      `(hidden)`). mic.rs grants it on the first turn and WebView2 keeps it.
+ 906. **Paused — the microphone CLOSED, not ignored** (`why_paused`, in this
+      order): off, no key, no mic, silenced ("Wycisz słowo na godzinę" in the
+      tray, `wake_snooze`, toggles back), presenting, in a call (call.rs), a
+      voice turn live (the page sends `wake_turn` on idle↔live; 11 min if it
+      dies; set for 8 s by the detection itself, so one word is one turn), and
+      while the Guardian speaks plus 1.5 s (`voice::sounding_lately`), so it
+      never hears itself. The page checks again on `wake:heard`
+      (`wakeRefused`): a word inside a turn is just a word.
+ 907. **Heard → exactly a tap of Alt+Q** (`VoiceTalk.wake` → `down`,
+      `up(60)`): hands-free, Enter or another tap sends, Escape drops. The
+      glance coming up is the feedback — no chime, which the turn's microphone
+      (open from that moment) would record.
+ 908. **Settings → Voice** (`settings-wake.ts`): the switch with a lamp (dim;
+      a ring while it listens; lit for 2 s when the word is heard — the test;
+      its tooltip says why it is paused), Low/Normal/High (0.35/0.55/0.75),
+      one row per microphone (a hands-free one carries the warning icon,
+      tooltip "Keeps your earbuds in call quality"; a chosen one that is
+      unplugged stays, dimmed), the AccessKey (masked, Save/Remove, a check
+      when one is saved). Prefs: `wakeWord` (off by default), `wakeMic`
+      (endpoint id), `wakeMicName`, `wakeSensitivity`. **Staged:** `&wake=<ms>`
+      switches it on and hears the word once; `window.__wake()` hears it
+      again; the pane keeps its prefs and "key saved" in sessionStorage.
+ 909. **What it never does:** listen on a microphone he did not pick, listen
+      while off, send audio anywhere (only the key check talks to Picovoice),
+      log or show the key, start a second turn inside one, or hear the
+      Guardian's own voice.

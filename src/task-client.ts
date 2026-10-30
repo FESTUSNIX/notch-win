@@ -187,6 +187,9 @@ let demoPrefs: Record<string, unknown> = {
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
   /* `?spoken=off` is Settings → Spoken replies switched off. */
   spokenReplies: new URLSearchParams(location.search).get("spoken") !== "off",
+  /* `&wake` is Settings → Voice → Wake word switched on (and fires the word, below). */
+  wakeWord: new URLSearchParams(location.search).has("wake"),
+  wakeMic: "", wakeMicName: "", wakeSensitivity: "normal",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 
@@ -697,9 +700,59 @@ const keepPeekPrefs = (prefs: Record<string, unknown>) => {
 };
 /* ── end of batch 13 sources ── */
 
+/* ── The wake word, staged (30 Oct) ─────────────────────────────────────
+   `&wake` switches it on and "hears" the word once, `&wake=<ms>` after load
+   (default 1500), as `wake:heard` on `previewBus` — what wake.rs emits. In any
+   preview `window.__wake()` hears it again. The microphones are his (the
+   earbuds' hands-free one among them); Settings → Voice keeps its four prefs
+   and whether a key was saved in sessionStorage, so a reload shows them. */
+const demoMics = [
+  { id: "{0.0.1.00000000}.{usb}", name: "Microphone (USB Audio Device)", isDefault: false, handsFree: false },
+  { id: "{0.0.1.00000000}.{buds}", name: "Headset (Mateusz's Buds3 Pro Hands-Free)", isDefault: true, handsFree: true },
+  { id: "{0.0.1.00000000}.{droid}", name: "Microphone (DroidCam Audio)", isDefault: false, handsFree: false },
+  { id: "{0.0.1.00000000}.{steam}", name: "Microphone (Steam Streaming Microphone)", isDefault: false, handsFree: false },
+];
+let demoWakeKey = false;
+let demoHeardAt = 0;
+function demoWakeStatus() {
+  const p = demoPrefs as { wakeWord?: boolean; wakeMic?: string };
+  const reason = !p.wakeWord ? "off" : !demoWakeKey ? "key" : !p.wakeMic ? "mic" : null;
+  return { listening: !reason, reason, heardAt: demoHeardAt, problem: null, hasKey: demoWakeKey, snoozedUntil: 0 };
+}
+function demoHear() {
+  demoHeardAt = Date.now();
+  previewBus.dispatchEvent(new CustomEvent("wake:heard", { detail: demoHeardAt }));
+  previewBus.dispatchEvent(new CustomEvent("wake:state", { detail: demoWakeStatus() }));
+}
+const WAKE_KEPT = ["wakeWord", "wakeMic", "wakeMicName", "wakeSensitivity"];
+if (preview) {
+  (window as unknown as { __wake: () => void }).__wake = demoHear;
+  try {
+    const kept = JSON.parse(sessionStorage.getItem("preview-wake-prefs") ?? "null") as Record<string, unknown> | null;
+    if (kept) { demoWakeKey = !!kept.hasKey; for (const k of WAKE_KEPT) if (k in kept) demoPrefs[k] = kept[k]; }
+  } catch { /* none kept */ }
+  if (params.has("wake")) setTimeout(demoHear, Number(params.get("wake")) || 1500);
+}
+const keepWakePrefs = () => {
+  const kept: Record<string, unknown> = { hasKey: demoWakeKey };
+  for (const k of WAKE_KEPT) kept[k] = demoPrefs[k];
+  try { sessionStorage.setItem("preview-wake-prefs", JSON.stringify(kept)); } catch { /* forgotten */ }
+};
+/* ── end of the wake word ── */
+
 export async function call<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) return invoke<T>(command, args);
-  if (command.startsWith("helm_") || command.startsWith("voice_")) helmCalls.push({ command, args: structuredClone(args) });
+  if (command.startsWith("helm_") || command.startsWith("voice_") || command.startsWith("wake_")) helmCalls.push({ command, args: structuredClone(args) });
+  if (command === "wake_mics") return structuredClone(demoMics) as T;
+  if (command === "wake_status") return demoWakeStatus() as T;
+  if (command === "wake_key") {
+    demoWakeKey = !!String(args.key ?? "").trim();
+    keepWakePrefs();
+    previewBus.dispatchEvent(new CustomEvent("wake:state", { detail: demoWakeStatus() }));
+    return demoWakeKey as T;
+  }
+  if (command === "wake_turn") return undefined as T;
+  if (command === "wake_snooze") return 0 as T;
   /* ── Moments (30 Oct) ── the jumps and links a moment's buttons make, read back by moments.spec.ts. */
   if (command === "focus_session" || command === "open_external") helmCalls.push({ command, args: structuredClone(args) });
   if (command === "get_tasks") return structuredClone(demo) as T;
@@ -719,6 +772,8 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "set_prefs") {
     demoPrefs = args.prefs as Record<string, unknown>;
     keepPeekPrefs(demoPrefs);
+    keepWakePrefs();
+    previewBus.dispatchEvent(new CustomEvent("wake:state", { detail: demoWakeStatus() }));
     return structuredClone(demoPrefs) as T;
   }
   if (command === "get_displays") return {screens:[

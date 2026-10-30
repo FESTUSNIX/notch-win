@@ -331,6 +331,20 @@ pub struct Prefs {
     /// Quiet hours for non-urgent peeks, `HH:MM` to `HH:MM` (may cross
     /// midnight). `None` is off, the default.
     pub peek_quiet: Option<PeekQuiet>,
+
+    /* ── The wake word (wake.rs) ───────────────────────────────────────── */
+    /// Saying "Jarvis" starts a hands-free turn. ⚠️ Off by default: it is a
+    /// microphone open all day, and it needs his own AccessKey anyway.
+    pub wake_word: bool,
+    /// The microphone it listens on, a Core Audio endpoint id. ⚠️ Empty is
+    /// NOT the default device: it is no listening at all (his earbuds).
+    pub wake_mic: String,
+    /// That microphone's name, for the voice turn's `getUserMedia` (matched by
+    /// label: the webview's device ids are its own) and for Settings while it
+    /// is unplugged. Set, every voice turn records from it, Alt+Q's included.
+    pub wake_mic_name: String,
+    /// `low`, `normal` or `high`.
+    pub wake_sensitivity: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -401,6 +415,10 @@ impl Default for Prefs {
             spoken_replies: true,
             peeks: BTreeMap::new(),
             peek_quiet: None,
+            wake_word: false,
+            wake_mic: String::new(),
+            wake_mic_name: String::new(),
+            wake_sensitivity: "normal".into(),
         }
     }
 }
@@ -470,6 +488,13 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
         // Only switched-off kinds are worth keeping: on is the default.
         peeks: prefs.peeks.into_iter().filter(|(k, on)| !on && k.len() <= 24).collect(),
         peek_quiet: clean_quiet(prefs.peek_quiet),
+        wake_sensitivity: match prefs.wake_sensitivity.as_str() {
+            "low" | "high" => prefs.wake_sensitivity,
+            _ => "normal".into(),
+        },
+        // An endpoint id and a device name; anything longer is not one.
+        wake_mic: if prefs.wake_mic.len() <= 300 { prefs.wake_mic } else { String::new() },
+        wake_mic_name: prefs.wake_mic_name.chars().take(200).collect(),
         helm_sound: if crate::sound::is_known(&prefs.helm_sound) {
             prefs.helm_sound
         } else {
@@ -529,6 +554,9 @@ mod tests {
         assert!(empty.muted_modules.is_empty());
         assert_eq!(empty.task_view, "day");
         assert!(empty.spoken_replies, "the Guardian answers out loud unless told not to");
+        assert!(!empty.wake_word, "the wake word is off until he turns it on");
+        assert!(empty.wake_mic.is_empty() && empty.wake_mic_name.is_empty());
+        assert_eq!(empty.wake_sensitivity, "normal");
     }
 
     /// ⚠️ Values arrive from a WebView. A colour that is not a colour leaves

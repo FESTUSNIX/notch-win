@@ -16,6 +16,8 @@ pub const GOOGLE: &str = "codenotch-win/google-oauth";
 pub const SPOTIFY: &str = "codenotch-win/spotify-oauth";
 pub const BINANCE: &str = "codenotch-win/binance";
 pub const HELM: &str = "codenotch-win/helm";
+/// The wake word's Picovoice AccessKey (wake.rs).
+pub const PICOVOICE: &str = "codenotch-win/picovoice";
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -28,6 +30,7 @@ fn label(target: &str) -> &'static str {
         SPOTIFY => "Spotify",
         BINANCE => "Binance",
         HELM => "Helm",
+        PICOVOICE => "Picovoice",
         _ => "TickTick",
     }
 }

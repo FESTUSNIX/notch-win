@@ -18794,3 +18794,90 @@ html[data-motion='never'] .pill-second.is-eq.on i {
 #peek-groups {
 	display: contents;
 }
+
+/* ── Settings → Voice (30 Oct): the wake word's lamp, the microphones ──── */
+.wake-head svg {
+	color: var(--accent);
+	transition: color 160ms ease, opacity 160ms ease;
+}
+.wake-head.is-off svg {
+	color: #8a8a8a;
+	opacity: 0.55;
+}
+/* The test: dim at rest, a ring while it listens, lit when the word is heard. */
+.wake-lamp {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	background: #3a3a3a;
+	box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.5), 0 1px 0 rgb(255 255 255 / 0.06);
+	transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+.wake-lamp.is-listening {
+	background: color-mix(in srgb, var(--accent) 28%, #2a2a2a);
+	box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.4), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.wake-lamp.is-heard {
+	background: var(--accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 14px var(--accent);
+	transition-duration: 60ms;
+}
+button.set-row.wake-mic {
+	width: 100%;
+	border: 0;
+	margin: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	border-radius: 0;
+}
+button.set-row.wake-mic:hover {
+	background: rgb(255 255 255 / 0.035);
+}
+.wake-mic .set-text b {
+	color: #bdbdbd;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wake-mic.is-chosen .set-text b {
+	color: #f2f2f2;
+}
+.wake-mic.is-chosen .mod-row > svg {
+	color: var(--accent);
+}
+.wake-mic.is-away {
+	opacity: 0.5;
+}
+.wake-warn {
+	display: inline-flex !important;
+	margin: 0 !important;
+}
+.wake-warn svg {
+	width: 15px;
+	height: 15px;
+	color: var(--warn) !important;
+}
+.wake-pick {
+	display: inline-flex;
+	width: 18px;
+	justify-content: center;
+}
+.wake-pick svg,
+.wake-saved svg {
+	width: 16px;
+	height: 16px;
+	color: var(--accent);
+}
+.wake-saved {
+	display: inline-flex;
+}
+.wake-saved[hidden] {
+	display: none;
+}
+#wake-level button[aria-pressed='true'] {
+	color: #f2f2f2;
+}

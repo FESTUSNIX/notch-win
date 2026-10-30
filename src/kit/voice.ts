@@ -59,6 +59,23 @@ export function voiceProblem(error: unknown): string {
   return "The microphone didn't start";
 }
 
+/** The webview's id for the microphone Settings picked (`wakeMicName`), by
+ *  its NAME: the webview's ids are its own hashes, but its labels are
+ *  Windows' names, a USB one with " (vid:pid)" after. `null` when it is not
+ *  plugged in; `undefined` when the labels are hidden (no microphone
+ *  permission yet in this profile) and nothing can be told apart.
+ *  ⚠️ "default" and "communications" are the same device again under a
+ *  prefix, never a match. */
+export function pickMic(devices: { deviceId: string; label: string; kind: string }[], name: string): string | null | undefined {
+  const want = name.trim().toLowerCase();
+  const inputs = devices.filter(d => d.kind === "audioinput" && d.deviceId !== "default" && d.deviceId !== "communications");
+  if (!want) return undefined;
+  if (inputs.length && inputs.every(d => !d.label)) return undefined;
+  const found = inputs.find(d => d.label.trim().toLowerCase() === want)
+    ?? inputs.find(d => d.label.trim().toLowerCase().startsWith(`${want} (`));
+  return found ? found.deviceId : null;
+}
+
 export class Recorder {
   state: "idle" | "starting" | "recording" = "idle";
   /** 0..1, smoothed, while recording. */
@@ -68,6 +85,13 @@ export class Recorder {
   openedIn = 0;
   /** The microphone stopped by itself during this recording. */
   lost = false;
+  /** The microphone to record from, by name (Settings → Voice); empty is the
+   *  webview's default, as before. Read on each start. */
+  preferMic = "";
+  /** Which microphone the last start used: the chosen one, the default
+   *  because none is chosen, or the default because the chosen one is not
+   *  plugged in / its name could not be read. For the log and the pill. */
+  usedMic: "chosen" | "default" | "missing" | "hidden" = "default";
   private stream: MediaStream | null = null;
   private recorder: MediaRecorder | null = null;
   private chunks: Blob[] = [];
@@ -117,7 +141,13 @@ export class Recorder {
     const asked = performance.now();
     let stream: MediaStream;
     try {
-      stream = await deadline(navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }),
+      /* ⚠️ With no microphone chosen getUserMedia is still asked in this same
+       * tick, as before: a press that adopts this start counts on it. */
+      this.usedMic = "default";
+      const asking = this.preferMic.trim()
+        ? this.constraints().then(audio => navigator.mediaDevices.getUserMedia({ audio }))
+        : navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      stream = await deadline(asking,
         OPEN_SECONDS * 1000, late => { for (const track of late.getTracks()) track.stop(); });
     } catch (error) {
       this.state = "idle";
@@ -148,6 +178,20 @@ export class Recorder {
     this.state = "recording";
     this.meter();
     this.cap = window.setTimeout(() => { this.onLimit?.(); }, MAX_SECONDS * 1000);
+  }
+
+  /** The chosen microphone by its webview id, or the default when none is
+   *  chosen. ⚠️ A chosen one that is unplugged falls back to the default and
+   *  says so (`usedMic`): a turn that refuses to record is worse than one on
+   *  the other microphone. */
+  private async constraints(): Promise<MediaTrackConstraints> {
+    const base: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true };
+    this.usedMic = "default";
+    if (!this.preferMic.trim() || !navigator.mediaDevices?.enumerateDevices) return base;
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => [] as MediaDeviceInfo[]);
+    const id = pickMic(devices, this.preferMic);
+    this.usedMic = id ? "chosen" : id === null ? "missing" : "hidden";
+    return id ? { ...base, deviceId: { exact: id } } : base;
   }
 
   /** The level, from an analyser on the same stream. ⚠️ Optional: a webview

@@ -1,4 +1,5 @@
 import {
+  Alert02Icon, Key01Icon,
   PauseIcon, PlayIcon, StopIcon, Tick02Icon, ListViewIcon, PinIcon, Settings01Icon,
   Cancel01Icon, ArrowDown01Icon, PlusSignIcon, FocusIcon,
   PreviousIcon, NextIcon, MusicNote01Icon, Calendar01Icon, CheckListIcon, Video01Icon,
@@ -144,7 +145,7 @@ const icons = {
      app never says whether your camera is on, so an icon that claimed to know
      would be decoration that lies. The mute has two because the microphone
      endpoint's state IS readable — see call.rs. */
-  mic: Mic01Icon, micOff: MicOff01Icon, share: ScreenShareIcon,
+  mic: Mic01Icon, micOff: MicOff01Icon, warn: Alert02Icon, key: Key01Icon, share: ScreenShareIcon,
   hand: HandIcon, hangup: CallEnd01Icon,
   // The header's two chips.
   bell: Notification01Icon, timer: Timer01Icon, back: ArrowLeft01Icon,

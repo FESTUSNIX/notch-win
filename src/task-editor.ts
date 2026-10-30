@@ -38,6 +38,7 @@ import { taskIcon, type TaskIcon } from "./task-icons";
 import { ringChoices } from "./ring-geometry";
 import "./tasks.css";
 import { mountPeeks, PEEKS_PANE_HTML, type PeekQuiet } from "./settings-peeks";
+import { mountWake, WAKE_PANE_HTML } from "./settings-wake";
 
 /* ── What the window is made of ──────────────────────────────────────── */
 
@@ -91,6 +92,11 @@ interface Prefs {
   /** Batch 13: peek kinds switched off (`false`; missing = on), and quiet hours. */
   peeks: Record<string, boolean>;
   peekQuiet: PeekQuiet | null;
+  /** Settings → Voice (wake.rs): the wake word and the microphone every turn records from. */
+  wakeWord: boolean;
+  wakeMic: string;
+  wakeMicName: string;
+  wakeSensitivity: string;
 }
 
 interface Screen { id: string; name: string; width: number; height: number; primary: boolean }
@@ -103,6 +109,7 @@ const PANES = [
   { id: "island", icon: "home", label: "Island", sub: "Where the panel lives and what it takes to open it." },
   { id: "pill", icon: "clock", label: "The pill", sub: "What the strip says, and what it does during a call." },
   { id: "peeks", icon: "bell", label: "Peeks", sub: "News that borrows the pill for a few seconds." },
+  { id: "voice", icon: "mic", label: "Voice", sub: "Say “Jarvis” to talk to the Guardian, and the microphone it hears you on." },
   { id: "timer", icon: "timer", label: "Timer", sub: "How long a pomodoro runs, and what it plays when it ends." },
   { id: "search", icon: "search", label: "Search", sub: "What the command palette is allowed to look through." },
   { id: "keys", icon: "keyboard", label: "Shortcuts", sub: "Global, so they work while another app has focus." },
@@ -280,6 +287,7 @@ const PANE_HTML: Record<PaneId, string> = {
     </div><p class="set-note" id="snoozed-note"></p></div>`,
 
   peeks: PEEKS_PANE_HTML,
+  voice: WAKE_PANE_HTML,
 
   timer: `
     <div><p class="set-label">Pomodoro</p><div class="set-group">
@@ -465,6 +473,7 @@ let prefs: Prefs = {
   helmSound: "Notification.Reminder",
   spokenReplies: true,
   peeks: {}, peekQuiet: null,
+  wakeWord: false, wakeMic: "", wakeMicName: "", wakeSensitivity: "normal",
 };
 
 let saving = 0;
@@ -487,6 +496,8 @@ function applyAccent(value: string) {
 
 /* ── Peeks (batch 13): settings-peeks.ts builds the pane ──────────────── */
 const paintPeeks = mountPeeks(() => prefs, patch => { prefs = { ...prefs, ...patch } as Prefs; savePrefs(); });
+/* ── Voice (30 Oct): settings-wake.ts builds the pane ─────────────────── */
+const paintWake = mountWake(() => prefs, patch => { prefs = { ...prefs, ...patch } as Prefs; savePrefs(); }, (text, kind) => say(text, kind === "error" ? "error" : "good"));
 
 /* ── Segmented controls ──────────────────────────────────────────────── */
 
@@ -1687,6 +1698,7 @@ function paintPrefs() {
   get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
   get<HTMLInputElement>("spoken-replies").checked = prefs.spokenReplies;
   paintPeeks();
+  paintWake();
   get<HTMLInputElement>("home-currency").value = prefs.homeCurrency;
   get<HTMLInputElement>("ring-hold").value = String(prefs.ringHoldMs);
   get("ring-hold-value").textContent = `${(prefs.ringHoldMs / 1000).toFixed(2)}s`;
