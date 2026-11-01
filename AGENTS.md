@@ -6000,10 +6000,12 @@ profile (music sounds like a phone call), so he is plugging in a USB
 microphone for it. `wake.rs` is the native half (engine, microphone, pauses),
 `wake-rules.ts` the page's check and the settings words (pure,
 `tests/wake.test.mjs`), `settings-wake.ts` Settings → Voice,
-`tests/browser/wake.spec.ts` the staged walk.
+`tests/browser/wake.spec.ts` the staged walk. Engines (30 Oct, later):
+sherpa-onnx offline by default, Picovoice kept for when they approve
+commercial use (910–912).
 
- 903. **The engine is Picovoice Porcupine, built-in keyword `jarvis`, loaded
-      from its DLL — not a crate.** Picovoice yanked every Rust crate they had
+ 903. **Picovoice Porcupine (now the second engine, see 910), built-in keyword
+      `jarvis`, loaded from its DLL — not a crate.** Picovoice yanked every Rust crate they had
       (`pv_porcupine`, `pv_recorder`) in Aug 2025; the C API is five
       functions. `resources/wake/` holds `libpv_porcupine.dll` (v4.0),
       `pv_ypu_impl_cuda.dll` (it IMPORTS this, so it ships even though it runs
@@ -6019,6 +6021,8 @@ microphone for it. `wake.rs` is the native half (engine, microphone, pauses),
       Native check: `cargo test --lib wake:: -- --ignored --nocapture` loads
       the library (512-sample frames, 16 kHz), refuses a made-up key in words,
       and records 0.6 s from a microphone that is NOT hands-free.
+      ⚠️ Picovoice's free tier is personal and non-commercial; they asked
+      Mateusz for commercial approval, so it stays available but not default.
  904. ⚠️⚠️ **The microphone is the one he picked, and nothing else — ever.**
       No mic picked is not "the default", it is no listening; a picked mic that
       is unplugged is no listening ("That microphone isn't plugged in"), never
@@ -6057,10 +6061,59 @@ microphone for it. `wake.rs` is the native half (engine, microphone, pauses),
       tooltip "Keeps your earbuds in call quality"; a chosen one that is
       unplugged stays, dimmed), the AccessKey (masked, Save/Remove, a check
       when one is saved). Prefs: `wakeWord` (off by default), `wakeMic`
-      (endpoint id), `wakeMicName`, `wakeSensitivity`. **Staged:** `&wake=<ms>`
+      (endpoint id), `wakeMicName`, `wakeSensitivity`, `wakeEngine`,
+      `wakePhrase` (910–912). **Staged:** `&wake=<ms>`
       switches it on and hears the word once; `window.__wake()` hears it
       again; the pane keeps its prefs and "key saved" in sessionStorage.
  909. **What it never does:** listen on a microphone he did not pick, listen
       while off, send audio anywhere (only the key check talks to Picovoice),
       log or show the key, start a second turn inside one, or hear the
       Guardian's own voice.
+ 910. **Two engines, one loop (30 Oct): sherpa-onnx is the default.**
+      `Detector` in wake.rs is `Porcupine` or `Sherpa`; the microphone, the
+      `Framer`, `why_paused`, `wake:heard` and everything in 904–909 are
+      shared. `Spec` (engine, sensitivity, phrase) is what the running one was
+      built from — a different one rebuilds it and reopens the mic, so
+      switching engines or saving a phrase restarts the listener. Only
+      Picovoice needs the key (`needs_key`): with it chosen and no key, it
+      stays closed ("key"), exactly as before; sherpa never asks for one.
+      sherpa-onnx (k2-fsa) is loaded from its official **C API DLL**, v2.0.1
+      `win-x64-shared-MT-Release-no-tts` (static CRT: no VC++ redistributable),
+      same `LoadLibraryExW(ALTERED_SEARCH_PATH)` rule — it imports
+      `onnxruntime.dll`, which must be the one beside it, not System32's
+      (Windows ML ships an older one). Not `sherpa-rs`: the DLL is ten
+      functions, and no crate build. The structs in wake.rs mirror v2.0.1's
+      `c-api.h` field for field — ⚠️ a newer DLL means re-reading that header.
+ 911. **Files and licences (`resources/wake/sherpa/`, ≈26 MB, ≈9 MB
+      compressed):** `sherpa-onnx-c-api.dll` (3.7 MB, Apache-2.0, `LICENSE`),
+      `onnxruntime.dll` (17.8 MB, MIT, `LICENSE-onnxruntime`), the KWS model
+      `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` as int8
+      (`encoder/decoder/joiner.int8.onnx`, 5.2 MB), its `tokens.txt`, and
+      `bpe.vocab`. The model's card (ModelScope `pkufool/…`, the k2-fsa
+      `kws-models` release) says **Apache License 2.0**; it was trained on
+      GigaSpeech XL, whose audio has its own access terms — the weights are
+      what is shipped, under Apache-2.0. Bundled by `tauri.conf.json`
+      `resources` (`resources/wake/sherpa/*` — the `wake/*` glob does not
+      reach into the folder). Idle cost: a minute of a quiet room is ≈2.1 s
+      of CPU, ≈3.5% of one core, one thread (`sherpa_idle_cpu`, --release).
+ 912. **The phrase (sherpa only)** is typed in Settings → Voice (default
+      "Jarvis"; letters A–Z, one to three words, ≤40 characters —
+      `wakePhrase` in wake-rules.ts and `phrase_ok` in wake.rs agree, and
+      prefs.rs puts back "Jarvis" for anything else). wake.rs spells it into
+      the model's tokens at load (`Vocab`): ⚠️ icefall's "bpe" models are
+      sentencepiece **unigram** — the split whose pieces' scores sum highest
+      (Viterbi), not greedy merges (greedy gives "▁W OR L D" for "▁WORLD").
+      `bpe.vocab` is the piece/score list read once out of the model's
+      `bpe.model` protobuf; the tokenizer reproduces the model's own
+      `keywords.txt` word for word (under test). It listens for the phrase
+      and "hey <phrase>" (`keyword_lines`). Sensitivity is sherpa's keywords
+      threshold, 0.35/0.25/0.15 (larger is stricter); the boost stays at its
+      1.0 — on Windows' own voice saying "Jarvis" at twelve offsets, a boost
+      of 1.5–2.0 missed MORE (10–11/12) than 1.0 (12/12). With Picovoice
+      chosen the phrase field hides and the head says "Jarvis".
+      Native check: `cargo test --release --lib wake::tests::the_bundled_sherpa
+      -- --ignored --nocapture` loads it, hears nothing in 5 s of a quiet
+      room, hears "Jarvis" and "hey Jarvis" spoken by System.Speech (16 kHz
+      WAV, made by the test) at 4 of 4 offsets, and not "the weather is nice
+      today". ⚠️ That is a synthetic voice; his own, through his USB mic, is
+      the real test (the Settings lamp).

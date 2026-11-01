@@ -98,7 +98,7 @@ test("with no microphone chosen, Alt+Q records from the default as before", asyn
   await page.keyboard.press("Escape");
 });
 
-test("Settings → Voice: the switch, the microphone, sensitivity and the key persist; the lamp lights on the word", async ({ page }) => {
+test("Settings → Voice: the switch, engine, phrase, microphone, sensitivity and key persist; the lamp lights on the word", async ({ page }) => {
   await page.goto("/task-editor.html#voice");
   const pane = page.locator("#pane-voice");
   await expect(pane).toBeVisible();
@@ -113,9 +113,40 @@ test("Settings → Voice: the switch, the microphone, sensitivity and the key pe
   await expect(pane.locator(".wake-warn")).toHaveCount(1);
   await expect(pane.locator(".wake-mic.is-chosen")).toHaveCount(0);
 
+  // sherpa-onnx is the default: no AccessKey anywhere, the phrase instead.
+  await expect(page.locator('#wake-engine [data-engine="sherpa"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#wake-pico")).toBeHidden();
+  await expect(page.locator("#wake-phrase")).toHaveValue("Jarvis");
+
   await mics.filter({ hasText: USB }).click();
   await page.locator('#wake-level [data-level="high"]').click();
   await on.click();
+  await page.waitForTimeout(400); // the save is debounced
+  await expect(page.locator("#wake-lamp")).toHaveClass(/is-listening/);
+  await expect(page.locator("#wake-lamp")).toHaveAttribute("data-tip", "Listening for “Jarvis”");
+
+  // A phrase that is not one is refused in the field's tooltip and never saved.
+  const phrase = page.locator("#wake-phrase");
+  await phrase.fill("hey 2");
+  await expect(phrase).toHaveClass(/is-invalid/);
+  await expect(phrase).toHaveAttribute("data-tip", "Letters only, A to Z");
+  await phrase.press("Enter");
+  await phrase.fill("one two three four");
+  await expect(phrase).toHaveAttribute("data-tip", "Three words at most");
+  await phrase.fill("  hey   Friday ");
+  await expect(phrase).not.toHaveClass(/is-invalid/);
+  await phrase.press("Enter");
+  await expect(page.locator("#wake-words")).toHaveText("“hey Friday”");
+  await page.waitForTimeout(400);
+  await expect(page.locator("#wake-lamp")).toHaveAttribute("data-tip", "Listening for “hey Friday”");
+
+  // Picovoice: the key appears, the phrase goes ("Jarvis" is all it knows), and with no key it stays closed.
+  await page.locator('#wake-engine [data-engine="porcupine"]').click();
+  await expect(page.locator("#wake-pico")).toBeVisible();
+  await expect(page.locator("#wake-phrase-row")).toBeHidden();
+  await expect(page.locator("#wake-words")).toHaveText("“Jarvis”");
+  await page.waitForTimeout(400);
+  await expect(page.locator("#wake-lamp")).not.toHaveClass(/is-listening/);
   await expect(page.locator("#wake-lamp")).toHaveAttribute("data-tip", "Needs your AccessKey");
   await page.locator("#wake-key").fill("test-key==");
   await page.locator("#wake-key-save").click();
@@ -130,9 +161,16 @@ test("Settings → Voice: the switch, the microphone, sensitivity and the key pe
   await expect(page.locator("#wake-on")).toBeChecked();
   await expect(page.locator(".wake-mic.is-chosen")).toContainText(USB);
   await expect(page.locator('#wake-level [data-level="high"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('#wake-engine [data-engine="porcupine"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#wake-saved")).toBeVisible();
   // ⚠️ The key is never shown back, only that one is saved.
   await expect(page.locator("#wake-key")).toHaveValue("");
+
+  // Back to sherpa: the key hides, the phrase it was given is still there.
+  await page.locator('#wake-engine [data-engine="sherpa"]').click();
+  await expect(page.locator("#wake-pico")).toBeHidden();
+  await expect(page.locator("#wake-phrase")).toHaveValue("hey Friday");
+  await expect(page.locator("#wake-words")).toHaveText("“hey Friday”");
 
   await page.evaluate(() => (window as unknown as { __wake: () => void }).__wake());
   await expect(page.locator("#wake-lamp")).toHaveClass(/is-heard/);

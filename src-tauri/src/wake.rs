@@ -2,14 +2,19 @@
 //! Guardian starts, exactly as a tap of the talk key does. This is the native
 //! half: the microphone, the detector, and when to listen at all.
 //!
-//! - **The engine** is Picovoice Porcupine with its built-in `jarvis` keyword,
-//!   run on this machine. Its C library, model and keyword are bundled
-//!   (`resources/wake/`) and loaded at run time (`LoadLibraryW`), not through
-//!   a crate: Picovoice yanked every one of their Rust crates in August 2025,
-//!   and the C API is five functions. ⚠️ It needs his AccessKey (Picovoice
-//!   Console, free), kept in Windows Credential Manager. The engine checks the
-//!   key with Picovoice when it starts; no audio ever leaves the machine — a
-//!   frame goes into the library and a yes or no comes out.
+//! - **Two engines, one loop** (`Detector`). The default is **sherpa-onnx**
+//!   (k2-fsa, Apache-2.0) keyword spotting with the English gigaspeech 3.3M
+//!   zipformer (int8), fully offline, no account: its C API DLL and
+//!   onnxruntime are bundled in `resources/wake/sherpa/` and loaded at run
+//!   time, and the phrase (default "Jarvis", "hey …" accepted too) is spelled
+//!   into the model's tokens here (`Vocab`, the unigram vocabulary exported
+//!   once from its `bpe.model`). The other is Picovoice **Porcupine** with its
+//!   built-in `jarvis` keyword (`resources/wake/`), kept for when Picovoice
+//!   approve commercial use: Picovoice yanked every Rust crate in August 2025,
+//!   so its C API is loaded the same way. ⚠️ Porcupine needs his AccessKey
+//!   (Picovoice Console), kept in Windows Credential Manager, and checks it
+//!   with Picovoice when it starts. Neither sends audio anywhere — a frame
+//!   goes into the library and a yes or no comes out.
 //! - **The microphone is the one he picked, and only that one.** His earbuds
 //!   are his only other microphone, and an always-open microphone on them
 //!   keeps them in the hands-free profile (music sounds like a phone call).
@@ -47,12 +52,22 @@ use windows::Win32::Media::Audio::{
 use windows::Win32::Media::MMSYSERR_NOERROR;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryExW, LOAD_WITH_ALTERED_SEARCH_PATH};
 
-/// The rate Porcupine listens at (checked against the library when it loads).
+/// The rate both engines listen at (checked against Porcupine when it loads).
 pub const RATE: u32 = 16_000;
-/// The files in `resources/wake/`.
+/// Porcupine's files in `resources/wake/`.
 const LIBRARY: &str = "libpv_porcupine.dll";
 const MODEL: &str = "porcupine_params.pv";
 const KEYWORD: &str = "jarvis_windows.ppn";
+/// sherpa-onnx's, in `resources/wake/sherpa/`: the C API (it imports
+/// `onnxruntime.dll` beside it), the keyword spotter's three int8 models,
+/// its tokens and the vocabulary that spells a phrase into them.
+const SHERPA_DIR: &str = "sherpa";
+const SHERPA_LIBRARY: &str = "sherpa-onnx-c-api.dll";
+const SHERPA_FILES: [&str; 6] = [SHERPA_LIBRARY, "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt", "bpe.vocab"];
+/// sherpa takes any length; 50 ms at a time keeps a detection prompt.
+const SHERPA_FRAME: usize = (RATE / 20) as usize;
+/// The phrase when none is set, or the one set is not one.
+pub const DEFAULT_PHRASE: &str = "Jarvis";
 /// `DRV_QUERYFUNCTIONINSTANCEIDSIZE` / `…ID` (mmddk.h): a waveIn device's endpoint id.
 const QUERY_ID_SIZE: u32 = 2066;
 const QUERY_ID: u32 = 2065;
@@ -117,6 +132,133 @@ pub fn sensitivity(level: &str) -> f32 {
         "low" => 0.35,
         "high" => 0.75,
         _ => 0.55,
+    }
+}
+
+/// The engine pref as one of the two; anything else is sherpa, the default.
+pub fn engine_of(pref: &str) -> &'static str {
+    if pref == "porcupine" { "porcupine" } else { "sherpa" }
+}
+
+/// Only Picovoice needs an AccessKey; sherpa-onnx has no account at all.
+pub fn needs_key(engine: &str) -> bool {
+    engine == "porcupine"
+}
+
+/// Settings' three steps for sherpa: (keywords score, keywords threshold).
+/// The threshold is how sure it must be (larger is stricter), sherpa's default
+/// 0.25 at Normal. ⚠️ The score (the boost to the phrase's path) stays at
+/// sherpa's 1.0: measured on Windows' voice saying "Jarvis" at twelve offsets,
+/// a boost of 1.5–2.0 MISSED more (10–11 of 12) than 1.0 (12 of 12).
+pub fn sherpa_tuning(level: &str) -> (f32, f32) {
+    match level {
+        "low" => (1.0, 0.35),
+        "high" => (1.0, 0.15),
+        _ => (1.0, 0.25),
+    }
+}
+
+/// The wake phrase as he typed it, cleaned, or `None` if it is not one:
+/// ASCII letters (the model's alphabet) and single spaces, one to three words,
+/// at most 40 characters. Mirrors `wakePhrase` in wake-rules.ts.
+pub fn phrase_ok(phrase: &str) -> Option<String> {
+    let words: Vec<&str> = phrase.split_whitespace().collect();
+    if words.is_empty() || words.len() > 3 || !words.iter().all(|w| w.chars().all(|c| c.is_ascii_alphabetic())) {
+        return None;
+    }
+    let joined = words.join(" ");
+    (joined.len() <= 40).then_some(joined)
+}
+
+/// The model's unigram vocabulary (`bpe.vocab`: a piece and its log
+/// probability a line), to spell a phrase into the tokens it was trained on.
+/// ⚠️ icefall's "bpe" models are sentencepiece UNIGRAM models: the best split
+/// is the one whose pieces' scores sum highest (Viterbi), not greedy merges —
+/// greedy gets "▁W OR L D" where the model's own keywords.txt has "▁WORLD".
+pub struct Vocab {
+    pieces: std::collections::HashMap<String, f32>,
+    longest: usize,
+}
+
+impl Vocab {
+    pub fn parse(text: &str) -> Vocab {
+        let mut pieces = std::collections::HashMap::new();
+        let mut longest = 1;
+        for line in text.lines() {
+            let mut parts = line.split('\t');
+            let (Some(piece), Some(score)) = (parts.next(), parts.next()) else { continue };
+            let Ok(score) = score.trim().parse::<f32>() else { continue };
+            if piece.is_empty() || piece.starts_with('<') {
+                continue;
+            }
+            longest = longest.max(piece.chars().count());
+            pieces.insert(piece.to_string(), score);
+        }
+        Vocab { pieces, longest }
+    }
+
+    /// The phrase as the model's tokens, space-separated ("Jarvis" → "▁JA R VI S"),
+    /// or `None` when some letter has no piece.
+    pub fn spell(&self, phrase: &str) -> Option<String> {
+        let mut out = Vec::new();
+        for word in phrase.to_ascii_uppercase().split_whitespace() {
+            let chars: Vec<char> = std::iter::once('\u{2581}').chain(word.chars()).collect();
+            let n = chars.len();
+            // best[end] = (the best total score up to here, where its last piece starts)
+            let mut best: Vec<Option<(f32, usize)>> = vec![None; n + 1];
+            best[0] = Some((0.0, 0));
+            for end in 1..=n {
+                for start in end.saturating_sub(self.longest)..end {
+                    let Some((before, _)) = best[start] else { continue };
+                    let piece: String = chars[start..end].iter().collect();
+                    if let Some(score) = self.pieces.get(&piece) {
+                        let total = before + score;
+                        if best[end].is_none_or(|(held, _)| total > held) {
+                            best[end] = Some((total, start));
+                        }
+                    }
+                }
+            }
+            let mut pieces = Vec::new();
+            let mut end = n;
+            while end > 0 {
+                let (_, start) = best[end]?;
+                pieces.push(chars[start..end].iter().collect::<String>());
+                end = start;
+            }
+            out.extend(pieces.into_iter().rev());
+        }
+        (!out.is_empty()).then(|| out.join(" "))
+    }
+}
+
+/// sherpa's keywords, one a line: the phrase, and "hey …" before it unless it
+/// already starts so (or is three words already). `@` names what was heard.
+pub fn keyword_lines(vocab: &Vocab, phrase: &str) -> Option<String> {
+    let phrase = phrase_ok(phrase)?;
+    let mut lines = vec![format!("{} @{}", vocab.spell(&phrase)?, phrase.replace(' ', "_"))];
+    if !phrase.to_ascii_lowercase().starts_with("hey ") && phrase.split(' ').count() < 3 {
+        let hey = format!("hey {phrase}");
+        lines.push(format!("{} @{}", vocab.spell(&hey)?, hey.replace(' ', "_")));
+    }
+    Some(lines.join("\n"))
+}
+
+/// What the running detector was built from; a change rebuilds it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spec {
+    pub engine: &'static str,
+    pub sensitivity: String,
+    /// Only sherpa's; Porcupine's keyword is fixed.
+    pub phrase: String,
+}
+
+impl Spec {
+    pub fn of(engine: &str, sensitivity: &str, phrase: &str) -> Spec {
+        let engine = engine_of(engine);
+        let sensitivity = match sensitivity { "low" | "high" => sensitivity, _ => "normal" }.to_string();
+        let phrase = if engine == "sherpa" { phrase_ok(phrase).unwrap_or_else(|| DEFAULT_PHRASE.into()) } else { DEFAULT_PHRASE.into() };
+        Spec { engine, sensitivity, phrase }
     }
 }
 
@@ -230,25 +372,33 @@ type StackFn = unsafe extern "C" fn(*mut *mut *mut c_char, *mut i32) -> i32;
 type FreeStackFn = unsafe extern "C" fn(*mut *mut c_char);
 
 /// Porcupine, loaded from its DLL. ⚠️ One per thread: the object is not shared.
-pub struct Engine {
+pub struct Porcupine {
     module: HMODULE,
     object: *mut c_void,
     delete: DeleteFn,
     process: ProcessFn,
     pub frame: usize,
-    pub sensitivity: f32,
 }
 
-/// The library and the two files it reads, where the bundle put them — or,
-/// under `tauri dev`, still in the source tree.
-pub fn files_dir(app: &AppHandle) -> Option<PathBuf> {
+/// An engine's library and the files it reads, where the bundle put them —
+/// or, under `tauri dev`, still in the source tree. Porcupine's are in
+/// `wake/`, sherpa's in `wake/sherpa/`.
+pub fn files_dir(app: &AppHandle, engine: &str) -> Option<PathBuf> {
     let mut places = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
         places.push(dir.join("resources").join("wake"));
         places.push(dir.join("wake"));
     }
     places.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("wake"));
-    places.into_iter().find(|dir| dir.join(LIBRARY).is_file() && dir.join(MODEL).is_file() && dir.join(KEYWORD).is_file())
+    places.into_iter().map(|dir| if engine == "sherpa" { dir.join(SHERPA_DIR) } else { dir }).find(|dir| has_files(dir, engine))
+}
+
+fn has_files(dir: &Path, engine: &str) -> bool {
+    if engine == "sherpa" {
+        SHERPA_FILES.iter().all(|name| dir.join(name).is_file())
+    } else {
+        [LIBRARY, MODEL, KEYWORD].iter().all(|name| dir.join(name).is_file())
+    }
 }
 
 fn c_path(path: &Path) -> Result<CString, &'static str> {
@@ -258,13 +408,19 @@ fn c_path(path: &Path) -> Result<CString, &'static str> {
 /// ⚠️ ALTERED search path: the library pulls in `pv_ypu_impl_cuda.dll` beside
 /// it, and a plain `LoadLibraryW` looks for that next to codenotch.exe instead.
 unsafe fn open_library(dir: &Path) -> windows::core::Result<HMODULE> {
-    LoadLibraryExW(&HSTRING::from(dir.join(LIBRARY).as_os_str()), None, LOAD_WITH_ALTERED_SEARCH_PATH)
+    open_dll(&dir.join(LIBRARY))
 }
 
-impl Engine {
+/// ⚠️ The same rule for sherpa: `sherpa-onnx-c-api.dll` imports `onnxruntime.dll`,
+/// which must be the one beside it, not System32's (Windows ML ships an older one).
+unsafe fn open_dll(path: &Path) -> windows::core::Result<HMODULE> {
+    LoadLibraryExW(&HSTRING::from(path.as_os_str()), None, LOAD_WITH_ALTERED_SEARCH_PATH)
+}
+
+impl Porcupine {
     /// Load the library and start Porcupine with the AccessKey.
     /// ⚠️ The error is words for the log and the settings mark, never the key.
-    pub fn load(dir: &Path, access_key: &str, sensitivity: f32) -> Result<Engine, &'static str> {
+    pub fn load(dir: &Path, access_key: &str, sensitivity: f32) -> Result<Porcupine, &'static str> {
         unsafe {
             let module = open_library(dir).map_err(|_| "the engine's library would not load")?;
             let find = |name: windows::core::PCSTR| GetProcAddress(module, name);
@@ -302,7 +458,7 @@ impl Engine {
                 let _ = FreeLibrary(module);
                 return Err(status_words(status));
             }
-            Ok(Engine { module, object, delete, process, frame: frame() as usize, sensitivity })
+            Ok(Porcupine { module, object, delete, process, frame: frame() as usize })
         }
     }
 
@@ -320,11 +476,270 @@ impl Engine {
     }
 }
 
-impl Drop for Engine {
+impl Drop for Porcupine {
     fn drop(&mut self) {
         unsafe {
             (self.delete)(self.object);
             let _ = FreeLibrary(self.module);
+        }
+    }
+}
+
+/* sherpa-onnx's C API (v2.0.1 `c-api.h`), the structs exactly as declared. */
+
+#[repr(C)]
+struct FeatureConfig {
+    sample_rate: i32,
+    feature_dim: i32,
+}
+
+/// `SherpaOnnxOnlineModelConfig` with its sub-structs flattened (each is only pointers).
+#[repr(C)]
+struct OnlineModelConfig {
+    encoder: *const c_char,
+    decoder: *const c_char,
+    joiner: *const c_char,
+    paraformer_encoder: *const c_char,
+    paraformer_decoder: *const c_char,
+    zipformer2_ctc: *const c_char,
+    tokens: *const c_char,
+    num_threads: i32,
+    provider: *const c_char,
+    debug: i32,
+    model_type: *const c_char,
+    modeling_unit: *const c_char,
+    bpe_vocab: *const c_char,
+    tokens_buf: *const c_char,
+    tokens_buf_size: i32,
+    nemo_ctc: *const c_char,
+    t_one_ctc: *const c_char,
+}
+
+#[repr(C)]
+struct KeywordSpotterConfig {
+    feat_config: FeatureConfig,
+    model_config: OnlineModelConfig,
+    max_active_paths: i32,
+    num_trailing_blanks: i32,
+    keywords_score: f32,
+    keywords_threshold: f32,
+    keywords_file: *const c_char,
+    keywords_buf: *const c_char,
+    keywords_buf_size: i32,
+}
+
+/// Only the first field is read; the rest belongs to the library.
+#[repr(C)]
+struct KeywordResult {
+    keyword: *const c_char,
+}
+
+type CreateSpotterFn = unsafe extern "C" fn(*const KeywordSpotterConfig) -> *const c_void;
+type DestroySpotterFn = unsafe extern "C" fn(*const c_void);
+type CreateStreamFn = unsafe extern "C" fn(*const c_void) -> *const c_void;
+type DestroyStreamFn = unsafe extern "C" fn(*const c_void);
+type AcceptFn = unsafe extern "C" fn(*const c_void, i32, *const f32, i32);
+type SpotterStreamFn = unsafe extern "C" fn(*const c_void, *const c_void) -> i32;
+type SpotterStreamVoidFn = unsafe extern "C" fn(*const c_void, *const c_void);
+type ResultFn = unsafe extern "C" fn(*const c_void, *const c_void) -> *const KeywordResult;
+type DestroyResultFn = unsafe extern "C" fn(*const KeywordResult);
+
+/// sherpa-onnx's keyword spotter with one stream, loaded from its DLL.
+/// ⚠️ One per thread, like Porcupine.
+pub struct Sherpa {
+    module: HMODULE,
+    spotter: *const c_void,
+    stream: *const c_void,
+    destroy_spotter: DestroySpotterFn,
+    create_stream: CreateStreamFn,
+    destroy_stream: DestroyStreamFn,
+    accept: AcceptFn,
+    ready: SpotterStreamFn,
+    decode: SpotterStreamVoidFn,
+    reset: SpotterStreamVoidFn,
+    result: ResultFn,
+    destroy_result: DestroyResultFn,
+    floats: Vec<f32>,
+    /// What was heard last, for the log ("Jarvis", "hey_Jarvis").
+    pub last: String,
+}
+
+impl Sherpa {
+    /// Load the library and the model, with the phrase spelled into its tokens.
+    pub fn load(dir: &Path, phrase: &str, level: &str) -> Result<Sherpa, &'static str> {
+        let vocab = std::fs::read_to_string(dir.join("bpe.vocab")).map_err(|_| "could not read its files")?;
+        let keywords = keyword_lines(&Vocab::parse(&vocab), phrase).ok_or("the wake phrase can't be spelled for the engine")?;
+        let (score, threshold) = sherpa_tuning(level);
+        let paths = ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"].map(|name| c_path(&dir.join(name)));
+        let [Ok(encoder), Ok(decoder), Ok(joiner), Ok(tokens)] = paths else {
+            return Err("could not read its files");
+        };
+        let provider = CString::new("cpu").unwrap();
+        let keywords = CString::new(keywords).map_err(|_| "the wake phrase can't be spelled for the engine")?;
+        unsafe {
+            let module = open_dll(&dir.join(SHERPA_LIBRARY)).map_err(|_| "the engine's library would not load")?;
+            let find = |name: windows::core::PCSTR| GetProcAddress(module, name);
+            let (Some(create), Some(destroy), Some(create_stream), Some(destroy_stream), Some(accept), Some(ready), Some(decode), Some(reset), Some(result), Some(destroy_result)) = (
+                find(s!("SherpaOnnxCreateKeywordSpotter")),
+                find(s!("SherpaOnnxDestroyKeywordSpotter")),
+                find(s!("SherpaOnnxCreateKeywordStream")),
+                find(s!("SherpaOnnxDestroyOnlineStream")),
+                find(s!("SherpaOnnxOnlineStreamAcceptWaveform")),
+                find(s!("SherpaOnnxIsKeywordStreamReady")),
+                find(s!("SherpaOnnxDecodeKeywordStream")),
+                find(s!("SherpaOnnxResetKeywordStream")),
+                find(s!("SherpaOnnxGetKeywordResult")),
+                find(s!("SherpaOnnxDestroyKeywordResult")),
+            ) else {
+                let _ = FreeLibrary(module);
+                return Err("the engine's library is not the one expected");
+            };
+            let create: CreateSpotterFn = std::mem::transmute(create);
+            let destroy: DestroySpotterFn = std::mem::transmute(destroy);
+            let create_stream: CreateStreamFn = std::mem::transmute(create_stream);
+            let null = std::ptr::null();
+            let config = KeywordSpotterConfig {
+                feat_config: FeatureConfig { sample_rate: RATE as i32, feature_dim: 80 },
+                model_config: OnlineModelConfig {
+                    encoder: encoder.as_ptr(),
+                    decoder: decoder.as_ptr(),
+                    joiner: joiner.as_ptr(),
+                    paraformer_encoder: null,
+                    paraformer_decoder: null,
+                    zipformer2_ctc: null,
+                    tokens: tokens.as_ptr(),
+                    // One thread: the rest of the machine is his.
+                    num_threads: 1,
+                    provider: provider.as_ptr(),
+                    debug: 0,
+                    model_type: null,
+                    modeling_unit: null,
+                    bpe_vocab: null,
+                    tokens_buf: null,
+                    tokens_buf_size: 0,
+                    nemo_ctc: null,
+                    t_one_ctc: null,
+                },
+                max_active_paths: 4,
+                num_trailing_blanks: 1,
+                keywords_score: score,
+                keywords_threshold: threshold,
+                keywords_file: null,
+                keywords_buf: keywords.as_ptr(),
+                keywords_buf_size: keywords.as_bytes().len() as i32,
+            };
+            let spotter = create(&config);
+            if spotter.is_null() {
+                crate::log::note("wake: sherpa-onnx refused its model or keywords");
+                let _ = FreeLibrary(module);
+                return Err("the keyword spotter would not start");
+            }
+            let stream = create_stream(spotter);
+            if stream.is_null() {
+                destroy(spotter);
+                let _ = FreeLibrary(module);
+                return Err("the keyword spotter would not start");
+            }
+            Ok(Sherpa {
+                module,
+                spotter,
+                stream,
+                destroy_spotter: destroy,
+                create_stream,
+                destroy_stream: std::mem::transmute::<_, DestroyStreamFn>(destroy_stream),
+                accept: std::mem::transmute::<_, AcceptFn>(accept),
+                ready: std::mem::transmute::<_, SpotterStreamFn>(ready),
+                decode: std::mem::transmute::<_, SpotterStreamVoidFn>(decode),
+                reset: std::mem::transmute::<_, SpotterStreamVoidFn>(reset),
+                result: std::mem::transmute::<_, ResultFn>(result),
+                destroy_result: std::mem::transmute::<_, DestroyResultFn>(destroy_result),
+                floats: Vec::with_capacity(SHERPA_FRAME),
+                last: String::new(),
+            })
+        }
+    }
+
+    /// Any number of samples: whether the phrase was spotted in them.
+    pub fn heard(&mut self, samples: &[i16]) -> bool {
+        self.floats.clear();
+        self.floats.extend(samples.iter().map(|&s| s as f32 / 32768.0));
+        let mut heard = false;
+        unsafe {
+            (self.accept)(self.stream, RATE as i32, self.floats.as_ptr(), self.floats.len() as i32);
+            while (self.ready)(self.spotter, self.stream) == 1 {
+                (self.decode)(self.spotter, self.stream);
+                let result = (self.result)(self.spotter, self.stream);
+                if !result.is_null() {
+                    let keyword = (*result).keyword;
+                    if !keyword.is_null() && *keyword != 0 {
+                        self.last = CStr::from_ptr(keyword).to_string_lossy().chars().take(60).collect();
+                        heard = true;
+                        (self.reset)(self.spotter, self.stream);
+                    }
+                    (self.destroy_result)(result);
+                }
+            }
+        }
+        heard
+    }
+
+    /// A fresh stream, so audio from before a pause is not half of a word after it.
+    pub fn fresh(&mut self) {
+        unsafe {
+            let next = (self.create_stream)(self.spotter);
+            if !next.is_null() {
+                (self.destroy_stream)(self.stream);
+                self.stream = next;
+            }
+        }
+    }
+}
+
+impl Drop for Sherpa {
+    fn drop(&mut self) {
+        unsafe {
+            (self.destroy_stream)(self.stream);
+            (self.destroy_spotter)(self.spotter);
+            let _ = FreeLibrary(self.module);
+        }
+    }
+}
+
+/// Whichever engine Settings picked, behind one face for the loop.
+pub enum Detector {
+    Porcupine(Porcupine),
+    Sherpa(Sherpa),
+}
+
+impl Detector {
+    /// Build the engine `spec` names. `key` is only Porcupine's.
+    pub fn load(dir: &Path, spec: &Spec, key: &str) -> Result<Detector, &'static str> {
+        match spec.engine {
+            "porcupine" => Porcupine::load(dir, key, sensitivity(&spec.sensitivity)).map(Detector::Porcupine),
+            _ => Sherpa::load(dir, &spec.phrase, &spec.sensitivity).map(Detector::Sherpa),
+        }
+    }
+
+    /// The samples it takes at a time.
+    pub fn frame(&self) -> usize {
+        match self {
+            Detector::Porcupine(engine) => engine.frame,
+            Detector::Sherpa(_) => SHERPA_FRAME,
+        }
+    }
+
+    /// One frame: whether the word ended in it. `Err` is Porcupine's status.
+    pub fn heard(&mut self, frame: &[i16]) -> Result<bool, i32> {
+        match self {
+            Detector::Porcupine(engine) => engine.heard(frame),
+            Detector::Sherpa(engine) => Ok(engine.heard(frame)),
+        }
+    }
+
+    /// The microphone just (re)opened.
+    pub fn fresh(&mut self) {
+        if let Detector::Sherpa(engine) = self {
+            engine.fresh();
         }
     }
 }
@@ -508,7 +923,7 @@ fn publish(app: &AppHandle, next: Status) {
 }
 
 fn run(app: &AppHandle) {
-    let mut engine: Option<Engine> = None;
+    let mut engine: Option<(Spec, Detector)> = None;
     let mut capture: Option<(String, Capture)> = None;
     let mut framer = Framer::new(512);
     let mut engine_retry: Option<Instant> = None;
@@ -523,10 +938,11 @@ fn run(app: &AppHandle) {
             checked = Instant::now();
             let prefs = crate::prefs::current(app);
             let now = crate::shortcuts::now_ms();
-            let key = if prefs.wake_word { key() } else { None };
+            let wanted = Spec::of(&prefs.wake_engine, &prefs.wake_sensitivity, &prefs.wake_phrase);
+            let key = if prefs.wake_word && needs_key(wanted.engine) { key() } else { None };
             let gate = Gate {
                 enabled: prefs.wake_word,
-                key: key.is_some(),
+                key: !needs_key(wanted.engine) || key.is_some(),
                 mic: !prefs.wake_mic.is_empty(),
                 snoozed: SNOOZE_UNTIL.load(Ordering::SeqCst) > epoch_ms(),
                 presenting: crate::helm::presenting(),
@@ -535,13 +951,17 @@ fn run(app: &AppHandle) {
                 speaking: crate::voice::sounding_lately(now, SPEECH_TAIL_MS),
             };
             let mut reason = why_paused(&gate);
-            let wanted_sensitivity = sensitivity(&prefs.wake_sensitivity);
 
             // Off or no key: the engine goes too. Any other pause keeps it, so a call
-            // ending does not cost another check of the key with Picovoice.
-            if matches!(reason, Some("off") | Some("key")) || RELOAD.load(Ordering::SeqCst)
-                || engine.as_ref().is_some_and(|e| e.sensitivity != wanted_sensitivity)
-            {
+            // ending does not cost another check of the key with Picovoice. Another
+            // engine, sensitivity or phrase: rebuilt (the phrase spelled again).
+            let respec = engine.as_ref().is_some_and(|(spec, _)| *spec != wanted);
+            if matches!(reason, Some("off") | Some("key")) || RELOAD.load(Ordering::SeqCst) || respec {
+                if respec {
+                    engine_retry = None;
+                    problem = None;
+                    capture = None;
+                }
                 if RELOAD.swap(false, Ordering::SeqCst) {
                     engine_retry = None;
                     problem = None;
@@ -555,16 +975,16 @@ fn run(app: &AppHandle) {
                 framer.clear();
             } else {
                 if engine.is_none() && engine_retry.is_none_or(|at| at.elapsed() >= RETRY_ENGINE) {
-                    match files_dir(app) {
+                    match files_dir(app, wanted.engine) {
                         None => {
                             problem = Some("the engine's files are missing");
                             engine_retry = Some(Instant::now());
                         }
-                        Some(dir) => match Engine::load(&dir, key.as_deref().unwrap_or(""), wanted_sensitivity) {
+                        Some(dir) => match Detector::load(&dir, &wanted, key.as_deref().unwrap_or("")) {
                             Ok(loaded) => {
-                                crate::log::note(&format!("wake: engine ready ({} samples a frame)", loaded.frame));
-                                framer = Framer::new(loaded.frame);
-                                engine = Some(loaded);
+                                crate::log::note(&format!("wake: {} ready ({} samples a frame)", wanted.engine, loaded.frame()));
+                                framer = Framer::new(loaded.frame());
+                                engine = Some((wanted.clone(), loaded));
                                 problem = None;
                                 engine_retry = None;
                             }
@@ -590,6 +1010,9 @@ fn run(app: &AppHandle) {
                                 capture = Some((prefs.wake_mic.clone(), open));
                                 mic_retry = None;
                                 framer.clear();
+                                if let Some((_, detector)) = engine.as_mut() {
+                                    detector.fresh();
+                                }
                             }
                             Err(_) => mic_retry = Some(Instant::now()),
                         }
@@ -603,7 +1026,7 @@ fn run(app: &AppHandle) {
             publish(app, Status { listening: reason.is_none() && capture.is_some(), reason, heard_at, problem });
         }
 
-        let (Some((_, open)), Some(detector)) = (capture.as_mut(), engine.as_mut()) else { continue };
+        let (Some((_, open)), Some((_, detector))) = (capture.as_mut(), engine.as_mut()) else { continue };
         let Some(samples) = open.take() else {
             crate::log::note("wake: the microphone went away");
             capture = None;
@@ -627,7 +1050,10 @@ fn run(app: &AppHandle) {
         }
         let at = epoch_ms();
         if heard && counts(STATUS.lock().unwrap().heard_at, at) {
-            crate::log::note("wake: heard");
+            match engine.as_ref() {
+                Some((_, Detector::Sherpa(spotter))) => crate::log::note(&format!("wake: heard ({})", spotter.last)),
+                _ => crate::log::note("wake: heard"),
+            }
             // The turn starts before the page has said so: one word, one turn.
             TURN_UNTIL.store(crate::shortcuts::now_ms() + HEARD_HOLD_MS, Ordering::SeqCst);
             let mut status = STATUS.lock().unwrap().clone();
@@ -833,6 +1259,207 @@ mod tests {
         assert_eq!(status_words(99), "the engine failed");
     }
 
+    fn bundled_vocab() -> Vocab {
+        Vocab::parse(&std::fs::read_to_string(sherpa_dir().join("bpe.vocab")).expect("bpe.vocab is bundled"))
+    }
+
+    fn sherpa_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("resources").join("wake").join(SHERPA_DIR)
+    }
+
+    #[test]
+    fn sherpa_is_the_default_and_only_picovoice_needs_a_key() {
+        assert_eq!(engine_of("sherpa"), "sherpa");
+        assert_eq!(engine_of("porcupine"), "porcupine");
+        assert_eq!(engine_of(""), "sherpa", "an old prefs file, before there was a choice");
+        assert_eq!(engine_of("Porcupine"), "sherpa", "exactly the word, or the default");
+        assert!(needs_key("porcupine") && !needs_key("sherpa"));
+        // Picovoice chosen with no key stays closed, as before; sherpa never asks for one.
+        let gate = |engine: &str, has_key: bool| Gate { enabled: true, key: !needs_key(engine) || has_key, mic: true, ..Gate::default() };
+        assert_eq!(why_paused(&gate("porcupine", false)), Some("key"));
+        assert_eq!(why_paused(&gate("porcupine", true)), None);
+        assert_eq!(why_paused(&gate("sherpa", false)), None);
+    }
+
+    #[test]
+    fn a_new_engine_sensitivity_or_phrase_is_a_new_detector() {
+        let now = Spec::of("sherpa", "normal", "Jarvis");
+        assert_eq!(now, Spec::of("sherpa", "", "  Jarvis "), "cleaned the same way is the same");
+        assert_ne!(now, Spec::of("porcupine", "normal", "Jarvis"));
+        assert_ne!(now, Spec::of("sherpa", "high", "Jarvis"));
+        assert_ne!(now, Spec::of("sherpa", "normal", "Computer"));
+        // Porcupine only knows "Jarvis": its phrase never rebuilds it.
+        assert_eq!(Spec::of("porcupine", "low", "Computer"), Spec::of("porcupine", "low", "Friday"));
+        assert_eq!(Spec::of("sherpa", "normal", "no digits 4 u").phrase, DEFAULT_PHRASE);
+    }
+
+    #[test]
+    fn sherpas_sensitivity_asks_less_as_it_goes_up() {
+        let (low, normal, high) = (sherpa_tuning("low"), sherpa_tuning("normal"), sherpa_tuning("high"));
+        assert!(low.1 > normal.1 && normal.1 > high.1, "keywords threshold falls (larger is stricter)");
+        assert!(low.0 == 1.0 && normal.0 == 1.0 && high.0 == 1.0, "the boost stays at sherpa's own: more missed more");
+        assert_eq!(sherpa_tuning("nonsense"), normal);
+        assert_eq!(normal, (1.0, 0.25), "sherpa's defaults at Normal");
+    }
+
+    #[test]
+    fn a_phrase_is_one_to_three_words_of_letters() {
+        assert_eq!(phrase_ok("Jarvis").as_deref(), Some("Jarvis"));
+        assert_eq!(phrase_ok("  hey   Jarvis ").as_deref(), Some("hey Jarvis"));
+        assert_eq!(phrase_ok("ok there computer").as_deref(), Some("ok there computer"));
+        assert_eq!(phrase_ok("one two three four"), None);
+        assert_eq!(phrase_ok(""), None);
+        assert_eq!(phrase_ok("   "), None);
+        assert_eq!(phrase_ok("R2D2"), None);
+        assert_eq!(phrase_ok("Jarvis!"), None);
+        assert_eq!(phrase_ok("Żaneta"), None, "the model's alphabet is A to Z");
+        assert_eq!(phrase_ok(&"a".repeat(41)), None);
+    }
+
+    /// The tokenizer reproduces the model's own `keywords.txt` (made by sherpa's
+    /// `text2token`) and its test keywords, word for word.
+    #[test]
+    fn the_phrase_is_spelled_as_sherpas_text2token_spells_it() {
+        let vocab = bundled_vocab();
+        for (raw, tokens) in [
+            ("HELLO WORLD", "▁HE LL O ▁WORLD"),
+            ("HI GOOGLE", "▁HI ▁GO O G LE"),
+            ("HEY SIRI", "▁HE Y ▁S I RI"),
+            ("ALEXA", "▁A LE X A"),
+            ("LOVE AND PEACE", "▁LOVE ▁AND ▁P E A CE"),
+            ("PLAY MUSIC", "▁PLAY ▁MU S IC"),
+            ("GO HOME", "▁GO ▁HOME"),
+            ("HAPPY NEW YEAR", "▁HA PP Y ▁NEW ▁YEAR"),
+            ("MERRY CHRISTMAS", "▁ME R RY ▁ CH R IST MA S"),
+            ("LIGHT UP", "▁ L IGHT ▁UP"),
+            ("LOVELY CHILD", "▁LOVE LY ▁CHI L D"),
+            ("FOREVER", "▁FOR E VER"),
+        ] {
+            assert_eq!(vocab.spell(raw).as_deref(), Some(tokens), "{raw}");
+        }
+        assert_eq!(vocab.spell("jarvis").as_deref(), Some("▁JA R VI S"), "case does not matter");
+        assert_eq!(
+            keyword_lines(&vocab, "Jarvis").as_deref(),
+            Some("▁JA R VI S @Jarvis\n▁HE Y ▁JA R VI S @hey_Jarvis"),
+            "the phrase, and \"hey\" before it"
+        );
+        assert_eq!(keyword_lines(&vocab, "hey Jarvis").as_deref(), Some("▁HE Y ▁JA R VI S @hey_Jarvis"));
+        assert_eq!(keyword_lines(&vocab, "ok there computer").map(|k| k.lines().count()), Some(1), "four words is too many to add hey");
+        assert_eq!(keyword_lines(&vocab, "R2D2"), None);
+        // Every token it spells is one the model has.
+        let tokens = std::fs::read_to_string(sherpa_dir().join("tokens.txt")).unwrap();
+        let known: std::collections::HashSet<&str> = tokens.lines().filter_map(|l| l.split(' ').next()).collect();
+        for word in ["Jarvis", "computer", "Friday", "hey Mateusz", "quiz"] {
+            for token in vocab.spell(word).unwrap().split(' ') {
+                assert!(known.contains(token), "{token} in {word}");
+            }
+        }
+    }
+
+    /// 16-bit mono PCM out of a WAV file (System.Speech writes a plain RIFF).
+    fn wav_samples(path: &Path) -> Vec<i16> {
+        let bytes = std::fs::read(path).expect("the wav");
+        let mut at = 12;
+        while at + 8 <= bytes.len() {
+            let size = u32::from_le_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]) as usize;
+            if &bytes[at..at + 4] == b"data" {
+                return samples_of(&bytes[at + 8..(at + 8 + size).min(bytes.len())]);
+            }
+            at += 8 + size + (size & 1);
+        }
+        panic!("no data chunk");
+    }
+
+    /// The phrase in Windows' own voice, at 16 kHz mono, or `None` without System.Speech.
+    fn spoken(text: &str, dir: &Path) -> Option<Vec<i16>> {
+        let path = dir.join(format!("{}.wav", text.replace(' ', "-")));
+        let script = format!(
+            "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+             $f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono); \
+             $s.SetOutputToWaveFile('{}', $f); $s.Speak('{text}'); $s.Dispose()",
+            path.display()
+        );
+        let ok = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &script]).status().ok()?.success();
+        ok.then(|| wav_samples(&path))
+    }
+
+    /// A quiet room: a little noise, never digital zero.
+    fn room(seconds: f32, seed: &mut u32) -> Vec<i16> {
+        (0..(seconds * RATE as f32) as usize)
+            .map(|_| {
+                *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((*seed >> 16) as i16 % 24) - 12
+            })
+            .collect()
+    }
+
+    fn run_through(spotter: &mut Detector, samples: &[i16]) -> usize {
+        let mut framer = Framer::new(spotter.frame());
+        let mut heard = 0;
+        framer.push(samples, |frame| heard += spotter.heard(frame).unwrap() as usize);
+        heard
+    }
+
+    /// The bundled sherpa-onnx DLL and model load, hear nothing in seconds of a
+    /// quiet room, and hear "Jarvis" / "hey Jarvis" in Windows' own voice.
+    /// `cargo test --lib wake::tests::the_bundled_sherpa_spots_jarvis -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn the_bundled_sherpa_spots_jarvis() {
+        let mut spotter = Detector::load(&sherpa_dir(), &Spec::of("sherpa", "normal", "Jarvis"), "").expect("sherpa loads");
+        let mut seed = 7;
+        let quiet = room(5.0, &mut seed);
+        assert_eq!(run_through(&mut spotter, &quiet), 0, "five seconds of a quiet room is not the word");
+        let dir = std::env::temp_dir().join("codenotch-wake-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        for text in ["Jarvis", "hey Jarvis", "the weather is nice today"] {
+            let Some(voice) = spoken(text, &dir) else {
+                println!("no System.Speech here: skipped the spoken check");
+                return;
+            };
+            // Four offsets: where the word falls in the model's 16-frame chunks matters a little.
+            let mut times = 0;
+            for lead in [0.3, 0.55, 0.8, 1.05] {
+                spotter.fresh();
+                let mut audio = room(lead, &mut seed);
+                audio.extend(&voice);
+                audio.extend(room(1.5, &mut seed));
+                times += (run_through(&mut spotter, &audio) > 0) as usize;
+            }
+            let last = if let Detector::Sherpa(s) = &spotter { s.last.clone() } else { String::new() };
+            println!("{text:?} ({:.2} s): heard at {times} of 4 offsets ({last})", voice.len() as f32 / RATE as f32);
+            if text.contains("Jarvis") {
+                assert!(times >= 3, "{text:?} is heard");
+            } else {
+                assert_eq!(times, 0, "{text:?} is not the word");
+            }
+        }
+    }
+
+    /// Roughly what it costs to listen: a minute of a quiet room through the
+    /// spotter, CPU time of the whole process over audio time.
+    /// `cargo test --release --lib wake::tests::sherpa_idle_cpu -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn sherpa_idle_cpu() {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+        let cpu = || unsafe {
+            let (mut a, mut b, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+            GetProcessTimes(GetCurrentProcess(), &mut a, &mut b, &mut kernel, &mut user).unwrap();
+            let ticks = |t: FILETIME| ((t.dwHighDateTime as u64) << 32 | t.dwLowDateTime as u64) as f64 / 1e7;
+            ticks(kernel) + ticks(user)
+        };
+        let mut spotter = Detector::load(&sherpa_dir(), &Spec::of("sherpa", "normal", "Jarvis"), "").expect("sherpa loads");
+        let mut seed = 11;
+        let minute = room(60.0, &mut seed);
+        let (start, wall) = (cpu(), Instant::now());
+        let heard = run_through(&mut spotter, &minute);
+        let spent = cpu() - start;
+        println!("60 s of audio: {spent:.2} s CPU ({:.1}% of one core), {:.2} s wall, heard {heard}", spent / 60.0 * 100.0, wall.elapsed().as_secs_f64());
+        assert_eq!(heard, 0);
+    }
+
     /// The bundled library loads and wants 16 kHz in 512-sample frames — no key
     /// needed for that much. `cargo test --lib wake::tests::the_bundled_engine_loads -- --ignored --nocapture`
     #[test]
@@ -849,7 +1476,7 @@ mod tests {
             let _ = FreeLibrary(module);
         }
         // A made-up key is refused with words, not a crash.
-        let refused = Engine::load(&dir, "not-a-key", 0.5).err();
+        let refused = Porcupine::load(&dir, "not-a-key", 0.5).err();
         println!("a made-up key: {refused:?}");
         assert!(refused.is_some());
     }
@@ -893,3 +1520,4 @@ mod tests {
         }));
     }
 }
+

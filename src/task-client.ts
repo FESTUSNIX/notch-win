@@ -190,6 +190,7 @@ let demoPrefs: Record<string, unknown> = {
   /* `&wake` is Settings → Voice → Wake word switched on (and fires the word, below). */
   wakeWord: new URLSearchParams(location.search).has("wake"),
   wakeMic: "", wakeMicName: "", wakeSensitivity: "normal",
+  wakeEngine: "sherpa", wakePhrase: "Jarvis",
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 
@@ -715,8 +716,9 @@ const demoMics = [
 let demoWakeKey = false;
 let demoHeardAt = 0;
 function demoWakeStatus() {
-  const p = demoPrefs as { wakeWord?: boolean; wakeMic?: string };
-  const reason = !p.wakeWord ? "off" : !demoWakeKey ? "key" : !p.wakeMic ? "mic" : null;
+  const p = demoPrefs as { wakeWord?: boolean; wakeMic?: string; wakeEngine?: string };
+  // Only Picovoice needs the key (wake.rs `needs_key`).
+  const reason = !p.wakeWord ? "off" : p.wakeEngine === "porcupine" && !demoWakeKey ? "key" : !p.wakeMic ? "mic" : null;
   return { listening: !reason, reason, heardAt: demoHeardAt, problem: null, hasKey: demoWakeKey, snoozedUntil: 0 };
 }
 function demoHear() {
@@ -724,7 +726,7 @@ function demoHear() {
   previewBus.dispatchEvent(new CustomEvent("wake:heard", { detail: demoHeardAt }));
   previewBus.dispatchEvent(new CustomEvent("wake:state", { detail: demoWakeStatus() }));
 }
-const WAKE_KEPT = ["wakeWord", "wakeMic", "wakeMicName", "wakeSensitivity"];
+const WAKE_KEPT = ["wakeWord", "wakeMic", "wakeMicName", "wakeSensitivity", "wakeEngine", "wakePhrase"];
 if (preview) {
   (window as unknown as { __wake: () => void }).__wake = demoHear;
   try {

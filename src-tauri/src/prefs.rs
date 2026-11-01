@@ -345,6 +345,12 @@ pub struct Prefs {
     pub wake_mic_name: String,
     /// `low`, `normal` or `high`.
     pub wake_sensitivity: String,
+    /// Which detector hears it: `sherpa` (sherpa-onnx, offline, no account —
+    /// the default) or `porcupine` (Picovoice, needs his AccessKey).
+    pub wake_engine: String,
+    /// What sherpa listens for, letters and spaces, one to three words
+    /// (`wake::phrase_ok`). Porcupine only knows its built-in "Jarvis".
+    pub wake_phrase: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -419,6 +425,8 @@ impl Default for Prefs {
             wake_mic: String::new(),
             wake_mic_name: String::new(),
             wake_sensitivity: "normal".into(),
+            wake_engine: "sherpa".into(),
+            wake_phrase: "Jarvis".into(),
         }
     }
 }
@@ -492,6 +500,8 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
             "low" | "high" => prefs.wake_sensitivity,
             _ => "normal".into(),
         },
+        wake_engine: crate::wake::engine_of(&prefs.wake_engine).into(),
+        wake_phrase: crate::wake::phrase_ok(&prefs.wake_phrase).unwrap_or_else(|| "Jarvis".into()),
         // An endpoint id and a device name; anything longer is not one.
         wake_mic: if prefs.wake_mic.len() <= 300 { prefs.wake_mic } else { String::new() },
         wake_mic_name: prefs.wake_mic_name.chars().take(200).collect(),
@@ -557,6 +567,8 @@ mod tests {
         assert!(!empty.wake_word, "the wake word is off until he turns it on");
         assert!(empty.wake_mic.is_empty() && empty.wake_mic_name.is_empty());
         assert_eq!(empty.wake_sensitivity, "normal");
+        assert_eq!(empty.wake_engine, "sherpa", "offline and free unless he picks Picovoice");
+        assert_eq!(empty.wake_phrase, "Jarvis");
     }
 
     /// ⚠️ Values arrive from a WebView. A colour that is not a colour leaves

@@ -18878,6 +18878,18 @@ button.set-row.wake-mic:hover {
 .wake-saved[hidden] {
 	display: none;
 }
-#wake-level button[aria-pressed='true'] {
+#wake-level button[aria-pressed='true'],
+#wake-engine button[aria-pressed='true'] {
 	color: #f2f2f2;
+}
+#wake-pico[hidden],
+#wake-phrase-row[hidden] {
+	display: none;
+}
+#wake-phrase {
+	width: 180px;
+}
+#wake-phrase.is-invalid {
+	border-color: var(--warn);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 22%, transparent);
 }

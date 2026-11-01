@@ -53,7 +53,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "resources": ["resources/wake/*"],
+    "resources": ["resources/wake/*", "resources/wake/sherpa/*"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

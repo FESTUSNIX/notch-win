@@ -1,25 +1,32 @@
 /* Settings → Voice: the wake word (30 Oct, wake.rs) and the microphone every
  * voice turn records from.
  *
- * - The switch, with a lamp beside it that lights when "Jarvis" is heard —
+ * - The switch, with a lamp beside it that lights when the word is heard —
  *   the test — and whose tooltip says whether it is listening or why not.
+ * - The engine: sherpa-onnx (offline, no account, the default) or Picovoice.
+ * - The phrase, sherpa only (Picovoice knows just "Jarvis"): letters, one to
+ *   three words, saved when it is one (`wakePhrase`); wake.rs spells it into
+ *   the model's tokens and restarts the listener.
  * - Sensitivity, three steps.
  * - The microphone: every one plugged in, one row each. ⚠️ A Bluetooth
  *   hands-free one is marked (the warning icon, a tooltip): listening on it
  *   keeps his earbuds in call quality. Nothing is chosen for him.
- * - The Picovoice AccessKey: written to Credential Manager, never read back —
- *   the field only ever shows whether one is saved.
+ * - The Picovoice AccessKey, shown only with Picovoice chosen: written to
+ *   Credential Manager, never read back — the field only shows whether one is saved.
  *
- * Stored in prefs.rs (`wakeWord`, `wakeMic`, `wakeMicName`, `wakeSensitivity`);
+ * Stored in prefs.rs (`wakeWord`, `wakeEngine`, `wakePhrase`, `wakeMic`,
+ * `wakeMicName`, `wakeSensitivity`);
  * the key through `wake_key`. task-editor.ts hands it the prefs and the save. */
 import { listen } from "@tauri-apps/api/event";
 import { call, native, previewBus } from "./task-client";
 import { taskIcon } from "./task-icons";
 import { tips } from "./tips";
-import { wakeTip } from "./wake-rules";
+import { DEFAULT_PHRASE, WAKE_ENGINES, wakeEngine, wakePhrase, wakePhraseProblem, wakeTip, wakeWords } from "./wake-rules";
 
 export interface WakePrefs {
   wakeWord?: boolean;
+  wakeEngine?: string;
+  wakePhrase?: string;
   wakeMic?: string;
   wakeMicName?: string;
   wakeSensitivity?: string;
@@ -33,15 +40,21 @@ const LIT_MS = 2200;
 
 export const WAKE_PANE_HTML = `
   <div><p class="set-label">Wake word</p><div class="set-group">
-    <div class="set-row"><div class="set-text mod-row wake-head" id="wake-head"><b>“Jarvis”</b></div>
+    <div class="set-row"><div class="set-text mod-row wake-head" id="wake-head"><b id="wake-words">“Jarvis”</b></div>
       <div class="set-ctl"><span class="wake-lamp" id="wake-lamp" data-tip="Off" role="status"></span><input type="checkbox" class="switch" id="wake-on" aria-label="Wake word"></div></div>
-    <div class="set-row"><div class="set-text"><b>Sensitivity</b></div>
+    <div class="set-row"><div class="set-text mod-row" id="wake-engine-label"><b>Engine</b></div>
+      <div class="set-ctl"><div class="seg" role="group" aria-label="Engine" id="wake-engine">${
+        WAKE_ENGINES.map(([value, text]) => `<button type="button" data-engine="${value}" aria-pressed="false">${text}</button>`).join("")
+      }</div></div></div>
+    <div class="set-row" id="wake-phrase-row"><div class="set-text mod-row" id="wake-phrase-label"><b>Phrase</b></div>
+      <div class="set-ctl"><input id="wake-phrase" type="text" autocomplete="off" spellcheck="false" maxlength="40" placeholder="${DEFAULT_PHRASE}" aria-label="Wake phrase"></div></div>
+    <div class="set-row"><div class="set-text mod-row" id="wake-level-label"><b>Sensitivity</b></div>
       <div class="set-ctl"><div class="seg" role="group" aria-label="Sensitivity" id="wake-level">${
         LEVELS.map(([value, text]) => `<button type="button" data-level="${value}" aria-pressed="false">${text}</button>`).join("")
       }</div></div></div>
   </div></div>
   <div><p class="set-label">Microphone</p><div class="set-group" id="wake-mics"></div></div>
-  <div><p class="set-label">Picovoice</p><div class="set-group">
+  <div id="wake-pico"><p class="set-label">Picovoice</p><div class="set-group">
     <div class="set-row"><div class="set-text mod-row" id="wake-key-label"><b>AccessKey</b></div>
       <div class="set-ctl"><span class="wake-saved" id="wake-saved" data-tip="Saved in Windows Credential Manager" hidden></span><input id="wake-key" type="password" autocomplete="off" spellcheck="false" maxlength="512" placeholder="console.picovoice.ai"><button type="button" class="set-btn is-accent" id="wake-key-save">Save</button><button type="button" class="set-btn" id="wake-key-remove" hidden>Remove</button></div></div>
   </div></div>`;
@@ -57,7 +70,15 @@ export function mountWake(prefs: () => WakePrefs, change: (patch: WakePrefs) => 
   const saved = document.getElementById("wake-saved")!;
   const save = document.getElementById("wake-key-save") as HTMLButtonElement;
   const remove = document.getElementById("wake-key-remove") as HTMLButtonElement;
+  const words = document.getElementById("wake-words")!;
+  const engine = document.getElementById("wake-engine")!;
+  const phraseRow = document.getElementById("wake-phrase-row")!;
+  const phrase = document.getElementById("wake-phrase") as HTMLInputElement;
+  const pico = document.getElementById("wake-pico")!;
   head.prepend(taskIcon("mic"));
+  document.getElementById("wake-engine-label")!.prepend(taskIcon("chip"));
+  document.getElementById("wake-phrase-label")!.prepend(taskIcon("words"));
+  document.getElementById("wake-level-label")!.prepend(taskIcon("target"));
   document.getElementById("wake-key-label")!.prepend(taskIcon("key"));
   saved.append(taskIcon("check"));
 
@@ -69,6 +90,33 @@ export function mountWake(prefs: () => WakePrefs, change: (patch: WakePrefs) => 
   for (const button of level.querySelectorAll<HTMLButtonElement>("button")) {
     button.onclick = () => { change({ wakeSensitivity: button.dataset.level }); paint(); };
   }
+  // Another engine: wake.rs sees the pref change and restarts the listener.
+  for (const button of engine.querySelectorAll<HTMLButtonElement>("button")) {
+    button.onclick = () => { change({ wakeEngine: button.dataset.engine }); paint(); };
+  }
+
+  /* The phrase: refused in the field's own tooltip while it is not one (no line
+   * of text under it), saved the moment it is. Escape or leaving an invalid
+   * one puts the saved phrase back. */
+  const checkPhrase = () => {
+    const problem = wakePhraseProblem(phrase.value);
+    phrase.classList.toggle("is-invalid", !!problem);
+    phrase.setAttribute("aria-invalid", String(!!problem));
+    if (problem) phrase.dataset.tip = problem; else delete phrase.dataset.tip;
+    return problem ? null : wakePhrase(phrase.value);
+  };
+  const savePhrase = () => {
+    const next = checkPhrase();
+    if (next && next !== (prefs().wakePhrase || DEFAULT_PHRASE)) { change({ wakePhrase: next }); paint(); }
+  };
+  const restorePhrase = () => { phrase.value = wakePhrase(prefs().wakePhrase ?? "") ?? DEFAULT_PHRASE; checkPhrase(); };
+  phrase.oninput = () => { checkPhrase(); };
+  phrase.onchange = savePhrase;
+  phrase.onkeydown = event => {
+    if (event.key === "Enter") savePhrase();
+    if (event.key === "Escape") { event.stopPropagation(); restorePhrase(); }
+  };
+  phrase.onblur = () => { if (!checkPhrase()) restorePhrase(); };
 
   const paintKey = (has: boolean) => {
     saved.hidden = !has;
@@ -143,7 +191,7 @@ export function mountWake(prefs: () => WakePrefs, change: (patch: WakePrefs) => 
   };
 
   const paintStatus = () => {
-    lamp.dataset.tip = wakeTip(status);
+    lamp.dataset.tip = wakeTip(status, wakeWords(prefs()));
     lamp.classList.toggle("is-listening", status.listening);
   };
   const heard = () => {
@@ -165,6 +213,15 @@ export function mountWake(prefs: () => WakePrefs, change: (patch: WakePrefs) => 
     const now = prefs();
     on.checked = now.wakeWord === true;
     head.classList.toggle("is-off", !on.checked);
+    const chosen = wakeEngine(now.wakeEngine);
+    for (const button of engine.querySelectorAll<HTMLButtonElement>("button")) {
+      button.setAttribute("aria-pressed", String(button.dataset.engine === chosen));
+    }
+    // ⚠️ The key only matters to Picovoice, the phrase only to sherpa.
+    pico.hidden = chosen !== "porcupine";
+    phraseRow.hidden = chosen !== "sherpa";
+    words.textContent = `“${wakeWords(now)}”`;
+    if (document.activeElement !== phrase) restorePhrase();
     const value = now.wakeSensitivity || "normal";
     for (const button of level.querySelectorAll<HTMLButtonElement>("button")) {
       button.setAttribute("aria-pressed", String(button.dataset.level === value));

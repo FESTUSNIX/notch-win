@@ -45,9 +45,41 @@ export const WAKE_PAUSED: Record<string, string> = {
   engine: "The engine didn't start",
 };
 
+/** The two detectors (wake.rs `Detector`): sherpa-onnx is offline with no
+ * account and the default; Picovoice needs his AccessKey and only knows "Jarvis". */
+export const WAKE_ENGINES: [string, string][] = [["sherpa", "sherpa-onnx (offline)"], ["porcupine", "Picovoice"]];
+export const DEFAULT_PHRASE = "Jarvis";
+
+export function wakeEngine(pref: string | undefined): "sherpa" | "porcupine" {
+  return pref === "porcupine" ? "porcupine" : "sherpa";
+}
+
+/** The phrase as sherpa will listen for it, or null — ASCII letters and single
+ * spaces, one to three words, 40 characters at most. Mirrors `wake::phrase_ok`. */
+export function wakePhrase(text: string): string | null {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 3 || !words.every(w => /^[A-Za-z]+$/.test(w))) return null;
+  const joined = words.join(" ");
+  return joined.length <= 40 ? joined : null;
+}
+
+/** Why a typed phrase is refused, for the field's tooltip; null when it is fine. */
+export function wakePhraseProblem(text: string): string | null {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "Say something to listen for";
+  if (words.length > 3) return "Three words at most";
+  if (!words.every(w => /^[A-Za-z]+$/.test(w))) return "Letters only, A to Z";
+  return wakePhrase(text) ? null : "Too long";
+}
+
+/** What it listens for: sherpa's phrase, or Porcupine's built-in "Jarvis". */
+export function wakeWords(prefs: { wakeEngine?: string; wakePhrase?: string }): string {
+  return wakeEngine(prefs.wakeEngine) === "sherpa" ? wakePhrase(prefs.wakePhrase ?? "") ?? DEFAULT_PHRASE : DEFAULT_PHRASE;
+}
+
 /** The mark's tooltip: listening, or why not (with the engine's own words when it failed). */
-export function wakeTip(status: { listening: boolean; reason: string | null; problem?: string | null }): string {
-  if (status.listening) return "Listening for “Jarvis”";
+export function wakeTip(status: { listening: boolean; reason: string | null; problem?: string | null }, phrase = DEFAULT_PHRASE): string {
+  if (status.listening) return `Listening for “${phrase}”`;
   const why = WAKE_PAUSED[status.reason ?? "off"] ?? "Paused";
   return status.reason === "engine" && status.problem ? `${why}: ${status.problem}` : why;
 }

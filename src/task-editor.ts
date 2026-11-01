@@ -97,6 +97,10 @@ interface Prefs {
   wakeMic: string;
   wakeMicName: string;
   wakeSensitivity: string;
+  /** `sherpa` (offline, the default) or `porcupine` (Picovoice, needs the AccessKey). */
+  wakeEngine: string;
+  /** What sherpa listens for; Picovoice only knows "Jarvis". */
+  wakePhrase: string;
 }
 
 interface Screen { id: string; name: string; width: number; height: number; primary: boolean }
@@ -474,6 +478,7 @@ let prefs: Prefs = {
   spokenReplies: true,
   peeks: {}, peekQuiet: null,
   wakeWord: false, wakeMic: "", wakeMicName: "", wakeSensitivity: "normal",
+  wakeEngine: "sherpa", wakePhrase: "Jarvis",
 };
 
 let saving = 0;
