@@ -802,7 +802,11 @@ pub async fn helm_send(
     voice: Option<bool>,
     meeting: Option<String>,
 ) -> Result<(), String> {
-    let body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]), voice == Some(true), meeting.as_deref());
+    let mut body = chat_body(&text, &images, capture == Some(true), focus, command.as_deref(), mentions.as_deref().unwrap_or(&[]), voice == Some(true), meeting.as_deref());
+    // JARVIS (2 Nov): the PC now, so the Guardian can act on it — his
+    // workspaces by name, what's playing, whether Spotify is connected. A
+    // Helm without `pc` ignores it and simply has no hands here.
+    body["pc"] = pc_state(&app);
     let mut response = as_him(chat_http(), reqwest::Method::POST, "/api/guardian/chat", Some(body)).await?;
     if !response.status().is_success() {
         return Err(refusal(response, "The Guardian didn't answer.").await);
@@ -814,6 +818,10 @@ pub async fn helm_send(
                 buffer.extend_from_slice(&chunk);
                 for line in take_lines(&mut buffer) {
                     if let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) {
+                        // Something to do on the PC: done now, while the reply is still coming.
+                        if event["t"] == "pc" {
+                            crate::jarvis::perform(app.clone(), &event["action"]);
+                        }
                         let _ = app.emit_to("tasks", "helm:chat", event);
                     }
                 }
@@ -828,6 +836,36 @@ pub async fn helm_send(
     // A turn may have changed today (a block planned, started): read it now.
     poke().notify_one();
     Ok(())
+}
+
+/// What the Guardian is told about the PC with each message (JARVIS): the
+/// workspaces' names (for "otwórz workspace Esono"), what's playing, and
+/// whether Spotify can be searched. Apps aren't listed — there are hundreds;
+/// the name he says is matched here (`jarvis::best`).
+fn pc_state(app: &AppHandle) -> serde_json::Value {
+    let mut workspaces: Vec<String> = crate::workspaces::get_workspaces(app.clone()).into_values().map(|w| w.name).filter(|n| !n.trim().is_empty()).collect();
+    workspaces.truncate(40);
+    let media = crate::media::get_media(app.clone());
+    let playing = (media.active && media.playing && !media.title.is_empty())
+        .then(|| if media.artist.is_empty() { media.title.clone() } else { format!("{} — {}", media.title, media.artist) })
+        .map(|p| p.chars().take(200).collect::<String>());
+    // `eyes`: this build answers what the Guardian asks back (eyes.rs, stage 2).
+    json!({ "workspaces": workspaces, "playing": playing, "spotify": crate::spotify::spotify_status(), "eyes": true })
+}
+
+/// The eyes' answer to request `id`, where the Guardian's reply is waiting
+/// for it (Helm's `/api/guardian/pc/<id>`). On the chat's client: a picture
+/// or a PDF takes longer to send than the usual fifteen seconds allow.
+pub(crate) async fn answer_pc(id: &str, answer: serde_json::Value) -> Result<(), String> {
+    if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err("Not a request's id.".into());
+    }
+    let response = as_him(chat_http(), reqwest::Method::POST, &format!("/api/guardian/pc/{id}"), Some(answer)).await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(refusal(response, "Helm didn't take the answer.").await)
+    }
 }
 
 /// Take back one thing a reply changed.

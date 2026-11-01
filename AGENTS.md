@@ -6117,3 +6117,71 @@ commercial use (910–912).
       WAV, made by the test) at 4 of 4 offsets, and not "the weather is nice
       today". ⚠️ That is a synthetic voice; his own, through his USB mic, is
       the real test (the Settings lamp).
+
+### JARVIS, stage 1: the Guardian's hands on this PC (2 Nov)
+
+His words: "make it a real personal assistant, JARVIS like". His picks for
+this stage: open and control things, timers and reminders, fast, a butler
+character that rarely addresses him. The brain stays in Helm (the Guardian,
+now with a quick model in front for plain commands); this side is the hands.
+
+ 913. **Every chat message carries `pc`** (`helm::pc_state`): the workspaces'
+      names, what's playing ("title — artist", only while playing), whether
+      Spotify is connected. Apps are NOT listed (hundreds): the name he says
+      is matched here. A Helm without `pc` ignores it.
+ 914. **A `pc` event in the stream is done at once** (`jarvis::perform`,
+      spawned, before the event is forwarded to the island): open an app
+      (`apps::list_apps` + `best`: the same name, then starts with, contains,
+      all words; the shortest name wins a tie; a few spoken aliases like "vs
+      code", "przeglądarka"), a workspace (by name), a site (http(s) only), a
+      file or folder (Everything, first hit of that kind), media (play and
+      pause read the state first — the session only has a toggle), music
+      (Spotify search → enqueue → next, play if it ended up paused), volume
+      (level or change; a change unmutes), brightness, lock, a timer.
+ 915. ⚠️ **Nothing goes back to Helm.** The reply has already said
+      "Gotowe." — so a thing that couldn't be done says so itself as a
+      `peek:pc` (kind `pc`, warn, "Couldn't do it" in Settings → Peeks).
+ 916. **Timers are local** (a tokio sleep; lost on a restart, his to set
+      again): the Reminder sound, a `peek:timer` (kind `timer`, urgent so
+      quiet hours don't drop it, 12 s, one pulse), and "Czas minął:
+      <label>." said through `voice::voice_say` as a turn of its own (far
+      above any reply's turn numbers, so neither waits on the other) — under
+      the voice's own quiet rules (calls, presenting, spoken replies off).
+      Reminders at a clock time are Helm's (they reach the phone): they come
+      as ordinary Helm moments, kind `remind`, id `rem:<id>@<minute>`.
+ 917. Tested: `jarvis::tests` (matching, Polish folding, the action shapes,
+      how long a timer ran). Not yet run live in a release build.
+
+### JARVIS, stage 2: the eyes (2 Nov)
+
+His picks: the Guardian sees his screen and his files. The brain stays in
+Helm; these are answers it asks for mid-reply.
+
+ 918. **A `pc` event with an `ask` is a question, not an action**
+      (`jarvis::perform` hands it to `eyes::answer`). The answer goes to
+      Helm's `/api/guardian/pc/<ask>` (`helm::answer_pc`, on the chat's client:
+      a picture takes longer than fifteen seconds on a slow line), where the
+      reply waits for it (a few seconds; after that Helm says 404 and the
+      answer is dropped). `pc_state` says `eyes: true` so Helm offers them.
+ 919. **look**: the monitor of the window he's working in (the island's own
+      windows → `task_window::previous_window`, the one he came from), GDI
+      `StretchBlt` with HALFTONE down to 1920 on the long side, JPEG 82
+      (`jpeg-encoder`), ~350 kB. ⚠️ The island's windows are kept out of the
+      picture with `WDA_EXCLUDEFROMCAPTURE` for the ~120 ms it takes (on the
+      monitor they stay; the previous affinity is put back).
+ 920. **find**: Everything. `newest` asks with QUERY2 (sorted by date
+      modified by Everything itself, with sizes and times;
+      `everything::search_newest`); an Everything too old for it answers
+      with nothing, and then the first 200 by name are sorted here.
+ 921. **read**: text (UTF-8, UTF-16 with its mark; binary refused; the first
+      100 000 characters), PDF and images as they are (≤ 3.2 MB: Vercel takes
+      4.5 MB a request and base64 adds a third), .docx (the zip's central
+      directory → `word/document.xml` inflated with flate2 → paragraphs), a
+      folder as its listing, newest first. ⚠️ `eyes::secret` refuses keys
+      and passwords whatever the path came from (.ssh, .env*, certificates,
+      vaults, browser logins): a screen or a document could ask for them.
+ 922. **clipboard**: the copied files, or the text (`shelf::clipboard`).
+ 923. Tested: `eyes::tests` (the asks, secrets, text vs binary, cutting at a
+      letter, Word's XML, a hand-built .docx); `live_eyes` (ignored; run with
+      `EYES_OUT=<folder> cargo test --lib live_eyes -- --ignored --nocapture`)
+      takes a real screenshot, a newest-first search and a folder read.

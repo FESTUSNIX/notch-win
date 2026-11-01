@@ -22,7 +22,8 @@ import type { TaskIcon } from "./task-icons";
 export type PeekKind =
   | "music" | "volume" | "block" | "meeting" | "leave"          // P's
   | "buds" | "mic" | "power" | "download" | "screenshot"        // S's (devices, files)
-  | "paid" | "logged" | "focus";                                // S's (Helm, focus)
+  | "paid" | "logged" | "focus"                                 // S's (Helm, focus)
+  | "timer" | "pc";                                             // JARVIS (2 Nov): a timer up, a thing it couldn't do
 
 export interface Peek {
   /** Stable per event: "music:<track id>", "download:<path>", "paid:<payment id>". */

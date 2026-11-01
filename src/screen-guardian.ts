@@ -132,7 +132,7 @@ export interface SuggestHints { focus: number | null; agents: number; finished: 
 const RECEIPT_ICON: Record<string, TaskIcon> = {
   block: "target", start: "play", plan: "today", mode: "settings", request: "request", time: "clock",
   deal: "star", event: "calendar", note: "note", memory: "agent",
-  done: "check", later: "later", pin: "pin", reminder: "bell",
+  done: "check", later: "later", pin: "pin", reminder: "bell", eye: "view",
 };
 const zl = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 0 });
 const hhmm = new Intl.DateTimeFormat("pl-PL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });

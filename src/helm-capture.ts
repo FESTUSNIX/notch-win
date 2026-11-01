@@ -37,7 +37,7 @@ const LINGER_MS = 6000;
 const RECEIPT_ICON: Record<string, TaskIcon> = {
   block: "target", start: "play", plan: "today", request: "request", time: "clock",
   deal: "star", event: "calendar", note: "note", memory: "agent", reminder: "bell",
-  done: "check", later: "later", pin: "pin",
+  done: "check", later: "later", pin: "pin", eye: "view",
 };
 
 export class Capture {

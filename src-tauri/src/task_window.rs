@@ -11,6 +11,10 @@ static PREVIOUS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 
 pub fn input_active() -> bool { INPUT_ACTIVE.load(Ordering::SeqCst) }
 
+/// The window he was in before typing into the island (0 when he isn't):
+/// what the Guardian's eyes look at while the island has the keyboard.
+pub fn previous_window() -> isize { PREVIOUS_WINDOW.load(Ordering::SeqCst) }
+
 #[tauri::command]
 pub async fn set_task_input(window: tauri::WebviewWindow, active: bool) -> Result<(), String> {
     if window.label() != "tasks" { return Err("Inline entry belongs to the task notch.".into()); }

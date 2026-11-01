@@ -47,6 +47,14 @@ use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 
 /// `EVERYTHING_IPC_COPYDATA_QUERYW`.
 const QUERYW: usize = 2;
+/// `EVERYTHING_IPC_COPYDATA_QUERY2W`: the query that can sort and send more
+/// than the name (1.4.1 on). Only the Guardian's "newest first" uses it.
+const QUERY2W: usize = 18;
+/// `EVERYTHING_IPC_QUERY2_REQUEST_FULL_PATH_AND_NAME | _SIZE | _DATE_MODIFIED`:
+/// each item's data comes in this order, the bits' order.
+const REQUEST2: u32 = 0x04 | 0x10 | 0x40;
+/// `EVERYTHING_IPC_SORT_DATE_MODIFIED_DESCENDING`.
+const SORT_NEWEST: u32 = 14;
 /// Ours to choose; it comes back as the reply's `dwData`.
 const REPLY: usize = 0x636e_0001;
 /// Long enough for a wedged indexer, short enough not to feel like a hang.
@@ -75,10 +83,21 @@ pub fn running() -> bool {
 
 /* ── The reply window ────────────────────────────────────────────────────── */
 
+/// A hit with its size (files) and when it was last changed (Unix seconds),
+/// as the newest-first query sends them.
+pub struct Dated {
+    pub hit: Hit,
+    pub size: Option<u64>,
+    pub modified: Option<i64>,
+}
+
 /// Filled by the window procedure, read by `search` once the pump sees it.
 #[derive(Default)]
 struct Reply {
+    /// Asked with QUERY2 (newest first): the answer is a LIST2, into `dated`.
+    newest: bool,
     hits: Vec<Hit>,
+    dated: Vec<Dated>,
     arrived: bool,
 }
 
@@ -91,7 +110,11 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
                 (*data).lpData as *const u8,
                 (*data).cbData as usize,
             );
-            (*held).hits = parse(bytes);
+            if (*held).newest {
+                (*held).dated = parse2(bytes);
+            } else {
+                (*held).hits = parse(bytes);
+            }
             (*held).arrived = true;
         }
         return LRESULT(1);
@@ -183,16 +206,50 @@ fn parse(bytes: &[u8]) -> Vec<Hit> {
     hits
 }
 
+/// `EVERYTHING_IPC_LIST2`: five DWORDs, then two per item (flags, where its
+/// data starts); the data is what `REQUEST2` asked for, in that order — the
+/// full path as a length in characters and the null-terminated string, the
+/// size as eight bytes, the time as a FILETIME. Bounds-checked as `parse` is.
+fn parse2(bytes: &[u8]) -> Vec<Dated> {
+    let Some(count) = dword(bytes, 4) else { return Vec::new() };
+    let eight = |at: usize| bytes.get(at..at + 8).map(|b| u64::from_le_bytes(b.try_into().unwrap()));
+    let mut out = Vec::new();
+    for index in 0..count as usize {
+        let base = 20 + index * 8;
+        let (Some(flags), Some(data)) = (dword(bytes, base), dword(bytes, base + 4)) else { break };
+        let data = data as usize;
+        let Some(length) = dword(bytes, data) else { break };
+        let Some(full) = wide_at(bytes, data + 4) else { break };
+        let after = data + 4 + (length as usize + 1) * 2;
+        let (Some(size), Some(time)) = (eight(after), eight(after + 8)) else { break };
+        let path = std::path::Path::new(&full);
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| full.clone());
+        let folder_path = path.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        out.push(Dated {
+            hit: Hit { name, path: folder_path, full, folder: flags & 1 != 0 },
+            // Unknown is all ones (a folder whose size isn't indexed).
+            size: (size != u64::MAX && flags & 1 == 0).then_some(size),
+            // FILETIME: 100 ns since 1601.
+            modified: (time != 0 && time != u64::MAX).then(|| (time / 10_000_000) as i64 - 11_644_473_600),
+        });
+    }
+    out
+}
+
 /* ── Asking ──────────────────────────────────────────────────────────────── */
 
 /// The `EVERYTHING_IPC_QUERYW` bytes: five DWORDs then the search, terminated.
-fn request(reply_to: HWND, query: &str, limit: u32) -> Vec<u8> {
+fn request(reply_to: HWND, query: &str, limit: u32, newest: bool) -> Vec<u8> {
     let mut out = Vec::with_capacity(20 + query.len() * 2 + 2);
     out.extend_from_slice(&(reply_to.0 as usize as u32).to_le_bytes()); // reply_hwnd
     out.extend_from_slice(&(REPLY as u32).to_le_bytes());               // reply_copydata_message
     out.extend_from_slice(&0u32.to_le_bytes());                         // search_flags: none
     out.extend_from_slice(&0u32.to_le_bytes());                         // offset
     out.extend_from_slice(&limit.to_le_bytes());                        // max_results
+    if newest {
+        out.extend_from_slice(&REQUEST2.to_le_bytes());                 // request_flags
+        out.extend_from_slice(&SORT_NEWEST.to_le_bytes());              // sort_type
+    }
     for unit in query.encode_utf16().chain(std::iter::once(0)) {
         out.extend_from_slice(&unit.to_le_bytes());
     }
@@ -202,16 +259,26 @@ fn request(reply_to: HWND, query: &str, limit: u32) -> Vec<u8> {
 /// ⚠️ Blocking, and it creates a window — so it must not run on the UI thread.
 /// The caller hands it to `spawn_blocking`.
 pub fn search(query: &str, limit: u32) -> Vec<Hit> {
+    ask(query, limit, false).hits
+}
+
+/// The newest first, with sizes and times (the Guardian's "ostatnia faktura").
+/// Empty from an Everything too old for QUERY2, as from one not running.
+pub fn search_newest(query: &str, limit: u32) -> Vec<Dated> {
+    ask(query, limit, true).dated
+}
+
+fn ask(query: &str, limit: u32, newest: bool) -> Reply {
+    let mut reply = Reply { newest, ..Default::default() };
     let query = query.trim();
     if query.is_empty() {
-        return Vec::new();
+        return reply;
     }
-    let Some(everything) = ipc_window() else { return Vec::new() };
+    let Some(everything) = ipc_window() else { return reply };
     if *class() == 0 {
-        return Vec::new();
+        return reply;
     }
 
-    let mut reply = Reply::default();
     unsafe {
         let Ok(window) = CreateWindowExW(
             WINDOW_EX_STYLE(0),
@@ -227,13 +294,13 @@ pub fn search(query: &str, limit: u32) -> Vec<Hit> {
             None,
             None,
         ) else {
-            return Vec::new();
+            return reply;
         };
         SetWindowLongPtrW(window, GWLP_USERDATA, &mut reply as *mut Reply as isize);
 
-        let body = request(window, query, limit);
+        let body = request(window, query, limit, newest);
         let packet = COPYDATASTRUCT {
-            dwData: QUERYW,
+            dwData: if newest { QUERY2W } else { QUERYW },
             cbData: body.len() as u32,
             lpData: body.as_ptr() as *mut std::ffi::c_void,
         };
@@ -272,7 +339,7 @@ pub fn search(query: &str, limit: u32) -> Vec<Hit> {
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         let _ = DestroyWindow(window);
     }
-    reply.hits
+    reply
 }
 
 #[tauri::command]
@@ -370,7 +437,7 @@ mod tests {
     /// nothing, which is indistinguishable from "no matches".
     #[test]
     fn the_query_carries_the_reply_window_and_the_search() {
-        let body = request(HWND(0x1234 as *mut std::ffi::c_void), "notes", 25);
+        let body = request(HWND(0x1234 as *mut std::ffi::c_void), "notes", 25, false);
         assert_eq!(u32::from_le_bytes(body[0..4].try_into().unwrap()), 0x1234);
         assert_eq!(u32::from_le_bytes(body[4..8].try_into().unwrap()), REPLY as u32);
         assert_eq!(u32::from_le_bytes(body[8..12].try_into().unwrap()), 0);

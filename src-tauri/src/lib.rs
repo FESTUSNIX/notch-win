@@ -21,6 +21,8 @@ mod media;
 mod dragout;
 mod guard;
 mod helm;
+mod jarvis;
+mod eyes;
 mod mic;
 mod voice;
 mod wake;

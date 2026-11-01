@@ -65,6 +65,18 @@ export async function bootPeekSources(deps: PeekSourceDeps) {
   await on<PowerEvent>("peek:power", e => { peek(plain(powerPeek(e))); });
   await on<Arrival>("peek:file", a => { peek(fileAction(a)); });
 
+  /* JARVIS (jarvis.rs): a timer the Guardian set is up — it rang and said its
+   * label; this stays a while and shows in quiet hours too, as he set it.
+   * And something the Guardian said it would do that the PC couldn't (an app
+   * it doesn't have, nothing playing): said here, since the reply already
+   * said "Gotowe.". */
+  await on<{ id: string; title: string; line: string }>("peek:timer", t => {
+    peek({ id: t.id, kind: "timer", icon: "bell", title: t.title, line: t.line, tone: "accent", ttl: 12_000, urgent: true, pulse: true });
+  });
+  await on<{ id: string; title: string; line: string | null }>("peek:pc", n => {
+    peek({ id: n.id, kind: "pc", icon: "guardian", title: n.title, ...(n.line ? { line: n.line } : {}), tone: "warn", ttl: 6000 });
+  });
+
   /* Focus: once per site per block. Session memory is enough — a block is
    * minutes long and a restart mid-block saying it once more is harmless. */
   const warned = new Set<string>();

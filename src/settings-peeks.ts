@@ -44,6 +44,10 @@ export const PEEK_GROUPS: { title: string; hue: string; kinds: { kind: PeekKind;
   { title: "Focus", hue: "#ff9f0a", kinds: [
     { kind: "focus", icon: "focus", title: "Before the curtain" },
   ] },
+  { title: "The Guardian on this PC", hue: "#8e8eff", kinds: [
+    { kind: "timer", icon: "bell", title: "Timers" },
+    { kind: "pc", icon: "guardian", title: "Couldn't do it" },
+  ] },
 ];
 
 const DEFAULT_QUIET: PeekQuiet = { from: "22:00", to: "07:00" };

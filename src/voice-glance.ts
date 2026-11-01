@@ -66,7 +66,7 @@ const QUIET: Record<string, { icon: TaskIcon; tip: string }> = {
 const RECEIPT_ICON: Record<string, TaskIcon> = {
   block: "target", start: "play", plan: "today", mode: "settings", request: "request", time: "clock",
   deal: "star", event: "calendar", note: "note", memory: "agent",
-  done: "check", later: "later", pin: "pin", reminder: "bell",
+  done: "check", later: "later", pin: "pin", reminder: "bell", eye: "view",
 };
 /** Enough to fill the row at its widest; the oldest are clipped off the left when keys take room. */
 const BARS = 66;
