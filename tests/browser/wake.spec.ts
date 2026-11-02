@@ -56,7 +56,29 @@ test("the word starts a hands-free turn on the chosen microphone, and Enter send
   await page.waitForTimeout(900);
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await calls(page, "helm_transcribe")).length).toBe(1);
-  await expect(glance(page)).toBeHidden({ timeout: 20_000 });
+  // The reply, its follow-up (nothing said), then folded.
+  await expect(glance(page)).toBeHidden({ timeout: 35_000 });
+  expect((await calls(page, "wake_turn")).at(-1)).toEqual({ live: false });
+});
+
+test("woken, answered, then \"ok, thanks, that's all\": the notch closes and nothing more is sent", async ({ page }) => {
+  test.setTimeout(60_000);
+  await fakeMics(page, chosen);
+  await page.goto("/tasks.html?helm&noagents&wake=1500&heard=" + encodeURIComponent("Przesuń Repricer na jutro rano|Ok, dzięki, to wszystko"));
+  await expect(glance(page)).toHaveAttribute("data-free", "true", { timeout: 6000 });
+  await page.waitForTimeout(900);
+  await page.keyboard.press("Enter");
+  await expect(glance(page)).toHaveAttribute("data-follow", "true", { timeout: 20_000 });
+  // His answer, a second of it (a tap stands in for him going quiet after it).
+  await page.waitForTimeout(1000);
+  await page.keyboard.down("Alt");
+  await page.keyboard.down("q");
+  await page.waitForTimeout(120);
+  await page.keyboard.up("q");
+  await page.keyboard.up("Alt");
+  await expect.poll(async () => (await calls(page, "helm_transcribe")).length).toBe(2);
+  await expect(glance(page)).toBeHidden({ timeout: 3000 });
+  expect((await calls(page, "helm_send")).length).toBe(1);
   expect((await calls(page, "wake_turn")).at(-1)).toEqual({ live: false });
 });
 

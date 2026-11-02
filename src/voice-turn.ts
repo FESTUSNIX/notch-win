@@ -12,6 +12,16 @@
  * another tap sends it, or Escape drops it. Hold-and-release is untouched,
  * for any length. A tap while it speaks still only stops the speech.
  *
+ * A conversation (2 Nov, his words: "even if I wake it I still have to press
+ * Enter, and when I get a response I can't respond to it"): a hands-free turn
+ * sends itself when he goes quiet after speaking (`silence`, measured by
+ * `voice-endpoint.ts`), and a spoken reply that has been said in full opens
+ * the microphone again for a short follow-up (`follow`) — he just answers, no
+ * key and no wake word; quiet through it (`nothing`) ends it without a word.
+ * A typed question (`chain` false), a text-only reply and Escape never follow.
+ * A sign-off ends it (his words again: "I just say 'ok that's it' or 'thanks'
+ * and it still keeps going"): `heard` carries `close`, read by `voice-close.ts`.
+ *
  * `step` is the whole state machine: an event in, the next state and what to
  * DO out (effects), so the order of things is under test (tests/voice.test.mjs)
  * and the shell only carries effects out. `takeSentences` and `speakable` are
@@ -57,6 +67,10 @@ export interface TurnState {
   free: boolean;
   /** This press interrupted a reply: a tap is then a stop, never hands-free. */
   barge: boolean;
+  /** Started by his voice (the key or the wake word), so a spoken reply may be answered. */
+  chain: boolean;
+  /** Listening after a reply, for his answer: nothing said ends it quietly. */
+  follow: boolean;
 }
 
 export type TurnEvent =
@@ -68,8 +82,12 @@ export type TurnEvent =
   | { t: "enter" }
   /** The recording ended by itself — five minutes, or the microphone went away: what came is sent. */
   | { t: "stop" }
-  /** What Helm heard (empty: nothing). */
-  | { t: "heard"; text: string }
+  /** Hands-free: he spoke and then went quiet — what he said is sent. */
+  | { t: "silence" }
+  /** Hands-free: nothing said at all — the turn (or the follow-up) ends without a word. */
+  | { t: "nothing" }
+  /** What Helm heard (empty: nothing); `close` is a sign-off read in it (`voice-close.ts`). */
+  | { t: "heard"; text: string; close?: "only" | "last" | null }
   /** A delta of the Guardian's reply. */
   | { t: "text"; d: string }
   /** The reply finished (or failed: what came is all there is). */
@@ -94,7 +112,7 @@ export type Effect =
   /** Back to idle: the glance stays up a moment for reading. */
   | { do: "end" };
 
-export const idle = (turn = 0): TurnState => ({ phase: "idle", turn, seq: 0, out: 0, done: false, buffer: "", muted: null, free: false, barge: false });
+export const idle = (turn = 0): TurnState => ({ phase: "idle", turn, seq: 0, out: 0, done: false, buffer: "", muted: null, free: false, barge: false, chain: false, follow: false });
 
 /** The phases a reply is coming in. */
 const replying = (phase: Phase) => phase === "thinking" || phase === "speaking";
@@ -107,16 +125,23 @@ const over = (state: TurnState, effects: Effect[] = []): [TurnState, Effect[]] =
 
 /** Let go, Enter, another tap, five minutes: the words go to Helm. */
 const send = (state: TurnState, effects: Effect[] = []): [TurnState, Effect[]] =>
-  [{ ...state, phase: "transcribing", free: false }, [...effects, keys(true), { do: "finish" }]];
+  [{ ...state, phase: "transcribing", free: false, follow: false }, [...effects, keys(true), { do: "finish" }]];
+
+/** The reply is over: a spoken one he started by voice is answered by listening
+ *  again (the microphone reopens, hands-free); anything else ends the turn. */
+const finished = (state: TurnState, effects: Effect[] = []): [TurnState, Effect[]] =>
+  state.chain && !state.muted && state.seq > 0
+    ? [{ ...idle(state.turn), phase: "listening", free: true, chain: true, follow: true }, [...effects, { do: "record" }, { do: "open" }, keys(true)]]
+    : over(state, effects);
 
 /** The next state, and what to do about it. */
 export function step(state: TurnState, event: TurnEvent): [TurnState, Effect[]] {
   switch (event.t) {
     case "down": {
-      if (state.phase === "idle") return [{ ...state, phase: "pressed", barge: false }, [{ do: "record" }]];
+      if (state.phase === "idle") return [{ ...state, phase: "pressed", barge: false, chain: true, follow: false }, [{ do: "record" }]];
       /* Barge-in: the voice stops at once, a tap included, and what is left of
        * the reply arrives as text only (no phase here listens for it). */
-      if (replying(state.phase)) return [{ ...state, phase: "pressed", barge: true, buffer: "", out: 0 }, [{ do: "hush" }, { do: "record" }]];
+      if (replying(state.phase)) return [{ ...state, phase: "pressed", barge: true, buffer: "", out: 0, chain: true, follow: false }, [{ do: "hush" }, { do: "record" }]];
       // Hands-free: the next press sends what was said, on the press.
       if (state.phase === "listening" && state.free) return send(state);
       // The key repeating while held, or a press while the words are on their way.
@@ -146,11 +171,19 @@ export function step(state: TurnState, event: TurnEvent): [TurnState, Effect[]] 
     case "stop":
       if (state.phase !== "listening" && state.phase !== "pressed") return [state, []];
       return send(state, state.phase === "pressed" ? [{ do: "open" }] : []);
+    case "silence":
+      if (state.phase !== "listening" || !state.free) return [state, []];
+      return send(state);
+    case "nothing":
+      if (state.phase !== "listening" || !state.free) return [state, []];
+      return over(state, [{ do: "cancel" }]);
     case "heard": {
       if (state.phase !== "transcribing") return [state, []];
       const text = event.text.trim();
       if (!text) return over(state);
-      return [{ ...idle(state.turn + 1), phase: "thinking" }, [keys(true), { do: "send", text }]];
+      // "Thanks", "that's it": nothing to send, the notch folds. "…, thanks" is sent and not followed.
+      if (event.close === "only") return over(state);
+      return [{ ...idle(state.turn + 1), phase: "thinking", chain: state.chain && event.close !== "last" }, [keys(true), { do: "send", text }]];
     }
     case "text": {
       if (!replying(state.phase)) return [state, []];
@@ -159,12 +192,12 @@ export function step(state: TurnState, event: TurnEvent): [TurnState, Effect[]] 
     case "done": {
       if (!replying(state.phase)) return [state, []];
       const [next, effects] = speak({ ...state, done: true }, true);
-      return next.out ? [next, effects] : over(next, effects);
+      return next.out ? [next, effects] : finished(next, effects);
     }
     case "said": {
       if (event.turn !== state.turn || !replying(state.phase)) return [state, []];
       const next = { ...state, out: Math.max(0, state.out - 1) };
-      return next.done && !next.out ? over(next) : [next, []];
+      return next.done && !next.out ? finished(next) : [next, []];
     }
     case "muted":
       return [{ ...state, muted: event.why }, []];

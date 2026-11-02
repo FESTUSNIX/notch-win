@@ -6185,3 +6185,33 @@ Helm; these are answers it asks for mid-reply.
       letter, Word's XML, a hand-built .docx); `live_eyes` (ignored; run with
       `EYES_OUT=<folder> cargo test --lib live_eyes -- --ignored --nocapture`)
       takes a real screenshot, a newest-first search and a folder read.
+
+ 924. **A conversation, not one-shot turns (2 Nov; his words: "even if I wake it I
+      still have to press enter, and when I get a response I can't respond").**
+      A HANDS-FREE turn (the wake word, a tap) sends itself when he goes quiet
+      after speaking (`voice-endpoint.ts`: ~1.3 s, judged against the room as it
+      was when he started — a rolling minimum of the last 3 s, the mic's first
+      300 ms left out; a sound that switches on and stays flat is `nothing`,
+      never words). A reply SAID in full by a turn he started by voice opens the
+      microphone again (`follow`): the answer stays above the bars, Enter is NOT
+      taken (it sends itself), Escape drops it; nothing said in 7 s (9 s for a
+      fresh turn) ends it without a word. Never after a typed question, a
+      text-only reply (call, presenting) or Escape; opening the Guardian ends a
+      follow-up. ⚠️ The detector runs on its own 50 ms clock, not the glance's
+      tick — a hidden glance must not leave the microphone listening — and only
+      once the recorder is RECORDING (a slow mic's silent opening isn't the
+      room); a follow-up whose mic never opens ends after 3 s. Held turns are
+      untouched: letting go sends, as ever.
+
+ 925. **A sign-off ends the conversation (2 Nov; his words: "sometimes I just
+      say 'ok that's it' or 'thanks' and it still keeps going").** What he said
+      is read for a goodbye at its END (`voice-close.ts`, English and Polish,
+      no diacritics needed): nothing but one ("thanks", "dobra, dzięki, to
+      wszystko") sends NOTHING and folds the notch (`heard` with `close:
+      "only"`); a request ending in one ("add milk, thanks") is sent and
+      answered with no follow-up after (`last`, `chain` off). ⚠️ After a reply
+      that ASKED, "ok"/"dobra"/"tak" is a yes: sent, then closed, never
+      dropped. ⚠️ "stop", "cancel", "nieważne" close a FOLLOW-UP only — said
+      fresh to the wake word they may mean a timer or the music. A local
+      check, no round trip: Helm's Guardian is not asked. `&heard=a|b` stages
+      what he says turn by turn in the preview.

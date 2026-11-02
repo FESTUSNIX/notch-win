@@ -40,7 +40,7 @@ test('what a voice reads leaves out markdown, links, list marks and emoji', () =
   assert.equal(speakable('✅'), '');
 });
 
-test('hold, speak, let go: listening, the words, thinking, each sentence said as it comes, then idle', () => {
+test('hold, speak, let go: listening, the words, thinking, each sentence said as it comes, then a follow-up, then idle', () => {
   let { state, did } = run([{ t: 'down' }]);
   assert.equal(state.phase, 'pressed');
   assert.deepEqual(did, ['record'], 'the microphone opens on the press, so the first word is not cut');
@@ -65,9 +65,68 @@ test('hold, speak, let go: listening, the words, thinking, each sentence said as
   assert.equal(state.phase, 'speaking', 'still saying the last one');
   ({ state, did } = run([{ t: 'said', turn }], state));
   assert.equal(state.phase, 'speaking');
-  ({ state, did } = run([{ t: 'said', turn }], state));
+  // Said in full: the microphone opens again for his answer, hands-free, Enter left alone.
+  let effects2;
+  ({ state, did, effects: effects2 } = run([{ t: 'said', turn }], state));
+  assert.equal(state.phase, 'listening');
+  assert.equal(state.free, true);
+  assert.equal(state.follow, true);
+  assert.deepEqual(did, ['record', 'open', 'keys']);
+  assert.deepEqual(effects2.find(e => e.do === 'keys'), { do: 'keys', escape: true, enter: false }, 'the follow-up never takes Enter from other apps');
+  // Nothing said: it ends without a word and gives the keys back.
+  ({ state, did } = run([{ t: 'nothing' }], state));
   assert.equal(state.phase, 'idle');
-  assert.deepEqual(did, ['keys', 'end'], 'the keys are given back');
+  assert.deepEqual(did, ['cancel', 'keys', 'end'], 'the keys are given back');
+});
+
+test('a conversation: the follow-up sends itself on silence, the answer is answered again; typed, text-only and Escape never follow', () => {
+  // Said by voice, answered, a follow-up: he speaks, goes quiet, it sends.
+  let { state } = run([{ t: 'down' }, { t: 'up', ms: 100 }, { t: 'silence' }]);
+  assert.equal(state.phase, 'transcribing', 'a hands-free turn sends itself when he goes quiet');
+  ({ state } = run([{ t: 'heard', text: 'Co dalej?' }, { t: 'text', d: 'Faktura.' }, { t: 'done' }], state));
+  ({ state } = run([{ t: 'said', turn: state.turn }], state));
+  assert.equal(state.follow, true);
+  ({ state } = run([{ t: 'silence' }, { t: 'heard', text: 'A potem?' }, { t: 'text', d: 'Koszyk.' }, { t: 'done' }], state));
+  ({ state } = run([{ t: 'said', turn: state.turn }], state));
+  assert.equal(state.phase, 'listening', 'and again, as long as he answers');
+  assert.equal(state.chain, true);
+  // Held turns: silence does nothing while the key is down.
+  let held = run([{ t: 'down' }, { t: 'held' }, { t: 'silence' }, { t: 'nothing' }]).state;
+  assert.equal(held.phase, 'listening');
+  assert.equal(held.free, false);
+  // A typed question (no chain): the reply ends the turn.
+  let typed = { ...idle(3), phase: 'transcribing' };
+  typed = run([{ t: 'heard', text: 'Hej' }, { t: 'text', d: 'Cześć.' }, { t: 'done' }], typed).state;
+  typed = run([{ t: 'said', turn: typed.turn }], typed).state;
+  assert.equal(typed.phase, 'idle');
+  // Text only (in a call): nothing was said, no follow-up.
+  let muted = run([{ t: 'down' }, { t: 'up', ms: 100 }, { t: 'silence' }, { t: 'heard', text: 'Co?' }, { t: 'muted', why: 'call' }, { t: 'text', d: 'Nic.' }, { t: 'done' }]).state;
+  assert.equal(muted.phase, 'idle');
+  // Escape during the follow-up ends it.
+  let esc = run([{ t: 'down' }, { t: 'up', ms: 100 }, { t: 'silence' }, { t: 'heard', text: 'X' }, { t: 'text', d: 'Y.' }, { t: 'done' }]).state;
+  esc = run([{ t: 'said', turn: esc.turn }], esc).state;
+  assert.equal(esc.follow, true);
+  assert.equal(run([{ t: 'escape' }], esc).state.phase, 'idle');
+});
+
+test('a sign-off ends the conversation: alone it sends nothing, after a request the answer is not followed', () => {
+  // In the follow-up, "thanks, that's it": nothing goes to Helm, the keys are given back.
+  let { state } = run([{ t: 'down' }, { t: 'up', ms: 100 }, { t: 'silence' }, { t: 'heard', text: 'Co dalej?' }, { t: 'text', d: 'Faktura.' }, { t: 'done' }]);
+  ({ state } = run([{ t: 'said', turn: state.turn }], state));
+  assert.equal(state.follow, true);
+  let did;
+  ({ state, did } = run([{ t: 'silence' }, { t: 'heard', text: 'Dzięki, to wszystko', close: 'only' }], state));
+  assert.equal(state.phase, 'idle');
+  assert.ok(!did.includes('send'), 'a goodbye is not a question');
+  assert.deepEqual(did.slice(-2), ['keys', 'end']);
+  // "Add milk, thanks": sent and answered, then over — no follow-up.
+  ({ state, did } = run([{ t: 'down' }, { t: 'up', ms: 100 }, { t: 'silence' }, { t: 'heard', text: 'Add milk, thanks', close: 'last' }], state));
+  assert.ok(did.includes('send'));
+  assert.equal(state.chain, false);
+  ({ state } = run([{ t: 'text', d: 'Added.' }, { t: 'done' }], state));
+  ({ state, did } = run([{ t: 'said', turn: state.turn }], state));
+  assert.equal(state.phase, 'idle');
+  assert.ok(!did.includes('record'), 'the microphone stays closed');
 });
 
 test('a press under half a second starts hands-free; held past it while the timer lost the race, it still counts', () => {
@@ -185,12 +244,15 @@ test('a failure ends the turn, and the reply failing ends it with what came', ()
 test('turn after turn: every press records again, every turn ends idle and gives the keys back', () => {
   let state = idle();
   const all = [];
+  let follows = 0;
   const go = events => { const r = run(events, state); state = r.state; all.push(...r.effects); return r; };
   const reply = sentences => {
     const turn = state.turn;
     go(sentences.map(d => ({ t: 'text', d })));
     go([{ t: 'done' }]);
     while (state.phase === 'speaking') go([{ t: 'said', turn }]);
+    // The follow-up after a spoken reply: here he says nothing.
+    if (state.follow) { follows++; go([{ t: 'nothing' }]); }
   };
   // 1. Hold, speak, let go; the reply is said.
   go([{ t: 'down' }, { t: 'held' }, { t: 'up', ms: 2100 }, { t: 'heard', text: 'Co mam dziś?' }]);
@@ -222,9 +284,10 @@ test('turn after turn: every press records again, every turn ends idle and gives
   go([{ t: 'held' }, { t: 'up', ms: 900 }, { t: 'heard', text: 'Dzięki.' }]);
   reply(['Proszę.']);
   assert.equal(state.phase, 'idle');
-  assert.equal(all.filter(e => e.do === 'record').length, 6, 'six presses, six recordings');
+  assert.equal(all.filter(e => e.do === 'record').length, 6 + follows, 'six presses, six recordings, and one for each follow-up');
+  assert.ok(follows >= 3, 'the spoken replies were followed up');
   assert.equal(all.filter(e => e.do === 'send').length, 5, 'five sent; the Escaped one was not');
-  assert.equal(all.filter(e => e.do === 'end').length, 5, 'every turn ended (the barged one ran straight into the next)');
+  assert.equal(all.filter(e => e.do === 'end').length, 5, 'every turn ended (the barged one ran straight into the next; a follow-up ends its own)');
   assert.deepEqual(all.filter(e => e.do === 'keys').at(-1), { do: 'keys', escape: false, enter: false }, 'nothing is held at the end');
   assert.equal(all.filter(e => e.do === 'keys' && e.enter).length, 1, 'Enter only for the hands-free turn');
 });

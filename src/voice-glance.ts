@@ -37,6 +37,8 @@ export interface GlanceTurn {
   /** The press interrupted a reply: until it is known to be a hold, the answer stays. */
   barge: boolean;
   muted: string | null;
+  /** Listening for his answer to the reply (2 Nov): the answer stays above the bars. */
+  follow?: boolean;
 }
 
 /** The reply on the glance: his words, then the Guardian's. */
@@ -183,16 +185,20 @@ export class VoiceGlance {
   /** What the turn is doing: which rows show, and in which colour. */
   turn(turn: GlanceTurn, reply: GlanceReply | null) {
     const { phase, free, barge, muted } = turn;
+    const follow = !!turn.follow && phase === "listening";
     // Pressed from a reply is maybe only a tap to stop it: the answer stays until it is a hold.
     const talking = phase === "listening" || phase === "transcribing" || (phase === "pressed" && !barge);
     this.host.dataset.phase = phase;
     this.host.dataset.free = String(free && phase === "listening");
+    this.host.dataset.follow = String(follow);
     this.head.hidden = !talking;
-    this.said.hidden = talking || !reply?.heard;
-    this.replyRow.hidden = talking || !reply?.heard;
-    this.time.hidden = phase !== "listening" && phase !== "pressed";
-    this.keys.hidden = !(free && phase === "listening");
-    this.lock.hidden = !(free && phase === "listening");
+    // A follow-up keeps the answer he is answering in view, the bars under it.
+    this.said.hidden = (talking && !follow) || !reply?.heard;
+    this.replyRow.hidden = (talking && !follow) || !reply?.heard;
+    this.time.hidden = (phase !== "listening" && phase !== "pressed") || follow;
+    // No keycaps on a follow-up: Enter isn't taken (it sends itself when he stops), Escape still drops it.
+    this.keys.hidden = !(free && phase === "listening") || follow;
+    this.lock.hidden = !(free && phase === "listening") || follow;
     const why = muted ? QUIET[muted] : null;
     this.quiet.hidden = !why || talking;
     if (why) {

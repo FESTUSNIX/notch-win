@@ -105,8 +105,15 @@ test("hold to talk opens the voice glance, never the Guardian's screen, and writ
   await expect(page.locator(".v-rc-undo")).toBeVisible();
   await expect(panel(page)).toBeHidden();
 
+  // Said in full: it listens for his answer, the answer still in view, Enter left to other apps.
+  await expect(glance(page)).toHaveAttribute("data-follow", "true", { timeout: 8000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "listening");
+  await expect(page.locator(".v-answer")).toBeVisible();
+  await expect(page.locator(".v-keys")).toBeHidden();
+  expect((await calls(page, "voice_keys")).at(-1)).toEqual({ escape: true, enter: false });
+  // Nothing said (the fake microphone is a steady tone): the follow-up ends by itself.
   // Over: up a moment to read, then folded, with the keys given back.
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 8000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
   await expect(glance(page)).toBeVisible();
   await expect(glance(page)).toBeHidden({ timeout: 12_000 });
   expect((await calls(page, "voice_keys")).at(-1)).toEqual({ escape: false, enter: false });
@@ -130,7 +137,9 @@ test("a tap is hands-free: it keeps listening with Enter and Esc on screen, and 
   // Enter goes back at once; Escape stays for the reply.
   expect((await calls(page, "voice_keys")).at(-1)).toEqual({ escape: true, enter: false });
   await expect(page.locator(".v-said-text")).toHaveText("Przesuń Repricer na jutro rano", { timeout: 5000 });
-  await expect(glance(page)).toBeHidden({ timeout: 20_000 });
+  // The follow-up after the reply, then nothing said: it ends and folds.
+  await expect(glance(page)).toHaveAttribute("data-follow", "true", { timeout: 15_000 });
+  await expect(glance(page)).toBeHidden({ timeout: 30_000 });
   expect((await calls(page, "voice_keys")).at(-1)).toEqual({ escape: false, enter: false });
 });
 
@@ -185,6 +194,8 @@ test("barge-in: holding while it speaks stops the voice and listens; a tap while
  * a microphone that stops by itself, and a hold once more — every one but the
  * Escaped hold reaches Helm. */
 test("turn after turn with a slow microphone: every hold records, the one after a tap and after a lost microphone too", async ({ page }) => {
+  // Each spoken reply is followed by a few seconds of listening for his answer.
+  test.setTimeout(150_000);
   // Seven turns, each said out loud and read: longer than the default half-minute.
   test.setTimeout(120_000);
   await fakeMic(page, 700);
@@ -195,7 +206,8 @@ test("turn after turn with a slow microphone: every hold records, the one after 
   await say(page, 1600);
   await expect.poll(heard, { timeout: 5000 }).toBe(1);
   await expect(glance(page)).toHaveAttribute("data-phase", "speaking", { timeout: 6000 });
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 10_000 });
+  // (the follow-up after the reply ends by itself: nothing is said into it)
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   // 2. Hold again, while the last answer is still up to read.
   await say(page, 1600);
   await expect.poll(heard, { timeout: 5000 }).toBe(2);
@@ -203,7 +215,7 @@ test("turn after turn with a slow microphone: every hold records, the one after 
   await expect(glance(page)).toHaveAttribute("data-phase", "speaking", { timeout: 6000 });
   await say(page, 1600);
   await expect.poll(heard, { timeout: 5000 }).toBe(3);
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   // 4. A hold Escape ends: nothing goes.
   await hold(page);
   await page.waitForTimeout(900);
@@ -218,7 +230,7 @@ test("turn after turn with a slow microphone: every hold records, the one after 
   await page.waitForTimeout(80);
   await say(page, 1600);
   await expect.poll(heard, { timeout: 5000 }).toBe(5);
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   // 6. The microphone stops by itself mid-hold: what it caught goes, and nothing wedges.
   await hold(page);
   await page.waitForTimeout(1400);
@@ -230,22 +242,23 @@ test("turn after turn with a slow microphone: every hold records, the one after 
   });
   await expect.poll(heard, { timeout: 5000 }).toBe(6);
   await letGo(page);
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   // 7. And a hold once more.
   await say(page, 1600);
   await expect.poll(heard, { timeout: 5000 }).toBe(7);
-  await expect(glance(page)).toBeHidden({ timeout: 25_000 });
+  await expect(glance(page)).toBeHidden({ timeout: 35_000 });
   expect((await calls(page, "voice_keys")).at(-1)).toEqual({ escape: false, enter: false });
 });
 
 test("the glance: the pointer holds it up, a click opens the Guardian with the thread, Escape folds it at once", async ({ page }) => {
+  test.setTimeout(60_000);
   await fakeMic(page);
   await page.goto("/tasks.html?helm&noagents&voicecard");
   await say(page, 800);
   // Cards do not fit: the open key says how many are waiting.
   await expect(page.locator(".v-open")).toBeVisible({ timeout: 6000 });
   await expect(page.locator(".v-open-count")).toHaveText("1");
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 10_000 });
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   // Held up while the pointer is on it, past the six seconds it would otherwise stay.
   const box = (await glance(page).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height - 12);
@@ -265,7 +278,8 @@ test("the glance: the pointer holds it up, a click opens the Guardian with the t
   await page.mouse.move(5, 500);
   await expect(panel(page)).toBeHidden({ timeout: 4000 });
   await say(page, 800);
-  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 10_000 });
+  // The reply, then its follow-up (nothing said), then done.
+  await expect(glance(page)).toHaveAttribute("data-phase", "done", { timeout: 20_000 });
   await page.keyboard.press("Escape");
   await expect(glance(page)).toBeHidden({ timeout: 1500 });
 });

@@ -43,6 +43,8 @@ import { Recorder, base64Of, voiceProblem, MAX_SECONDS } from "./kit/voice";
 import { HOLD_MS, idle, step, type Effect, type Phase, type TurnEvent, type TurnState } from "./voice-turn";
 import { VoiceGlance, emptyReply, type GlanceReply } from "./voice-glance";
 import { wakeRefused } from "./wake-rules";
+import { EndOfSpeech } from "./voice-endpoint";
+import { closing } from "./voice-close";
 import type { ChatEvent, Extra, GuardianChat } from "./screen-guardian";
 import type { HelmSource } from "./screen-helm";
 import type { IslandSurface } from "./island-surface";
@@ -127,6 +129,13 @@ export class VoiceTalk {
   private typed = false;
   /** "Wycisz słowo" until this, ms since the epoch (wake.rs says so on `wake:snooze`). */
   private snoozedUntil = 0;
+  /** When he has finished speaking, in a hands-free turn (`voice-endpoint.ts`). */
+  private endpoint = new EndOfSpeech();
+  /** Its own clock: a hands-free turn listens whether or not the glance is up to show it. */
+  private endpointTimer = 0;
+  private listeningSince = 0;
+  /** This recording answers a reply: that reply's words (a question makes "ok" a yes), else null. */
+  private answering: string | null = null;
 
   constructor(private chat: GuardianChat, private helm: HelmSource, private surface: IslandSurface, private hooks: TalkHooks) {
     const host = document.getElementById("island-voice")!;
@@ -264,11 +273,41 @@ export class VoiceTalk {
     for (const effect of effects) this.run(effect, before);
     // The wake word is paused while a turn is live, so it never starts a second one (wake.rs).
     if ((next.phase === "idle") !== (before.phase === "idle")) void call("wake_turn", { live: next.phase !== "idle" }).catch(() => {});
-    if (next.phase !== before.phase || next.muted !== before.muted || next.free !== before.free) {
+    if (next.phase !== before.phase || next.muted !== before.muted || next.free !== before.free || next.follow !== before.follow) {
       this.log(`${before.phase} → ${next.phase}${next.free ? " (hands-free)" : ""}${next.muted ? ` (text only: ${next.muted})` : ""}`);
       this.paint();
     }
     if (next.phase !== before.phase || event.t === "text" || event.t === "said") this.watch();
+    this.listenFor();
+  }
+
+  /** While a hands-free turn listens: has he finished, or never started? Twenty times a second. */
+  private listenFor() {
+    const want = this.state.phase === "listening" && this.state.free;
+    if (!want) {
+      window.clearInterval(this.endpointTimer);
+      this.endpointTimer = 0;
+      return;
+    }
+    if (this.endpointTimer) return;
+    this.listeningSince = performance.now();
+    this.endpointTimer = window.setInterval(() => {
+      if (this.state.phase !== "listening" || !this.state.free) return this.listenFor();
+      // ⚠️ Only once the microphone is really recording: a slow one's silent opening isn't the room.
+      if (this.recorder.state !== "recording") {
+        // A follow-up whose microphone never opened isn't left listening to nothing.
+        if (this.state.follow && performance.now() - this.listeningSince > 3000) {
+          this.log("the follow-up's microphone never opened: ended");
+          this.feed({ t: "nothing" });
+        }
+        return;
+      }
+      // The recorder's own smoothed level: steady between frames, unlike the bars' decaying peak.
+      const heard = this.endpoint.push(this.recorder.level, performance.now());
+      if (!heard) return;
+      this.log(heard === "silence" ? "quiet after speaking: sent" : `nothing said${this.state.follow ? " after the reply" : ""}: ended`);
+      this.feed({ t: heard });
+    }, 50);
   }
 
   private run(effect: Effect, before: TurnState) {
@@ -283,6 +322,8 @@ export class VoiceTalk {
           this.feed({ t: "stop" });
         };
         this.startedAt = performance.now();
+        this.endpoint.reset(this.state.follow);
+        this.answering = this.state.follow ? this.reply.text : null;
         this.recorder.preferMic = this.hooks.micName?.() ?? "";
         // A new turn on a glance still up: what it showed goes, unless this is maybe only a tap to stop the voice.
         if (before.phase === "idle") this.fresh();
@@ -357,9 +398,11 @@ export class VoiceTalk {
       const text = await this.helm.voice.transcribe(await base64Of(recording.blob), recording.mime);
       this.log(text.trim() ? `heard ${text.trim().length} characters` : "heard nothing");
       if (!text.trim()) this.helm.tell("Speech", "Didn't catch that");
+      const close = closing(text, { follow: this.answering !== null, asked: /\?\s*$/.test(this.answering ?? "") });
+      if (close) this.log(close === "only" ? "a sign-off: closed" : "ends with a sign-off: sent, no follow-up");
       // His words on the glance at once, before the Guardian has said anything.
       if (text.trim()) this.reply = emptyReply(text.trim());
-      this.feed({ t: "heard", text });
+      this.feed({ t: "heard", text, close });
     } catch (error) {
       this.log(`transcription failed: ${clean(error)}`);
       this.helm.tell("Speech", clean(error));
@@ -387,6 +430,8 @@ export class VoiceTalk {
     else void call<string | null>("voice_quiet").then(why => { if (why && this.state.turn === turn) this.feed({ t: "muted", why }); }).catch(() => {});
     this.ours = true;
     this.reading = true;
+    // An answer to the last reply (the follow-up, or a barge-in): its chips and words make way.
+    if (this.reply.heard) { this.quiet = null; this.glance.reset(); }
     this.reply = emptyReply(text);
     this.paint();
     const extra = this.extra ?? {};
@@ -511,6 +556,8 @@ export class VoiceTalk {
   /** The glance's open key, a click on it: the Guardian, with the thread. */
   private openGuardian() {
     this.glance.flush();
+    // Opening the thread to read it is not an answer: a follow-up still listening ends.
+    if (this.state.phase === "listening" && this.state.follow) this.feed({ t: "nothing" });
     this.hooks.openGuardian();
     // Read there from now on; a turn still live comes back to the glance when the panel folds.
     if (!this.live) {
@@ -523,11 +570,11 @@ export class VoiceTalk {
   }
 
   private paint() {
-    const { phase, free, barge, muted } = this.state;
+    const { phase, free, barge, muted, follow } = this.state;
     // ⚠️ The machine forgets why at the end of the turn; the glance still says it while he reads.
     if (muted) this.quiet = muted;
     this.glance.speaking = this.ours && !muted && (phase === "speaking" || phase === "thinking");
-    this.glance.turn({ phase: phase === "idle" ? "done" : phase, free, barge, muted: muted ?? this.quiet }, this.reply.heard ? this.reply : null);
+    this.glance.turn({ phase: phase === "idle" ? "done" : phase, free, barge, muted: muted ?? this.quiet, follow }, this.reply.heard ? this.reply : null);
     window.clearInterval(this.tickTimer);
     this.tickTimer = 0;
     if (this.raised) this.tickTimer = window.setInterval(() => this.tick(), 50);
@@ -539,6 +586,7 @@ export class VoiceTalk {
     const level = phase === "listening" || phase === "pressed" ? this.mic : 0;
     // Gone in a few frames when the voice stops, rather than frozen at its last peak.
     this.mic *= 0.55;
+    // Hands-free: he went quiet after speaking (sent), or never started (ended).
     const seconds = phase === "listening" || phase === "pressed" ? (performance.now() - this.startedAt) / 1000 : 0;
     this.glance.tick(level, seconds, phase === "speaking" ? this.out : 0);
   }

@@ -578,6 +578,8 @@ export function previewFinished(): { session: string; project: string; folder: s
    `previewBus` as `voice:out`, and a hush cuts every one short. `?call` and
    `?event=now` are what voice.rs answers as a call and a meeting (text only). */
 let demoHushes = 0;
+/** Which of `&heard=` is said next. */
+let demoHeard = 0;
 const voicePace = Math.max(1, Number(new URLSearchParams(location.search).get("pace")) || 1);
 function demoQuiet(): string | null {
   if (demoPrefs.spokenReplies === false) return "off";
@@ -1224,6 +1226,9 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "helm_transcribe") {
     if (params.get("speech") === "off") return { unavailable: true } as T;
     await new Promise(done => setTimeout(done, 450 * voicePace));
+    /* `&heard=a|b`: what he says, turn by turn (the last one repeats). */
+    const heard = params.get("heard")?.split("|");
+    if (heard) return { text: heard[Math.min(demoHeard++, heard.length - 1)] } as T;
     return { text: "Przesuń Repricer na jutro rano" } as T;
   }
   /* `&remind=sent` is Helm's 409: that level went out before. */
