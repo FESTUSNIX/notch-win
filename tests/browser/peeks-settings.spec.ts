@@ -9,8 +9,8 @@ test("Peeks: every kind grouped, switches and quiet hours persist", async ({ pag
   await page.goto("/task-editor.html#peeks");
   const pane = page.locator("#pane-peeks");
   await expect(pane).toBeVisible();
-  await expect(pane.locator("[data-peek]")).toHaveCount(13);
-  for (const group of ["Music", "Your block", "Calendar", "Devices", "Files", "Money and work", "Focus"]) {
+  await expect(pane.locator("[data-peek]")).toHaveCount(16);
+  for (const group of ["Music", "Your block", "Calendar", "Devices", "Files", "Money and work", "Mail", "Focus", "The Guardian on this PC"]) {
     await expect(pane.locator(".set-label", { hasText: group }).first()).toBeVisible();
   }
   const mic = pane.locator('[data-peek="mic"]');
@@ -47,15 +47,15 @@ test("Peeks: every kind grouped, switches and quiet hours persist", async ({ pag
 });
 
 test("Peek sources fire from the preview flags", async ({ page }) => {
-  await page.goto("/tasks.html?quiet&src=volume,buds,mic,power,download,screenshot,paid,logged");
+  await page.goto("/tasks.html?quiet&src=volume,buds,mic,power,download,screenshot,paid,logged,mail");
   /* ⚠️ Reads the STUB peeks.ts's record (`window.__peeks`). Once P's engine
      replaces the stub this checks nothing unless it keeps that record. */
   await page.waitForTimeout(300);
   test.skip(!(await page.evaluate(() => "__peeks" in window)), "peeks.ts keeps no preview record");
-  await page.waitForFunction(() => ((window as unknown as { __peeks?: unknown[] }).__peeks ?? []).length >= 8, null, { timeout: 15_000 });
+  await page.waitForFunction(() => ((window as unknown as { __peeks?: unknown[] }).__peeks ?? []).length >= 9, null, { timeout: 15_000 });
   const titles = await page.evaluate(() => (window as unknown as { __peeks: { title: string }[] }).__peeks.map(p => p.title));
   expect(titles).toEqual(expect.arrayContaining([
     "Głośność 64%", "Buds podłączone · 80%", "Mikrofon wyciszony", "Bateria 12%", "Pobrano: faktura_wrzesien_2026.pdf",
-    "Zrzut ekranu", "+4 795 zł · NXM", "1 h 20 min na Atelier, zalogowane",
+    "Zrzut ekranu", "+4 795 zł · NXM", "1 h 20 min na Atelier, zalogowane", "Biuro Rachunkowe Lex",
   ]));
 });

@@ -23,6 +23,7 @@ export type PeekKind =
   | "music" | "volume" | "block" | "meeting" | "leave"          // P's
   | "buds" | "mic" | "power" | "download" | "screenshot"        // S's (devices, files)
   | "paid" | "logged" | "focus"                                 // S's (Helm, focus)
+  | "mail"                                                        // Helm (2 Nov): mail that matters, just in
   | "timer" | "pc";                                             // JARVIS (2 Nov): a timer up, a thing it couldn't do
 
 export interface Peek {

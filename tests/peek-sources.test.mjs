@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  budsPeek, micPeek, powerPeek, filePeek, fitName, shortDevice, freshHelmPeeks, helmPeek, remember,
+  budsPeek, micPeek, powerPeek, filePeek, fitName, shortDevice, freshHelmPeeks, helmPeek, helmPeekUrl, remember,
   focusKey, focusPeek, withKind, volumePeek,
 } from '../src/peek-logic.ts';
 
@@ -54,6 +54,13 @@ test("Helm's feed: each id once, oldest first, junk dropped", () => {
   assert.deepEqual(freshHelmPeeks(null, []), []);
   assert.equal(helmPeek({ id: '41', kind: 'paid', title: '+1 zł', at: '' }).id, 'paid:41');
   assert.equal(helmPeek({ id: 'logged:9', kind: 'logged', title: 'x', at: '' }).icon, 'stopwatch');
+  // Mail that matters (2 Nov): its icon, and a click only to a web address.
+  const mail = { id: 'mail:12@t', kind: 'mail', title: 'Biuro Lex', line: 'Needs invoices', at: '', url: 'https://crm.hadastudios.com/inbox?thread=12' };
+  assert.deepEqual(freshHelmPeeks({ peeks: [mail, { ...mail, id: 'x', kind: 'spam' }] }, []).map(p => p.id), ['mail:12@t']);
+  assert.equal(helmPeek(mail).icon, 'mail');
+  assert.equal(helmPeekUrl(mail), 'https://crm.hadastudios.com/inbox?thread=12');
+  assert.equal(helmPeekUrl({ ...mail, url: 'file:///C:/x.exe' }), null);
+  assert.equal(helmPeekUrl({ ...mail, url: undefined }), null);
   let seen = [];
   for (let i = 0; i < 100; i++) seen = remember(seen, `id${i}`);
   assert.equal(seen.length, 80);

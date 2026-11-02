@@ -687,6 +687,7 @@ const previewSources: Record<string, [string, unknown]> = {
   paid: ["peek:helm", [{ id: "paid:41", kind: "paid", title: "+4 795 zł · NXM", at: new Date().toISOString() }]],
   logged: ["peek:helm", [{ id: "logged:907", kind: "logged", title: "1 h 20 min na Atelier, zalogowane", at: new Date().toISOString() }]],
   focus: ["peek:focus", "youtube.com"],
+  mail: ["peek:helm", [{ id: "mail:12@x", kind: "mail", title: "Biuro Rachunkowe Lex", line: "Needs the October invoices by 10 Nov", at: new Date().toISOString(), url: "https://crm.hadastudios.com/inbox?thread=12" }]],
 };
 if (preview) {
   (params.get("src") ?? "").split(",").filter(k => k in previewSources).forEach((kind, i) => {

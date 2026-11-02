@@ -14,7 +14,12 @@ export type PowerEvent =
   | { what: "low"; percent: number; urgent: boolean };
 export interface Arrival { token: string; kind: "download" | "screenshot"; name: string; thumb: string | null }
 /** `/api/notch` `peeks` (Helm's feed). */
-export interface HelmPeek { id: string; kind: "paid" | "logged"; title: string; line?: string; at: string }
+/** `url`: where a click goes (a mail peek opens its conversation in Helm's Inbox). */
+export interface HelmPeek { id: string; kind: "paid" | "logged" | "mail"; title: string; line?: string; at: string; url?: string }
+
+const HELM_KINDS = ["paid", "logged", "mail"] as const;
+const HELM_ICON = { paid: "money", logged: "stopwatch", mail: "mail" } as const;
+const HELM_TONE = { paid: "good", logged: "accent", mail: "accent" } as const;
 
 /** A peek without its click: the wiring adds what a click does. */
 export type PeekShape = Omit<Peek, "action">;
@@ -95,7 +100,7 @@ export function freshHelmPeeks(raw: unknown, seen: readonly string[]): HelmPeek[
   const list = (raw as { peeks?: unknown } | null)?.peeks;
   if (!Array.isArray(list)) return [];
   return list
-    .filter((p): p is HelmPeek => !!p && typeof p.id === "string" && (p.kind === "paid" || p.kind === "logged") && typeof p.title === "string" && p.title.trim() !== "")
+    .filter((p): p is HelmPeek => !!p && typeof p.id === "string" && (HELM_KINDS as readonly string[]).includes(p.kind) && typeof p.title === "string" && p.title.trim() !== "")
     .filter(p => !seen.includes(p.id))
     .sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
@@ -104,12 +109,15 @@ export function helmPeek(p: HelmPeek): PeekShape {
   const kind: PeekKind = p.kind;
   return {
     id: p.id.startsWith(`${kind}:`) ? p.id : `${kind}:${p.id}`, kind,
-    icon: kind === "paid" ? "money" : "stopwatch",
+    icon: HELM_ICON[kind as HelmPeek["kind"]],
     title: p.title.trim().slice(0, 60),
     ...(p.line?.trim() ? { line: p.line.trim().slice(0, 60) } : {}),
-    tone: kind === "paid" ? "good" : "accent",
+    tone: HELM_TONE[kind as HelmPeek["kind"]],
   };
 }
+
+/** A Helm peek's link, only when it's a web address (never a file or a command). */
+export const helmPeekUrl = (p: HelmPeek): string | null => (typeof p.url === "string" && /^https?:\/\//i.test(p.url) ? p.url : null);
 
 /** Once per site per block: the key to remember. No running block, no peek. */
 export function focusKey(block: number | null, site: string): string | null {

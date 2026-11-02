@@ -6215,3 +6215,11 @@ Helm; these are answers it asks for mid-reply.
       fresh to the wake word they may mean a timer or the music. A local
       check, no round trip: Helm's Guardian is not asked. `&heard=a|b` stages
       what he says turn by turn in the preview.
+
+ 926. **Helm's mail peek (2 Nov, step 4 of his mail).** `/api/notch` peeks carry
+      `kind: "mail"` for mail that matters just in (not a client's or a lead's:
+      those come as Helm moments, kind `request` / `remind`, which this side
+      already shows), with `url` to its conversation in Helm's Inbox. The peek
+      shows the mail icon, sender and Claude's line; a click opens the `url`,
+      ⚠️ only an http(s) one (`helmPeekUrl`), never a file or a command.
+      Settings → Peeks has a "Mail" group to switch it off. `&src=mail` stages it.

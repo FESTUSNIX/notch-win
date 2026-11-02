@@ -41,6 +41,9 @@ export const PEEK_GROUPS: { title: string; hue: string; kinds: { kind: PeekKind;
     { kind: "paid", icon: "money", title: "Paid" },
     { kind: "logged", icon: "stopwatch", title: "Time Helm logged" },
   ] },
+  { title: "Mail", hue: "#0a84ff", kinds: [
+    { kind: "mail", icon: "mail", title: "Mail that matters" },
+  ] },
   { title: "Focus", hue: "#ff9f0a", kinds: [
     { kind: "focus", icon: "focus", title: "Before the curtain" },
   ] },

@@ -23,7 +23,7 @@ import { call, native, preview, previewBus } from "./task-client";
 import { load, save } from "./kit/store";
 import { peek, type Peek } from "./peeks";
 import {
-  budsPeek, filePeek, volumePeek, focusKey, focusPeek, freshHelmPeeks, helmPeek, micPeek, powerPeek, remember,
+  budsPeek, filePeek, volumePeek, focusKey, focusPeek, freshHelmPeeks, helmPeek, helmPeekUrl, micPeek, powerPeek, remember,
   type Arrival, type BudsEvent, type PeekShape, type PowerEvent,
 } from "./peek-logic";
 
@@ -94,7 +94,8 @@ export async function bootPeekSources(deps: PeekSourceDeps) {
   const fromHelm = (raw: unknown) => {
     for (const p of freshHelmPeeks(raw, seen)) {
       seen = remember(seen, p.id);
-      peek(plain(helmPeek(p)));
+      const url = helmPeekUrl(p);
+      peek({ ...plain(helmPeek(p)), ...(url ? { action: { label: "Otwórz", run: quietly("open_external", { url }) } } : {}) });
     }
     if (!preview) save("peek-helm-seen", seen);
   };
