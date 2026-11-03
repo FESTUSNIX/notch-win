@@ -77,6 +77,9 @@ pub struct Site {
     pub tokens: Vec<String>,
     /// Locked by earn rules alone, so earned or bought minutes open it.
     pub earn: bool,
+    /// A work pass running on it: the topic's words. A title carrying one is
+    /// work, and isn't covered (Helm since 3 Nov; the extension checks pages too).
+    pub pass: Vec<String>,
 }
 
 /// What the page draws.
@@ -224,8 +227,32 @@ pub fn site_in(title: &str, sites: &[Site]) -> Option<usize> {
     sites.iter().position(|site| {
         site.tokens.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).any(|token| {
             parts.iter().any(|part| part.to_lowercase() == token.to_lowercase())
-        })
+        }) && !on_pass(title, &site.pass)
     })
+}
+
+/// Whether a title is about a work pass's topic: one of its words anywhere in
+/// it, case and Polish letters aside ("Kampanię" carries "kampanie").
+pub fn on_pass(title: &str, words: &[String]) -> bool {
+    let title = fold(title);
+    words.iter().map(|w| fold(w.trim())).any(|w| !w.is_empty() && title.contains(&w))
+}
+
+fn fold(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' | 'ż' => 'z',
+            other => other,
+        })
+        .collect()
 }
 
 /// The browsers, by executable, as people call them. Anything else in front is
@@ -650,6 +677,17 @@ mod tests {
         assert_eq!(site_in("Why I quit X - Medium", &s), None);
         assert_eq!(site_in("YouTube Music - Brave", &s), None);
         assert_eq!(site_in("Untitled - Brave", &s), None);
+    }
+
+    #[test]
+    fn a_work_pass_lets_its_topic_through() {
+        let mut s = sites();
+        s[0].pass = vec!["google ads".into(), "kampanie".into()];
+        assert_eq!(site_in("Google Ads for beginners - YouTube - Brave", &s), None, "on the topic: work");
+        assert_eq!(site_in("Jak ustawić KAMPANIĘ - YouTube - Brave", &s), None, "Polish letters and case aside");
+        assert_eq!(site_in("Funny cats - YouTube - Brave", &s), Some(0), "off the topic: still covered");
+        assert_eq!(site_in("YouTube - Brave", &s), Some(0), "the home page is never a topic");
+        assert_eq!(site_in("Google Ads thread / X - Brave", &s), Some(1), "a pass is for its own site");
     }
 
     #[test]

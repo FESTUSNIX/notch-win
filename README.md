@@ -307,7 +307,10 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   comes while presenting, in a call (in-call mode's microphone reading) or in a
   meeting on your calendar, nor on a Helm reading older than two and a half
   minutes, and a page that doesn't draw is put away after six seconds. A Helm
-  without the route (404) never puts one up. Quitting codenotch removes it.
+  without the route (404) never puts one up. Quitting codenotch removes it. A
+  **work pass** (Helm, 3 Nov) sends its topic's words with the site (`pass`): a
+  window title carrying one (case and Polish letters aside, `on_pass`) is work,
+  and isn't covered.
 - **The cockpit** (`/api/notch`, read with the queue every minute and after
   anything you do). codenotch is where the work is RUN; Helm's web is where it
   is managed. Today's header carries **your time and the agents'** for the day
