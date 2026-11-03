@@ -351,6 +351,17 @@ pub struct Prefs {
     /// What sherpa listens for, letters and spaces, one to three words
     /// (`wake::phrase_ok`). Porcupine only knows its built-in "Jarvis".
     pub wake_phrase: String,
+
+    /* ── The Guardian's face (2 Nov, face.ts) ──────────────────────────── */
+    /// Who he is in the notch: `eyes` (the default), `hoot`, `sir`, or
+    /// `off` (the date is back in the pill).
+    pub face_character: String,
+    /// Calm: blinks and moods only — no glances, winks, tilts or cameos.
+    pub face_calm: bool,
+    /// Now and then he takes the resting pill for a moment.
+    pub face_cameos: bool,
+    /// He reacts to the PC: the earbuds, the volume, the battery.
+    pub face_reactions: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -427,6 +438,10 @@ impl Default for Prefs {
             wake_sensitivity: "normal".into(),
             wake_engine: "sherpa".into(),
             wake_phrase: "Jarvis".into(),
+            face_character: "eyes".into(),
+            face_calm: false,
+            face_cameos: true,
+            face_reactions: true,
         }
     }
 }
@@ -502,6 +517,10 @@ pub fn set_prefs(app: AppHandle, prefs: Prefs) -> Prefs {
         },
         wake_engine: crate::wake::engine_of(&prefs.wake_engine).into(),
         wake_phrase: crate::wake::phrase_ok(&prefs.wake_phrase).unwrap_or_else(|| "Jarvis".into()),
+        face_character: match prefs.face_character.as_str() {
+            "hoot" | "sir" | "off" => prefs.face_character,
+            _ => "eyes".into(),
+        },
         // An endpoint id and a device name; anything longer is not one.
         wake_mic: if prefs.wake_mic.len() <= 300 { prefs.wake_mic } else { String::new() },
         wake_mic_name: prefs.wake_mic_name.chars().take(200).collect(),
@@ -569,6 +588,8 @@ mod tests {
         assert_eq!(empty.wake_sensitivity, "normal");
         assert_eq!(empty.wake_engine, "sherpa", "offline and free unless he picks Picovoice");
         assert_eq!(empty.wake_phrase, "Jarvis");
+        assert_eq!(empty.face_character, "eyes", "the Eyes, lively, with cameos and reactions");
+        assert!(!empty.face_calm && empty.face_cameos && empty.face_reactions);
     }
 
     /// ⚠️ Values arrive from a WebView. A colour that is not a colour leaves

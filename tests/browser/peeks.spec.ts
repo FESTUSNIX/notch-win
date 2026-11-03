@@ -23,8 +23,11 @@ test("the block owns the pill and music is second place, as a mark at the end", 
   await expect(pill(page)).toHaveAttribute("data-kind", "focus");
   await expect(pill(page)).toHaveAttribute("data-view", "owner");
   await expect(pill(page).locator(".pill-label")).toHaveText("Rynek Czeski — poprawki w koszyku");
-  await expect(pill(page).locator(".pill-second.is-eq.on")).toBeVisible();
+  // Playing: the Guardian vibes to it in the bars' place (face.ts, 2 Nov); with the face off, the bars.
+  await expect(pill(page).locator(".pill-second.is-face .face-canvas")).toBeVisible();
   await picture(page, "owner-block-music-second");
+  await page.goto(`${base}&face=off`);
+  await expect(pill(page).locator(".pill-second.is-eq.on")).toBeVisible();
 });
 
 test("a song change peeks for a few seconds, then the block comes back", async ({ page }) => {

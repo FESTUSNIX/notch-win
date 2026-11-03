@@ -11,7 +11,8 @@ import { SCREENS, withBoards } from "./screens";
 import { cpx } from "./layout";
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview, watchTasks } from "./task-client";
-import { pick, renderActivity, renderResting, renderPeek, clearPeek, paintSecond, type Activity, type FixedScreen, type ScreenName } from "./island-activity";
+import { pick, renderActivity, renderResting, renderPeek, clearPeek, paintSecond, playCameo, type Activity, type FixedScreen, type ScreenName } from "./island-activity";
+import { face } from "./face";
 // Peeks (batch 13): news that borrows the pill — peeks.ts, peek-feed.ts.
 import { peek, peeks, onPeek, setPeekPrefs, PillCycle, type Peek } from "./peeks";
 import { BlockPeeks, CalendarPeeks, MusicPeeks } from "./peek-feed";
@@ -361,6 +362,11 @@ interface Prefs {
   /** Settings → Voice (wake.rs): the wake word, and the microphone every turn records from. */
   wakeWord?: boolean;
   wakeMicName?: string;
+  /** Settings → Character (face.ts): who the Guardian is in the notch, and how lively. */
+  faceCharacter?: string;
+  faceCalm?: boolean;
+  faceCameos?: boolean;
+  faceReactions?: boolean;
 }
 
 let prefs: Prefs = {
@@ -1256,12 +1262,14 @@ function noticeClaim(): Activity | null {
  * engines this replaced kept them apart by construction; one collection has to
  * say so. */
 function stripRun(): Run | null {
-  const mine = runs.list.filter(one => one.kind !== "timer");
-  const live = mine.filter(runGoing);
-  return live.find(one => one.kind === "pomodoro")
-    ?? live[0]
-    ?? mine.find(one => one.kind === "pomodoro" && one.count)
-    ?? null;
+  /* ⚠️ RUNNING only (2 Nov, his words: "the default and almost always active
+   * one is the Focus, which I don't even know what we use for"). A paused or
+   * never-started pomodoro used to claim the strip too — and runs are saved, so
+   * one left "ready" weeks ago held the notch all day, every day, over the
+   * clock and the Guardian's face. Paused, it stays where it's wanted: the
+   * Timer screen and the header chip (`leading`). */
+  const live = runs.list.filter(one => one.kind !== "timer" && runGoing(one));
+  return live.find(one => one.kind === "pomodoro") ?? live[0] ?? null;
 }
 
 /** …and the run the HEADER CHIP speaks for, which is any of them.
@@ -1668,6 +1676,18 @@ function feedPeeks(owner: Activity | null) {
 }
 onPeek(() => paintPill());
 
+/* The Guardian's face (2 Nov): a double click on him opens the Guardian; his
+ * cameo takes the resting pill only when nothing else is going on there. */
+window.addEventListener("face:guardian", () => {
+  steered = performance.now();
+  guardianChat.today();
+  show("guardian");
+  surface.show(true);
+});
+face.setCameo(kind => !peekHeld() && !pillPointer && playCameo(collapsedLayer, kind));
+// Switched on or off, or someone else: the pill redraws (off brings the date back).
+face.onChange(() => paintPill());
+
 /** Draw the collapsed pill: the live claim if there is one, the resting three
  *  slots otherwise. Split because at rest the pill is not one claim with its
  *  parts blank — it is three independent things sharing a strip. */
@@ -1681,6 +1701,8 @@ function paintPill(live = claims()) {
     ? { through: runThrough(lead), phase: pom.phase, held: pom.endsAt === null }
     : null);
   const best = pick(live);
+  // A session or a pomodoro's work running: he's focused with you.
+  face.set({ focused: live.some(one => !!one && one.kind === "focus" && one.priority > 0 && !one.held && (!one.phase || one.phase === "work")) });
   /* Second place: the next claim down that has something to say. */
   const owner = best && best.priority > 0 ? best : null;
   const second = owner
@@ -1725,7 +1747,7 @@ function paintPill(live = claims()) {
     renderActivity(collapsedLayer, best.kind === "call"
       ? { ...best, clock: clockText(new Date(), clock24) }
       : best);
-    paintSecond(collapsedLayer, best.kind === "call" ? null : second);
+    paintSecond(collapsedLayer, best.kind === "call" ? null : second, best.kind === "call" ? null : best);
     return;
   }
   const now = new Date();
@@ -2557,6 +2579,12 @@ function applyPrefs(next: Prefs) {
   document.documentElement.style.setProperty("--accent", next.accent);
   setMotion(next.motion);
   surface.setOpenOnHover(next.openOnHover);
+  // Settings → Character: who he is, how lively, cameos and the PC's reactions.
+  const who = next.faceCharacter;
+  face.configure({
+    character: who === "hoot" || who === "sir" || who === "off" ? who : "eyes",
+    lively: !next.faceCalm, cameos: next.faceCameos !== false, reactions: next.faceReactions !== false,
+  });
   // Settings → Peeks (batch 13): which kinds, and the quiet hours.
   setPeekPrefs(next as unknown as Parameters<typeof setPeekPrefs>[0]);
   /* ⚠️ On <html>, where the stylesheet can read it. Click mode is not only a

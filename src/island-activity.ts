@@ -15,6 +15,9 @@ import { setDigits, setText } from "./tween";
 import type { ModuleReading } from "./pill-modules";
 import type { CallControl } from "./call-format";
 import type { Peek } from "./peeks";
+import { face } from "./face";
+import { peekFace } from "./face-mood";
+import { still } from "./motion-pref";
 
 /** A board somebody built, by its id.
  *
@@ -237,6 +240,9 @@ function buildClock(host: HTMLElement) {
   host.replaceChildren();
   const date = element("div", "pill-date");
   date.append(element("span", "pill-date-day"), element("span", "pill-date-month"));
+  /* The Guardian's face takes the date's place (2 Nov, his pick); the date
+   * stays built underneath for when the face is switched off (face.ts). */
+  date.append(element("span", "pill-face"));
   const module = element("div", "pill-module");
   module.append(
     element("div", "pill-module-mark"),
@@ -258,6 +264,8 @@ function paintModule(slot: HTMLElement, reading: ModuleReading | null) {
   const same = slot.dataset.module === (reading?.id ?? "");
 
   const write = () => {
+    // New words beside him: the face glances at them.
+    if (!same && reading) face.glance();
     slot.dataset.module = reading?.id ?? "";
     slot.dataset.tone = reading?.tone ?? "";
     copy.replaceChildren();
@@ -395,6 +403,8 @@ export function renderResting(host: HTMLElement, resting: Resting) {
   setDigits(host.querySelector<HTMLElement>(".pill-clock")!, resting.time);
   setText(host.querySelector<HTMLElement>(".pill-date-day")!, resting.day);
   setText(host.querySelector<HTMLElement>(".pill-date-month")!, resting.month);
+  host.classList.toggle("has-face", face.enabled);
+  if (face.enabled) face.mount(host.querySelector<HTMLElement>(".pill-face")!);
   paintModule(host.querySelector<HTMLElement>(".pill-module")!, resting.module);
 }
 
@@ -515,12 +525,22 @@ export function renderActivity(host: HTMLElement, activity: Activity | null) {
  * CSS from the one `--accent` and the semantic `--good`/`--warn` — a tint on
  * the glyph and the level, never a stripe (AGENTS 230, 257). */
 export function renderPeek(host: HTMLElement, peek: Peek) {
-  const shape = `${peek.art ? "art" : "icon"}${peek.level !== undefined ? "level" : ""}${peek.secondary ? "second" : peek.action ? "act" : ""}`;
+  // His own news, or the PC doing something he reacts to: his face in the lead, not the glyph (face-mood.ts).
+  const his0 = face.enabled && !peek.art ? peekFace(peek) : null;
+  // The PC's reactions switched off (Settings → Character): those peeks keep their glyph.
+  const his = his0?.react && !face.reactions ? null : his0;
+  const shape = `${peek.art ? "art" : his ? "face" : "icon"}${peek.level !== undefined ? "level" : ""}${peek.secondary ? "second" : peek.action ? "act" : ""}`;
   if (host.dataset.kind !== "peek" || host.dataset.shape !== shape || host.dataset.peek !== peek.id) {
     const fresh = host.dataset.kind !== "peek";
     host.replaceChildren();
     const lead = element("div", "pill-lead");
-    if (peek.art) {
+    if (his) {
+      lead.classList.add("has-face");
+      face.mount(lead);
+      if (his.flash) face.flash(his.flash);
+      if (his.react) face.react(his.react);
+      if (his.glance) face.glance();
+    } else if (peek.art) {
       const image = element("img", "pill-art") as HTMLImageElement;
       image.alt = "";
       image.src = peek.art;
@@ -585,8 +605,43 @@ export function clearPeek(host: HTMLElement) {
  * glyph otherwise (an agent's mark, the target of a block, the calendar).
  * ⚠️ Re-appended on every paint — a claim's rebuild clears the host's
  * children — and built only when what it stands for changes. */
-export function paintSecond(host: HTMLElement, second: Activity | null) {
+export function paintSecond(host: HTMLElement, second: Activity | null, owner: Activity | null = null) {
   let mark = host.querySelector<HTMLElement>(":scope > .pill-second");
+  /* The Guardian at the edge (2 Nov), in this slot only — never a new one:
+   * music in second place playing, he's there vibing to it in the bars'
+   * place; nothing in second place, he peeks out for a moment when a claim
+   * takes the strip (vibing if it's the music), then ducks away. */
+  const vibing = face.enabled && second?.kind === "media" && !!second.playing;
+  const ownerKey = owner ? `${owner.kind}:${owner.label}` : "";
+  if (ownerKey !== edge.owner) {
+    edge.owner = ownerKey;
+    edge.until = ownerKey && face.enabled && face.lively && !still() ? Date.now() + EDGE_PEEK_MS : 0;
+  }
+  const peeking = !second && !!owner && Date.now() < edge.until;
+  if (vibing || peeking) {
+    if (!mark) mark = element("span", "pill-second");
+    const key = vibing ? "face:vibe" : "face:peek";
+    if (mark.dataset.key !== key) {
+      mark.replaceChildren();
+      delete mark.dataset.icon;
+      mark.classList.remove("is-eq");
+      mark.classList.add("is-face");
+      mark.classList.toggle("is-peeking", peeking);
+      mark.dataset.key = key;
+    }
+    const playing = vibing || (owner?.kind === "media" && !!owner.playing);
+    face.mount(mark, "edge", { px: EDGE_PX, zoom: 1.5, mood: () => playing ? "vibe" : null });
+    if (vibing) mark.dataset.screen = second!.screen;
+    else delete mark.dataset.screen;
+    if (mark.parentElement !== host || host.lastElementChild !== mark) host.append(mark);
+    host.classList.add("has-second");
+    return;
+  }
+  if (mark?.classList.contains("is-face")) {
+    face.unmount("edge");
+    mark.classList.remove("is-face", "is-peeking");
+    delete mark.dataset.key;
+  }
   if (!second) {
     mark?.remove();
     host.classList.remove("has-second");
@@ -610,4 +665,36 @@ export function paintSecond(host: HTMLElement, second: Activity | null) {
   mark.dataset.screen = second.screen;
   if (mark.parentElement !== host || host.lastElementChild !== mark) host.append(mark);
   host.classList.add("has-second");
+}
+
+/** The edge face: its size, how long he peeks out, and what he last peeked at. */
+const EDGE_PX = 18;
+const EDGE_PEEK_MS = 5000;
+const edge = { owner: "", until: 0 };
+
+/* ── A cameo (2 Nov) ──────────────────────────────────────────────────────
+ * Now and then (at most hourly), and when he's back at the PC after a while
+ * away: the Guardian takes the resting pill for a few seconds — looks one way,
+ * the other, then a smile (a welcome back is a happy one) — and gives it back.
+ * Only over the resting pill: never over a claim, a peek or the open island. */
+const CAMEO_MS = 3600;
+let cameoTimer = 0;
+export function playCameo(host: HTMLElement, kind: "hello" | "welcome"): boolean {
+  if (!host.classList.contains("is-clock") || host.classList.contains("is-cameo")) return false;
+  const slot = element("span", "pill-cameo");
+  host.append(slot);
+  host.classList.add("is-cameo");
+  face.mount(slot, "cameo", { px: 30, zoom: 1.5 });
+  const middle = () => { const b = slot.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; };
+  const at = (ms: number, run: () => void) => window.setTimeout(run, ms);
+  at(350, () => { const m = middle(); face.look(m.x - 160, m.y + 10); });
+  at(1250, () => { const m = middle(); face.look(m.x + 160, m.y + 10); });
+  at(2150, () => kind === "welcome" ? face.flash("happy") : face.react("nod"));
+  window.clearTimeout(cameoTimer);
+  cameoTimer = at(CAMEO_MS, () => {
+    host.classList.remove("is-cameo");
+    face.unmount("cameo");
+    slot.remove();
+  });
+  return true;
 }

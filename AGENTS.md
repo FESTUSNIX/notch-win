@@ -6223,3 +6223,79 @@ Helm; these are answers it asks for mid-reply.
       shows the mail icon, sender and Claude's line; a click opens the `url`,
       ⚠️ only an http(s) one (`helmPeekUrl`), never a file or a command.
       Settings → Peeks has a "Mail" group to switch it off. `&src=mail` stages it.
+
+ 927. **The Guardian's face (2 Nov; his words: "some sort of visual character …
+      something playful"; he picked plain Eyes, Hoot and Sir to switch to; the
+      concepts are on claude.ai/artifact/2r5e27mDM29xxFP1aySWPk).** Step 1: the
+      Eyes take the DATE's place in the resting pill (`.pill-face`, the date
+      still built underneath for `face.enabled = false`). One mood at a time
+      from `face-mood.ts` (pure, tested: voice > oops > paid > done > worried >
+      focused > sleepy > idle; paid/done/oops are 4 s flashes); `face-eyes.ts`
+      draws it with springs and a squash on every change; `face.ts` owns ONE
+      canvas that the pill (later the glance and the moments) moves into its
+      slot. ⚠️ On screen all day, so it draws every frame only while something
+      moves, 15 fps for the long moods (focused, sleepy), and otherwise sleeps
+      until the next blink, habit or flash ends; nothing while the window is
+      hidden; reduced motion keeps moods, drops springs and habits. ⚠️ In the
+      pill the eyes are zoomed to the clock's height (`PILL_ZOOM`): at 1× they
+      read as two dots. Lively habits: a glance when the module's subject
+      changes, a wink or tilt every 8–22 min. Staged: `?mood=`, `?face=off`,
+      `?night=0|1`; `window.__face`. Next: the event moods, the glance and
+      moments, Hoot and Sir with Settings → Character.
+
+ 928. **The face, steps 2–5 (2 Nov; his picks: cameos, vibing to music, peeking
+      at the pill's edge, follows the cursor, pokes, reacts to the PC — with
+      "make sure it isn't just clutter, that we don't just force our way into
+      components that already have enough elements").** ⚠️ His rule, kept:
+      the face only takes a slot that is already there — a peek's lead, the
+      second-place mark, the voice glance's mic disc or shield, a moment's
+      tile — never a new one. `face.ts` now has VIEWS (pill, edge, glance,
+      moment, cameo), one canvas each, sharing the mood; a view may ask for
+      its own (the edge vibes, a warn moment is worried). `peekFace`
+      (face-mood.ts, tested) says which peeks are his: paid → love, logged →
+      happy, a thing JARVIS couldn't do → oops, mail and timers → a glance
+      (his face in the lead, no glyph well); earbuds on → headphones, volume
+      at 100 → wide eyes, battery low → tired; anything else keeps its glyph.
+      Voice: his face in the disc while listening (the mic is his ears), in
+      the shield while answering, never both; a follow-up keeps the mic. A
+      voice error flashes oops; Helm warn moments unseen → worried; a running
+      session or a pomodoro's work → focused. Edge: music in second place
+      playing → he vibes in the eq bars' place; nothing in second place → he
+      peeks out for 5 s when a claim takes the strip. Pokes: a click on his
+      face in the pill or at the edge = startle, 3 in 4 s = giggle, 5 = grumpy;
+      a double click opens the Guardian (`face:guardian`). ⚠️ His face in
+      the folded pill is a PASSIVE rect (island-surface `onPassive`), so in
+      hover mode pointing at him doesn't open the island before the click
+      lands; in a peek's lead the click stays the peek's. Cursor: hover.rs
+      emits `tasks:near` within 260 css px of the pill (only on a real move),
+      and `tasks:back` once after 20 min idle → a welcome cameo. Cameo: at
+      most hourly (checked every 5 min) and only when idle, lively, the pill
+      resting and no peek held: he takes the pill for 3.6 s, looks left,
+      right, nods (welcome: smiles). Tests: face.spec.ts (15).
+
+ 929. **The face, step 6 (3 Nov): Hoot, Sir and Settings → Character.** Hoot
+      (an owl: tufts up when listening, flat when sleepy, a beak that talks)
+      and Sir (a knight: eyes glowing through the visor, the plume in the
+      mood's colour) are 16 × 16 pixel sprites in `face-friends.ts`, with the
+      Eyes' contract (`draw(ctx, S, t, mood, dt, habits, still)` → still
+      moving?), so every view, mood and reaction works for all three; face.ts
+      picks the painter per view (`configure`). ⚠️ face-friends.ts has no
+      runtime imports (node --test): face.ts hands a reaction over only while
+      it plays. ⚠️ Each pixel edge is rounded to a device pixel or the 16-grid
+      smears. Four prefs (prefs.rs): `faceCharacter` eyes|hoot|sir|off,
+      `faceCalm`, `faceCameos`, `faceReactions` (the PC's: earbuds, volume,
+      battery, screenshot flash — off, those peeks keep their glyph; his own
+      news still gets his face). Settings → Character: four cards drawn live
+      with the notch's own painters, Off showing the date, Habits Lively/Calm,
+      Cameos, Reacts to your PC. Staged: `?face=hoot|sir|off`, `&calm`,
+      `&nocameos`, `&noreact`. Also mended three stale tests in tasks.spec:
+      eleven settings pages and four shortcuts, the week grid placing blocks
+      in px, and click mode, where a playing pill under the pointer swells into
+      the music glance, whose own play/pause is the control.
+
+ 930. **The curtain lets a work pass through (3 Nov).** Helm's work pass opens a
+      locked site for one topic; `/api/desktop/blocker` sends its words on the
+      site (`Site.pass`). `site_in` skips a site whose window title carries one
+      (`on_pass`: anywhere in the title, case and Polish letters folded by
+      hand, no crate). The home page ("YouTube - Brave") never carries a topic,
+      so it's still covered. Test: `a_work_pass_lets_its_topic_through`.

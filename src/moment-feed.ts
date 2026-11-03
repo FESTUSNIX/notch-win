@@ -33,6 +33,7 @@ import {
   type AgentSeen, type Moment, type MomentButton, type ProviderReading,
 } from "./moments";
 import { prepCovers, type NotchMoment } from "./helm-link";
+import { face } from "./face";
 import type { IslandSurface } from "./island-surface";
 import type { SessionView } from "./screen-agents";
 import type { HelmBlock, HelmEntry, HelmNudge, NudgeAction } from "./screen-helm";
@@ -299,6 +300,8 @@ export class MomentFeed {
   private helmMoments(now: number) {
     this.coveredMeetings();
     const list = this.deps.helm.moments();
+    // A warning from Helm not yet seen (money late, a mail waiting): the Guardian's face is worried until it is.
+    face.set({ worried: list.some(n => n.tone === "warn" && !this.helmSeen.includes(n.id)) });
     const live = new Set(list.map(n => helmKey(n.id)));
     this.queue.dropWhere(m => m.kind === "helm" && !live.has(m.key));
     for (const n of list) {

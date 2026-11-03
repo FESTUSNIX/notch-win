@@ -6814,6 +6814,69 @@ html.chrome-line #island-collapsed .pill-lead {
 	color: #7d7d7d;
 }
 
+/* The Guardian's face in the date's place (2 Nov; face.ts). The date is still
+   built underneath it: switched off, the face goes and the date is back. */
+.pill-face { display: none; }
+#island-collapsed.has-face .pill-face {
+	display: block;
+	width: 26px;
+	height: 26px;
+}
+#island-collapsed.has-face .pill-date-day,
+#island-collapsed.has-face .pill-date-month { display: none; }
+.face-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+/* His face telling a peek: the face is the character, so no glyph well round it. */
+#island-collapsed[data-kind='peek'] .pill-lead.has-face:not(:has(.pill-art)) {
+	width: 26px;
+	height: 26px;
+	background: none;
+	box-shadow: none;
+}
+/* At the edge, in second place's own slot: a little bigger than a glyph. */
+.pill-second.is-face {
+	width: 18px;
+	height: 18px;
+	margin-left: -2px;
+}
+/* Peeking out: he slides in from the strip's end. */
+.pill-second.is-peeking .face-canvas {
+	animation: face-peek 5s var(--ease-smooth-out, ease-out) both;
+}
+@keyframes face-peek {
+	0% { transform: translateX(10px); opacity: 0; }
+	10%, 85% { transform: none; opacity: 1; }
+	100% { transform: translateX(10px); opacity: 0; }
+}
+/* A cameo: he takes the resting pill for a few seconds, then gives it back. */
+.pill-cameo { display: none; }
+#island-collapsed.is-cameo.is-clock > :not(.pill-cameo) {
+	opacity: 0;
+	transition: opacity 180ms ease-out;
+}
+#island-collapsed.is-cameo.is-clock > .pill-cameo {
+	display: block;
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 30px;
+	height: 30px;
+	translate: -50% -50%;
+	animation: face-cameo 3.6s ease-in-out both;
+}
+@keyframes face-cameo {
+	0% { scale: 0.4; opacity: 0; }
+	12%, 88% { scale: 1; opacity: 1; }
+	100% { scale: 0.4; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .pill-second.is-peeking .face-canvas,
+	html:not([data-motion='always']) #island-collapsed.is-cameo > .pill-cameo { animation: none; }
+}
+
 /* The module slot. Empty is a legitimate state and takes no room of its own:
    `:empty` on the mark is what collapses it rather than leaving a gap where a
    warning used to be. */
@@ -18892,4 +18955,74 @@ button.set-row.wake-mic:hover {
 #wake-phrase.is-invalid {
 	border-color: var(--warn);
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+
+/* ── Settings → Character (2 Nov, settings-character.ts): the three of him,
+   alive, and Off. A card is chosen like a radio: raised and ringed. ─────── */
+.char-cards {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 10px;
+}
+.char-card {
+	display: grid;
+	justify-items: center;
+	gap: 8px;
+	padding: 14px 8px 11px;
+	border-radius: var(--r-tile);
+	background-color: var(--tile);
+	background-image: var(--sheen);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1);
+	color: #bdbdbd;
+	transition: transform var(--duration-fast) var(--ease-bounce), box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+.char-card:hover {
+	color: #fff;
+	transform: translateY(-1px);
+}
+.char-card:active {
+	transform: scale(0.97);
+}
+.char-card.is-chosen {
+	color: #fff;
+	background-color: var(--tile-hi);
+	box-shadow: var(--hairline), var(--gloss), var(--lift-1), 0 0 0 1.5px var(--accent);
+}
+/* The stage: a slice of the notch, black, so he looks as he will. */
+.char-stage {
+	display: grid;
+	place-items: center;
+	width: 64px;
+	height: 64px;
+	border-radius: 18px;
+	background: #000;
+	box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.char-stage canvas {
+	width: 48px;
+	height: 48px;
+	image-rendering: pixelated;
+}
+.char-date {
+	display: grid;
+	justify-items: center;
+	line-height: 1;
+	color: #fff;
+}
+.char-date b {
+	font-size: 20px;
+	font-weight: 600;
+}
+.char-date small {
+	font-size: 10px;
+	color: #9a9a9a;
+	letter-spacing: 0.06em;
+}
+.char-name {
+	font-size: 12.5px;
+	font-weight: 600;
+}
+#char-calm.is-off {
+	opacity: 0.4;
+	pointer-events: none;
 }

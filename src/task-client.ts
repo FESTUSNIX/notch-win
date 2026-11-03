@@ -191,6 +191,11 @@ let demoPrefs: Record<string, unknown> = {
   wakeWord: new URLSearchParams(location.search).has("wake"),
   wakeMic: "", wakeMicName: "", wakeSensitivity: "normal",
   wakeEngine: "sherpa", wakePhrase: "Jarvis",
+  /* `?face=off|hoot|sir` is Settings → Character; `&calm` is Calm, `&nocameos`, `&noreact` its switches off. */
+  faceCharacter: ["off", "hoot", "sir"].includes(new URLSearchParams(location.search).get("face") ?? "") ? new URLSearchParams(location.search).get("face") : "eyes",
+  faceCalm: new URLSearchParams(location.search).has("calm"),
+  faceCameos: !new URLSearchParams(location.search).has("nocameos"),
+  faceReactions: !new URLSearchParams(location.search).has("noreact"),
 };
 const demoSpaces: Record<string, Record<string, unknown>> = {};
 

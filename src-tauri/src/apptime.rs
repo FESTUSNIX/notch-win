@@ -81,7 +81,8 @@ fn display(exe: &str) -> String {
     }
 }
 
-fn idle_seconds() -> u64 {
+/// Seconds since the last keyboard or mouse input (also the Guardian's face: "back after a while", hover.rs).
+pub(crate) fn idle_seconds() -> u64 {
     let mut info = LASTINPUTINFO {
         cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
         dwTime: 0,

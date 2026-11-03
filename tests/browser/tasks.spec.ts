@@ -178,7 +178,16 @@ test("the collapsed pill shows whatever is most live, and opens that screen", as
 
 test("at rest the pill is a date, a centred clock, and one module", async ({page}) => {
   await page.clock.install({time: new Date("2026-09-14T14:53:00")});
-  await page.goto("/tasks.html?quiet");
+  /* Since 2 Nov the Guardian's face sits in the date's place (face.spec.ts):
+   * with it on, the clock still sits dead centre; switched off, the date is back. */
+  await page.goto("/tasks.html?quiet&night=0");
+  await expect(page.locator("#island-collapsed")).toHaveClass(/has-face/);
+  {
+    const pill = (await page.locator("#island-collapsed").boundingBox())!;
+    const clock = (await page.locator(".pill-clock").boundingBox())!;
+    expect(Math.abs((clock.x + clock.width / 2) - (pill.x + pill.width / 2))).toBeLessThan(2);
+  }
+  await page.goto("/tasks.html?quiet&face=off");
   await expect(page.locator("#island-collapsed")).toHaveClass(/is-clock/);
   await expect(page.locator(".pill-date-day")).toHaveText("14");
   await expect(page.locator(".pill-date-month")).toHaveText("SEP");
@@ -448,7 +457,7 @@ test("finishing the last task clears the day", async ({page}) => {
   await page.screenshot({path: "test-results/island-clear.png"});
 });
 
-test("settings: one window, eight pages, and nothing that can show a token", async ({page}) => {
+test("settings: one window, its pages, and nothing that can show a token", async ({page}) => {
   await page.setViewportSize({width: 900, height: 640});
   await page.goto("/task-editor.html");
 
@@ -462,7 +471,8 @@ test("settings: one window, eight pages, and nothing that can show a token", asy
    * one of their own: they were filed under the island because that is where
    * the countdown is drawn, which is how that pane became fifty switches while
    * the others were nearly empty. */
-  await expect(page.getByRole("tab")).toHaveCount(8);
+  /* Eleven since: Peeks (batch 13), Voice (30 Oct), Character (2 Nov). */
+  await expect(page.getByRole("tab")).toHaveCount(11);
   await expect(page.getByRole("tab", {name: "General"})).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", {name: "General"})).toBeVisible();
   await page.screenshot({path: "test-results/settings-general.png"});
@@ -496,7 +506,8 @@ test("settings: one window, eight pages, and nothing that can show a token", asy
    * is the palette, held it is the ring, and everything that had a key of its
    * own is a wedge or a row away. The third is quick capture to the Guardian,
    * added back on purpose (see DEFAULT_CAPTURE in shortcuts.rs). */
-  await expect(page.locator(".key-record")).toHaveCount(3);
+  // And a fourth since 29 Oct: hold-to-talk to the Guardian (DEFAULT_TALK in shortcuts.rs).
+  await expect(page.locator(".key-record")).toHaveCount(4);
   await expect(page.locator("#key-capture")).toHaveText("CtrlAltJ");
   await page.locator("#key-ring").click();
   await expect(page.locator("#key-ring")).toHaveClass(/is-listening/);
@@ -1049,7 +1060,10 @@ test("click mode: leaving does not close it, and the pill carries a control", as
   await page.waitForTimeout(400);
   await expect(page.locator("#island-expanded")).toBeHidden();
 
-  await page.locator("#island-collapsed").click();
+  /* ⚠️ `force`: under the pointer the music glance re-measures every second
+     (its time changes width), so the pill shifts by a hundredth of a pixel and
+     never passes Playwright's two-frames-still check. The click is real. */
+  await page.locator("#island-collapsed").click({ force: true });
   await expect(page.locator("#island-expanded")).toBeVisible();
 
   /* ⚠️ This is the whole of click mode, and it was the half that was missing.
@@ -1075,11 +1089,16 @@ test("click mode: leaving does not close it, and the pill carries a control", as
   const eq = page.locator(".pill-eq");
   await expect(eq).toHaveCSS("pointer-events", "auto");
   await expect.poll(() => eq.locator(".pill-eq-mark").evaluate(el => getComputedStyle(el).opacity)).toBe("0");
+  /* Since the glance (island-surface.ts `setGlance`): with music playing, the
+     pointer resting on the pill swells it into the track's glance, which
+     carries play/pause itself — so the control under the pointer is the
+     glance's, not the bars'. */
   await eq.hover();
-  await expect.poll(() => eq.locator(".pill-eq-mark").evaluate(el => getComputedStyle(el).opacity)).toBe("1");
+  const play = page.locator(".glance-play");
+  await expect(play).toBeVisible();
   // ⚠️ And pressing it must not open the island: a play/pause that also
   // expands the panel is a control you can only use once.
-  await eq.click();
+  await play.click();
   await expect(page.locator("#island-expanded")).toBeHidden();
   await page.screenshot({path: "test-results/island-click-mode.png"});
 });
@@ -2175,7 +2194,9 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await expect(block).toBeVisible();
   const placed = await page.locator(".cal-block").evaluateAll(all =>
     all.map(el => [(el as HTMLElement).style.top, (el as HTMLElement).style.height]));
-  expect(placed.every(([top, height]) => /%$/.test(top) && /%\)$/.test(height))).toBe(true);
+  /* In pixels on the axis since the axis learned to fold its empty hours
+     (screen-calendar.ts `axis.yOf`), every block placed and sized. */
+  expect(placed.every(([top, height]) => /^-?[\d.]+px$/.test(top) && /^[\d.]+px$/.test(height))).toBe(true);
   // Today's column carries the now line; the others do not.
   await expect(page.locator(".cal-wknow")).toHaveCount(1);
   await expect(page.locator(".cal-row")).toHaveCount(0);

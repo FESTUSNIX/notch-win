@@ -15,6 +15,7 @@
  * text is being squeezed rather than revealed.
  */
 import { listen } from "@tauri-apps/api/event";
+import { face } from "./face";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
 import { IslandBubble, type BubbleReading } from "./island-bubble";
@@ -232,7 +233,14 @@ export class IslandSurface {
         const origin = box(this.shell);
         this.hover(e.payload.hover
           && !this.onPassive(e.payload.x + origin.x, e.payload.y + origin.y));
+        if (e.payload.hover) face.look(e.payload.x + origin.x, e.payload.y + origin.y);
       });
+      // Near the pill without being on it: his eyes follow (hover.rs); back after a while away: a hello.
+      await listen<{ x: number; y: number }>("tasks:near", e => {
+        const origin = box(this.shell);
+        face.look(e.payload.x + origin.x, e.payload.y + origin.y);
+      });
+      await listen("tasks:back", () => face.back());
       await listen<{ edge: Edge }>("tasks:placement", e => { void this.place(e.payload.edge); });
       await listen("island:toggle", () => this.toggle());
       await listen<boolean>("chrome:hidden", e => this.setHidden(e.payload));
@@ -241,6 +249,7 @@ export class IslandSurface {
       /* ⚠️ The same two-part rule the native listener above follows, and it
        * has to be: the preview is where every hover test runs, so a rule that
        * lived only in the `native` branch would be a rule nothing checks. */
+      document.addEventListener("pointermove", e => face.look(e.clientX, e.clientY));
       document.addEventListener("pointermove", e =>
         this.hover(!this.onPassive(e.clientX, e.clientY) && this.masks.some(r =>
           e.clientX >= r.x && e.clientX < r.x + r.width && e.clientY >= r.y && e.clientY < r.y + r.height)));
@@ -1272,7 +1281,15 @@ export class IslandSurface {
    * empty corner the circle is parked in.
    */
   private onPassive(px: number, py: number): boolean {
-    return this.passive.some(r =>
-      px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height);
+    if (this.passive.some(r => px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height)) return true;
+    /* The Guardian's face in the folded pill (2 Nov): poked, not a door into
+     * the island — pointing at him must not open it before the click lands. */
+    if (!this.open) {
+      for (const f of document.querySelectorAll<HTMLElement>("#island-collapsed .pill-face .face-canvas, #island-collapsed .pill-second .face-canvas")) {
+        const b = f.getBoundingClientRect();
+        if (px >= b.left && px < b.right && py >= b.top && py < b.bottom) return true;
+      }
+    }
+    return false;
   }
 }

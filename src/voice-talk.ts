@@ -44,6 +44,7 @@ import { HOLD_MS, idle, step, type Effect, type Phase, type TurnEvent, type Turn
 import { VoiceGlance, emptyReply, type GlanceReply } from "./voice-glance";
 import { wakeRefused } from "./wake-rules";
 import { EndOfSpeech } from "./voice-endpoint";
+import { face } from "./face";
 import { closing } from "./voice-close";
 import type { ChatEvent, Extra, GuardianChat } from "./screen-guardian";
 import type { HelmSource } from "./screen-helm";
@@ -273,6 +274,11 @@ export class VoiceTalk {
     for (const effect of effects) this.run(effect, before);
     // The wake word is paused while a turn is live, so it never starts a second one (wake.rs).
     if ((next.phase === "idle") !== (before.phase === "idle")) void call("wake_turn", { live: next.phase !== "idle" }).catch(() => {});
+    // The Guardian's face listens, thinks and talks with the turn.
+    if (next.phase !== before.phase) {
+      face.voice(next.phase);
+      if (next.phase !== "listening") face.level(null);
+    }
     if (next.phase !== before.phase || next.muted !== before.muted || next.free !== before.free || next.follow !== before.follow) {
       this.log(`${before.phase} → ${next.phase}${next.free ? " (hands-free)" : ""}${next.muted ? ` (text only: ${next.muted})` : ""}`);
       this.paint();
@@ -314,7 +320,7 @@ export class VoiceTalk {
     switch (effect.do) {
       case "record":
         this.mic = 0;
-        this.recorder.onLevel = level => { this.mic = Math.max(this.mic, level); };
+        this.recorder.onLevel = level => { this.mic = Math.max(this.mic, level); face.level(level); };
         this.recorder.onLimit = () => { this.log("five minutes: sent"); this.feed({ t: "stop" }); };
         this.recorder.onLost = () => {
           this.log("the microphone stopped by itself");
@@ -476,7 +482,7 @@ export class VoiceTalk {
       case "text": reply.status = null; reply.text += event.d; break;
       case "receipt": reply.receipts.push(event.receipt); break;
       case "card": reply.cards++; break;
-      case "error": reply.status = null; reply.error = event.message; reply.done = true; break;
+      case "error": reply.status = null; reply.error = event.message; reply.done = true; face.flash("oops"); break;
       case "done":
         reply.done = true;
         reply.id = event.id;

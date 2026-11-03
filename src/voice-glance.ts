@@ -29,6 +29,7 @@ import { clockOf } from "./kit/words";
 import { MAX_SECONDS } from "./kit/voice";
 import { revealMs, wordsOf, type Phase } from "./voice-turn";
 import type { Receipt } from "./screen-guardian";
+import { face } from "./face";
 
 /** What the turn is doing, as the glance draws it. `done`: over, still up to read. */
 export interface GlanceTurn {
@@ -207,6 +208,16 @@ export class VoiceGlance {
       this.quiet.setAttribute("aria-label", why.tip);
     }
     this.host.dataset.muted = String(!!why);
+    /* The Guardian's face (2 Nov), in one place, never two: the mic's disc
+     * while he listens (the mic is his ears), the reply's shield while he
+     * answers. A follow-up shows both rows, so the mic stays the mic there. */
+    const ears = face.enabled && !this.head.hidden && !follow;
+    const mouth = face.enabled && !ears && !this.replyRow.hidden;
+    this.disc.classList.toggle("has-face", ears);
+    this.shield.classList.toggle("has-face", mouth);
+    if (ears) face.mount(this.disc, "glance", { px: 40, zoom: 1.35 });
+    else if (mouth) face.mount(this.shield, "glance", { px: 26, zoom: 1.45 });
+    else face.unmount("glance");
     this.paintReply(reply);
     // ⚠️ Here too, not only with a reply: back to one listening row after a tall answer, the glance has to shrink.
     this.remeasure();

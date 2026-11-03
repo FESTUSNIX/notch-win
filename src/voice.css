@@ -566,3 +566,10 @@
 		transition: none !important;
 	}
 }
+
+/* The Guardian's face (2 Nov, face.ts): in the mic's disc while he listens,
+   in the reply's shield while he answers — his face instead of the glyph. */
+.v-disc.has-face > svg,
+.v-shield.has-face > svg { display: none; }
+.v-disc.has-face > .face-canvas { width: 40px; height: 40px; }
+.v-shield.has-face > .face-canvas { width: 26px; height: 26px; }

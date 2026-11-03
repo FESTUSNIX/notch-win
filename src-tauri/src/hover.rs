@@ -50,6 +50,11 @@ pub fn set_drop_zone(active: bool) {
 /// rather than jumped to.
 const POLL: Duration = Duration::from_millis(100);
 
+/// The Guardian's eyes follow the cursor this far from the pill, in CSS pixels (2 Nov).
+const NEAR: f64 = 260.0;
+/// Away this long (no input), then back: his welcome cameo (2 Nov).
+const AWAY_SECONDS: u64 = 20 * 60;
+
 /// A rectangle as the web layer knows it: CSS pixels, relative to the window.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct CssRect {
@@ -95,6 +100,10 @@ pub fn spawn(app: AppHandle, label: &'static str) {
         // state. Starts true so a launch with the button already held cannot
         // fire one.
         let mut was_down = true;
+        // The face: where the cursor was last said to be near, whether he's away, and a tick to read the idle time once a second.
+        let mut last_near: (i32, i32) = (i32::MIN, i32::MIN);
+        let mut away = false;
+        let mut tick: u32 = 0;
 
         loop {
             std::thread::sleep(POLL);
@@ -154,6 +163,44 @@ pub fn spawn(app: AppHandle, label: &'static str) {
                 && DROP_ZONE.load(std::sync::atomic::Ordering::SeqCst);
             let _ = &mut was_zone;
             let hovering = on_chrome || zone;
+
+            /* The Guardian's face (2 Nov): the cursor's place while it's within
+             * reach of the pill, so his eyes can follow it — throttled to a
+             * real move, and only on the island's window. And "back": no input
+             * for a long while, then some, once. */
+            if label == "tasks" {
+                let reach = NEAR * scale;
+                let near = !hovering
+                    && rects.iter().any(|r| {
+                        let left = origin.x as f64 + r.x * scale - reach;
+                        let top = origin.y as f64 + r.y * scale - reach;
+                        let right = origin.x as f64 + (r.x + r.width) * scale + reach;
+                        let bottom = origin.y as f64 + (r.y + r.height) * scale + reach;
+                        (point.x as f64) >= left && (point.x as f64) < right && (point.y as f64) >= top && (point.y as f64) < bottom
+                    });
+                if near && ((point.x - last_near.0).abs() + (point.y - last_near.1).abs() > 2) {
+                    last_near = (point.x, point.y);
+                    let _ = app.emit_to(
+                        label,
+                        "tasks:near",
+                        HoverPayload {
+                            hover: false,
+                            x: (point.x as f64 - origin.x as f64) / scale,
+                            y: (point.y as f64 - origin.y as f64) / scale,
+                        },
+                    );
+                }
+                tick = tick.wrapping_add(1);
+                if tick % 10 == 0 {
+                    let idle = crate::apptime::idle_seconds();
+                    if idle >= AWAY_SECONDS {
+                        away = true;
+                    } else if away && idle < 5 {
+                        away = false;
+                        let _ = app.emit_to(label, "tasks:back", ());
+                    }
+                }
+            }
 
             /* ⚠️ Hands off while a drag-out is running. `set_ignore_cursor_events`
              * is a tao call that goes through the main thread, and the main

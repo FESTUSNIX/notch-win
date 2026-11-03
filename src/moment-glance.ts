@@ -17,6 +17,7 @@
 import { element } from "./dom";
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { helmBadge, type Moment, type MomentButton } from "./moments";
+import { face } from "./face";
 
 export interface MomentHooks {
   /** A button was pressed. */
@@ -103,7 +104,15 @@ export class MomentGlance {
     delete this.tile.dataset.icon;
     this.tile.replaceChildren();
     this.tile.dataset.agent = moment.agent ?? "";
-    paintIcon(this.tile, moment.icon);
+    /* The Guardian's own moment (2 Nov): his face on its tile, in the shield's
+     * place — worried over a warning, glad over good news. */
+    const his = face.enabled && moment.icon === "guardian";
+    this.tile.classList.toggle("has-face", his);
+    if (his) face.mount(this.tile, "moment", { px: 40, zoom: 1.35, mood: () => moment.tone === "warn" ? "alert" : moment.tone === "good" ? "happy" : null });
+    else {
+      face.unmount("moment");
+      paintIcon(this.tile, moment.icon);
+    }
     const badge = moment.helm ? helmBadge(moment.helm.kind) : BADGE[moment.kind];
     if (badge) {
       paintIcon(this.badge, badge);

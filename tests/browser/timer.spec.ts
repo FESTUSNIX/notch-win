@@ -237,3 +237,24 @@ test("the ruler winds UP when it is dragged left", async ({ page }) => {
   await page.mouse.up();
   await expect(figure).toHaveText("30:00");
 });
+
+test("only a running pomodoro takes the pill: paused, it gives it back to the clock", async ({ page }) => {
+  /* 2 Nov, his words: "the default and almost always active one is the Focus,
+   * which I don't even know what we use for". A pomodoro left paused or ready
+   * was saved and held the strip every day; it now stays on the Timer screen. */
+  await page.goto(`${HOME}&night=0`);
+  await open(page);
+  await page.locator(".tm-go").click();
+  await expect(page.locator(".tm-go")).toHaveText("Pause");
+  await page.mouse.move(700, 800);
+  await expect(page.locator("#island-collapsed")).toHaveAttribute("data-kind", /focus|media|event/);
+  await expect(page.locator("#island-collapsed")).not.toHaveClass(/is-clock/);
+  await open(page);
+  await page.locator(".tm-go").click();
+  await expect(page.locator(".tm-go")).not.toHaveText("Pause");
+  await page.mouse.move(700, 800);
+  await expect(page.locator("#island-collapsed")).toHaveClass(/is-clock/, { timeout: 5000 });
+  // …and it outlives a reload without coming back to the strip.
+  await page.reload();
+  await expect(page.locator("#island-collapsed")).toHaveClass(/is-clock/, { timeout: 5000 });
+});
