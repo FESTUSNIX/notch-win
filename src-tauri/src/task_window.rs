@@ -64,6 +64,15 @@ pub async fn set_task_input(window: tauri::WebviewWindow, active: bool) -> Resul
     Ok(())
 }
 
+/// Whether Escape is down right now. A drag on the calendar asks while it runs: the
+/// island doesn't hold the keyboard then, so the page never hears the key, and
+/// taking the keyboard mid-press could end the press.
+#[tauri::command]
+pub fn escape_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+    unsafe { (GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000) != 0 }
+}
+
 #[derive(Clone, serde::Serialize)]
 pub struct Placement {
     edge: Edge,

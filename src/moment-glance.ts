@@ -30,6 +30,8 @@ export interface MomentHooks {
   measured: (depth: number) => void;
   /** A photo may take more depth than a note (not on a side edge, whose glance is a fixed depth). */
   mayGrow: (on: boolean) => boolean;
+  /** Whether pressing its body goes anywhere (the cursor says so). */
+  opens: (moment: Moment) => boolean;
   /** Typing an answer: the island takes the keyboard, or gives it back. */
   input: (active: boolean) => Promise<unknown>;
 }
@@ -151,6 +153,7 @@ export class MomentGlance {
     if (same) return;
     const host = this.host;
     host.dataset.kind = moment.kind;
+    host.toggleAttribute("data-inert", !this.hooks.opens(moment));
     host.dataset.sticky = String(moment.sticky);
     host.dataset.key = moment.key;
     host.dataset.agent = moment.agent ?? "";

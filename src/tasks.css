@@ -3266,7 +3266,7 @@ html[data-motion='never'] .bub-ring .arc {
 }
 .cal-wkhead {
 	display: grid;
-	grid-template-columns: 38px repeat(7, minmax(0, 1fr));
+	grid-template-columns: 38px repeat(var(--cal-cols, 7), minmax(0, 1fr));
 	gap: 3px;
 	align-items: end;
 	padding-bottom: 6px;
@@ -3296,6 +3296,22 @@ html[data-motion='never'] .bub-ring .arc {
 	font-size: 14px;
 	font-weight: 600;
 }
+.cal-wkday {
+	cursor: pointer;
+}
+.cal-wkday:hover:not(.is-today) {
+	background: rgba(255, 255, 255, 0.05);
+}
+.cal-wkfree {
+	font-size: 9.5px;
+	font-weight: 600;
+	color: #9a9a9a;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.cal-wkday.is-today .cal-wkfree {
+	color: color-mix(in srgb, var(--on-accent) 80%, transparent);
+}
 .cal-wkday.is-past {
 	opacity: 0.5;
 }
@@ -3312,7 +3328,7 @@ html[data-motion='never'] .bub-ring .arc {
 
 .cal-wkall {
 	display: grid;
-	grid-template-columns: 38px repeat(7, minmax(0, 1fr));
+	grid-template-columns: 38px repeat(var(--cal-cols, 7), minmax(0, 1fr));
 	gap: 3px;
 	padding: 0 0 6px;
 	align-items: start;
@@ -3331,11 +3347,58 @@ html[data-motion='never'] .bub-ring .arc {
 	gap: 2px;
 	min-width: 0;
 }
+.cal-wkall-cell .cal-chip {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	border: 0;
+	padding: 2px 6px;
+	border-radius: 6px;
+	text-align: left;
+	cursor: pointer;
+	background-color: color-mix(in srgb, var(--cal, var(--cool)) 24%, #101010);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 45%, transparent);
+}
+.cal-wkall-cell .cal-chip:hover {
+	background-color: color-mix(in srgb, var(--cal, var(--cool)) 34%, #101010);
+}
+/* A marker is Helm's, not a meeting: a quieter chip, with its colour as a dot. */
+.cal-wkall-cell .cal-chip.is-marker {
+	position: relative;
+	padding-left: 15px;
+	background-color: #161616;
+	box-shadow: inset 0 0 0 1px var(--hair);
+}
+.cal-wkall-cell .cal-chip.is-marker::before {
+	content: '';
+	position: absolute;
+	left: 6px;
+	top: 50%;
+	width: 5px;
+	height: 5px;
+	margin-top: -2.5px;
+	border-radius: 50%;
+	background: var(--cal);
+}
+.cal-wkall-cell .cal-chip.is-marker:hover {
+	background-color: #202020;
+}
+.cal-wkall-cell .cal-chip.is-marker.is-late .cal-chip-title {
+	color: var(--hot);
+}
+.cal-wkall-cell .cal-chip.is-open {
+	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cal, var(--cool)) 75%, transparent);
+}
+.cal-wkall-cell .cal-chip-title {
+	display: block;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
 
 .cal-wkbody {
 	position: relative;
 	display: grid;
-	grid-template-columns: 38px repeat(7, minmax(0, 1fr));
+	grid-template-columns: 38px repeat(var(--cal-cols, 7), minmax(0, 1fr));
 	gap: 3px;
 	/* ⚠️ The height is written INLINE, from the axis, and there is no longer a
 	   number here to keep in step with the one in TypeScript. The axis is
@@ -3638,6 +3701,45 @@ html[data-motion='never'] .cal-worktop {
 	background: rgba(255, 255, 255, 0.075);
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
+.cal-plan-list {
+	margin-bottom: 10px;
+}
+.cal-plan {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	cursor: grab;
+}
+.cal-plan-dot {
+	flex-shrink: 0;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--cal);
+}
+.cal-plan-text {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+}
+.cal-plan-text .cal-task-title,
+.cal-plan-for {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.cal-plan-for {
+	font-size: 10.5px;
+	color: #9a9a9a;
+}
+.cal-plan-long {
+	flex-shrink: 0;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: #c9c9c9;
+	font-variant-numeric: tabular-nums;
+}
 .cal-tasks-list {
 	display: flex;
 	flex-direction: column;
@@ -3826,8 +3928,41 @@ html[data-motion='never'] .cal-worktop {
 .cal-block.is-live:hover::after {
 	opacity: 1;
 }
+/* The same at the top, which resizes from the start. */
+.cal-block.is-live::before {
+	content: '';
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	height: 7px;
+	cursor: ns-resize;
+	background: linear-gradient(to bottom, color-mix(in srgb, var(--cal) 55%, transparent), transparent);
+	opacity: 0;
+	transition: opacity var(--duration-fast, 120ms) var(--ease-smooth-out, ease-out);
+}
+.cal-block.is-live:hover::before {
+	opacity: 1;
+}
+.cal-tick {
+	position: relative;
+	z-index: 1;
+}
+/* The whole window shows the gesture, wherever the pointer has got to. */
+body[data-cal-gesture='move'],
+body[data-cal-gesture='move'] * {
+	cursor: grabbing !important;
+}
+body[data-cal-gesture^='resize'],
+body[data-cal-gesture^='resize'] * {
+	cursor: ns-resize !important;
+}
+body[data-cal-gesture='create'],
+body[data-cal-gesture='create'] * {
+	cursor: crosshair !important;
+}
 .cal-block.is-dragging {
 	z-index: 3;
+	scale: 1;
 	cursor: grabbing;
 	/* ⚠️ No transition while dragging. The block is being positioned every
 	   frame from the pointer, and an eased `top` makes it lag behind the hand
@@ -3872,6 +4007,37 @@ html[data-motion='never'] .cal-worktop {
 .cal-ghost .cal-block-title {
 	opacity: 0.8;
 }
+/* A focus block: time he gave to work. Solid where a meeting is tinted, so "how much
+   of Thursday is meetings" reads at a glance. */
+.cal-block.is-focus {
+	background-color: color-mix(in srgb, var(--cal, var(--iris)) 58%, #101010);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--iris)) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.cal-block.is-focus:hover {
+	background-color: color-mix(in srgb, var(--cal, var(--iris)) 68%, #101010);
+}
+.cal-block.is-focus .cal-block-time {
+	color: rgba(255, 255, 255, 0.82);
+}
+.cal-block.is-focus.is-done {
+	opacity: 0.5;
+}
+.cal-block.is-focus.is-done .cal-block-title {
+	text-decoration: line-through;
+}
+.cal-block.is-focus.is-running {
+	box-shadow: inset 0 0 0 1.5px var(--accent), var(--glow-accent);
+}
+/* The time it would land on, readable even on a short block. */
+.cal-block.is-dragging .cal-block-time,
+.cal-ghost .cal-block-time {
+	position: absolute;
+	top: 3px;
+	right: 5px;
+	font-variant-numeric: tabular-nums;
+	color: #fff;
+	text-shadow: 0 0 4px #000;
+}
 /* Drawn, and waiting for a name. */
 .cal-draft {
 	z-index: 4;
@@ -3893,6 +4059,25 @@ html[data-motion='never'] .cal-worktop {
 }
 .cal-draft-field::placeholder {
 	color: rgba(255, 255, 255, 0.45);
+}
+.cal-draft {
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 3px;
+}
+.cal-draft-kind {
+	flex-shrink: 0;
+	border: 0;
+	padding: 1px 6px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.16);
+	color: #f2f2f2;
+	font-size: 10px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.cal-draft-kind:hover {
+	background: rgba(255, 255, 255, 0.26);
 }
 .cal-block-title {
 	font-size: 10.5px;
@@ -5007,6 +5192,33 @@ html[data-motion='never'] #day-rail-fill.is-won {
 	padding: 8px var(--screen-pad) var(--screen-pad);
 	scrollbar-width: thin;
 	scrollbar-color: #303030 transparent;
+}
+.cal-signin {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 10px;
+	padding: 7px 8px 7px 10px;
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--warn) 13%, #141414);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 24%, transparent);
+}
+.cal-signin-mark {
+	flex: none;
+	display: inline-flex;
+	color: var(--warn);
+}
+.cal-signin-text {
+	flex: 1;
+	min-width: 0;
+	font-size: 12px;
+	font-weight: 600;
+	color: #e6e6e6;
+}
+.cal-signin .day-connect {
+	margin-top: 0;
+	flex: none;
+	padding: 6px 12px;
 }
 .screen-error {
 	margin: 10px 0 0;
@@ -8217,7 +8429,108 @@ html[data-motion='never'] *::after {
 		var(--lift-3),
 		var(--gloss),
 		inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 30%, transparent);
+}
+.cal-panel.is-entering {
 	animation: cal-panel-in var(--duration-fast) var(--ease-smooth-out);
+}
+/* Beside its event in the grid; `placeBeside` writes where. */
+.cal-panel.is-beside {
+	left: 0;
+	right: auto;
+	bottom: auto;
+	width: 288px;
+	gap: 7px;
+	padding: 12px 13px;
+	border-radius: 14px;
+	cursor: default;
+}
+.cal-panel-field {
+	min-width: 0;
+	border: 0;
+	padding: 3px 6px;
+	margin-inline: -6px;
+	border-radius: 7px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	outline: none;
+	user-select: text;
+	transition: background-color var(--duration-fast, 120ms) var(--ease-smooth-out, ease-out);
+}
+.cal-panel-field:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+.cal-panel-field:focus {
+	background: rgba(0, 0, 0, 0.35);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 55%, transparent);
+}
+.cal-panel-field::placeholder {
+	color: #8f8f8f;
+}
+.cal-panel-name {
+	width: calc(100% + 12px);
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: -0.2px;
+	color: #f2f2f2;
+}
+.cal-panel-place {
+	flex: 1;
+	margin-inline: -6px 0;
+	font-size: 12px;
+	color: #c9c9c9;
+}
+.cal-panel-time {
+	width: 82px;
+	margin: 0;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: #e4e4e4;
+	color-scheme: dark;
+}
+.cal-panel-time::-webkit-calendar-picker-indicator {
+	display: none;
+}
+/* A meeting's prep note, in the panel; the panel scrolls if it's a long one. */
+.cal-prep {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px 10px;
+	border-radius: 9px;
+	background: rgba(0, 0, 0, 0.28);
+	font-size: 11.5px;
+	line-height: 1.4;
+	color: #d6d6d6;
+}
+.cal-prep-head {
+	margin: 0;
+	font-weight: 600;
+	color: #f2f2f2;
+}
+.cal-prep-title {
+	margin-top: 4px;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: color-mix(in srgb, var(--cal, var(--cool)) 70%, #fff);
+}
+.cal-prep-list {
+	margin: 0;
+	padding-left: 14px;
+}
+.cal-panel.is-beside {
+	overflow-y: auto;
+}
+.cal-fact-times {
+	gap: 4px;
+}
+.cal-fact-times .cal-fact-mark {
+	margin-right: 4px;
+}
+.cal-fact-length {
+	margin-left: auto;
+	color: #a8a8a8;
+	white-space: nowrap;
 }
 @keyframes cal-panel-in {
 	from {
@@ -10425,8 +10738,67 @@ html[data-motion='never'] *::after {
    week grid answers "how is the week shaped". */
 .cal-views {
 	display: flex;
+	align-items: center;
 	gap: 4px;
 	margin-bottom: 10px;
+}
+.cal-nav {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+}
+/* One line in plain words, added through Helm. */
+.cal-quick {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 1 300px;
+	min-width: 120px;
+	margin-left: 6px;
+	padding: 3px 10px;
+	border-radius: 8px;
+	background: #101010;
+	box-shadow: inset 0 0 0 1px var(--hair);
+	cursor: text;
+}
+.cal-quick:focus-within {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.cal-quick-mark {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	color: #8f8f8f;
+}
+.cal-quick-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.cal-quick-field {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	padding: 2px 0;
+	background: transparent;
+	color: #e4e4e4;
+	font: inherit;
+	font-size: 11.5px;
+	outline: none;
+}
+.cal-quick-field::placeholder {
+	color: #8f8f8f;
+}
+.cal-nav-label {
+	padding-inline: 8px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #d6d6d6;
+	font-variant-numeric: tabular-nums;
+}
+.cal-nav .cal-page:disabled {
+	opacity: 0.3;
+	cursor: default;
 }
 .cal-view {
 	display: flex;

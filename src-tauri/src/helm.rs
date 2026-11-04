@@ -761,6 +761,39 @@ pub async fn helm_blocker(action: serde_json::Value) -> Result<serde_json::Value
     Ok(answer)
 }
 
+/// The calendar as Helm's page reads it, for the weeks asked. `None` when Helm isn't
+/// connected or is too old to have it: the app's own Google connection carries on.
+#[tauri::command]
+pub async fn helm_calendar(from: String, to: String) -> Result<Option<serde_json::Value>, String> {
+    if !signed_in() {
+        return Ok(None);
+    }
+    let is_day = |value: &str| value.len() == 10 && value.bytes().all(|b| b.is_ascii_digit() || b == b'-');
+    if !is_day(&from) || !is_day(&to) {
+        return Err("Those aren't days.".into());
+    }
+    let path = format!("/api/notch/calendar?from={from}&to={to}");
+    let response = as_him(http(), reqwest::Method::GET, &path, None).await?;
+    if response.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(refusal(response, "Couldn't read the calendar.").await);
+    }
+    response.json().await.map(Some).map_err(|_| "Helm sent something unexpected.".to_string())
+}
+
+/// A change to the calendar, through Helm: the body `/api/notch/calendar` takes, which
+/// checks it. On the chat's client, because a prep note or a quick add waits for Claude.
+#[tauri::command]
+pub async fn helm_calendar_act(action: serde_json::Value) -> Result<serde_json::Value, String> {
+    let response = as_him(chat_http(), reqwest::Method::POST, "/api/notch/calendar", Some(action)).await?;
+    if !response.status().is_success() {
+        return Err(refusal(response, "Helm said no.").await);
+    }
+    Ok(response.json().await.unwrap_or_else(|_| json!({ "ok": true })))
+}
+
 /// A Helm page in the browser, where he's signed in: the check-in, the end of
 /// the day. A path only, so nothing else can be opened through this.
 #[tauri::command]

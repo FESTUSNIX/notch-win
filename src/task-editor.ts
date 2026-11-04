@@ -69,7 +69,6 @@ interface Prefs {
   ringHoldMs: number;
   ringTap: string;
   homeCurrency: string;
-  followLive: boolean;
   pomodoroWork: number;
   pomodoroBreak: number;
   pomodoroLong: number;
@@ -246,7 +245,6 @@ const PANE_HTML: Record<PaneId, string> = {
     </div></div>
     <div><p class="set-label">Opening</p><div class="set-group">
       ${row("Open on hover", "", check("open-on-hover"))}
-      ${row("Open on what is happening", "A call, an agent waiting, a meeting about to start.", check("follow-live"))}
       ${row("Stays open for", "",
         `<input type="range" id="fold-delay" min="120" max="2000" step="20"><span class="set-value" id="fold-delay-value"></span>`)}
     </div></div>
@@ -478,7 +476,7 @@ let prefs: Prefs = {
   useEverything: true, callMode: true, callMuteMic: true, callOpen: true,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder",
-  pomodoroPill: "bar", ringStops: [], ringGlass: true, followLive: true,
+  pomodoroPill: "bar", ringStops: [], ringGlass: true,
   ringHoldMs: 250, ringTap: "@search", homeCurrency: "",
   indexApps: true, notifyRuns: true,
   mutedModules: [], thresholds: {}, taskView: "day",
@@ -712,7 +710,7 @@ get<HTMLInputElement>("rail-always").onchange = event => {
  * layer up. */
 for (const [id, key] of [
   ["call-mode", "callMode"], ["call-mute-mic", "callMuteMic"], ["call-open", "callOpen"],
-  ["notice-mode", "noticeMode"], ["follow-live", "followLive"],
+  ["notice-mode", "noticeMode"],
   ["ring-glass", "ringGlass"], ["spoken-replies", "spokenReplies"],
 ] as const) {
   get<HTMLInputElement>(id).onchange = event => {
@@ -1710,7 +1708,6 @@ function paintPrefs() {
   }
   get<HTMLInputElement>("call-mute-mic").checked = prefs.callMuteMic;
   get<HTMLInputElement>("call-open").checked = prefs.callOpen;
-  get<HTMLInputElement>("follow-live").checked = prefs.followLive;
   get<HTMLInputElement>("ring-glass").checked = prefs.ringGlass;
   get<HTMLInputElement>("spoken-replies").checked = prefs.spokenReplies;
   paintPeeks();

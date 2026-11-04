@@ -111,6 +111,9 @@ const eventEnd = eventFlag === "now" ? 20 / 60
   : eventFlag === "soon" ? eventStart + 0.7
   : (nocal ? 4 : 1);
 
+let demoSignedIn = false;
+const calWritable = <T extends { events: object[] }>(feed: T): T => params.has("calwrite")
+  ? { ...feed, events: feed.events.map(e => ({ ...e, writable: true, calendarId: "work" })) } : feed;
 const demoCalendar = {
   connected: true,
   updatedAt: new Date().toISOString(),
@@ -183,7 +186,6 @@ let demoPrefs: Record<string, unknown> = {
   pomodoroPill: new URLSearchParams(location.search).has("pomtime") ? "time" : "bar",
   ringStops: [], ringGlass: true, ringHoldMs: 250, ringTap: "@search",
   homeCurrency: "PLN",
-  followLive: !new URLSearchParams(location.search).has("nofollow"),
   indexApps: true, notifyRuns: true, mutedModules: [], thresholds: {}, taskView: "day",
   /* `?spoken=off` is Settings → Spoken replies switched off. */
   spokenReplies: new URLSearchParams(location.search).get("spoken") !== "off",
@@ -296,6 +298,105 @@ function peekStageHelm<T>(helm: T): T {
   if (peekDone) Object.assign(live, { status: "done", runStartedAt: null, elapsedSeconds: 1740 });
   return helm;
 }
+/* `&prepevent`: the calendar has the meeting `&hmoment=prep` is about, under its bare id. */
+if (params.has("calwrite")) (window as unknown as { __calRefresh?: () => void }).__calRefresh = () => {
+  previewBus.dispatchEvent(new CustomEvent("calendar:changed", { detail: structuredClone(calWritable(demoCalendar)) }));
+};
+/* What Helm's `/api/notch/calendar` answers, staged at fixed hours today. */
+const helmDay = (offset = 0) => {
+  const at = new Date();
+  at.setDate(at.getDate() + offset);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+};
+let helmDemo: Record<string, unknown> | null = null;
+const demoHelmCalendar = () => {
+  helmDemo ??= {
+    status: params.get("helmcal") === "expired" ? "expired" : "ok",
+    email: "m@example.com", message: null, canWrite: true,
+    calendars: [{ id: "prim", name: "Mateusz", hue: "blue", primary: true, writable: true }],
+    events: params.get("helmcal") === "expired" ? [] : [
+      { id: "prim:g1", googleId: "g1", calendarId: "prim", title: "Esono call", day: helmDay(), endDay: helmDay(), start: 11 * 60, end: 12 * 60, editable: true, place: "Meet" },
+      { id: "prim:g2", googleId: "g2", calendarId: "prim", title: "Kowalski review", day: helmDay(), endDay: helmDay(), start: 15 * 60, end: 16 * 60, editable: true },
+      { id: "prim:g3", googleId: "g3", calendarId: "prim", title: "Guests meeting", day: helmDay(), endDay: helmDay(), start: 13 * 60, end: 14 * 60, editable: false },
+    ],
+    blocks: [
+      { id: 7, day: helmDay(), title: "Repricer: import", projectId: 1, workItemId: null, plannedAt: "09:00", minutes: 90, status: "planned", elapsedSeconds: 0 },
+      { id: 8, day: helmDay(), title: "Finished thing", projectId: 1, workItemId: null, plannedAt: "16:30", minutes: 30, status: "done", elapsedSeconds: 1800 },
+    ],
+    markers: [
+      { key: "payment:1", kind: "payment", day: helmDay(), title: "Rata 2", context: "Esono", hue: "green", href: "/money", amount: 1200, late: false },
+      { key: "delivery:2", kind: "delivery", day: helmDay(), title: "Repricer", context: "Esono", hue: "blue", href: "/projects/1", amount: null, late: false },
+    ],
+    items: [
+      { key: "request:5", kind: "request", title: "Fix the checkout", context: "Esono", hue: "orange", minutes: 60, projectId: 1, workItemId: 5, taskId: null, dealId: null, blockId: null, dueOn: null, covered: false },
+      { key: "block:9", kind: "block", title: "Unscheduled block", context: null, hue: "iris", minutes: 30, projectId: null, workItemId: null, taskId: null, dealId: null, blockId: 9, dueOn: helmDay(), covered: false },
+      { key: "request:6", kind: "request", title: "Already planned", context: "Esono", hue: "orange", minutes: 60, projectId: 1, workItemId: 6, taskId: null, dealId: null, blockId: null, dueOn: null, covered: true },
+    ],
+    marks: [{ id: 1, name: "Esono", hue: "orange", logoVersion: null, label: "Esono" }],
+    meetings: {
+      "prim:g1": { clientId: 1, dealId: null, name: "Esono", hue: "orange", projects: [{ id: 1, name: "Esono" }], logged: null },
+      "prim:g2": { clientId: 2, dealId: null, name: "Kowalski", hue: "blue", projects: [{ id: 2, name: "Sklep" }], logged: null },
+    },
+    preps: {
+      "prim:g2": { headline: "Close the review", status: ["Build delivered"], cover: ["Second payment"], ask: ["Who signs off?"], watch: [] },
+    },
+    from: helmDay(-35), to: helmDay(77), today: helmDay(), now: 8 * 60,
+  };
+  return helmDemo;
+};
+const applyDemoHelm = (action: Record<string, unknown>) => {
+  const reading = demoHelmCalendar() as { events: Record<string, unknown>[]; blocks: Record<string, unknown>[]; items: Record<string, unknown>[]; preps: Record<string, unknown> };
+  const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  const event = reading.events.find(one => one.googleId === action.eventId);
+  const block = reading.blocks.find(one => one.id === action.blockId);
+  switch (action.action) {
+    case "moveEvent": if (event) Object.assign(event, { day: action.day, endDay: action.day, start: action.start, end: action.end }); break;
+    case "updateEvent": if (event) Object.assign(event, { title: action.title }, action.place === undefined ? {} : { place: action.place }); break;
+    case "deleteEvent": reading.events = reading.events.filter(one => one !== event); break;
+    case "createEvent": reading.events.push({ id: `prim:n${reading.events.length}`, googleId: `n${reading.events.length}`, calendarId: "prim", title: action.title, day: action.day, endDay: action.day, start: action.start, end: action.end, editable: true }); break;
+    case "moveBlock":
+      if (block) Object.assign(block, { day: action.day, plannedAt: hhmm(Number(action.start)), minutes: Number(action.end) - Number(action.start) });
+      else if (action.blockId === 9) {
+        reading.blocks.push({ id: 9, day: action.day, title: "Unscheduled block", projectId: null, workItemId: null, plannedAt: hhmm(Number(action.start)), minutes: Number(action.end) - Number(action.start), status: "planned", elapsedSeconds: 0 });
+        reading.items = reading.items.filter(one => one.blockId !== 9);
+      }
+      break;
+    case "scheduleBlock":
+      reading.blocks.push({ id: 100 + reading.blocks.length, day: action.day, title: action.title, projectId: action.projectId ?? null, workItemId: action.workItemId ?? null, plannedAt: hhmm(Number(action.start)), minutes: Number(action.end) - Number(action.start), status: "planned", elapsedSeconds: 0 });
+      reading.items = reading.items.filter(one => one.workItemId !== action.workItemId || !action.workItemId);
+      break;
+    case "renameBlock": if (block) block.title = action.title; break;
+    case "deleteBlock": reading.blocks = reading.blocks.filter(one => one !== block); break;
+    case "unscheduleBlock": if (block) block.plannedAt = null; break;
+    case "prep": reading.preps[String(action.eventId)] = { headline: "Written just now", status: ["In progress"], cover: ["The next step"], ask: ["Anything blocking?"], watch: [] }; break;
+    case "quickAdd":
+      reading.blocks.push({ id: 200, day: helmDay(), title: "Gym", projectId: null, workItemId: null, plannedAt: "18:00", minutes: 60, status: "planned", elapsedSeconds: 0 });
+      return { ok: true, title: "Gym", day: helmDay(), start: 18 * 60, endDay: null, kind: "block" };
+  }
+  return { ok: true };
+};
+
+/* `&calwrite`: events at fixed hours today, so a grid test doesn't depend on the clock.
+ * `&caloverlap`: two meetings at the same time, and an all-day one. */
+const todayAt = (hour: number) => {
+  const at = new Date();
+  at.setHours(hour, 0, 0, 0);
+  return at.toISOString();
+};
+const todayKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+if (params.has("calwrite")) demoCalendar.events.push(
+  { id: "f1", title: "Lunch with Ada", start: todayAt(14), end: todayAt(15), allDay: false, location: "Cafe Mistral", meetingUrl: "", calendar: "Personal", color: "#ff9f0a", response: "accepted" },
+);
+if (params.has("caloverlap")) demoCalendar.events.push(
+  { id: "x1", title: "Overlap one", start: todayAt(11), end: todayAt(12), allDay: false, location: "", meetingUrl: "", calendar: "Work", color: "#5ac8fa", response: "accepted" },
+  { id: "x2", title: "Overlap two", start: todayAt(11), end: todayAt(12), allDay: false, location: "", meetingUrl: "", calendar: "Work", color: "#ff9f0a", response: "accepted" },
+  { id: "x3", title: "Holiday", start: todayKey(), end: todayKey(), allDay: true, location: "", meetingUrl: "", calendar: "Work", color: "#30d158", response: "" },
+);
+if (params.has("prepevent")) demoCalendar.events.push({ id: "staged-meeting", title: "Esono — przegląd sprintu", start: hoursFromNow(0.08),
+  end: hoursFromNow(0.6), allDay: false, location: "", meetingUrl: "https://meet.google.com/demo", calendar: "Work", color: "#5ac8fa", response: "accepted" });
 if (peekFlags.has("meeting")) demoCalendar.events.push({ id: "pm", title: "Standup NXM", start: hoursFromNow((600 + 4) / 3600),
   end: hoursFromNow(1), allDay: false, location: "", meetingUrl: "https://meet.google.com/peek", calendar: "Work", color: "#5ac8fa", response: "accepted" });
 if (peekFlags.has("leave")) demoCalendar.events.push({ id: "pl", title: "Dentysta", start: hoursFromNow((1200 + 4) / 3600),
@@ -850,7 +951,35 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     if (action === "leave") demoCall = {...demoCall, active:false};
     return structuredClone(demoCall) as T;
   }
-  if (command === "get_calendar") return structuredClone(demoCalendar) as T;
+  if (command === "get_calendar") return structuredClone(params.has("calsignedout") && !demoSignedIn ? { ...demoCalendar, needsSignIn: true, error: "Google rejected the sign-in: Token has been expired or revoked." } : calWritable(demoCalendar)) as T;
+  /* `&helmcal`: Helm's reading. `&helmcal=expired`: Helm has lost Google. */
+  if (command === "helm_calendar") return (params.has("helmcal") ? structuredClone(demoHelmCalendar()) : null) as T;
+  if (command === "helm_calendar_act") {
+    const action = (args as { action: Record<string, unknown> }).action;
+    const seen = window as unknown as { __helmActs?: unknown[] };
+    seen.__helmActs = [...(seen.__helmActs ?? []), action];
+    if (params.get("helmcal") === "refuse") throw new Error("Helm said no.");
+    return applyDemoHelm(action) as T;
+  }
+  /* `&calwrite`: the demo's events are writable, and a write lands, like Rust's re-read. */
+  if (command === "move_event" || command === "create_event" || command === "delete_event" || command === "update_event") {
+    (window as unknown as { __calWrites?: unknown[] }).__calWrites = [...((window as unknown as { __calWrites?: unknown[] }).__calWrites ?? []), { command, ...args }];
+    const one = demoCalendar.events.find(e => e.id === args.eventId);
+    if (command === "move_event" && one) { one.start = String(args.start); one.end = String(args.end); }
+    if (command === "update_event" && one) Object.assign(one, args.title === undefined ? {} : { title: args.title }, args.location === undefined ? {} : { location: args.location });
+    if (params.has("calslow")) return undefined as T;
+    previewBus.dispatchEvent(new CustomEvent("calendar:changed", { detail: structuredClone(calWritable(demoCalendar)) }));
+    return undefined as T;
+  }
+  /* `&calsignedout`: Google has turned the saved sign-in down. `&calsignin=fail`: so does the second try. */
+  if (command === "reconnect_google") {
+    (window as unknown as { __signIns?: number }).__signIns = ((window as unknown as { __signIns?: number }).__signIns ?? 0) + 1;
+    await new Promise(done => setTimeout(done, 300));
+    if (params.get("calsignin") === "fail") throw "The Google redirect never arrived.";
+    demoSignedIn = true;
+    previewBus.dispatchEvent(new CustomEvent("calendar:changed", { detail: structuredClone(demoCalendar) }));
+    return undefined as T;
+  }
   /* ⚠️ Both of them, and the ones Rust actually defaults to. This stub was
      three keys and a stale `Ctrl+Alt+N` — which is `AltGr+N`, the combination
      that ate `ń` and is the reason the defaults moved. The settings window's

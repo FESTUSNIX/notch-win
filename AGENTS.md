@@ -6334,3 +6334,66 @@ Helm; these are answers it asks for mid-reply.
       Tests: gabi.test.mjs, gabi.rs, tests/browser/gabi.spec.ts (`&gabi=…` stages
       them; `fun.html` in the preview exposes `__fun`). The overlay itself, the 10 s
       read and the real keyboard need the installed app to check.
+ 932. **A press lands on what was pressed (4 Nov).** His words: "when we click on
+      any peek we just open the previous screen", and the follow-live setting "was a
+      mistake", so it's gone from the window, the prefs and `prefs.rs`. `?nofollow`
+      stays for the tests that walk the screens. `landOn` takes what the pill DREW
+      (`pillShows`: a peek, second place, a replay, or the owner); at rest it stays on
+      the screen it was left on. Where each thing goes is `click-target.ts`.
+      - ⚠️ `pillShows` is read FIRST in the open callback: an open panel holds peeks
+        back, so the `render` right after repaints the pill without the pressed peek.
+      - ⚠️ A target of null is not "open the panel anyway". A peek with no screen and
+        no action swallows the press (hers, for now). A moment stays up: a payment,
+        a request or mail keeps the buttons that act on it, which Today has none of.
+        The context view replaces those nulls.
+      - ⚠️ Helm's event ids are `<calendar>:<event>`, the calendar's are bare:
+        `choose` matches both, as `prepCovers` does.
+      Tests: click-target.test.mjs, tests/browser/click-target.spec.ts.
+ 933. **Signing back in to Google from the calendar (4 Nov).** `reconnect_google`
+      reuses the client saved in Credential Manager, so nothing is pasted, and the
+      calendar shows the bar when `needs_sign_in` is set (a token request Google
+      turned down: `REJECTED`, not a dropped network). The last good events stay
+      below it. A failed attempt writes nothing, so it can't cost the saved client.
+      - ⚠️ The redirect is `http://127.0.0.1:<random port>`, which Google only allows
+        for a DESKTOP app client. Helm's client is a Web one and answers
+        `redirect_uri_mismatch`: never paste it here.
+      - ⚠️ A Google app whose consent screen is in Testing has its refresh tokens
+        expire after 7 days. Publishing it is what stops the sign-outs.
+      `&calsignedout`, `&calsignin=fail`, and `&calwrite` (writable demo events, writes
+      recorded in `window.__calWrites`) stage it. Test: calendar-signin.spec.ts.
+
+934.  The calendar's gestures are one controller, after Helm's `use-grid-gestures`
+      (`calendar-edit.ts`). Found by driving the old grid: a fast drag across days
+      stuck and never saved, Esc closed the island and still wrote the move, the top
+      edge moved instead of resizing, nothing scrolled, a click away kept the panel
+      and started an event, overlaps stacked out of reach.
+      - ⚠️ Once a press is a drag the SCROLLER holds the pointer, because the block
+        moves between columns and a re-appended element loses its capture.
+      - ⚠️ `render()` does nothing during a press (`holding`) or while a field in the
+        panel, draft or quick add has the caret (`heldStill`): a redraw would take
+        the element from under the pointer, or empty the field. Only an INPUT counts:
+        a button keeps focus after its press, and counting that froze the screen.
+      - ⚠️ Native Esc: the island doesn't hold the keyboard during a drag and taking it
+        mid-press could end the press, so `escape_down` asks Windows every 90 ms.
+      - The panel is one element kept between redraws (`panelFor`), or a half-pressed
+        button loses its click and the entrance animation replays on every tick.
+      - `surface.holdForDrag` keeps the island up however far the pointer goes.
+      Test: calendar-grid.spec.ts, calendar-edit.test.mjs.
+
+935.  With Helm connected the calendar reads and writes through it
+      (`/api/notch/calendar`, `helm_calendar`, `helm_calendar_act`, every 3 minutes
+      and on coming back to the screen): his decision, 4 Nov. Blocks, markers, To plan
+      and prep notes only exist there, and it holds the one Google login.
+      - `calendar.feed` carries Helm's events then, so peeks and moments follow. Their
+        ids are Helm's `<calendar>:<event>`, and `googleId` is what a write addresses.
+      - The app's own Google connection is the fallback: no Helm, an older Helm (404,
+        read as "no reading"), or Helm having lost Google. Writes follow the event
+        (`viaHelm`), not a setting.
+      - ⚠️ A write bumps `helmTurn`, so a read already under way can't put a block back
+        where it was. The reading that follows is what clears the optimism.
+      - ⚠️ Helm's rule, kept: an event with other guests isn't draggable (Helm doesn't
+        send invitations), where the app's own connection only checked the calendar.
+      - Blocks stop at 3 hours, which Helm refuses past: `Placed.maxHours` clamps the
+        drag so it never gets that far.
+      `&helmcal`, `&helmcal=expired`, `&helmcal=refuse` stage it, with writes in
+      `window.__helmActs`. Test: calendar-helm.spec.ts, calendar-helm.test.mjs.

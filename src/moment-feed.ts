@@ -26,6 +26,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { call, native, preview } from "./task-client";
 import { MomentGlance } from "./moment-glance";
+import { momentOpens, momentTarget } from "./click-target";
 import { load, save } from "./kit/store";
 import {
   AgentWatch, BLOCK_LEAD_MS, MEETING_LEAD_MS, MomentQueue, finishedMoment, helmKey, helmMoment, inMinutes, lowWindows, plannedStart,
@@ -38,6 +39,7 @@ import type { IslandSurface } from "./island-surface";
 import type { SessionView } from "./screen-agents";
 import type { HelmBlock, HelmEntry, HelmNudge, NudgeAction } from "./screen-helm";
 import type { CalEvent } from "./screen-calendar";
+import type { ScreenName } from "./island-activity";
 import type { TaskIcon } from "./task-icons";
 
 export interface FeedDeps {
@@ -69,8 +71,8 @@ export interface FeedDeps {
   eventQuiet: (id: string) => boolean;
   /** Something else owns the island right now: the palette, capture, a call… */
   busy: () => boolean;
-  /** Open the panel on a screen. */
-  openScreen: (name: "agents" | "guardian" | "calendar" | "helm") => void;
+  /** Open the panel on a screen, and on the calendar on one event. */
+  openScreen: (name: ScreenName, event?: string) => void;
   agentName: (provider?: string) => string;
   say: (what: string, why: string) => void;
 }
@@ -103,6 +105,7 @@ export class MomentFeed {
     this.glance = new MomentGlance(host, {
       act: (moment, button) => this.act(moment, button),
       open: moment => this.open(moment),
+      opens: moment => momentOpens(moment),
       dismiss: moment => this.dismiss(moment),
       measured: depth => deps.surface.setMomentDepth(depth),
       mayGrow: on => deps.surface.setMomentTall(on),
@@ -459,15 +462,16 @@ export class MomentFeed {
     void this.jumpTo(first?.id ?? moment.key.split(":")[1]);
   }
 
+  /** The moment's body pressed. With nowhere of its own to go it stays up, buttons
+   *  and all: see click-target.ts. */
   private open(moment: Moment) {
-    // Hers open nothing: everything about them is here already, and he's rarely in Helm.
-    if (moment.kind === "gabi") return;
     if (moment.kind === "finished") return this.openFinished(moment);
     if (moment.helm?.kind === "close") { this.done(moment); this.deps.helm.close(); return; }
+    if (moment.kind === "question") { this.done(moment); return void this.jump(moment); }
+    const to = momentTarget(moment);
+    if (!to) return;
     this.done(moment);
-    if (moment.helm) return this.deps.openScreen(moment.helm.kind === "prep" ? "calendar" : "helm");
-    if (moment.kind === "question") return void this.jump(moment);
-    this.deps.openScreen(moment.kind === "meeting" ? "calendar" : moment.kind === "usage" ? "agents" : "guardian");
+    this.deps.openScreen(to.screen, to.event);
   }
 
   private act(moment: Moment, button: MomentButton) {

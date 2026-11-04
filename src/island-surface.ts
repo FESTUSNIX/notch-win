@@ -591,7 +591,7 @@ export class IslandSurface {
      * length of the fold. The question is "will it end up collapsed", not
      * "did I fold it". */
     if (!this.open) return true;
-    if (this.pinned || this.hovering || this.editing) return false;
+    if (this.pinned || this.hovering || this.editing || this.dragging) return false;
     clearTimeout(this.timer);
     this.show(false);
     return true;
@@ -822,8 +822,19 @@ export class IslandSurface {
     else { this.suppressed = false; this.show(true); }
   }
 
+  /** A drag on a screen is running, and may leave the island: it stays up until
+   *  the drag ends, then folds as usual if the pointer is gone. */
+  private dragging = false;
+  holdForDrag(on: boolean) {
+    this.dragging = on;
+    clearTimeout(this.timer);
+    if (!on && this.open && this.openOnHover && !this.hovering) {
+      this.timer = window.setTimeout(() => this.show(false), this.foldDelay);
+    }
+  }
+
   show(value: boolean) {
-    if (!value && (this.pinned || this.editing)) return;
+    if (!value && (this.pinned || this.editing || this.dragging)) return;
     if (this.open === value) return;
     this.open = value;
     /* Opening from a glance: the glance's own spring goes back to zero while

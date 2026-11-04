@@ -60,6 +60,8 @@
 #island-moment[data-kind='gabi'] {
 	--m: #ff5c8a;
 	--on-m: #22070f;
+}
+#island-moment[data-inert] {
 	cursor: default;
 }
 /* A solid colour, not the usual see-through white, which dims her emoji too. */

@@ -273,11 +273,6 @@ pub struct Prefs {
     /// frosted, it reads as something laid ON the work — which is what it is.
     /// Solid stays available for a busy background, where blur is noise.
     pub ring_glass: bool,
-    /// Opening the island lands on whatever is actually happening — the call,
-    /// the agent waiting, the meeting about to start — rather than on wherever
-    /// you last were. ⚠️ The pill has already decided which that is; this
-    /// only says whether to follow it.
-    pub follow_live: bool,
 
     /* ── The palette ────────────────────────────────────────────────────── */
     pub use_everything: bool,
@@ -418,7 +413,6 @@ impl Default for Prefs {
             ring_hold_ms: 250,
             ring_tap: "@search".into(),
             home_currency: String::new(),
-            follow_live: true,
             call_mode: true,
             call_mute_mic: true,
             call_open: true,

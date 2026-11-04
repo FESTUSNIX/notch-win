@@ -103,6 +103,9 @@ pub struct Calendar {
     pub events: Vec<Event>,
     pub updated_at: Option<String>,
     pub error: Option<String>,
+    /// Google no longer accepts the saved sign-in. The client is still saved, so
+    /// the calendar offers to sign in again without asking for it.
+    pub needs_sign_in: bool,
 }
 
 #[derive(Default)]
@@ -237,8 +240,12 @@ fn await_code(listener: TcpListener) -> Result<String, String> {
         }
         // Anything else is the browser asking for a favicon; keep listening.
     }
-    Err("The Google redirect never arrived.".into())
+    Err("The Google redirect never arrived. If Google said redirect_uri_mismatch, this is a Web client: Codenotch needs a Desktop app client.".into())
 }
+
+/// How a token request Google turned down begins: what `needs_sign_in` looks for.
+/// A dropped network says something else, and signing in again wouldn't fix it.
+const REJECTED: &str = "Google rejected the sign-in";
 
 async fn exchange(
     http: &reqwest::Client,
@@ -263,7 +270,7 @@ async fn exchange(
             .and_then(Value::as_str)
             .or_else(|| body.get("error").and_then(Value::as_str))
             .unwrap_or("no detail");
-        return Err(format!("Google rejected the sign-in: {detail}"));
+        return Err(format!("{REJECTED}: {detail}"));
     }
     body.as_object()
         .cloned()
@@ -301,7 +308,23 @@ pub async fn connect_google(
     if client_id.is_empty() || client_secret.is_empty() {
         return Err("Paste both the client ID and the client secret.".into());
     }
+    authorize(&app, client_id, client_secret).await?;
+    refresh_calendar(app, window).await
+}
 
+/// Sign in again with the saved client, from the calendar itself. ⚠️ Not limited to
+/// the editor as `connect_google` is: no secret crosses to the page in either
+/// direction, it stays in Rust and Credential Manager.
+#[tauri::command]
+pub async fn reconnect_google(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    let record = stored()?.ok_or("Connect Google Calendar in Settings first.")?;
+    authorize(&app, record.client_id, record.client_secret).await?;
+    refresh_calendar(app, window).await
+}
+
+/// The browser, the redirect and the saved result. ⚠️ A failed attempt writes
+/// nothing, so it can't cost the client that was already saved.
+async fn authorize(app: &AppHandle, client_id: String, client_secret: String) -> Result<(), String> {
     let verifier = url_safe(&rand::rng().random::<[u8; 48]>());
     let challenge = url_safe(&Sha256::digest(verifier.as_bytes()));
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -346,12 +369,12 @@ pub async fn connect_google(
         credentials::GOOGLE,
         &serde_json::to_string(&record).map_err(|_| "Could not serialise the credential.")?,
     )?;
-    if let Some(access) = body.get("access_token").and_then(Value::as_str) {
-        let state = app.state::<CalendarState>();
-        *state.access.lock().unwrap() =
-            Some((access.to_string(), Instant::now() + Duration::from_secs(3000)));
-    }
-    refresh_calendar(app, window).await
+    let state = app.state::<CalendarState>();
+    *state.access.lock().unwrap() = body
+        .get("access_token")
+        .and_then(Value::as_str)
+        .map(|access| (access.to_string(), Instant::now() + Duration::from_secs(3000)));
+    Ok(())
 }
 
 #[tauri::command]
@@ -740,6 +763,42 @@ pub async fn move_event(
     .await
 }
 
+/// A new name or place for one event. A PATCH of only what changed, for the same
+/// reason as `move_event`.
+#[tauri::command]
+pub async fn update_event(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    calendar_id: String,
+    event_id: String,
+    title: Option<String>,
+    location: Option<String>,
+) -> Result<(), String> {
+    if calendar_id.is_empty() || event_id.is_empty() {
+        return Err("That event cannot be identified.".into());
+    }
+    let mut body = serde_json::Map::new();
+    if let Some(title) = title {
+        body.insert("summary".into(), Value::String(title.trim().to_string()));
+    }
+    if let Some(location) = location {
+        body.insert("location".into(), Value::String(location.trim().to_string()));
+    }
+    if body.is_empty() {
+        return Ok(());
+    }
+    let body = Value::Object(body);
+    write_then_refresh(&app, &window, move |http, token| async move {
+        let url = format!(
+            "{API}/calendars/{}/events/{}",
+            encode(&calendar_id),
+            encode(&event_id)
+        );
+        send_json(&http, &token, Method::PATCH, &url, Some(&body)).await.map(|_| ())
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn delete_event(
     app: AppHandle,
@@ -792,6 +851,7 @@ async fn poll(app: &AppHandle, state: &CalendarState) -> Result<(), String> {
                     events,
                     updated_at: Some(Utc::now().to_rfc3339()),
                     error: None,
+                    needs_sign_in: false,
                 },
             );
             Ok(())
@@ -801,6 +861,7 @@ async fn poll(app: &AppHandle, state: &CalendarState) -> Result<(), String> {
             // an empty one, exactly as the usage cells keep their last reading.
             let mut snapshot = state.view.lock().unwrap().clone();
             snapshot.connected = true;
+            snapshot.needs_sign_in = message.starts_with(REJECTED);
             snapshot.error = Some(message.clone());
             publish(app, state, snapshot);
             Err(message)

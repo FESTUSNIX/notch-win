@@ -1,31 +1,24 @@
-/* Direct manipulation on the week grid: drawing an event, moving one, and
- * changing how long it is.
+/* Direct manipulation on the time grid: drawing an event, moving one across
+ * days, and changing how long it is from either edge. Helm's grid is the model
+ * (`components/calendar/use-grid-gestures.ts`).
  *
- * ⚠️ A SEPARATE file from `screen-calendar.ts`, the way `board-edit.ts` sits
- * beside `screen-board.ts`. The screen renders; this reaches into what it
- * rendered and moves it.
+ * One gesture at a time, followed on the WINDOW. Once a press becomes a drag the
+ * scroller holds the pointer, because the block itself moves between columns and
+ * an element that is re-appended loses its capture: that was a fast drag across
+ * days ending stuck and unsaved.
  *
- * ⚠️ **Nothing here re-renders mid-gesture.** The screen repaints wholesale on
- * `changed()`, so a drag that called it would destroy the element under the
- * pointer on the first move and the gesture would end on a node that is no
- * longer in the document. Everything between `pointerdown` and `pointerup` is
- * inline style on one block; `changed()` is for after.
+ * The screen does not redraw during a gesture (`busy`), so the elements under the
+ * pointer stay in the document. A cancelled gesture is put back by the redraw
+ * that follows it, not by undoing each change here.
  *
- * ⚠️ Positions are PIXELS off the shared `Axis`, never percentages. The axis
- * is piecewise — quiet hours collapse — so "40% down the column" does not name
- * an hour, and the renderer and this file have to agree about which pixel is
- * which time or a block jumps the moment it is picked up.
+ * Positions are pixels off the shared `Axis`, because quiet hours collapse and a
+ * percentage down the column names no hour.
  */
 import { element } from "./dom.ts";
 import { SNAP, type Axis } from "./calendar-axis.ts";
 
-/** One thing laid on the grid, as far as a gesture is concerned.
- *
- * ⚠️ `ref` is OPAQUE on purpose. The grid carries Google events and TickTick
- * tasks now, and they are written back through completely different commands —
- * but a drag does not care which it is holding, only where it ended up. The
- * screen puts a ref in and gets the same ref back; this file never looks
- * inside one, which is why adding tasks needed no gesture code at all. */
+/** One thing laid on the grid, as far as a gesture is concerned. `ref` is opaque:
+ *  the screen puts an event or a task in and gets the same one back. */
 export interface Placed {
   id: string;
   ref: unknown;
@@ -34,54 +27,135 @@ export interface Placed {
   start: number;
   end: number;
   column: number;
+  /** The longest it may be, in hours: Helm's blocks stop at three. */
+  maxHours?: number;
 }
 
-/** What a click with no drag in it means, in hours. ⚠️ A click has no
- *  duration, so one has to be invented; half an hour is the shortest thing
- *  anybody schedules and the easiest to lengthen afterwards. */
+export type GestureKind = "move" | "resize-start" | "resize-end" | "create";
+
+export interface Span {
+  column: number;
+  start: number;
+  end: number;
+}
+
+/** What a click on empty time proposes, in hours. */
 const CLICK_SPAN = 0.5;
-
-/** How far the pointer must move before a press becomes a drag.
- *
- * ⚠️ Without this every click on a block is a one-pixel move, which is a write
- * to Google, a refresh, and an event that ends up seven minutes off because a
- * hand moved. The press only becomes a gesture once it has clearly left. */
+/** How far the pointer must move before a press becomes a drag: a click stays a
+ *  click, and a shaky hand doesn't move a meeting. */
 const SLOP = 4;
-
-/** How close to the bottom edge counts as "resize" rather than "move". */
+/** How close to an edge counts as resizing rather than moving. */
 const GRIP = 7;
-
-/** The shortest a block may be drawn, in px. Matches the screen's own floor. */
+/** The shortest a block is drawn, in px. Matches the screen's own floor. */
 const MIN_PX = 22;
+/** How near the top or bottom the grid starts scrolling, and its fastest step. */
+const EDGE = 40;
+const MAX_SCROLL = 14;
+/** How often Escape is asked after while a drag runs in the real window. */
+const ESCAPE_POLL_MS = 90;
 
 export interface EditHooks {
-  /** Draw a new event. Times are local-wall-clock, as a Date. */
+  /** A new range, drawn or clicked. Times are local wall clock. */
   create: (start: Date, end: Date) => void;
-  /** Move or resize something already on the grid. */
+  /** Something on the grid has a new time. */
   move: (ref: unknown, start: Date, end: Date) => void;
-  /** Say why a gesture was refused, or clear it with "". */
-  say: (message: string) => void;
+  /** Hold redraws and keep the island up while a press is live. */
+  busy: (on: boolean) => void;
+  /** A drag began: whatever is open about the grid steps aside. */
+  started: () => void;
+  /** Something is open, so a click on empty time only closes it. */
+  dismissing: () => boolean;
+  /** That click: close what is open. */
+  dismiss: () => void;
+  /** Draw what is true again, after a gesture that changed nothing. */
+  repaint: () => void;
+  /** Whether Escape is down. The island doesn't hold the keyboard while a block
+   *  is dragged, so in the real window the page never hears the key. */
+  escapeDown?: () => Promise<boolean>;
 }
 
-/** A local Date from a `YYYY-MM-DD` and an hour with a fraction.
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+const snapped = (hour: number) => Math.round(hour / SNAP) * SNAP;
+
+/** Where a gesture puts things for the pointer's position. Pure, and the half of
+ *  this file that is tested without a browser.
  *
- * ⚠️ Built field by field rather than by parsing a string. `new Date("…T09:30")`
- * is parsed as local by every engine that matters and as UTC by some older
- * ones, and the failure mode is a meeting an hour out twice a year. */
+ * @param grab `move`: hours between the pointer and the start when pressed.
+ *             `create`: the hour pressed. Unused by a resize. */
+export function gestureSpan(
+  kind: GestureKind,
+  origin: Span,
+  grab: number,
+  over: { column: number; hour: number },
+  maxHours = 24,
+): Span {
+  if (kind === "move") {
+    const length = origin.end - origin.start;
+    const start = clamp(snapped(over.hour - grab), 0, 24 - length);
+    return { column: over.column, start, end: start + length };
+  }
+  if (kind === "resize-end") {
+    return { ...origin, end: clamp(snapped(over.hour), origin.start + SNAP, Math.min(24, origin.start + maxHours)) };
+  }
+  if (kind === "resize-start") {
+    return { ...origin, start: clamp(snapped(over.hour), Math.max(0, origin.end - maxHours), origin.end - SNAP) };
+  }
+  // Drawing, upward as well as down, and at least a quarter of an hour.
+  const anchor = Math.floor(grab / SNAP) * SNAP;
+  const to = clamp(snapped(over.hour), 0, 24);
+  const start = Math.min(anchor, to);
+  const end = to > anchor ? to : anchor + SNAP;
+  return { column: origin.column, start: Math.min(start, 24 - SNAP), end: Math.min(end, 24) };
+}
+
+/** A local Date from a `YYYY-MM-DD` and an hour with a fraction, built field by
+ *  field so no engine reads it as UTC. */
 export function atHour(day: string, hour: number): Date {
   const [y, m, d] = day.split("-").map(Number);
   const whole = Math.floor(hour);
   return new Date(y, (m || 1) - 1, d || 1, whole, Math.round((hour - whole) * 60), 0, 0);
 }
 
-/** Hour-of-day at a point inside a column.
- *
- * ⚠️ Through the AXIS, which knows where the collapsed bands are. Dividing the
- * column's height by a span would place every hour after a band on the wrong
- * line. */
+/** Hour-of-day at a point inside a column, through the axis and its bands. */
 export function hourAtPoint(clientY: number, box: { top: number }, axis: Axis): number {
   return axis.hourAt(clientY - box.top);
 }
+
+/** An event's start and end as hours of the day it starts on. Ending at the next
+ *  midnight is 24, not 0, and `crosses` says it runs on beyond that. */
+export function hoursWithin(begin: Date, finish: Date): { start: number; end: number; crosses: boolean } {
+  const start = begin.getHours() + begin.getMinutes() / 60;
+  const nextDay = new Date(begin.getFullYear(), begin.getMonth(), begin.getDate() + 1);
+  if (finish.getTime() > nextDay.getTime()) return { start, end: 24, crosses: true };
+  if (finish.getTime() === nextDay.getTime()) return { start, end: 24, crosses: false };
+  return { start, end: Math.max(start + SNAP, finish.getHours() + finish.getMinutes() / 60), crosses: false };
+}
+
+/** Which of the columns an x falls in; off either side counts as the nearest. */
+export function columnAt(boxes: { left: number; right: number }[], x: number): number {
+  const inside = boxes.findIndex(box => x >= box.left && x <= box.right);
+  if (inside >= 0) return inside;
+  // In a gap between two columns, or off either side: whichever is closest.
+  let best = 0;
+  let distance = Infinity;
+  for (const [index, box] of boxes.entries()) {
+    const away = Math.min(Math.abs(x - box.left), Math.abs(x - box.right));
+    if (away < distance) { distance = away; best = index; }
+  }
+  return best;
+}
+
+/** How far to scroll for a pointer at `y`: faster the nearer the edge. */
+export function edgeStep(y: number, top: number, bottom: number): number {
+  if (y < top + EDGE) return -MAX_SCROLL * Math.min(1, (top + EDGE - y) / EDGE);
+  if (y > bottom - EDGE) return MAX_SCROLL * Math.min(1, (y - (bottom - EDGE)) / EDGE);
+  return 0;
+}
+
+const clock = (hour: number) => {
+  const whole = Math.floor(hour) % 24;
+  return `${String(whole).padStart(2, "0")}:${String(Math.round((hour - Math.floor(hour)) * 60)).padStart(2, "0")}`;
+};
 
 /** Where a block sits, in the axis's own pixels. */
 function place(block: HTMLElement, start: number, end: number, axis: Axis) {
@@ -90,232 +164,259 @@ function place(block: HTMLElement, start: number, end: number, axis: Axis) {
   block.style.height = `${Math.max(MIN_PX, axis.yOf(end) - top)}px`;
 }
 
-/** Wire one rendered week body for editing.
- *
- * `columns` must be in the same order as `days`. Returns nothing: the
- * listeners live as long as the elements do, and the screen throws the whole
- * body away on every render.
- */
+/** The click a finished drag produces goes nowhere. */
+function swallowNextClick() {
+  const swallow = (event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+  };
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  // The click, if one comes, arrives with the pointerup, before any timer.
+  setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+}
+
+/** Wire one drawn grid. `columns` is in the order of `days`, and the listeners
+ *  live as long as `body`, which the screen replaces on every draw. */
 export function wireWeekEditing(
+  scroller: HTMLElement,
   body: HTMLElement,
   columns: HTMLElement[],
   axis: Axis,
   days: string[],
   hooks: EditHooks,
 ) {
-  /* ── Drawing a new event ───────────────────────────────────────────── */
-  for (const [index, column] of columns.entries()) {
-    column.addEventListener("pointerdown", event => {
-      /* ⚠️ Only a press on the column ITSELF or on one of its hour lines. A
-       * press that started on a block is that block's gesture, and without
-       * this check drawing a new event on top of an existing one was the
-       * easiest thing on the grid to do by accident.
-       *
-       * ⚠️ The hour lines have to be allowed explicitly: they tile the whole
-       * column, so almost every press on "empty" space actually lands on one.
-       * Testing only for the column itself made the gesture work on the few
-       * pixels between them and nowhere else. */
-      const on = event.target as HTMLElement;
-      if (on !== column && !on.classList.contains("cal-wkline")) return;
-      /* ⚠️ And never inside a collapsed hour. 13px cannot hold an event, and a
-       * drag that started there would draw one nobody can see. The band over
-       * it is a button that opens those hours instead. */
-      if (on.classList.contains("is-shut")) return;
-      if (event.button !== 0) return;
-      const day = days[index];
-      if (!day) return;
-      event.preventDefault();
-      hooks.say("");
-
-      const box = column.getBoundingClientRect();
-      const anchor = hourAtPoint(event.clientY, box, axis);
-      const ghost = element("div", "cal-block cal-ghost");
-      ghost.append(element("span", "cal-block-title", "New event"));
-      place(ghost, anchor, anchor + CLICK_SPAN, axis);
-      column.append(ghost);
-      column.setPointerCapture(event.pointerId);
-
-      let lo = anchor;
-      let hi = anchor + CLICK_SPAN;
-      let moved = false;
-      const onMove = (step: PointerEvent) => {
-        if (Math.abs(step.clientY - event.clientY) > SLOP) moved = true;
-        const now = hourAtPoint(step.clientY, box, axis);
-        /* ⚠️ Dragging UPWARD is a real gesture and has to mean the same thing.
-         * Sorting the two ends is the whole of it, and leaving it out makes an
-         * upward drag produce a negative height, which CSS clamps to the floor
-         * — so it looks like the grid ignores you. */
-        lo = Math.min(anchor, now);
-        hi = Math.max(anchor, now);
-        if (!moved || hi - lo < SNAP) { lo = anchor; hi = anchor + CLICK_SPAN; }
-        place(ghost, lo, hi, axis);
-      };
-      const done = (step: PointerEvent) => {
-        column.releasePointerCapture(step.pointerId);
-        column.removeEventListener("pointermove", onMove);
-        column.removeEventListener("pointerup", done);
-        column.removeEventListener("pointercancel", cancel);
-        ghost.remove();
-        hooks.create(atHour(day, lo), atHour(day, Math.min(24, hi)));
-      };
-      const cancel = () => {
-        column.removeEventListener("pointermove", onMove);
-        column.removeEventListener("pointerup", done);
-        column.removeEventListener("pointercancel", cancel);
-        ghost.remove();
-      };
-      column.addEventListener("pointermove", onMove);
-      column.addEventListener("pointerup", done);
-      column.addEventListener("pointercancel", cancel);
-    });
-  }
-
-  /* ── Moving and resizing what is already there ─────────────────────── */
   for (const block of body.querySelectorAll<HTMLElement>(".cal-block[data-cal-id]")) {
-    const id = block.dataset.calId!;
-    const source = blocks.get(id);
+    const source = blocks.get(block.dataset.calId!);
     if (!source) continue;
     if (source.locked) {
-      /* ⚠️ Marked rather than silently inert. A block that cannot move should
-       * say so on approach — the alternative is a drag that does nothing,
-       * which reads as the app being broken rather than as the calendar being
-       * somebody else's. */
       block.classList.add("is-locked");
       block.dataset.tip = source.locked;
-      continue;
+    } else {
+      block.classList.add("is-live");
     }
-    block.classList.add("is-live");
-
-    block.addEventListener("pointerdown", event => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      hooks.say("");
-
-      const box = block.getBoundingClientRect();
-      const resizing = event.clientY >= box.bottom - GRIP;
-      const startHour = source.start;
-      const endHour = source.end;
-      /* ⚠️ Every column's box is measured ONCE, at the start. Reading them per
-       * pointermove is a forced layout on every frame of a drag, and the boxes
-       * cannot move anyway — the grid is not scrolling while a pointer is
-       * captured on it. */
-      const boxes = columns.map(one => one.getBoundingClientRect());
-      const grabbed = hourAtPoint(event.clientY, boxes[source.column], axis);
-      let column$ = source.column;
-      let lo = startHour;
-      let hi = endHour;
-      let moved = false;
-
-      block.setPointerCapture(event.pointerId);
-      block.classList.add("is-dragging");
-
-      const onMove = (step: PointerEvent) => {
-        if (Math.abs(step.clientY - event.clientY) > SLOP
-          || Math.abs(step.clientX - event.clientX) > SLOP) moved = true;
-        if (!moved) return;
-        const over = hourAtPoint(step.clientY, boxes[column$], axis);
-        if (resizing) {
-          /* ⚠️ The END only, and never above the start. A resize that can
-           * cross its own beginning is a drag that silently turns into a move
-           * halfway through. */
-          hi = Math.max(lo + SNAP, over);
-        } else {
-          const drift = over - grabbed;
-          const length = endHour - startHour;
-          lo = Math.min(24 - length, Math.max(0, startHour + drift));
-          hi = lo + length;
-          /* Which day the pointer is over, so a block can cross columns. */
-          const found = boxes.findIndex(one => step.clientX >= one.left && step.clientX <= one.right);
-          if (found >= 0 && found !== column$) {
-            column$ = found;
-            columns[found].append(block);
-          }
-        }
-        place(block, lo, hi, axis);
-      };
-      const finish = (step: PointerEvent) => {
-        block.releasePointerCapture(step.pointerId);
-        block.removeEventListener("pointermove", onMove);
-        block.removeEventListener("pointerup", finish);
-        block.removeEventListener("pointercancel", abort);
-        block.classList.remove("is-dragging");
-        /* ⚠️ A press that never became a drag is left ALONE, so the block's own
-         * click opens the detail panel exactly as it always did. Calling
-         * `click()` here instead would fire it twice — `preventDefault` on
-         * `pointerdown` suppresses selection and focus, not the click — and
-         * the panel would open and immediately close again. */
-        if (!moved) return;
-        /* ⚠️ And a press that DID become a drag has to have its click eaten.
-         * The browser still sends one after the gesture, and without this every
-         * move ends by opening the panel for the event just dropped. */
-        block.addEventListener("click", stop => {
-          stop.preventDefault();
-          stop.stopPropagation();
-        }, { capture: true, once: true });
-        const day = days[column$];
-        if (!day) return;
-        hooks.move(source.ref, atHour(day, lo), atHour(day, hi));
-      };
-      const abort = () => {
-        block.removeEventListener("pointermove", onMove);
-        block.removeEventListener("pointerup", finish);
-        block.removeEventListener("pointercancel", abort);
-        block.classList.remove("is-dragging");
-        place(block, startHour, endHour, axis);
-      };
-      block.addEventListener("pointermove", onMove);
-      block.addEventListener("pointerup", finish);
-      block.addEventListener("pointercancel", abort);
-    });
   }
+
+  const stuckBottom = () => scroller.querySelector(".cal-wkstick")?.getBoundingClientRect().bottom;
+
+  body.addEventListener("pointerdown", press => {
+    if (press.button !== 0) return;
+    const on = press.target as HTMLElement;
+    if (on.closest(".cal-panel, .cal-draft, .cal-wkband, .cal-wkaxis, [data-no-drag]")) return;
+
+    const element$ = on.closest<HTMLElement>(".cal-block[data-cal-id]");
+    const source = element$ ? blocks.get(element$.dataset.calId!) ?? null : null;
+    if (element$ && (!source || source.locked)) return;
+    if (!element$ && on.closest(".cal-block")) return;
+    if (!element$ && on.classList.contains("is-shut")) return;
+    const pressed = on.closest<HTMLElement>(".cal-wkcol");
+    if (!pressed) return;
+    const pressedColumn = columns.indexOf(pressed);
+    if (pressedColumn < 0 || !days[pressedColumn]) return;
+
+    press.preventDefault();
+    const hourNow = (y: number) => axis.hourAt(y - columns[0].getBoundingClientRect().top);
+
+    let kind: GestureKind = "create";
+    if (element$) {
+      const box = element$.getBoundingClientRect();
+      const zone = Math.min(GRIP, box.height / 3);
+      kind = press.clientY <= box.top + zone ? "resize-start"
+        : press.clientY >= box.bottom - zone ? "resize-end" : "move";
+    }
+    const pressHour = hourNow(press.clientY);
+    const origin: Span = source
+      ? { column: source.column, start: source.start, end: source.end }
+      : { column: pressedColumn, start: pressHour, end: pressHour + CLICK_SPAN };
+    const grab = source ? pressHour - source.start : pressHour;
+    const dismissing = !source && hooks.dismissing();
+
+    hooks.busy(true);
+    /* `preventDefault` kept focus from moving, so a field in the panel or a draft
+     * has to be told it's over. It keeps what was typed. */
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.closest(".cal-panel, .cal-draft, .cal-quick")) focused.blur();
+    let armed = false;
+    let span = origin;
+    let pointer = { x: press.clientX, y: press.clientY };
+    let frame = 0;
+    let escapeTimer = 0;
+    let ghost: HTMLElement | null = null;
+    const stamp = element$ ? element$.querySelector<HTMLElement>(".cal-block-time") : null;
+
+    /** Put the block or the ghost where the pointer says. */
+    const update = () => {
+      const boxes = columns.map(one => one.getBoundingClientRect());
+      const over = { column: columnAt(boxes, pointer.x), hour: axis.hourAt(pointer.y - boxes[0].top) };
+      const next = gestureSpan(kind, origin, grab, over, source?.maxHours);
+      span = next;
+      const target = ghost ?? element$!;
+      if (target.parentElement !== columns[next.column]) columns[next.column].append(target);
+      place(target, next.start, next.end, axis);
+      const label = `${clock(next.start)} – ${clock(next.end)}`;
+      if (ghost) ghost.querySelector<HTMLElement>(".cal-block-time")!.textContent = label;
+      else {
+        const shown = stamp ?? element$!.querySelector<HTMLElement>(".cal-block-time");
+        if (shown) shown.textContent = label;
+        else element$!.append(element("span", "cal-block-time", label));
+      }
+    };
+
+    const tick = () => {
+      const box = scroller.getBoundingClientRect();
+      const step = edgeStep(pointer.y, stuckBottom() ?? box.top, box.bottom);
+      if (step) {
+        scroller.scrollBy({ top: step });
+        update();
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    const arm = () => {
+      armed = true;
+      /* From here the scroller owns the pointer, wherever it goes. */
+      try { scroller.setPointerCapture(press.pointerId); } catch { /* already gone */ }
+      scroller.addEventListener("lostpointercapture", lost);
+      document.body.dataset.calGesture = kind;
+      hooks.started();
+      if (source) {
+        element$!.classList.add("is-dragging");
+        // Full width while it travels; the lanes are for what stays put.
+        element$!.style.removeProperty("left");
+        element$!.style.removeProperty("width");
+        element$!.style.removeProperty("right");
+      } else {
+        ghost = element("div", "cal-block cal-ghost");
+        ghost.append(element("span", "cal-block-title", "New event"), element("span", "cal-block-time"));
+        columns[pressedColumn].append(ghost);
+      }
+      frame = requestAnimationFrame(tick);
+      if (hooks.escapeDown) {
+        const ask = hooks.escapeDown;
+        escapeTimer = window.setInterval(() => {
+          void ask().then(down => { if (down) finish(false); }).catch(() => {});
+        }, ESCAPE_POLL_MS);
+      }
+      update();
+    };
+
+    let finished = false;
+    /** A drag ended, by a release (`commit`) or by being called off. */
+    function finish(commit: boolean) {
+      if (finished) return;
+      finished = true;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey, true);
+      scroller.removeEventListener("lostpointercapture", lost);
+      cancelAnimationFrame(frame);
+      clearInterval(escapeTimer);
+      delete document.body.dataset.calGesture;
+      ghost?.remove();
+      try { scroller.releasePointerCapture(press.pointerId); } catch { /* not held */ }
+      hooks.busy(false);
+
+      const day = days[span.column];
+      if (!armed) {
+        // A plain click on empty time proposes a slot, unless it's closing something.
+        if (commit && kind === "create" && dismissing) hooks.dismiss();
+        else if (commit && kind === "create" && days[pressedColumn]) {
+          const from = clamp(Math.floor(pressHour / SNAP) * SNAP, 0, 24 - CLICK_SPAN);
+          hooks.create(atHour(days[pressedColumn], from), atHour(days[pressedColumn], from + CLICK_SPAN));
+        }
+        return;
+      }
+      swallowNextClick();
+      const changed = kind === "create"
+        || span.column !== origin.column || span.start !== origin.start || span.end !== origin.end;
+      if (!commit || !changed || !day) {
+        hooks.repaint();
+        return;
+      }
+      if (kind === "create") hooks.create(atHour(day, span.start), atHour(day, span.end));
+      else hooks.move(source!.ref, atHour(day, span.start), atHour(day, span.end));
+    }
+
+    function onMove(step: PointerEvent) {
+      if (step.pointerId !== press.pointerId) return;
+      // The button came up somewhere nobody heard about.
+      if (step.pointerType === "mouse" && step.buttons === 0) { finish(false); return; }
+      pointer = { x: step.clientX, y: step.clientY };
+      if (!armed) {
+        if (Math.hypot(step.clientX - press.clientX, step.clientY - press.clientY) < SLOP) return;
+        arm();
+        return;
+      }
+      step.preventDefault();
+      update();
+    }
+    function onUp(step: PointerEvent) {
+      if (step.pointerId === press.pointerId) finish(true);
+    }
+    function onCancel(step: PointerEvent) {
+      if (step.pointerId === press.pointerId) finish(false);
+    }
+    function lost() { finish(false); }
+    function onKey(key: KeyboardEvent) {
+      if (key.key !== "Escape" || !armed) return;
+      key.preventDefault();
+      key.stopPropagation();
+      finish(false);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey, true);
+  });
 }
 
-/** Where each rendered block came from.
- *
- * ⚠️ A module-level map filled by the screen as it draws, rather than data
- * attributes read back off the DOM. The gesture needs the event DROP — its
- * calendar id, whether it is writable — and round-tripping that through
- * `dataset` means serialising and re-parsing it on every render for the one
- * gesture in a hundred renders that uses it.
- */
+/** Where each rendered block came from: filled by the screen as it draws, so a
+ *  gesture has the event itself rather than what survives a data attribute. */
 const blocks = new Map<string, Placed>();
 
-/** Called by the screen before it wires a freshly drawn week. */
+/** Called by the screen before it wires a freshly drawn grid. */
 export function rememberBlocks(entries: Placed[]) {
   blocks.clear();
   for (const one of entries) blocks.set(one.id, one);
 }
 
 /* ── Dragging a task in from the list ─────────────────────────────────────
- * ⚠️ A POINTER drag, not HTML5 drag-and-drop. The island is a transparent,
- * non-activating window: the native drag image is a screenshot the compositor
- * takes of an element that has no opaque background, and `dragover` does not
- * fire reliably across it. Everything else in this app that drags — the board's
- * arrange, the shelf's drop — is pointer-based for the same reason.
+ * A pointer drag, not HTML5 drag-and-drop: the island is a transparent,
+ * non-activating window, and native drag images and `dragover` don't hold up on it.
  */
 export interface DropHooks {
-  /** Where the pointer is, as a column index and an hour, or null if it is
-   *  not over the grid. */
+  /** Where the pointer is, as a column index and an hour, or null off the grid. */
   at: (clientX: number, clientY: number) => { column: number; hour: number } | null;
   /** Land it. */
   drop: (ref: unknown, column: number, hour: number) => void;
   /** How long a dropped thing should be, in hours. */
   span: number;
+  /** Hold redraws while the row is in the air. */
+  busy?: (on: boolean) => void;
 }
 
 /** Make one row of the task list draggable onto the grid. */
 export function wireTaskDrag(row: HTMLElement, ref: unknown, label: string, hooks: DropHooks) {
   row.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
-    /* ⚠️ Not on the checkbox. It is a control inside the drag handle, and
-     * without this every tick started a drag that ate the click. */
+    /* Not on the checkbox: it's a control inside the drag handle. */
     if ((event.target as HTMLElement).closest("[data-no-drag]")) return;
     event.preventDefault();
 
     let ghost: HTMLElement | null = null;
     let over: { column: number; hour: number } | null = null;
-    const onMove = (step: PointerEvent) => {
+    hooks.busy?.(true);
+    const stop = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", done);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", onKey, true);
+      try { row.releasePointerCapture(event.pointerId); } catch { /* not held */ }
+      row.classList.remove("is-lifting");
+      ghost?.remove();
+      hooks.busy?.(false);
+    };
+    function onMove(step: PointerEvent) {
       if (!ghost) {
         if (Math.abs(step.clientX - event.clientX) < SLOP
           && Math.abs(step.clientY - event.clientY) < SLOP) return;
@@ -324,55 +425,77 @@ export function wireTaskDrag(row: HTMLElement, ref: unknown, label: string, hook
         document.body.append(ghost);
         row.classList.add("is-lifting");
       }
-      /* ⚠️ `position: fixed` and placed from the CLIENT coordinates, so the
-       * ghost is right wherever the island happens to be on the screen —
-       * offsets relative to any container would be wrong the moment the notch
-       * moved along its edge. */
+      /* `position: fixed`, from client coordinates: right wherever the island is. */
       ghost.style.left = `${step.clientX + 12}px`;
       ghost.style.top = `${step.clientY + 10}px`;
       over = hooks.at(step.clientX, step.clientY);
       ghost.classList.toggle("is-over", !!over);
-    };
-    const done = (step: PointerEvent) => {
-      row.releasePointerCapture(step.pointerId);
-      row.removeEventListener("pointermove", onMove);
-      row.removeEventListener("pointerup", done);
-      row.removeEventListener("pointercancel", cancel);
-      row.classList.remove("is-lifting");
-      ghost?.remove();
-      /* ⚠️ No ghost means the pointer never left, so this was a click and the
-       * row's own handler owns it. */
-      if (!ghost) return;
-      /* And a drag that ends anywhere but the grid is a drag that was thought
-       * better of — not an error, and not a reason to schedule anything. */
-      if (over) hooks.drop(ref, over.column, over.hour);
-    };
-    const cancel = () => {
-      row.removeEventListener("pointermove", onMove);
-      row.removeEventListener("pointerup", done);
-      row.removeEventListener("pointercancel", cancel);
-      row.classList.remove("is-lifting");
-      ghost?.remove();
-    };
+    }
+    function done() {
+      const flew = !!ghost;
+      stop();
+      // No ghost: a click, which the row's own handler owns. Off the grid: thought better of.
+      if (flew && over) hooks.drop(ref, over.column, over.hour);
+    }
+    function cancel() { stop(); }
+    function onKey(key: KeyboardEvent) {
+      if (key.key !== "Escape" || !ghost) return;
+      key.preventDefault();
+      key.stopPropagation();
+      stop();
+    }
     row.setPointerCapture(event.pointerId);
-    row.addEventListener("pointermove", onMove);
-    row.addEventListener("pointerup", done);
-    row.addEventListener("pointercancel", cancel);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", done);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", onKey, true);
   });
 }
 
-/** Which column and hour a screen point is over, or null.
- *
- * ⚠️ Measured FRESH on every call rather than cached like the move gesture's
- * boxes. A task drag can scroll the grid under itself — the pointer is
- * captured on the list, not on the columns — so a cached rect would land the
- * drop at the hour that was there when the drag started. */
+/** Which column and hour a screen point is over, or null. Measured fresh: the
+ *  grid can scroll under a task drag. */
 export function pointOver(columns: HTMLElement[], axis: Axis, clientX: number, clientY: number) {
-  for (const [index, column] of columns.entries()) {
-    const box = column.getBoundingClientRect();
-    if (clientX < box.left || clientX > box.right) continue;
-    if (clientY < box.top || clientY > box.bottom) return null;
-    return { column: index, hour: axis.hourAt(clientY - box.top) };
+  const boxes = columns.map(one => one.getBoundingClientRect());
+  if (!boxes.length || clientX < boxes[0].left || clientX > boxes[boxes.length - 1].right) return null;
+  // The gaps between days count as the nearest day, or a drop there is silently lost.
+  const index = columnAt(boxes, clientX);
+  const box = boxes[index];
+  if (clientY < box.top || clientY > box.bottom) return null;
+  return { column: index, hour: axis.hourAt(clientY - box.top) };
+}
+
+/* ── Overlaps ─────────────────────────────────────────────────────────────── */
+
+export interface LaneItem {
+  top: number;
+  bottom: number;
+}
+
+/** Side by side, in lanes, instead of on top of each other. Works on drawn pixels,
+ *  because two short meetings can touch on screen without overlapping in time.
+ *  Everything that overlaps, even indirectly, shares a lane count, so widths in a
+ *  cluster match. Returns one entry per item, in the order given. */
+export function layoutLanes(items: LaneItem[]): { lane: number; lanes: number }[] {
+  const order = items.map((_, index) => index)
+    .sort((a, b) => items[a].top - items[b].top || items[b].bottom - items[a].bottom);
+  const out = items.map(() => ({ lane: 0, lanes: 1 }));
+  let cluster: number[] = [];
+  let ends: number[] = [];
+  let reach = -Infinity;
+  const close = () => {
+    for (const index of cluster) out[index].lanes = ends.length;
+    cluster = [];
+    ends = [];
+  };
+  for (const index of order) {
+    const item = items[index];
+    if (item.top >= reach) { close(); reach = -Infinity; }
+    let lane = ends.findIndex(end => end <= item.top);
+    if (lane < 0) { lane = ends.length; ends.push(item.bottom); } else ends[lane] = item.bottom;
+    out[index].lane = lane;
+    cluster.push(index);
+    reach = Math.max(reach, item.bottom);
   }
-  return null;
+  close();
+  return out;
 }

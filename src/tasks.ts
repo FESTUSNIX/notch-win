@@ -15,6 +15,7 @@ import { pick, renderActivity, renderResting, renderPeek, clearPeek, paintSecond
 import { face } from "./face";
 // Peeks (batch 13): news that borrows the pill — peeks.ts, peek-feed.ts.
 import { peek, peeks, onPeek, setPeekPrefs, PillCycle, type Peek } from "./peeks";
+import { peekTarget, type Target } from "./click-target";
 import { BlockPeeks, CalendarPeeks, MusicPeeks } from "./peek-feed";
 import { blockSeconds } from "./screen-helm";
 import { choose, decay, readings, type HoldState, type ModuleContext, type ModuleReading } from "./pill-modules";
@@ -211,7 +212,7 @@ const WIDTH: Record<FixedScreen, number> = {
 function widthOf(name: ScreenName): number {
   if (name === "media" && player.open) return PLAYER_AND_QUEUE;
   if (name === "timer" && timerScreen.listOpen) return TIMER_AND_LIST;
-  if (name === "calendar" && calendar.view === "week") {
+  if (name === "calendar" && calendar.view !== "month") {
     return calendar.tasksOpen ? CALENDAR_WORK_TASKS : CALENDAR_WORK;
   }
   /* ⚠️ A board is measured from its WIDGETS, not from a table. It has no entry
@@ -344,7 +345,6 @@ interface Prefs {
   timerSound: string;
   pomodoroPill: string;
   ringStops: string[];
-  followLive: boolean;
   /** What `120 usd` on its own converts into. Empty is off — see `parseMoney`. */
   homeCurrency: string;
   pomodoroWork: number;
@@ -375,7 +375,7 @@ let prefs: Prefs = {
   motion: "system", panelWidth: 0, railVisible: 5, railAlways: true, railGrip: 100, railSharp: 0, railFlat: false, railOrder: [], railHidden: [], railColours: {}, boards: [], boardCap: 4,
   noticeMode: true, pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
   timerSound: "Notification.Reminder", homeCurrency: "",
-  pomodoroPill: "bar", ringStops: [], followLive: true,
+  pomodoroPill: "bar", ringStops: [],
   callMode: true, callMuteMic: true, callOpen: true,
   useEverything: true, indexApps: true,
   mutedModules: [], thresholds: {}, taskView: "day", spokenReplies: true,
@@ -390,14 +390,11 @@ let prefs: Prefs = {
  * and did nothing, and hovering the island brought back a palette that had
  * never been given the caret — visible, and impossible to type in or click.
  * Folding is the one signal that covers every route into that state. */
-/** How live a claim has to be before opening the island lands on its screen.
- *
- * ⚠️ Forty, which is the line between "this is happening to you" and "this
- * is a fact about your day". A call, an agent waiting, a meeting about to
- * start and a countdown are all above it; a track playing, the day's tally and
- * the weather are below. Being sent to the player because music is on is the
- * behaviour that makes people turn a feature like this off. */
-const LANDS = 40;
+/** The tests that walk the screens themselves. Not a setting: he had one, turned it
+ *  off, and called that a mistake (4 Nov). */
+const NO_LANDING = preview && new URLSearchParams(location.search).has("nofollow");
+/** What the pill had drawn last paint: a press is aimed at exactly that. */
+let pillShows: Activity | Peek | null = null;
 
 /** Open on whatever is actually happening, rather than wherever you were.
  *
@@ -420,11 +417,27 @@ const STEERED_FOR = 1500;
 /** True for the instant the island is opening onto a live claim. See `show`. */
 let landing = false;
 
-function landOn() {
-  if (!prefs.followLive) return;
-  if (performance.now() - steered < STEERED_FOR) return;
-  const best = pick(claims());
-  if (!best || best.steers === false || best.priority < LANDS) return;
+const isPeek = (one: Activity | Peek): one is Peek => "kind" in one && "id" in one;
+
+/** A screen, opened on the thing it was sent for. */
+function goTo(to: Target) {
+  if (to.screen === "guardian") guardianChat.today();
+  // Before `show`, or the panel measures the list and then the event (see `landing`).
+  if (to.event) calendar.choose(to.event);
+  show(to.screen);
+}
+
+/** Opening lands on what the pill was showing. At rest it shows nothing to go to,
+ *  so the island stays on the screen it was left on. */
+function landOn(aim: Activity | Peek | null) {
+  if (NO_LANDING || !aim || performance.now() - steered < STEERED_FOR) return;
+  if (isPeek(aim)) {
+    const to = peekTarget(aim);
+    if (to) goTo(to);
+    return;
+  }
+  const best = aim;
+  if (best.steers === false || best.priority <= 0) return;
   /* ⚠️ The agent claim opens the SESSION, not the screen. You looked down,
    * saw that something was running and opened it — the thing you came for is
    * that session, and the overview with it somewhere in it is one tap behind
@@ -443,6 +456,9 @@ function landOn() {
 
 const surface = new IslandSurface(open => {
   if (open) {
+    /* ⚠️ Read first: an open panel holds the peeks back, so the `render` below
+     * repaints the pill without the very peek that was pressed. */
+    const aim = pillShows;
     /* ⚠️ The mask comes off HERE, not when the palette closed — and the
      * screen's width goes back on here too. Closing the palette over an island
      * that is folding does neither: the contents stay hidden all the way down,
@@ -458,7 +474,7 @@ const surface = new IslandSurface(open => {
      * fold, and it landed as a screen visited later sitting ten pixels short
      * at the bottom — on a full test run and nowhere else. A frame later it is
      * an ordinary screen change, the same one a tab press makes. */
-    requestAnimationFrame(() => landOn());
+    requestAnimationFrame(() => landOn(aim));
   } else {
     if (palette.open) void palette.hide();
     // ⚠️ The same rule as the palette: a fold closes the capture bar (AGENTS 174).
@@ -490,6 +506,7 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
   },
   lists: () => today.lists(),
   focus: active => surface.input(active),
+  hold: on => surface.holdForDrag(on),
 });
 const callSource = new CallSource(() => render(), (what, why) => say(what, why));
 const noticeSource = new NoticeSource(() => render(), (what, why) => say(what, why));
@@ -671,10 +688,9 @@ const moments = new MomentFeed({
   events: () => calendar.feed.events,
   eventQuiet: id => snooze.isQuiet(`event:${id}`),
   busy: () => palette.open || capture.open || surface.editing || surface.pinned || callSource.call.active,
-  openScreen: name => {
+  openScreen: (name, event) => {
     steered = performance.now();
-    if (name === "guardian") guardianChat.today();
-    show(name);
+    goTo({ screen: name, ...(event ? { event } : {}) });
     surface.show(true);
   },
   agentName: provider => agentName(provider),
@@ -1008,6 +1024,7 @@ const SCREEN_EXIT_MS = 150;
  *             content stuttering rather than as either animation.
  */
 function show(name: ScreenName, live = false) {
+  if (name === "calendar") calendar.cameBack();
   /* ⚠️ "Today" means Helm's day while Helm is connected — wherever it was asked
    * for: the rail, the ring, the palette, a claim. One redirect here rather
    * than one at each of those. */
@@ -1719,7 +1736,8 @@ function paintPill(live = claims()) {
   const at = up ? 0 : pillCycle.index(stops.length, nowMs);
   const shown: Activity | Peek | null = up
     ?? (pillHovered && second && !surface.open ? second : at > 0 ? stops[at] : null);
-  pillPeek = shown && "kind" in shown && "id" in shown ? shown as Peek : null;
+  pillPeek = shown && isPeek(shown) ? shown : null;
+  pillShows = shown ?? owner;
   collapsedLayer.dataset.view = up ? "peek" : shown === second && second ? "second" : at > 0 ? "replay" : "owner";
   if (pillPeek) {
     surface.setGlanceable(false);
@@ -2739,13 +2757,18 @@ collapsedLayer.addEventListener("click", event => {
 }, true);
 
 /* A peek's click does its own action (Join), and the strip goes back to the
- * owner. ⚠️ Capturing, and only when there IS an action: a peek without one is
- * the pill, and pressing the pill opens the island as it always has. */
+ * owner. ⚠️ Capturing, and only when there IS an action. Without one, pressing the
+ * pill opens the island and `landOn` takes it to the peek's screen. With no screen
+ * either, the press stays here rather than open whatever was open last. */
 collapsedLayer.addEventListener("click", event => {
   const shown = pillPeek;
   // Its small icon runs the secondary (Pokaż w folderze) instead of the click's action.
   const second = shown?.secondary && (event.target as Element | null)?.closest("[data-secondary]");
-  if (!shown || (!shown.action && !second)) return;
+  if (!shown) return;
+  if (!shown.action && !second) {
+    if (!peekTarget(shown)) event.stopPropagation();
+    return;
+  }
   event.stopPropagation();
   peeks.drop(shown.kind);
   if (second) shown.secondary!.run();
@@ -2942,6 +2965,7 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     if (today.escape()) return;
     if (helmScreen.escape()) return;
+    if (screen === "calendar" && calendar.escape()) return;
     if (guardianScreen.escape()) return;
     // A moment up over the pill: Escape is its ×, sticky or not (AGENTS 879).
     if (moments.escape()) return;

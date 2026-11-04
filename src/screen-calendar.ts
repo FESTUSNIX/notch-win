@@ -7,13 +7,18 @@
 import { listen } from "@tauri-apps/api/event";
 import { element } from "./dom";
 import { paintIcon, taskIcon, type TaskIcon } from "./task-icons";
-import { call, native } from "./task-client";
+import { call, native, previewBus } from "./task-client";
 import { isQuiet } from "./snooze";
 import { isoWeek, localDay, weekStart } from "./task-model";
 import { still } from "./motion-pref";
-import { atHour, pointOver, rememberBlocks, wireTaskDrag, wireWeekEditing, type Placed } from "./calendar-edit";
+import { atHour, hoursWithin, layoutLanes, pointOver, rememberBlocks, wireTaskDrag, wireWeekEditing, type Placed } from "./calendar-edit";
 import type { Task } from "./task-model";
 import { buildAxis, busyHours, quietHours, QUIET_BEFORE } from "./calendar-axis.ts";
+import {
+  atMinutes, blockStart, calEventFrom, freeOn, helmNeedsGoogle, markerLabel, newEventCalendar, railItems, shortLength,
+  type HelmBlock, type HelmCalendar, type HelmMarker, type HelmPlanItem, type MinuteSpan,
+} from "./calendar-helm";
+import { hueOf, zloty } from "./helm-link";
 import { cpx } from "./layout";
 import type { Activity } from "./island-activity";
 
@@ -34,6 +39,13 @@ export interface CalEvent {
    *  403, so the grid refuses the drag rather than letting it snap back. */
   writable: boolean;
   response: string;
+  /** From Helm, which is who a change to it goes through. */
+  viaHelm?: boolean;
+  /** Google's own id, when `id` is Helm's `<calendar>:<event>`. */
+  googleId?: string;
+  /** Where it opens in Google, when Helm knows. */
+  url?: string;
+  note?: string;
 }
 
 export interface CalendarFeed {
@@ -41,6 +53,8 @@ export interface CalendarFeed {
   events: CalEvent[];
   updatedAt: string | null;
   error: string | null;
+  /** Google stopped accepting the saved sign-in; the client is still saved. */
+  needsSignIn?: boolean;
 }
 
 export const emptyCalendar = (): CalendarFeed => ({ connected: false, events: [], updatedAt: null, error: null });
@@ -83,10 +97,17 @@ export function spanLabel(event: CalEvent): string {
   const mins = Math.max(0, Math.round((to.getTime() - from.getTime()) / 60000));
   const clock = (when: Date) =>
     when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const length = mins >= 60
-    ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}`
-    : `${mins} min`;
-  return `${clock(from)} – ${clock(to)} · ${length}`;
+  return `${clock(from)} – ${clock(to)} · ${lengthLabel(mins)}`;
+}
+
+function lengthLabel(mins: number): string {
+  return mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}` : `${mins} min`;
+}
+
+/** An hour with a fraction as `HH:MM`, midnight at the end of the day included. */
+function hhmm(hour: number): string {
+  const whole = Math.floor(hour) % 24;
+  return `${String(whole).padStart(2, "0")}:${String(Math.round((hour - Math.floor(hour)) * 60)).padStart(2, "0")}`;
 }
 
 export function timeLabel(event: CalEvent): string {
@@ -126,7 +147,7 @@ export function nextEvent(events: CalEvent[], now = new Date()): CalEvent | null
 /** ⚠️ No standalone `agenda` any more — the month view IS the agenda, with a
  *  grid beside it saying which days are worth scrolling to. Two views that
  *  differ only in whether there is a grid is one view and a toggle. */
-export type CalendarView = "month" | "week";
+export type CalendarView = "month" | "week" | "day";
 
 /** How tall an hour the week grid actually shows is.
  *
@@ -192,6 +213,18 @@ const SCREEN_PAD = 15;
  *  band, and starting there means scrolling past it every time. */
 const START_AT_HOUR = 8;
 
+/** How far the pager goes: what Rust's feed holds (`collect` in calendar.rs). */
+const FEED_AHEAD_DAYS = 45;
+const FEED_BACK_DAYS = 30;
+
+/** How often the calendar is read from Helm, and how old a reading may be on opening it.
+ *  Each read asks Google for every calendar, so not every minute like the cockpit. */
+const HELM_POLL_MS = 180_000;
+const HELM_FRESH_MS = 45_000;
+
+/** Helm refuses a focus block over three hours. */
+const BLOCK_MAX_HOURS = 3;
+
 /** What a block on the grid stands for.
  *
  * ⚠️ A UNION, because the week now carries two completely unrelated things
@@ -199,7 +232,7 @@ const START_AT_HOUR = 8;
  * passes one of these back untouched — it never looks inside — so the only
  * place that has to know the difference is the hook that writes the change.
  */
-type GridRef = { kind: "event"; event: CalEvent } | { kind: "task"; task: Task };
+type GridRef = { kind: "event"; event: CalEvent } | { kind: "task"; task: Task } | { kind: "block"; block: HelmBlock };
 
 export class CalendarScreen {
   feed: CalendarFeed = emptyCalendar();
@@ -215,7 +248,22 @@ export class CalendarScreen {
    * ⚠️ Held on the SCREEN rather than as a loose element, so the five-minute
    * poll landing mid-compose redraws the composer instead of throwing away
    * what somebody was in the middle of typing. */
-  private draft: { day: string; start: number; end: number } | null = null;
+  private draft: { day: string; start: number; end: number; kind: "event" | "block" } | null = null;
+
+  /** New events on their way to Google, drawn until the feed that answers them. */
+  private creating: { key: number; title: string; day: string; start: number; end: number; kind?: "event" | "block" }[] = [];
+  private creatingKey = 0;
+
+  /** Title and location edits Google hasn't confirmed, laid over the feed like `settling`. */
+  private patched = new Map<string, { title?: string; location?: string }>();
+
+  /** Which day the week or day view is on; "" is today. */
+  private anchorDay = "";
+
+  /** A press is live on the grid: a redraw would take the elements from under it. */
+  private holding = false;
+  /** A redraw was asked for while one couldn't happen. */
+  private owed = false;
 
   /** Writes Google has not confirmed yet, laid over the feed at render time.
    *
@@ -306,22 +354,138 @@ export class CalendarScreen {
        *  keystrokes going to whatever application is actually in front. It is
        *  the same round trip Today's composer makes; see `set_task_input`. */
       focus: (active: boolean) => Promise<void>;
+      /** Keep the island up while a drag runs, wherever the pointer goes. */
+      hold: (on: boolean) => void;
     } = {
       create: () => {}, lists: () => [], focus: async () => {},
-      tasks: () => [], taskColor: () => "", finishTask: () => {}, width: () => {},
+      tasks: () => [], taskColor: () => "", finishTask: () => {}, width: () => {}, hold: () => {},
     },
   ) {}
 
   async boot() {
-    if (native) await listen<CalendarFeed>("calendar:changed", e => {
-      this.feed = e.payload;
-      /* ⚠️ EVERY optimistic move drops here, not just one that matches. A
-       * write triggers a full re-read, so this feed is the answer to it. */
-      this.settling.clear();
-      this.removing.clear();
+    /* ⚠️ EVERY optimistic change drops here, not just one that matches. A write
+     * triggers a full re-read, so this feed is the answer to it. */
+    const arrived = (feed: CalendarFeed) => {
+      this.own = feed;
+      // With Helm as the source, the app's own Google poll is only the fallback.
+      if (this.viaHelm) return;
+      this.feed = feed;
+      this.settled();
+      this.changed();
+    };
+    if (native) await listen<CalendarFeed>("calendar:changed", e => arrived(e.payload));
+    else previewBus.addEventListener("calendar:changed", event => arrived((event as CustomEvent<CalendarFeed>).detail));
+    try {
+      this.own = await call<CalendarFeed>("get_calendar");
+      if (!this.viaHelm) this.feed = this.own;
+    } catch { /* not connected */ }
+    this.changed();
+    void this.readHelm();
+    setInterval(() => void this.readHelm(), HELM_POLL_MS);
+  }
+
+  /* ── Helm, when connected ──────────────────────────────────────────────
+   * The calendar's source: blocks, markers and prep notes live there, and so does
+   * the one Google login. Without Helm, or while Helm has lost Google, the app's
+   * own connection carries on. */
+  private own: CalendarFeed = emptyCalendar();
+  private helm: HelmCalendar | null = null;
+  /** The latest read: a write bumps it, so a read already under way can't undo it on screen. */
+  private helmTurn = 0;
+  private helmReadAt = 0;
+  /** Items dropped on the grid, off the rail until the reading that answers them. */
+  private planning = new Set<string>();
+  /** Meetings whose prep note Claude is writing. */
+  private prepping = new Set<string>();
+  private watchingGoogle = 0;
+  private quickBusy = false;
+  private quickSaid = "";
+
+  private get viaHelm(): boolean {
+    return this.helm?.status === "ok";
+  }
+
+  private settled() {
+    this.settling.clear();
+    this.removing.clear();
+    this.patched.clear();
+    this.creating = [];
+    this.planning.clear();
+  }
+
+  /** Back on the calendar: what it shows may be a few minutes behind. */
+  cameBack() {
+    if (Date.now() - this.helmReadAt > HELM_FRESH_MS) void this.readHelm();
+  }
+
+  private async readHelm() {
+    const turn = ++this.helmTurn;
+    /* The weeks around today and around wherever the grid has been paged to. */
+    const day = 86_400_000;
+    const today = Date.now();
+    const anchor = this.anchorDay ? atHour(this.anchorDay, 0).getTime() : today;
+    const from = localDay(new Date(Math.min(today, anchor) - 35 * day));
+    const to = localDay(new Date(Math.max(today, anchor) + 77 * day));
+    let reading: HelmCalendar | null | undefined;
+    try {
+      reading = await call<HelmCalendar | null>("helm_calendar", { from, to });
+    } catch {
+      return; // Unreachable for now: the last reading stands.
+    }
+    if (turn !== this.helmTurn) return;
+    this.helmReadAt = Date.now();
+    this.helm = reading ?? null;
+    if (this.viaHelm) {
+      const shown = this.helm!;
+      this.feed = {
+        connected: true,
+        events: shown.events.map(one => calEventFrom(one, shown)),
+        updatedAt: new Date().toISOString(),
+        error: null,
+      };
+    } else {
+      this.feed = this.own;
+    }
+    this.settled();
+    if (this.viaHelm && this.watchingGoogle) { clearInterval(this.watchingGoogle); this.watchingGoogle = 0; this.waitingForGoogle = false; }
+    this.changed();
+  }
+
+  /** One write through Helm, read back after; `undo` puts the screen right if it's refused. */
+  private act(action: Record<string, unknown>, undo: () => void = () => {}): Promise<{ ok?: boolean } & Record<string, unknown>> {
+    this.helmTurn++;
+    return call<{ ok?: boolean } & Record<string, unknown>>("helm_calendar_act", { action }).then(answer => {
+      void this.readHelm();
+      return answer ?? {};
+    }).catch(problem => {
+      undo();
+      this.actionError = String(problem);
+      this.changed();
+      return { ok: false };
+    });
+  }
+
+  /** Helm lost Google: signing in happens there, in the browser, and the grid watches for it. */
+  private signInToHelm() {
+    this.waitingForGoogle = true;
+    this.actionError = "";
+    void call("helm_open", { path: "/api/google/connect" }).catch(problem => {
+      this.waitingForGoogle = false;
+      this.actionError = String(problem);
       this.changed();
     });
-    try { this.feed = await call<CalendarFeed>("get_calendar"); } catch { /* not connected */ }
+    clearInterval(this.watchingGoogle);
+    const until = Date.now() + 3 * 60_000;
+    this.watchingGoogle = window.setInterval(() => {
+      if (Date.now() > until) {
+        clearInterval(this.watchingGoogle);
+        this.watchingGoogle = 0;
+        this.waitingForGoogle = false;
+        this.changed();
+        return;
+      }
+      void this.readHelm();
+    }, 5000);
     this.changed();
   }
 
@@ -376,8 +540,276 @@ export class CalendarScreen {
     return minutes >= 0 && minutes <= CalendarScreen.IMMINENT ? next : null;
   }
 
+  /** Which sign-in is the latest, so one abandoned in the browser can't speak over it. */
+  private signingIn = 0;
+  private waitingForGoogle = false;
+
+  /** Over the calendar, whose last good events stay on screen below it. */
+  private signInBar(): HTMLElement {
+    const bar = element("div", "cal-signin");
+    const mark = element("span", "cal-signin-mark");
+    paintIcon(mark, "calendar");
+    const go = element("button", "day-connect", this.waitingForGoogle ? "Open Google again" : "Sign in again") as HTMLButtonElement;
+    go.type = "button";
+    const helm = helmNeedsGoogle(this.helm);
+    go.onclick = () => { if (helm) this.signInToHelm(); else void this.signIn(); };
+    bar.append(mark, element("span", "cal-signin-text", this.waitingForGoogle ? "Waiting for Google in your browser"
+      : helm ? "Google signed Helm's calendar out" : "Google signed the calendar out"), go);
+    return bar;
+  }
+
+  private async signIn() {
+    const attempt = ++this.signingIn;
+    this.waitingForGoogle = true;
+    this.actionError = "";
+    this.changed();
+    try {
+      await call("reconnect_google");
+      if (attempt !== this.signingIn) return;
+      this.waitingForGoogle = false;
+    } catch (problem) {
+      if (attempt !== this.signingIn) return;
+      this.waitingForGoogle = false;
+      this.actionError = String(problem);
+    }
+    this.changed();
+  }
+
   /** The event whose panel is open, by id. */
   private chosen: string | null = null;
+
+  /** Sent here about one event: its panel opens. One this calendar doesn't have
+   *  (Helm knew it first, or it has gone) just leaves the list showing. */
+  choose(id: string) {
+    // Helm writes `<calendar>:<event>`; here it's the event alone (as `prepCovers`).
+    const found = this.feed.events.find(event => id === event.id || id.endsWith(`:${event.id}`) || event.id.endsWith(`:${id}`));
+    if (!found) return;
+    this.chosen = found.id;
+    // In the week or day view, go to where it is.
+    if (this.view !== "month") this.anchorDay = found.allDay ? found.start.slice(0, 10) : localDay(startOf(found));
+  }
+
+  /** Escape: the open thing on this screen closes first, and the island after. */
+  escape(): boolean {
+    if (this.draft) { this.cancelDraft(); return true; }
+    if (this.chosen) { this.chosen = null; this.changed(); return true; }
+    return false;
+  }
+
+  /** An event with whatever hasn't been confirmed laid over it. */
+  private edited(event: CalEvent): CalEvent {
+    const times = this.settling.get(event.id);
+    const words = this.patched.get(event.id);
+    return times || words ? { ...event, ...times, ...words } : event;
+  }
+
+  /** The redraw after a write from a field: not until focus has landed, so tabbing
+   *  to the next field isn't undone by the one just left. */
+  private soon() {
+    setTimeout(() => this.changed(), 0);
+  }
+
+  /** One editable line of the panel: Enter keeps it, Escape puts it back. */
+  private panelField(sheet: HTMLElement, value: string, label: string, className: string, type: string, save: (next: string) => boolean | void): HTMLInputElement {
+    const field = document.createElement("input");
+    field.type = type;
+    field.className = `cal-panel-field ${className}`;
+    field.value = value;
+    if (type === "text") field.maxLength = 300;
+    field.setAttribute("aria-label", label);
+    let kept = value;
+    field.onfocus = () => { void this.deps.focus(true).catch(() => {}); };
+    field.onkeydown = key => {
+      if (key.key === "Enter") { key.preventDefault(); field.blur(); }
+      if (key.key === "Escape") {
+        key.preventDefault();
+        key.stopPropagation();
+        field.value = kept;
+        field.blur();
+      }
+    };
+    field.onblur = blur => {
+      if (!sheet.contains(blur.relatedTarget as Node | null)) void this.deps.focus(false).catch(() => {});
+      const next = field.value.trim();
+      if (next !== kept) {
+        if (save(next) === false) field.value = kept; else kept = next;
+      }
+      this.soon();
+    };
+    return field;
+  }
+
+  /** The panel's element, kept while nothing about it has changed: a redraw then
+   *  leaves a half-pressed button, and an animation that has played, alone. */
+  private sheet: HTMLElement | null = null;
+  private sheetKey = "";
+  private sheetFor = "";
+
+  private panelFor(id: string): HTMLElement | null {
+    const block = this.blockOf(id);
+    const event = block ? null : this.feed.events.find(one => one.id === id);
+    if (!block && !event) return null;
+    const shown = event ? this.edited(event) : null;
+    const key = JSON.stringify(block
+      ? [block, this.settling.get(id), this.view]
+      : [shown, this.view, this.helm?.meetings[id], this.helm?.preps[id], this.prepping.has(id)]);
+    if (!this.sheet || this.sheetKey !== key) {
+      this.sheet = block ? this.blockPanel(block) : this.panel(shown!);
+      this.sheetKey = key;
+    }
+    this.sheet.classList.toggle("is-entering", this.sheetFor !== id);
+    this.sheetFor = id;
+    return this.sheet;
+  }
+
+  private blockOf(id: string): HelmBlock | null {
+    if (!id.startsWith("block:")) return null;
+    return this.helm?.blocks.find(one => `block:${one.id}` === id) ?? null;
+  }
+
+  /** A focus block: its name and time in place, and what can be done about it. */
+  private blockPanel(block: HelmBlock): HTMLElement {
+    const id = `block:${block.id}`;
+    const mark = this.helm?.marks.find(one => one.id === block.projectId);
+    const times = this.settling.get(id);
+    const startMin = blockStart(block) ?? 0;
+    const from = times ? new Date(times.start) : atMinutes(block.day, startMin);
+    const to = times ? new Date(times.end) : atMinutes(block.day, startMin + block.minutes);
+    const span = hoursWithin(from, to);
+    const day = localDay(from);
+
+    const sheet = element("div", "cal-panel");
+    sheet.style.setProperty("--cal", hueOf(mark?.hue, mark?.name ?? block.title));
+    const head = element("div", "cal-panel-head");
+    head.append(element("span", "cal-panel-when", dayHeading(day)));
+    const close = element("button", "cal-panel-close small-icon");
+    (close as HTMLButtonElement).type = "button";
+    close.setAttribute("aria-label", "Close block");
+    paintIcon(close, "close");
+    close.onclick = () => { this.chosen = null; this.changed(); };
+    head.append(close);
+    sheet.append(head);
+
+    const open = block.status !== "done" && block.status !== "skipped";
+    if (open) {
+      sheet.append(this.panelField(sheet, block.title, "Block name", "cal-panel-name", "text", next => {
+        if (!next) return false;
+        const before = block.title;
+        block.title = next;
+        void this.act({ action: "renameBlock", blockId: block.id, title: next }, () => { block.title = before; });
+      }));
+    } else {
+      sheet.append(element("h4", "cal-panel-title", block.title));
+    }
+
+    const facts = element("div", "cal-panel-facts");
+    const fact = (icon: TaskIcon, text: string) => {
+      const row = element("div", "cal-fact");
+      const dot = element("span", "cal-fact-mark");
+      paintIcon(dot, icon);
+      row.append(dot, element("span", "", text));
+      facts.append(row);
+    };
+    const asHour = (value: string) => {
+      const [h, m] = value.split(":").map(Number);
+      return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : null;
+    };
+    if (open && block.status !== "running") {
+      const row = element("div", "cal-fact cal-fact-times");
+      const dot = element("span", "cal-fact-mark");
+      paintIcon(dot, "clock");
+      const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "time", next => {
+        const hour = asHour(next);
+        if (hour === null) return false;
+        const end = Math.min(24, hour + (span.end - span.start));
+        this.commitBlock(block, atHour(day, hour), atHour(day, end));
+      });
+      const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "time", next => {
+        const hour = asHour(next);
+        if (hour === null || hour <= span.start || hour - span.start > BLOCK_MAX_HOURS) return false;
+        this.commitBlock(block, atHour(day, span.start), atHour(day, hour));
+      });
+      row.append(dot, begins, element("span", "cal-fact-to", "–"), ends,
+        element("span", "cal-fact-length", lengthLabel(Math.round((span.end - span.start) * 60))));
+      facts.append(row);
+    } else {
+      fact("clock", `${hhmm(span.start)} – ${hhmm(span.end)}`);
+    }
+    if (mark) fact("target", mark.name);
+    if (block.elapsedSeconds >= 60) fact("history", `${shortLength(Math.round(block.elapsedSeconds / 60))} logged`);
+    if (facts.childElementCount) sheet.append(facts);
+
+    const actions = element("div", "cal-panel-actions");
+    if ((block.status === "planned" || block.status === "paused") && day === localDay()) {
+      const start = element("button", "cal-panel-join");
+      (start as HTMLButtonElement).type = "button";
+      paintIcon(start, "target");
+      start.append(element("span", "", block.status === "paused" ? "Resume" : "Start"));
+      start.onclick = () => {
+        void call("helm_act", { action: { do: "start", block: block.id } })
+          .then(() => this.readHelm())
+          .catch(problem => { this.actionError = String(problem); this.changed(); });
+      };
+      actions.append(start);
+    }
+    if (block.status === "planned") {
+      const back = element("button", "cal-panel-open");
+      (back as HTMLButtonElement).type = "button";
+      back.append(element("span", "", "Back to To plan"));
+      back.onclick = () => {
+        this.chosen = null;
+        this.removing.add(id);
+        this.changed();
+        void this.act({ action: "unscheduleBlock", blockId: block.id, day }, () => this.removing.delete(id));
+      };
+      actions.append(back);
+    }
+    if (open && block.status !== "running") {
+      const drop = element("button", "cal-panel-drop");
+      (drop as HTMLButtonElement).type = "button";
+      paintIcon(drop, "close");
+      drop.append(element("span", "", "Delete"));
+      drop.onclick = () => {
+        this.chosen = null;
+        this.removing.add(id);
+        this.changed();
+        void this.act({ action: "deleteBlock", blockId: block.id }, () => this.removing.delete(id));
+      };
+      actions.append(drop);
+    }
+    if (actions.childElementCount) sheet.append(actions);
+    return sheet;
+  }
+
+  /** In the week or day view the panel sits beside its event, in the grid, so the
+   *  week stays visible and it scrolls along. */
+  private placeBeside(sheet: HTMLElement, id: string) {
+    const body = this.host.querySelector<HTMLElement>(".cal-wkbody");
+    if (!body) { this.host.append(sheet); return; }
+    sheet.classList.add("is-beside");
+    body.append(sheet);
+    const name = CSS.escape(id);
+    const anchor = body.querySelector<HTMLElement>(`.cal-block[data-cal-id="${name}"]`)
+      ?? this.host.querySelector<HTMLElement>(`.cal-chip[data-chip-id="${name}"]`);
+    const home = body.getBoundingClientRect();
+    const view = this.host.getBoundingClientRect();
+    const stuck = this.host.querySelector(".cal-wkstick")?.getBoundingClientRect().bottom ?? view.top;
+    sheet.style.maxHeight = `${Math.max(180, view.bottom - stuck - 12)}px`;
+    const width = sheet.offsetWidth;
+    const height = sheet.offsetHeight;
+    const low = stuck - home.top + 4;
+    const high = Math.max(low, view.bottom - home.top - height - 8);
+    if (!anchor) {
+      sheet.style.left = `${Math.max(0, home.width - width)}px`;
+      sheet.style.top = `${low}px`;
+      return;
+    }
+    const spot = anchor.getBoundingClientRect();
+    const right = spot.right - home.left + 6;
+    const left = spot.left - home.left - width - 6;
+    sheet.style.left = `${right + width <= home.width ? right : left >= 0 ? left : Math.max(0, home.width - width)}px`;
+    sheet.style.top = `${Math.min(high, Math.max(low, spot.top - home.top))}px`;
+  }
 
   /** Everything about one event, over the list rather than inside it.
    *
@@ -398,7 +830,15 @@ export class CalendarScreen {
     paintIcon(close, "close");
     close.onclick = () => { this.chosen = null; this.changed(); };
     head.append(close);
-    sheet.append(head, element("h4", "cal-panel-title", event.title));
+    sheet.append(head);
+    if (event.writable) {
+      sheet.append(this.panelField(sheet, event.title, "Event name", "cal-panel-name", "text", next => {
+        if (!next) return false;
+        this.commitEdit(event, { title: next });
+      }));
+    } else {
+      sheet.append(element("h4", "cal-panel-title", event.title));
+    }
 
     const facts = element("div", "cal-panel-facts");
     const fact = (icon: TaskIcon, text: string) => {
@@ -408,11 +848,63 @@ export class CalendarScreen {
       row.append(mark, element("span", "", text));
       facts.append(row);
     };
-    if (!event.allDay) fact("clock", spanLabel(event));
+    if (!event.allDay) {
+      const from = startOf(event);
+      const to = endOf(event);
+      const span = hoursWithin(from, to);
+      if (event.writable && !span.crosses) {
+        const day = localDay(from);
+        const asHour = (value: string) => {
+          const [h, m] = value.split(":").map(Number);
+          return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : null;
+        };
+        const row = element("div", "cal-fact cal-fact-times");
+        const mark = element("span", "cal-fact-mark");
+        paintIcon(mark, "clock");
+        const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "time", next => {
+          const hour = asHour(next);
+          if (hour === null) return false;
+          // A new start moves the event; its length stays.
+          const length = span.end - span.start;
+          const end = Math.min(24, hour + length);
+          this.commitMove(event, atHour(day, hour), atHour(day, end));
+        });
+        const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "time", next => {
+          const typed = asHour(next);
+          if (typed === null) return false;
+          const hour = typed === 0 ? 24 : typed;
+          if (hour <= span.start) return false;
+          this.commitMove(event, atHour(day, span.start), atHour(day, hour));
+        });
+        row.append(mark, begins, element("span", "cal-fact-to", "–"), ends,
+          element("span", "cal-fact-length", lengthLabel(Math.round((to.getTime() - from.getTime()) / 60000))));
+        facts.append(row);
+      } else {
+        fact("clock", spanLabel(event));
+      }
+    }
     if (event.calendar) fact("calendar", event.calendar);
-    if (event.location) fact("system", event.location);
+    if (event.writable) {
+      const row = element("div", "cal-fact");
+      const mark = element("span", "cal-fact-mark");
+      paintIcon(mark, "system");
+      const place = this.panelField(sheet, event.location, "Location", "cal-panel-place", "text", next => {
+        this.commitEdit(event, { location: next });
+      });
+      place.placeholder = "Add a location";
+      row.append(mark, place);
+      facts.append(row);
+    } else if (event.location) {
+      fact("system", event.location);
+    }
     if (event.response === "declined") fact("close", "You declined this");
+    const match = this.helm?.meetings[event.id];
+    if (match) fact("you", match.name);
+    if (match?.logged) fact("history", `${shortLength(match.logged.minutes)} logged on ${match.logged.projectName}`);
     if (facts.childElementCount) sheet.append(facts);
+
+    const prep = this.helm?.preps[event.id];
+    if (prep) sheet.append(this.prepNote(prep));
 
     const actions = element("div", "cal-panel-actions");
     if (event.meetingUrl) {
@@ -426,7 +918,7 @@ export class CalendarScreen {
     /* ⚠️ Only in work mode, and only where Google would accept it. A Delete
      * that is always on the panel is one press away from removing a meeting
      * somebody is reading the details of. */
-    if (this.view === "week" && event.writable && !event.allDay) {
+    if (this.view !== "month" && event.writable && !event.allDay) {
       const drop = element("button", "cal-panel-drop");
       (drop as HTMLButtonElement).type = "button";
       paintIcon(drop, "close");
@@ -434,14 +926,55 @@ export class CalendarScreen {
       drop.onclick = () => this.commitDelete(event);
       actions.append(drop);
     }
+    const eventDay = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
+    if (match && !prep && !event.allDay && eventDay >= localDay()) {
+      const write = element("button", "cal-panel-open") as HTMLButtonElement;
+      write.type = "button";
+      const busy = this.prepping.has(event.id);
+      write.disabled = busy;
+      write.append(element("span", "", busy ? "Writing the prep note…" : "Prep note"));
+      write.onclick = () => {
+        this.prepping.add(event.id);
+        this.changed();
+        void this.act({ action: "prep", eventId: event.id, day: eventDay }).finally(() => {
+          this.prepping.delete(event.id);
+          this.changed();
+        });
+      };
+      actions.append(write);
+    }
+    /* Its time, once it has started, on the client's first project. */
+    const project = match?.projects[0];
+    if (match && !match.logged && project && !event.allDay && startOf(event).getTime() <= Date.now()) {
+      const minutes = Math.round((endOf(event).getTime() - startOf(event).getTime()) / 60000);
+      const log = element("button", "cal-panel-open") as HTMLButtonElement;
+      log.type = "button";
+      log.append(element("span", "", `Log ${shortLength(minutes)} on ${project.name}`));
+      log.onclick = () => { void this.act({ action: "logMeeting", eventId: event.id, day: eventDay }); };
+      actions.append(log);
+    }
     const inGoogle = element("button", "cal-panel-open");
     (inGoogle as HTMLButtonElement).type = "button";
     inGoogle.append(element("span", "", "Open in Google Calendar"));
-    inGoogle.onclick = () => this.open("https://calendar.google.com/calendar/r/day/"
-      + (event.allDay ? event.start.slice(0, 10) : localDay(startOf(event))).replace(/-/g, "/"));
+    inGoogle.onclick = () => this.open(event.url || "https://calendar.google.com/calendar/r/day/"
+      + eventDay.replace(/-/g, "/"));
     actions.append(inGoogle);
     sheet.append(actions);
     return sheet;
+  }
+
+  /** Claude's note for a meeting: where things stand, what to raise, what to ask. */
+  private prepNote(prep: { headline: string; status: string[]; cover: string[]; ask: string[]; watch: string[] }): HTMLElement {
+    const note = element("div", "cal-prep");
+    note.append(element("p", "cal-prep-head", prep.headline));
+    for (const [title, lines] of [["Where it stands", prep.status], ["Raise", prep.cover], ["Ask", prep.ask], ["Careful", prep.watch]] as const) {
+      if (!lines.length) continue;
+      note.append(element("b", "cal-prep-title", title));
+      const list = element("ul", "cal-prep-list");
+      for (const line of lines) list.append(element("li", "", line));
+      note.append(list);
+    }
+    return note;
   }
 
   private open(url: string) {
@@ -459,18 +992,18 @@ export class CalendarScreen {
     return {
       tools: [
         { icon: "list" as const,
-          label: this.tasksOpen ? "Hide today's tasks" : "Show today's tasks",
+          label: this.tasksOpen ? "Hide To plan" : "Show To plan",
           /* ⚠️ Turning the list on switches to the week. There is nowhere to
            * drop a task on a month grid, so a list beside one would be a
            * drag that can only ever fail. */
           run: () => {
             this.tasksOpen = !this.tasksOpen;
-            if (this.tasksOpen) this.view = "week";
+            if (this.tasksOpen && this.view === "month") this.view = "week";
             this.deps.width();
             this.changed();
           } },
         { icon: "clock" as const, label: "Refresh the calendar",
-          run: () => { void call("refresh_calendar").catch(() => {}); } },
+          run: () => { void this.readHelm(); if (!this.viaHelm) void call("refresh_calendar").catch(() => {}); } },
         { icon: "open" as const, label: "Open Google Calendar",
           run: () => this.open("https://calendar.google.com/calendar/r") },
       ],
@@ -517,6 +1050,29 @@ export class CalendarScreen {
     /* The inner box keeps its full width whatever the track is doing. */
     panel.style.width = `${TASK_PANEL_W}px`;
     box.append(panel);
+    const toPlan = this.viaHelm ? railItems(this.helm!.items).filter(item => !this.planning.has(item.key)) : [];
+    if (this.viaHelm) {
+      const head = element("div", "cal-tasks-head");
+      head.append(element("span", "cal-tasks-title", "To plan"), element("span", "cal-tasks-count", String(toPlan.length)));
+      panel.append(head);
+      if (toPlan.length) {
+        const list = element("div", "cal-tasks-list cal-plan-list");
+        for (const item of toPlan) {
+          const row = element("div", "cal-task cal-plan");
+          row.dataset.planRow = item.key;
+          row.style.setProperty("--cal", hueOf(item.hue, item.context ?? item.title));
+          const text = element("span", "cal-plan-text");
+          text.append(element("span", "cal-task-title", item.title));
+          if (item.context) text.append(element("span", "cal-plan-for", item.context));
+          row.append(element("span", "cal-plan-dot"), text, element("span", "cal-plan-long", shortLength(item.minutes)));
+          row.dataset.tip = `${item.title} — drag onto the grid`;
+          list.append(row);
+        }
+        panel.append(list);
+      } else {
+        panel.append(element("p", "cal-tasks-none", "Everything is planned."));
+      }
+    }
     const head = element("div", "cal-tasks-head");
     head.append(element("span", "cal-tasks-title", "Today"));
     head.append(element("span", "cal-tasks-count", String(waiting.length)));
@@ -619,15 +1175,31 @@ export class CalendarScreen {
     const draft = this.draft;
     if (!draft) return;
     this.draft = null;
+    (this.host.querySelector(".cal-draft-field") as HTMLElement | null)?.blur();
     void this.deps.focus(false);
     const start = atHour(draft.day, draft.start);
     const end = atHour(draft.day, draft.end);
-    this.changed();
+    const name = title.trim() || "(no title)";
+    const key = ++this.creatingKey;
+    this.creating.push({ key, title: name, ...draft });
+    this.soon();
+    const gone = () => { this.creating = this.creating.filter(one => one.key !== key); };
+    if (this.viaHelm) {
+      const minutes = { day: draft.day, start: Math.round(draft.start * 60), end: Math.round(draft.end * 60) };
+      const calendarId = newEventCalendar(this.helm!);
+      if (draft.kind === "block" || !calendarId) {
+        void this.act({ action: "scheduleBlock", title: name, ...minutes, end: Math.min(minutes.end, minutes.start + BLOCK_MAX_HOURS * 60) }, gone);
+      } else {
+        void this.act({ action: "createEvent", calendarId, title: name, ...minutes }, gone);
+      }
+      return;
+    }
     void call("create_event", {
-      title: title.trim(),
+      title: name,
       start: start.toISOString(),
       end: end.toISOString(),
     }).catch(problem => {
+      gone();
       this.actionError = String(problem);
       this.changed();
     });
@@ -635,8 +1207,9 @@ export class CalendarScreen {
 
   private cancelDraft() {
     this.draft = null;
+    (this.host.querySelector(".cal-draft-field") as HTMLElement | null)?.blur();
     void this.deps.focus(false);
-    this.changed();
+    this.soon();
   }
 
   /** Move or resize one event. */
@@ -644,7 +1217,15 @@ export class CalendarScreen {
     const before = this.settling.get(event.id);
     this.settling.set(event.id, { start: start.toISOString(), end: end.toISOString() });
     this.actionError = "";
-    this.changed();
+    this.soon();
+    if (event.viaHelm) {
+      const span = hoursWithin(start, end);
+      void this.act({
+        action: "moveEvent", calendarId: event.calendarId, eventId: event.googleId,
+        day: localDay(start), start: Math.round(span.start * 60), end: Math.round(span.end * 60),
+      }, () => { if (before) this.settling.set(event.id, before); else this.settling.delete(event.id); });
+      return;
+    }
     void call("move_event", {
       calendarId: event.calendarId,
       eventId: event.id,
@@ -658,6 +1239,62 @@ export class CalendarScreen {
       this.actionError = String(problem);
       this.changed();
     });
+  }
+
+  /** A new name or place, shown at once and put back if Google says no. */
+  private commitEdit(event: CalEvent, change: { title?: string; location?: string }) {
+    const before = this.patched.get(event.id);
+    this.patched.set(event.id, { ...before, ...change });
+    this.actionError = "";
+    this.soon();
+    if (event.viaHelm) {
+      void this.act({
+        action: "updateEvent", calendarId: event.calendarId, eventId: event.googleId, title: change.title ?? event.title,
+        ...(change.location !== undefined ? { place: change.location } : {}),
+      }, () => { if (before) this.patched.set(event.id, before); else this.patched.delete(event.id); });
+      return;
+    }
+    void call("update_event", { calendarId: event.calendarId, eventId: event.id, ...change }).catch(problem => {
+      if (before) this.patched.set(event.id, before); else this.patched.delete(event.id);
+      this.actionError = String(problem);
+      this.changed();
+    });
+  }
+
+  /** Move or resize one of Helm's blocks. */
+  private commitBlock(block: HelmBlock, start: Date, end: Date) {
+    const id = `block:${block.id}`;
+    const before = this.settling.get(id);
+    this.settling.set(id, { start: start.toISOString(), end: end.toISOString() });
+    this.actionError = "";
+    this.soon();
+    const span = hoursWithin(start, end);
+    void this.act({
+      action: "moveBlock", blockId: block.id, day: localDay(start), start: Math.round(span.start * 60), end: Math.round(span.end * 60),
+    }, () => { if (before) this.settling.set(id, before); else this.settling.delete(id); });
+  }
+
+  /** Something off the rail, landed on the grid. */
+  private planItem(item: HelmPlanItem, day: string, hour: number) {
+    const length = Math.min(BLOCK_MAX_HOURS, item.minutes / 60);
+    const start = Math.min(24 - length, hour);
+    const minutes = { day, start: Math.round(start * 60), end: Math.round((start + length) * 60) };
+    const key = ++this.creatingKey;
+    this.creating.push({ key, title: item.title, day, start, end: start + length, kind: "block" });
+    this.planning.add(item.key);
+    this.actionError = "";
+    this.soon();
+    const undo = () => {
+      this.creating = this.creating.filter(one => one.key !== key);
+      this.planning.delete(item.key);
+    };
+    if (item.blockId) void this.act({ action: "moveBlock", blockId: item.blockId, ...minutes }, undo);
+    else {
+      void this.act({
+        action: "scheduleBlock", title: item.title, projectId: item.projectId, workItemId: item.workItemId,
+        taskId: item.taskId, dealId: item.dealId, ...minutes,
+      }, undo);
+    }
   }
 
   /** Put a task at a time — a drop from the list, or a drag of one already
@@ -708,6 +1345,10 @@ export class CalendarScreen {
     this.chosen = null;
     this.actionError = "";
     this.changed();
+    if (event.viaHelm) {
+      void this.act({ action: "deleteEvent", calendarId: event.calendarId, eventId: event.googleId }, () => this.removing.delete(event.id));
+      return;
+    }
     void call("delete_event", { calendarId: event.calendarId, eventId: event.id })
       .catch(problem => {
         this.removing.delete(event.id);
@@ -716,28 +1357,136 @@ export class CalendarScreen {
       });
   }
 
-  private viewSwitch(): HTMLElement {
+  /** The day the week or day view is built around. */
+  private anchorDate(now: Date): Date {
+    if (!this.anchorDay) return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return atHour(this.anchorDay, 0);
+  }
+
+  /** The days on screen: one, or a week from its first day. */
+  private shownDays(now: Date): Date[] {
+    const anchor = this.anchorDate(now);
+    if (this.view === "day") return [anchor];
+    const first = weekStart(anchor, this.mondayFirst);
+    return Array.from({ length: 7 }, (_, offset) => {
+      const date = new Date(first);
+      date.setDate(first.getDate() + offset);
+      return date;
+    });
+  }
+
+  private setView(name: CalendarView) {
+    /* The width changes with the view, and leaving the grid shuts the list. */
+    if (name === "month") this.leaveWeek();
+    /* The views scroll different things, so a position carried over means nothing. */
+    if ((name === "month") !== (this.view === "month")) this.scrollAt = 0;
+    this.view = name;
+    this.deps.width();
+    this.changed();
+  }
+
+  private viewSwitch(now: Date): HTMLElement {
     const bar = element("div", "cal-views");
-    for (const [name, icon, label] of [["month", "calendar", "Month"], ["week", "grid", "Week"]] as const) {
+    for (const [name, icon, label] of [["month", "calendar", "Month"], ["week", "grid", "Week"], ["day", "clock", "Day"]] as const) {
       const button = element("button", "cal-view", label);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-pressed", String(this.view === name));
       button.prepend(taskIcon(icon));
-      button.onclick = () => {
-        /* ⚠️ The width changes with the view as well — month is the narrow
-         * one, and leaving the week also shuts the list. */
-        if (name !== "week") this.leaveWeek();
-        /* ⚠️ The two views scroll different things — a week of hours and a
-         * month of days — so a position carried between them is meaningless
-         * and usually lands somewhere arbitrary. */
-        if (name !== this.view) this.scrollAt = 0;
-        this.view = name;
-        this.deps.width();
-        this.changed();
-      };
+      button.onclick = () => this.setView(name);
       bar.append(button);
     }
+    if (this.viaHelm) bar.append(this.quickAdd(now));
+    if (this.view !== "month") bar.append(this.pager(now));
     return bar;
+  }
+
+  /** One line in plain words ("gym at 18", "call z Esono czw 15"), read by Claude in
+   *  Helm and added straight away. */
+  private quickAdd(now: Date): HTMLElement {
+    const box = element("label", "cal-quick");
+    const mark = element("span", "cal-quick-mark");
+    paintIcon(mark, "plus");
+    const field = document.createElement("input");
+    field.type = "text";
+    field.className = "cal-quick-field";
+    field.maxLength = 300;
+    field.disabled = this.quickBusy;
+    field.placeholder = this.quickBusy ? "Adding…" : this.quickSaid || "Add: gym at 18";
+    field.setAttribute("aria-label", "Add to the calendar in plain words");
+    field.onfocus = () => { this.quickSaid = ""; void this.deps.focus(true).catch(() => {}); };
+    field.onblur = () => { void this.deps.focus(false).catch(() => {}); this.soon(); };
+    field.onkeydown = key => {
+      if (key.key === "Escape") {
+        key.preventDefault();
+        key.stopPropagation();
+        field.value = "";
+        field.blur();
+      }
+      if (key.key !== "Enter" || !field.value.trim()) return;
+      key.preventDefault();
+      const text = field.value.trim();
+      this.quickBusy = true;
+      field.value = "";
+      field.blur();
+      this.actionError = "";
+      void this.act({ action: "quickAdd", text, day: this.anchorDay || localDay(now) }).then(answer => {
+        this.quickBusy = false;
+        if (answer.ok && typeof answer.title === "string" && typeof answer.day === "string") {
+          const at = typeof answer.start === "number" ? ` · ${hhmm(answer.start / 60)}` : "";
+          this.quickSaid = `Added ${answer.title} · ${dayHeading(answer.day)}${at}`;
+          if (this.view !== "month") this.anchorDay = answer.day;
+        }
+        this.changed();
+      });
+    };
+    box.append(mark, field);
+    return box;
+  }
+
+  /** Back and forward through what the feed holds. */
+  private pager(now: Date): HTMLElement {
+    const nav = element("div", "cal-nav");
+    const shown = this.shownDays(now);
+    const first = shown[0];
+    const last = shown[shown.length - 1];
+    const step = this.view === "day" ? 1 : 7;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayMs = 86_400_000;
+    const page = (direction: -1 | 1, label: string, glyph: string) => {
+      const button = element("button", "cal-page", glyph) as HTMLButtonElement;
+      button.type = "button";
+      button.setAttribute("aria-label", label);
+      const to = new Date(this.anchorDate(now));
+      to.setDate(to.getDate() + direction * step);
+      const beyond = direction > 0
+        ? (first.getTime() + step * dayMs - today.getTime()) / dayMs > FEED_AHEAD_DAYS
+        : (today.getTime() - (last.getTime() - step * dayMs)) / dayMs > FEED_BACK_DAYS;
+      // Helm can read any weeks; the app's own feed holds a fixed window.
+      button.disabled = beyond && !this.viaHelm;
+      button.onclick = () => {
+        this.anchorDay = localDay(to);
+        this.changed();
+        const held = this.helm;
+        if (held && (this.anchorDay < held.from || this.anchorDay > held.to)) void this.readHelm();
+      };
+      return button;
+    };
+    const month = (date: Date) => date.toLocaleDateString(undefined, { month: "short" });
+    const label = this.view === "day"
+      ? first.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })
+      : first.getMonth() === last.getMonth()
+        ? `${first.getDate()} – ${last.getDate()} ${month(last)}`
+        : `${first.getDate()} ${month(first)} – ${last.getDate()} ${month(last)}`;
+    const onToday = shown.some(date => localDay(date) === localDay(now));
+    if (!onToday) {
+      const back = element("button", "cal-view", "Today") as HTMLButtonElement;
+      back.type = "button";
+      back.onclick = () => { this.anchorDay = ""; this.changed(); };
+      nav.append(back);
+    }
+    nav.append(element("span", "cal-nav-label", label), page(-1, this.view === "day" ? "Previous day" : "Previous week", "‹"),
+      page(1, this.view === "day" ? "Next day" : "Next week", "›"));
+    return nav;
   }
 
   /* ── The month ─────────────────────────────────────────────────────────
@@ -1107,7 +1856,8 @@ export class CalendarScreen {
    */
   private renderWeek(now: Date) {
     const today = localDay(now);
-    const first = weekStart(now, this.mondayFirst);
+    const shownDays = this.shownDays(now);
+    const first = shownDays[0];
 
     /* ⚠️ Every event resolved through `timesOf` ONCE, here, and the rest of
      * this method reads the result. An optimistic move can change which DAY an
@@ -1116,7 +1866,7 @@ export class CalendarScreen {
      * hour. */
     const placed = this.feed.events
       .filter(e => !this.removing.has(e.id))
-      .map(e => ({ event: e, ...this.timesOf(e) }));
+      .map(e => ({ event: this.edited(e), ...this.timesOf(e) }));
 
     /* ⚠️ Tasks with a real TIME, laid on the same axis as the events. A task
      * that is merely due today has 00:00 in its `startDate`, and putting those
@@ -1134,19 +1884,35 @@ export class CalendarScreen {
       return { task, begin, finish };
     });
 
-    const days: { key: string; date: Date; events: typeof placed; tasks: typeof tasks }[] = [];
-    for (let offset = 0; offset < 7; offset++) {
-      const date = new Date(first);
-      date.setDate(first.getDate() + offset);
+    /* Helm's blocks with a time, wherever a move has just put them. */
+    const blocks = (this.helm?.blocks ?? []).flatMap(block => {
+      const id = `block:${block.id}`;
+      const at = blockStart(block);
+      if (at === null || block.status === "skipped" || this.removing.has(id)) return [];
+      const pending = this.settling.get(id);
+      const begin = pending ? new Date(pending.start) : atMinutes(block.day, at);
+      const finish = pending ? new Date(pending.end) : atMinutes(block.day, at + block.minutes);
+      return [{ block, begin, finish }];
+    });
+    const markers = this.helm?.markers ?? [];
+
+    const days = shownDays.map(date => {
       const key = localDay(date);
-      days.push({
+      return {
         key,
         date,
-        events: placed.filter(one =>
-          (one.event.allDay ? one.event.start.slice(0, 10) : localDay(one.begin)) === key),
+        blocks: blocks.filter(one => localDay(one.begin) === key),
+        markers: markers.filter(one => one.day === key),
+        events: placed.filter(one => {
+          if (!one.event.allDay) return localDay(one.begin) === key;
+          // An all-day event shows on every day it covers; Google's end is exclusive.
+          const from = one.event.start.slice(0, 10);
+          const to = one.event.end ? one.event.end.slice(0, 10) : from;
+          return key === from || (key > from && key < to);
+        }),
         tasks: tasks.filter(one => localDay(one.begin) === key),
-      });
-    }
+      };
+    });
 
     /* ── The axis ──────────────────────────────────────────────────────────
      * ⚠️ All 24 hours, but not all the same height. Cropping the axis to what
@@ -1159,21 +1925,21 @@ export class CalendarScreen {
      * ⚠️ An hour holding an event is never collapsed, whatever the default
      * says — see `quietHours`. Collapsing is a way to spend less room on
      * nothing; the moment it hides a meeting it has started lying. */
-    const hoursOf = (one: { begin: Date; finish: Date }) => ({
-      start: one.begin.getHours() + one.begin.getMinutes() / 60,
-      end: one.finish.getHours() + one.finish.getMinutes() / 60,
-    });
+    const hoursOf = (one: { begin: Date; finish: Date }) => hoursWithin(one.begin, one.finish);
     /* ⚠️ Tasks count as busy too. A task dropped at 21:00 has to hold its hour
      * open exactly as a meeting does, or the drop would fold the thing that
      * was just dropped into a collapsed band. */
     const spans = [
       ...days.flatMap(d => d.events.filter(one => !one.event.allDay).map(hoursOf)),
       ...days.flatMap(d => d.tasks.map(hoursOf)),
+      ...days.flatMap(d => d.blocks.map(hoursOf)),
+      ...this.creating.filter(one => days.some(d => d.key === one.day)),
     ];
     const axis = buildAxis(quietHours(busyHours(spans), this.opened), WEEK_HOUR_PX, SHUT_HOUR_PX);
 
     const week = element("div", "cal-weekgrid is-work");
     week.style.setProperty("--cal-height", `${axis.height}px`);
+    week.style.setProperty("--cal-cols", String(days.length));
 
     /* ── The head: one column per day, plus the axis gutter ───────────── */
     const head = element("div", "cal-wkhead");
@@ -1186,6 +1952,18 @@ export class CalendarScreen {
         element("span", "cal-wkname", day.date.toLocaleDateString(undefined, { weekday: "short" })),
         element("span", "cal-wknum", String(day.date.getDate())),
       );
+      /* What's left of the working day. */
+      const busy: MinuteSpan[] = [
+        ...day.events.filter(one => !one.event.allDay).map(hoursOf),
+        ...day.blocks.map(hoursOf),
+      ].map(one => ({ start: Math.round(one.start * 60), end: Math.round(one.end * 60) }));
+      const free = freeOn(busy, day.key, today, now.getHours() * 60 + now.getMinutes());
+      if (free) cell.append(element("span", "cal-wkfree", `${shortLength(free)} free`));
+      // A day's heading opens that day, and back.
+      cell.onclick = () => {
+        this.anchorDay = day.key;
+        this.setView(this.view === "day" ? "week" : "day");
+      };
       head.append(cell);
     }
 
@@ -1194,18 +1972,25 @@ export class CalendarScreen {
      * on an hour axis means inventing one — and a birthday drawn across
      * 00:00–23:59 swamps every meeting in the column. */
     let allDayBand: HTMLElement | null = null;
-    if (days.some(d => d.events.some(one => one.event.allDay))) {
+    if (days.some(d => d.markers.length || d.events.some(one => one.event.allDay))) {
       const band = element("div", "cal-wkall");
       band.append(element("span", "cal-wkall-label", "All day"));
       for (const day of days) {
         const cell = element("div", "cal-wkall-cell");
         for (const { event } of day.events.filter(one => one.event.allDay)) {
-          const chip = element("span", "cal-chip");
+          const chip = element("button", "cal-chip" + (this.chosen === event.id ? " is-open" : ""));
+          (chip as HTMLButtonElement).type = "button";
           chip.style.setProperty("--cal", event.color || "var(--cool)");
           chip.append(element("span", "cal-chip-title", event.title));
           chip.dataset.tip = event.title;
+          chip.dataset.chipId = event.id;
+          chip.onclick = () => {
+            this.chosen = this.chosen === event.id ? null : event.id;
+            this.changed();
+          };
           cell.append(chip);
         }
+        for (const marker of day.markers) cell.append(this.markerChip(marker));
         band.append(cell);
       }
       allDayBand = band;
@@ -1245,13 +2030,15 @@ export class CalendarScreen {
         column.append(line);
       }
 
+      const inColumn: { block: HTMLElement; top: number; bottom: number }[] = [];
       for (const { event, begin, finish: end } of day.events.filter(one => !one.event.allDay)) {
-        const startHour = begin.getHours() + begin.getMinutes() / 60;
-        const endHour = Math.max(startHour + 0.25, end.getHours() + end.getMinutes() / 60);
+        const { start: startHour, end: endHour, crosses } = hoursWithin(begin, end);
         drawn.push({
           id: event.id,
           ref: { kind: "event", event } as GridRef,
-          locked: event.writable ? "" : `${event.title} · ${event.calendar} is read-only`,
+          /* A drag here would cut an event that runs past midnight down to one day. */
+          locked: !event.writable ? `${event.title} · ${event.calendar} is read-only`
+            : crosses ? `${event.title} runs past midnight · change it in Google Calendar` : "",
           start: startHour, end: endHour, column: index,
         });
         const block = element("button", `cal-block${event.response === "declined" ? " declined" : ""}`
@@ -1282,6 +2069,7 @@ export class CalendarScreen {
           this.changed();
         };
         column.append(block);
+        inColumn.push({ block, top, bottom: top + tall });
       }
 
       /* ── Tasks, on the same grid and deliberately not identical ────────
@@ -1292,8 +2080,7 @@ export class CalendarScreen {
        * grid that cannot answer "how much of Thursday is already spoken
        * for". */
       for (const { task, begin, finish } of day.tasks) {
-        const startHour = begin.getHours() + begin.getMinutes() / 60;
-        const endHour = Math.max(startHour + 0.25, finish.getHours() + finish.getMinutes() / 60);
+        const { start: startHour, end: endHour } = hoursWithin(begin, finish);
         const done = task.status === 2;
         const block = element("div", "cal-block is-task" + (done ? " is-done" : ""));
         block.style.setProperty("--cal", this.deps.taskColor(task) || "var(--good)");
@@ -1331,6 +2118,62 @@ export class CalendarScreen {
         }
         block.dataset.tip = task.title;
         column.append(block);
+        inColumn.push({ block, top, bottom: top + tall });
+      }
+
+      /* Helm's focus blocks: work he has given a time, in the project's colour. */
+      for (const { block: focus, begin, finish } of day.blocks) {
+        const { start: startHour, end: endHour } = hoursWithin(begin, finish);
+        const id = `block:${focus.id}`;
+        const mark = this.helm?.marks.find(one => one.id === focus.projectId);
+        const done = focus.status === "done";
+        const block = element("button", `cal-block is-focus is-${focus.status}`
+          + (this.chosen === id ? " is-open" : "")
+          + (this.settling.has(id) ? " is-settling" : ""));
+        (block as HTMLButtonElement).type = "button";
+        block.style.setProperty("--cal", hueOf(mark?.hue, mark?.name ?? focus.title));
+        const top = axis.yOf(startHour);
+        const tall = Math.max(MIN_BLOCK_PX, axis.yOf(endHour) - top);
+        block.style.top = `${top}px`;
+        block.style.height = `${tall}px`;
+        block.dataset.calId = id;
+        block.dataset.tip = mark ? `${focus.title} · ${mark.name}` : focus.title;
+        block.append(element("span", "cal-block-title", focus.title));
+        if (tall >= 34) block.append(element("span", "cal-block-time", mark?.name ?? hhmm(startHour)));
+        drawn.push({
+          id,
+          ref: { kind: "block", block: focus } as GridRef,
+          locked: done ? `${focus.title} · already done` : focus.status === "running" ? `${focus.title} · running now` : "",
+          start: startHour, end: endHour, column: index, maxHours: BLOCK_MAX_HOURS,
+        });
+        block.onclick = () => {
+          this.chosen = this.chosen === id ? null : id;
+          this.changed();
+        };
+        column.append(block);
+        inColumn.push({ block, top, bottom: top + tall });
+      }
+
+      /* New events still on their way to Google. */
+      for (const one of this.creating.filter(entry => entry.day === day.key)) {
+        const block = element("div", `cal-block is-settling${one.kind === "block" ? " is-focus" : ""}`);
+        const top = axis.yOf(one.start);
+        const tall = Math.max(MIN_BLOCK_PX, axis.yOf(one.end) - top);
+        block.style.top = `${top}px`;
+        block.style.height = `${tall}px`;
+        block.append(element("span", "cal-block-title", one.title));
+        column.append(block);
+        inColumn.push({ block, top, bottom: top + tall });
+      }
+
+      /* Overlaps side by side, so each stays readable and reachable. */
+      const lanes = layoutLanes(inColumn);
+      for (const [at, { block }] of inColumn.entries()) {
+        const { lane, lanes: count } = lanes[at];
+        if (count < 2) continue;
+        block.style.left = `calc(${(lane / count) * 100}% + 1px)`;
+        block.style.width = `calc(${100 / count}% - 2px)`;
+        block.style.right = "auto";
       }
 
       /* Now, as a line across today's column. */
@@ -1370,7 +2213,8 @@ export class CalendarScreen {
      * same box and cannot disagree; sticky is what stops it scrolling away. */
     const scroller = element("div", "cal-wkscroll");
     const stuck = element("div", "cal-wkstick");
-    stuck.append(head);
+    // The views and the pager stay reachable however far the hours scroll.
+    stuck.append(this.viewSwitch(now), head);
     if (allDayBand) stuck.append(allDayBand);
     /* An opened run can be shut again from the same place it was opened. */
     if (this.opened.size) {
@@ -1396,7 +2240,7 @@ export class CalendarScreen {
         box.style.height = `${Math.max(MIN_BLOCK_PX, axis.yOf(end) - top)}px`;
         const field = element("input", "cal-draft-field") as HTMLInputElement;
         field.type = "text";
-        field.placeholder = "New event";
+        field.placeholder = this.draft.kind === "block" ? "New block" : "New event";
         field.maxLength = 200;
         field.onkeydown = key => {
           if (key.key === "Enter") { key.preventDefault(); this.commitDraft(field.value); }
@@ -1407,10 +2251,25 @@ export class CalendarScreen {
          * more annoying of the two mistakes; Escape is the one that throws it
          * away, and it says so. */
         field.onblur = () => {
-          if (!this.draft) return;
+          if (!this.draft) { this.soon(); return; }
           if (field.value.trim()) this.commitDraft(field.value); else this.cancelDraft();
         };
         box.append(field);
+        /* Through Helm a new thing is a meeting or a block of work. Pressing this
+         * doesn't take the caret out of the field. */
+        if (this.viaHelm) {
+          const kind = element("button", "cal-draft-kind", this.draft.kind === "block" ? "Block" : "Event") as HTMLButtonElement;
+          kind.type = "button";
+          kind.onmousedown = down => down.preventDefault();
+          kind.onclick = () => {
+            const draft = this.draft;
+            if (!draft) return;
+            draft.kind = draft.kind === "block" ? "event" : "block";
+            kind.textContent = draft.kind === "block" ? "Block" : "Event";
+            field.placeholder = draft.kind === "block" ? "New block" : "New event";
+          };
+          box.append(kind);
+        }
         columns[at].append(box);
         /* ⚠️ The island never takes focus, so a bare `focus()` puts the caret
          * in the DOM and leaves the keystrokes going to whatever is actually
@@ -1493,6 +2352,7 @@ export class CalendarScreen {
         if (!task) continue;
         wireTaskDrag(row, task, task.title, {
           at: (x, y) => pointOver(columns, axis, x, y),
+          busy: on => this.hold(on),
           span: DROP_SPAN,
           drop: (ref, column, hour) => {
             const day = days[column]?.key;
@@ -1507,14 +2367,34 @@ export class CalendarScreen {
       }
     }
 
+    if (this.tasksOpen && this.viaHelm) {
+      const reading = this.helm!;
+      for (const row of this.host.querySelectorAll<HTMLElement>("[data-plan-row]")) {
+        const item = reading.items.find(one => one.key === row.dataset.planRow);
+        if (!item) continue;
+        wireTaskDrag(row, item, item.title, {
+          at: (x, y) => pointOver(columns, axis, x, y),
+          busy: on => this.hold(on),
+          span: Math.min(BLOCK_MAX_HOURS, item.minutes / 60),
+          drop: (ref, column, hour) => {
+            const day = days[column]?.key;
+            if (day) this.planItem(ref as HelmPlanItem, day, hour);
+          },
+        });
+      }
+    }
+
     rememberBlocks(drawn);
-    wireWeekEditing(body, columns, axis, days.map(d => d.key), {
+    wireWeekEditing(this.host, body, columns, axis, days.map(d => d.key), {
       create: (start, end) => {
         this.draft = {
           day: localDay(start),
           start: start.getHours() + start.getMinutes() / 60,
-          end: end.getHours() + end.getMinutes() / 60,
+          // A range drawn to the very end of the day ends on the next day's midnight.
+          end: localDay(end) === localDay(start) ? end.getHours() + end.getMinutes() / 60 : 24,
+          kind: "event",
         };
+        this.chosen = null;
         this.actionError = "";
         this.changed();
       },
@@ -1523,20 +2403,61 @@ export class CalendarScreen {
       move: (ref, start, end) => {
         const what = ref as GridRef;
         if (what.kind === "event") this.commitMove(what.event, start, end);
+        else if (what.kind === "block") this.commitBlock(what.block, start, end);
         else this.scheduleTask(what.task, start, end);
       },
-      say: message => {
-        if (this.actionError === message) return;
-        this.actionError = message;
-        this.changed();
+      busy: on => this.hold(on),
+      started: () => {
+        this.actionError = "";
+        if (this.chosen) {
+          this.chosen = null;
+          this.host.querySelector(".cal-panel")?.remove();
+        }
       },
+      dismissing: () => !!this.chosen || !!this.draft,
+      dismiss: () => {
+        if (!this.chosen) return;
+        this.chosen = null;
+        this.soon();
+      },
+      repaint: () => this.changed(),
+      escapeDown: native ? () => call<boolean>("escape_down") : undefined,
     });
   }
 
+  /** A delivery, a phase's end, a payment: read here, opened where it lives. */
+  private markerChip(marker: HelmMarker): HTMLElement {
+    const chip = element("button", `cal-chip is-marker is-${marker.kind}${marker.late ? " is-late" : ""}`);
+    (chip as HTMLButtonElement).type = "button";
+    chip.style.setProperty("--cal", hueOf(marker.hue, marker.context));
+    chip.append(element("span", "cal-chip-title", markerLabel(marker, zloty)));
+    chip.dataset.tip = marker.context && marker.context !== marker.title ? `${marker.title} · ${marker.context}` : marker.title;
+    chip.onclick = () => { void call("helm_open", { path: marker.href }).catch(() => {}); };
+    return chip;
+  }
+
+  /** Redraws wait for a press to end, and the island stays up however far it goes. */
+  private hold(on: boolean) {
+    this.holding = on;
+    this.deps.hold(on);
+    // A timer, so a plain click still lands on the element it was pressed on.
+    if (!on && this.owed) this.soon();
+  }
+
+  /** Whether a redraw now would take something out from under the person. */
+  private heldStill(): boolean {
+    if (this.holding) return true;
+    const focused = document.activeElement;
+    // A field being typed in, not a button that kept focus after its press.
+    return focused instanceof HTMLInputElement && this.host.contains(focused)
+      && !!focused.closest(".cal-draft, .cal-panel, .cal-quick");
+  }
 
   render() {
+    if (this.heldStill()) { this.owed = true; return; }
+    this.owed = false;
     this.host.replaceChildren();
-    if (!this.feed.connected) {
+    if (!this.feed.connected && !this.helm?.blocks.length) {
       const empty = element("div", "day-empty");
       const connect = element("button", "day-connect", "Connect Google Calendar");
       (connect as HTMLButtonElement).type = "button";
@@ -1550,20 +2471,27 @@ export class CalendarScreen {
       return;
     }
 
-    this.host.append(this.viewSwitch());
+    if (helmNeedsGoogle(this.helm) || (!this.viaHelm && this.feed.needsSignIn)) this.host.append(this.signInBar());
     const now = new Date();
-    if (this.view === "week") this.renderWeek(now);
-    else this.renderMonth(now);
+    if (this.view !== "month") this.renderWeek(now);
+    else {
+      this.host.append(this.viewSwitch(now));
+      this.renderMonth(now);
+    }
 
-    if (this.actionError || this.error || this.feed.error) {
+    // The bar already says what the feed's error would.
+    const feedError = this.feed.needsSignIn ? "" : this.feed.error;
+    if (this.actionError || this.error || feedError) {
       this.host.append(element("p", "screen-error",
-        this.actionError || this.error || this.feed.error || ""));
+        this.actionError || this.error || feedError || ""));
     }
     if (this.chosen) {
-      const open = this.feed.events.find(e => e.id === this.chosen);
-      if (open) this.host.append(this.panel(open));
-      else this.chosen = null;
+      const sheet = this.panelFor(this.chosen);
+      if (!sheet) this.chosen = null;
+      else if (this.view === "month") this.host.append(sheet);
+      else this.placeBeside(sheet, this.chosen);
     }
+    if (!this.chosen) this.sheetFor = "";
 
     if (this.scrollTo) this.scrollAgenda(this.scrollTo);
     this.scrollTo = "";
