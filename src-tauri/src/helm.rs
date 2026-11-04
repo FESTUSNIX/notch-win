@@ -81,8 +81,20 @@ const POLL: Duration = Duration::from_secs(20);
 const RING_AGAIN: Duration = Duration::from_secs(180);
 /// How often the queue is read. It's built from every project at once, so it
 /// costs Helm more than today, and it changes when he acts (which reads it at
-/// once) more than on its own. `/api/notch` rides on the same beat.
-const QUEUE_EVERY: Duration = Duration::from_secs(60);
+/// once) more than on its own. `/api/notch` rides on the same beat, and opening
+/// the island reads both at once if they're more than `FRESH_ENOUGH` old.
+const QUEUE_EVERY: Duration = Duration::from_secs(180);
+/// How often the curtain's reading is asked for. ⚠️ Well inside curtain.rs's
+/// `STALE`, or the curtain stops trusting it between reads.
+const BLOCKER_EVERY: Duration = Duration::from_secs(60);
+/// Nobody has touched the PC for this long: he's away, and nothing here is urgent.
+const AWAY_AFTER_SECS: u64 = 300;
+/// How often anything is read while he's away. Coming back reads at once.
+const AWAY_EVERY: Duration = Duration::from_secs(300);
+/// How often the loops look at the clock, and at whether he came back.
+pub(crate) const TICK: Duration = Duration::from_secs(5);
+/// Opening the island reads again only if the queue is older than this.
+const FRESH_ENOUGH_SECS: i64 = 30;
 /// An access token with less than this left is refreshed before it's used.
 const REFRESH_BEFORE: i64 = 300;
 /// The largest logo kept. Helm stores them as data URLs; anything bigger than
@@ -265,7 +277,113 @@ pub(crate) fn presenting() -> bool {
     matches!(unsafe { SHQueryUserNotificationState() }, Ok(state) if state == QUNS_PRESENTATION_MODE)
 }
 
+/* ── Reading without Vercel ───────────────────────────────────────────────
+ * The fast reads are one database call each. Through Helm's routes they were
+ * thousands of function calls a day that added nothing, so codenotch asks Supabase
+ * itself. The database still decides what the key or the session may read.
+ *
+ * ⚠️ Any failure falls back to the route, so a Helm too old to say where Supabase
+ * is, or a Supabase that says no, costs a function call and nothing else.
+ */
+
+#[derive(Clone, Deserialize)]
+struct Direct {
+    url: String,
+    /// The publishable key, the one every browser already has.
+    key: String,
+    #[serde(default)]
+    replies: Vec<String>,
+}
+
+/// What `/api/desktop/direct` said, and when: an old Helm is asked again in an hour.
+static DIRECT: Mutex<Option<(Option<Direct>, Instant)>> = Mutex::new(None);
+const DIRECT_ASK_AGAIN: Duration = Duration::from_secs(3600);
+
+async fn direct(url: &str, key: &str) -> Option<Direct> {
+    if let Ok(held) = DIRECT.lock() {
+        if let Some((known, at)) = held.as_ref() {
+            if known.is_some() || at.elapsed() < DIRECT_ASK_AGAIN {
+                return known.clone();
+            }
+        }
+    }
+    let response = http().get(format!("{url}/api/desktop/direct")).bearer_auth(key).send().await.ok()?;
+    let found = if response.status().is_success() { response.json::<Direct>().await.ok() } else { None };
+    if let Ok(mut held) = DIRECT.lock() {
+        *held = Some((found.clone(), Instant::now()));
+    }
+    found
+}
+
+/// Today from the database's own `desktop_state`, which is all `/api/desktop` does.
+async fn read_today_direct(direct: &Direct, key: &str) -> Option<Today> {
+    let response = http()
+        .post(format!("{}/rest/v1/rpc/desktop_state", direct.url))
+        .header("apikey", &direct.key)
+        .json(&json!({ "p_key": key }))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let mut body: serde_json::Value = response.json().await.ok()?;
+    // An unknown key answers null, and the route says what that means.
+    if !body.is_object() {
+        return None;
+    }
+    body["replies"] = json!(direct.replies);
+    serde_json::from_value(body).ok()
+}
+
+/// The notes from Gabi he hasn't seen, by id, as him. `None`: ask the route instead.
+pub(crate) async fn unseen_note_ids() -> Option<Vec<i64>> {
+    let (config, token) = access(false).await.ok()?;
+    let direct = direct(&config.url, &config.key).await?;
+    let response = http()
+        .get(format!("{}/rest/v1/companion_notes?select=id&direction=eq.to_him&seen_at=is.null&order=created_at&limit=20", direct.url))
+        .header("apikey", &direct.key)
+        .bearer_auth(token)
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let rows: Vec<serde_json::Value> = response.json().await.ok()?;
+    rows.iter().map(|row| row.get("id").and_then(serde_json::Value::as_i64)).collect()
+}
+
+/// Whether he's been away from the PC long enough that nothing here is urgent.
+pub(crate) fn away() -> bool {
+    crate::apptime::idle_seconds() >= AWAY_AFTER_SECS
+}
+
+/// Whether a reading this old is due. Away, everything waits for the same slow beat.
+pub(crate) fn due(age: Duration, every: Duration, away: bool) -> bool {
+    age >= if away { AWAY_EVERY } else { every }
+}
+
+/// He was away and isn't now. Keeps track in `was`.
+pub(crate) fn came_back(was: &mut bool, now: bool) -> bool {
+    let back = *was && !now;
+    *was = now;
+    back
+}
+
+fn reading_of(today: Today) -> (Today, i64) {
+    let skew = chrono::DateTime::parse_from_rfc3339(&today.now)
+        .map(|server| Local::now().timestamp_millis() - server.timestamp_millis())
+        .unwrap_or(0);
+    (today, skew)
+}
+
 async fn read_today(url: &str, key: &str) -> Result<(Today, i64), String> {
+    if let Some(found) = direct(url, key).await {
+        if let Some(today) = read_today_direct(&found, key).await {
+            return Ok(reading_of(today));
+        }
+    }
     let response = http()
         .get(format!("{url}/api/desktop"))
         .bearer_auth(key)
@@ -278,10 +396,7 @@ async fn read_today(url: &str, key: &str) -> Result<(Today, i64), String> {
         status => return Err(format!("Helm answered {status}.")),
     }
     let today: Today = response.json().await.map_err(|_| "Helm sent something unexpected.".to_string())?;
-    let skew = chrono::DateTime::parse_from_rfc3339(&today.now)
-        .map(|server| Local::now().timestamp_millis() - server.timestamp_millis())
-        .unwrap_or(0);
-    Ok((today, skew))
+    Ok(reading_of(today))
 }
 
 /// What the curtain covers and says (`/api/desktop/blocker`), on the device key.
@@ -401,7 +516,15 @@ fn notch_reading(body: serde_json::Value) -> Result<Option<serde_json::Value>, S
     }
 }
 
-async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: &mut bool, blocker_failing: &mut bool) {
+/// Which readings are due this time round.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Beats {
+    today: bool,
+    blocker: bool,
+    queue: bool,
+}
+
+async fn poll(app: &AppHandle, bell: &mut Bell, beats: Beats, notch_failing: &mut bool, blocker_failing: &mut bool) {
     let Some(config) = connected() else {
         if current(app).connected {
             publish(app, Helm::default());
@@ -413,7 +536,7 @@ async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: 
     let mut next = current(app);
     next.connected = true;
     next.signed_in = config.refresh.is_some();
-    match read_today(&config.url, &config.key).await {
+    if beats.today { match read_today(&config.url, &config.key).await {
         Ok((today, skew)) => {
             let unread: Vec<i64> = today.nudges.iter().map(|n| n.id).collect();
             let ring = bell.ring(&unread, Instant::now());
@@ -439,13 +562,16 @@ async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: 
             next.error = Some(message);
             publish(app, next);
         }
+    } }
+    /* The curtain's reading on its own beat: what's locked changes when an
+     * unlock or a rule ends, and a minute late is fine for a curtain. */
+    if beats.blocker {
+        refresh_blocker(&config, blocker_failing).await;
     }
-    /* The curtain's reading on today's beat: what's locked changes when an
-     * unlock or a rule ends, and twenty seconds late is fine for a curtain. */
-    refresh_blocker(&config, blocker_failing).await;
     /* After today is out, so the timer and the nudges never wait on the
      * heavier read. */
-    if queue_due && config.refresh.is_some() {
+    if beats.queue && config.refresh.is_some() {
+        QUEUE_READ_AT.store(chrono::Utc::now().timestamp(), std::sync::atomic::Ordering::Relaxed);
         let read = read_queue().await;
         let mut next = current(app);
         match read {
@@ -477,6 +603,24 @@ async fn poll(app: &AppHandle, bell: &mut Bell, queue_due: bool, notch_failing: 
         }
         publish(app, next);
     }
+}
+
+/// When the queue was last read, for `helm_fresh`.
+static QUEUE_READ_AT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// The island opened: if what it's about to show is more than a moment old, read again.
+#[tauri::command]
+pub fn helm_fresh() {
+    let age = chrono::Utc::now().timestamp() - QUEUE_READ_AT.load(std::sync::atomic::Ordering::Relaxed);
+    if age > FRESH_ENOUGH_SECS {
+        poke().notify_one();
+    }
+}
+
+/// Whether he's away, for the page's own slow reads.
+#[tauri::command]
+pub fn helm_away() -> bool {
+    away()
 }
 
 /// Read again now, after an action or a new connection, rather than in 20 s.
@@ -1421,20 +1565,44 @@ pub async fn helm_logo(id: i64, version: String) -> Result<Option<String>, Strin
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut bell = Bell::default();
-        let mut queued: Option<Instant> = None;
-        let mut poked = true;
+        let mut today_at: Option<Instant> = None;
+        let mut blocker_at: Option<Instant> = None;
+        let mut queue_at: Option<Instant> = None;
+        // The first round reads everything.
+        let mut woken = true;
+        let mut was_away = false;
         let mut notch_failing = false;
         let mut blocker_failing = false;
+        let is_due = |at: Option<Instant>, every: Duration, away: bool| at.is_none_or(|at| due(at.elapsed(), every, away));
         loop {
-            let queue_due = poked || queued.is_none_or(|at| at.elapsed() >= QUEUE_EVERY);
-            if queue_due {
-                queued = Some(Instant::now());
+            let away_now = away();
+            /* ⚠️ The curtain keeps its beat while a browser is in front, even away:
+             * a video watched without touching anything is exactly when earned
+             * time runs out and the curtain has to know. */
+            let curtain_away = away_now && !crate::curtain::browser_in_front();
+            let beats = Beats {
+                today: woken || is_due(today_at, POLL, away_now),
+                blocker: woken || is_due(blocker_at, BLOCKER_EVERY, curtain_away),
+                queue: woken || is_due(queue_at, QUEUE_EVERY, away_now),
+            };
+            if beats.today || beats.blocker || beats.queue {
+                let now = Instant::now();
+                if beats.today {
+                    today_at = Some(now);
+                }
+                if beats.blocker {
+                    blocker_at = Some(now);
+                }
+                if beats.queue {
+                    queue_at = Some(now);
+                }
+                poll(&app, &mut bell, beats, &mut notch_failing, &mut blocker_failing).await;
             }
-            poll(&app, &mut bell, queue_due, &mut notch_failing, &mut blocker_failing).await;
-            poked = tokio::select! {
-                _ = tokio::time::sleep(POLL) => false,
+            let poked = tokio::select! {
+                _ = tokio::time::sleep(TICK) => false,
                 _ = poke().notified() => true,
             };
+            woken = came_back(&mut was_away, away()) || poked;
         }
     });
 }
@@ -1442,6 +1610,30 @@ pub fn spawn(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reading_waits_for_its_own_beat_or_the_slow_one_when_he_is_away() {
+        let twenty = Duration::from_secs(20);
+        assert!(!due(Duration::from_secs(10), twenty, false));
+        assert!(due(Duration::from_secs(20), twenty, false));
+        assert!(!due(Duration::from_secs(200), twenty, true));
+        assert!(due(AWAY_EVERY, twenty, true));
+    }
+
+    #[test]
+    fn coming_back_is_said_once() {
+        let mut was = false;
+        assert!(!came_back(&mut was, false));
+        assert!(!came_back(&mut was, true), "going away isn't coming back");
+        assert!(!came_back(&mut was, true));
+        assert!(came_back(&mut was, false));
+        assert!(!came_back(&mut was, false));
+    }
+
+    #[test]
+    fn the_curtain_is_read_well_inside_what_it_trusts() {
+        assert!(BLOCKER_EVERY.as_secs() * 2 < 150, "curtain.rs's STALE is 150 s");
+    }
 
     #[test]
     fn the_cockpit_reading_is_an_object_or_nothing() {

@@ -434,6 +434,14 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// A browser is in front. Read by helm.rs, which keeps the curtain's reading coming
+/// while he's "away": a video watched without touching anything looks like away.
+static BROWSER_FRONT: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn browser_in_front() -> bool {
+    BROWSER_FRONT.load(Ordering::Relaxed) || OPEN.load(Ordering::Relaxed)
+}
+
 fn tick(app: &AppHandle, exes: &mut HashMap<u32, String>) {
     let front = foreground();
     let exe = front
@@ -448,6 +456,7 @@ fn tick(app: &AppHandle, exes: &mut HashMap<u32, String>) {
         })
         .unwrap_or_default();
     let browser = browser_name(&exe);
+    BROWSER_FRONT.store(browser.is_some(), Ordering::Relaxed);
     let title = match (front, browser) {
         (Some((window, _)), Some(_)) => Some(crate::win::title_of(hwnd(window))),
         _ => None,

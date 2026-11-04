@@ -221,9 +221,10 @@ const FEED_BACK_DAYS = 30;
 const OPENING_MS = 700;
 
 /** How often the calendar is read from Helm, and how old a reading may be on opening it.
- *  Each read asks Google for every calendar, so not every minute like the cockpit. */
-const HELM_POLL_MS = 180_000;
-const HELM_FRESH_MS = 45_000;
+ *  Each read asks Google for every calendar and costs Helm the most of anything here,
+ *  and opening the island reads it anyway. */
+const HELM_POLL_MS = 15 * 60_000;
+const HELM_FRESH_MS = 60_000;
 
 /** Helm refuses a focus block over three hours. */
 const BLOCK_MAX_HOURS = 3;
@@ -396,7 +397,9 @@ export class CalendarScreen {
     } catch { /* not connected */ }
     this.changed();
     void this.readHelm();
-    setInterval(() => void this.readHelm(), HELM_POLL_MS);
+    setInterval(() => {
+      void call<boolean>("helm_away").catch(() => false).then(away => { if (!away) void this.readHelm(); });
+    }, HELM_POLL_MS);
   }
 
   /* ── Helm, when connected ──────────────────────────────────────────────
@@ -430,7 +433,7 @@ export class CalendarScreen {
 
   /** Back on the calendar: what it shows may be a few minutes behind. */
   cameBack() {
-    if (Date.now() - this.helmReadAt > HELM_FRESH_MS) void this.readHelm();
+    this.freshen();
     // Back on today and on now, unless something sent us to a particular event.
     if (!this.chosen) {
       this.anchorDay = "";
@@ -438,6 +441,11 @@ export class CalendarScreen {
     }
     this.scrollAt = null;
     this.aimUntil = Date.now() + OPENING_MS;
+  }
+
+  /** The island opened on the calendar, or we came to it: read if it's a while old. */
+  freshen() {
+    if (Date.now() - this.helmReadAt > HELM_FRESH_MS) void this.readHelm();
   }
 
   private async readHelm() {

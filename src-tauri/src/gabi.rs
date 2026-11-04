@@ -60,12 +60,30 @@ pub struct Play {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut failing = false;
+        let mut read_at: Option<std::time::Instant> = None;
+        let mut wait = EVERY;
+        let mut was_away = false;
+        /* What the route last said, and for which notes. ⚠️ A note stays unseen until
+         * he answers, which can be hours: the route, which says what each note IS, is
+         * asked only when the set of notes changes. */
+        let mut known: Option<(Vec<i64>, serde_json::Value)> = None;
         loop {
-            let mut wait = EVERY;
-            if crate::helm::signed_in() {
-                match crate::helm::optional("/api/notch/gabi").await {
+            let away = crate::helm::away();
+            let back = crate::helm::came_back(&mut was_away, away);
+            let due = back || read_at.is_none_or(|at| crate::helm::due(at.elapsed(), wait, away));
+            if due && crate::helm::signed_in() {
+                read_at = Some(std::time::Instant::now());
+                wait = EVERY;
+                let unseen = crate::helm::unseen_note_ids().await;
+                let body = match (&unseen, &known) {
+                    (Some(ids), _) if ids.is_empty() => Ok(Some(serde_json::json!({ "notes": [] }))),
+                    (Some(ids), Some((same, body))) if ids == same => Ok(Some(body.clone())),
+                    _ => crate::helm::optional("/api/notch/gabi").await,
+                };
+                match body {
                     Ok(Some(body)) => {
                         failing = false;
+                        known = unseen.map(|ids| (ids, body.clone()));
                         let _ = app.emit_to("tasks", "gabi:notes", body);
                     }
                     Ok(None) => wait = WITHOUT_ROUTE,
@@ -77,7 +95,7 @@ pub fn spawn(app: AppHandle) {
                     }
                 }
             }
-            tokio::time::sleep(wait).await;
+            tokio::time::sleep(crate::helm::TICK).await;
         }
     });
 }

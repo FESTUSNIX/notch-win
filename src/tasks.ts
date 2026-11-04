@@ -461,6 +461,10 @@ function landOn(aim: Activity | Peek | null) {
 
 const surface = new IslandSurface(open => {
   if (open) {
+    /* What it's about to show may be up to a few minutes old: Rust reads slowly while
+     * the island is shut (helm.rs, `QUEUE_EVERY`). */
+    void call("helm_fresh").catch(() => {});
+    if (screen === "calendar") calendar.freshen();
     /* ⚠️ Read first: an open panel holds the peeks back, so the `render` below
      * repaints the pill without the very peek that was pressed. */
     const aim = pillShows;

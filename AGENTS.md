@@ -6440,3 +6440,20 @@ Helm; these are answers it asks for mid-reply.
         (`aimHour`, `aimUntil`: the island is still growing when it first aims). The
         calendar's grids get a taller cap than other screens (`wantsTall`).
       Test: helm-rename.spec.ts, helm-project.spec.ts, calendar-open.spec.ts.
+
+940.  Reading Helm costs his free Vercel allowance, and it was 22,000 function calls a day
+      with the PC on (4 Nov; Fluid Active CPU would have run out around day 18 of 30).
+      - Away (no input for 5 minutes) everything drops to one read in 5 minutes, and
+        coming back reads at once. ⚠️ Except the curtain's while a browser is in front:
+        watching a video without touching anything looks like away, and that's when
+        earned time runs out (`browser_in_front`).
+      - Today and "anything new from Gabi?" go straight to Supabase (`/api/desktop/direct`
+        says where), so they stay fast and cost Vercel nothing. Any failure falls back to
+        the route. The route for Gabi is still what says what a note IS: it's asked when
+        the set of unseen notes changes, not every 10 s.
+      - ⚠️ The curtain's reading can't go direct: `blockerPlan` and `curtainView` are
+        Helm's TypeScript. It's on 60 s, which has to stay well inside `STALE`.
+      - The queue and `/api/notch` are on 3 minutes, the calendar on 15, and opening the
+        island reads what's old (`helm_fresh`, `freshen`).
+      - ⚠️ The extension keeps its minute: that check is also what counts minutes on the
+        watched sites.
