@@ -71,6 +71,7 @@ import "./tasks.css";
 // Moments (30 Oct): the island's notifications — see moments.ts.
 import { MomentFeed } from "./moment-feed";
 import { bootPeekSources } from "./peek-sources";
+import { GabiFeed } from "./gabi-feed";
 import { nudgeAction } from "./screen-helm";
 import { agentName } from "./screen-agents";
 import "./moments.css";
@@ -1654,7 +1655,8 @@ collapsedLayer.addEventListener("pointerleave", () => { pillPointer = false; });
 function peekHeld(): boolean {
   if (peeks.size && Date.now() - peekQuietAt > 3000) {
     peekQuietAt = Date.now();
-    void call<string | null>("voice_quiet").then(why => { peekQuietWhy = why ?? null; }).catch(() => { peekQuietWhy = null; });
+    // ⚠️ `island_quiet`: see moment-feed.ts.
+    void call<string | null>("island_quiet").then(why => { peekQuietWhy = why ?? null; }).catch(() => { peekQuietWhy = null; });
   }
   return surface.open || surface.voiceUp || surface.momentUp || surface.isHidden || surface.inAmbient
     || palette.open || capture.open || callSource.call.active
@@ -3322,6 +3324,8 @@ async function boot() {
   await guardianChat.boot();
   await voiceTalk.boot();
   await moments.boot();
+  /* Gabi (4 Nov): what she sends, every ten seconds, by how much of the island it takes. */
+  await new GabiFeed({ surface, moments, peekHeld, say }).boot();
   /* Batch 13 (builder S): devices, files, Helm's paid/logged and the focus peek. */
   await bootPeekSources({
     runningBlock: () => helmSource.blocks.find(b => b.status === "running")?.id ?? null,

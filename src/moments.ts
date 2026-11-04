@@ -27,7 +27,8 @@ import type { TaskIcon } from "./task-icons";
 import type { NotchAction, NotchMoment } from "./helm-link";
 
 /** `helm`: one of the Guardian's own moments from `/api/notch` (batch 12). */
-export type MomentKind = "finished" | "question" | "usage" | "nudge" | "block" | "meeting" | "helm";
+/** `gabi`: a note or a photo of hers (gabi-logic.ts). */
+export type MomentKind = "finished" | "question" | "usage" | "nudge" | "block" | "meeting" | "helm" | "gabi";
 
 export interface MomentButton {
   /** What the shell runs for it. */
@@ -70,6 +71,10 @@ export interface Moment {
   detail?: { label: string; text: string }[];
   /** HELM only: the moment as Helm sent it, for its actions and its id. */
   helm?: NotchMoment;
+  /** How long it stays up, over `FOLD_MS`. */
+  foldMs?: number;
+  /** A picture in the tile's place, in memory only (gabi.rs). */
+  photo?: string;
 }
 
 /** One agent in a finished moment. */
@@ -122,6 +127,7 @@ export const PRIORITY: Record<MomentKind, number> = {
   question: 70,
   usage: 50,
   finished: 40,
+  gabi: 95,
 };
 
 /** Where a moment stands in the queue: its own priority, else its kind's. */
@@ -202,7 +208,8 @@ export class MomentQueue {
   /** Advance to `now`: what should be up. */
   step(now: number, ctx: StepContext): Moment | null {
     // What stopped being true goes, wherever it is.
-    const live = (m: Moment) => (m.until === undefined || now < m.until) && (m.sticky || now - m.at < STALE_MS || m === this.current);
+    // ⚠️ Hers never goes stale: held through a two-hour call, it's still there after it.
+    const live = (m: Moment) => (m.until === undefined || now < m.until) && (m.sticky || m.kind === "gabi" || now - m.at < STALE_MS || m === this.current);
     this.waiting = this.waiting.filter(live);
     if (this.current && this.current.until !== undefined && now >= this.current.until) this.current = null;
 
@@ -215,7 +222,7 @@ export class MomentQueue {
       if (ctx.hovering) this.wasHovering = true;
       else if (this.wasHovering) { this.wasHovering = false; this.leftAt = now; }
       if (!this.current.sticky && !ctx.hovering) {
-        const end = Math.max(this.since + FOLD_MS, this.leftAt ? this.leftAt + LEAVE_MS : 0);
+        const end = Math.max(this.since + (this.current.foldMs ?? FOLD_MS), this.leftAt ? this.leftAt + LEAVE_MS : 0);
         if (now >= end) this.current = null;
       }
     }

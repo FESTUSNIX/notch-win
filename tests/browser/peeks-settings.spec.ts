@@ -9,7 +9,7 @@ test("Peeks: every kind grouped, switches and quiet hours persist", async ({ pag
   await page.goto("/task-editor.html#peeks");
   const pane = page.locator("#pane-peeks");
   await expect(pane).toBeVisible();
-  await expect(pane.locator("[data-peek]")).toHaveCount(16);
+  await expect(pane.locator("[data-peek]")).toHaveCount(17);
   for (const group of ["Music", "Your block", "Calendar", "Devices", "Files", "Money and work", "Mail", "Focus", "The Guardian on this PC"]) {
     await expect(pane.locator(".set-label", { hasText: group }).first()).toBeVisible();
   }

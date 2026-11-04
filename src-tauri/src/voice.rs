@@ -176,6 +176,20 @@ pub fn why_quiet(spoken: bool, presenting: bool, call: bool, meeting: bool) -> O
     }
 }
 
+/// Why the island should keep things off the screen: a share, a call, a meeting.
+/// ⚠️ `voice_quiet` answers "off" first when spoken replies are off, which hid
+/// all three from everything that asked it about the SCREEN.
+#[tauri::command]
+pub fn island_quiet(app: AppHandle) -> Option<String> {
+    why_quiet(
+        true,
+        crate::helm::presenting(),
+        app.try_state::<crate::call::CallState>().is_some_and(|state| state.snapshot().active),
+        crate::curtain::meeting_now(&crate::calendar::get_calendar(app.clone()).events, chrono::Utc::now()),
+    )
+    .map(str::to_string)
+}
+
 /// ⚠️ The call is `call.rs`'s microphone reading, which only runs with in-call
 /// mode on; with it off the calendar is what says he is in a meeting — the
 /// curtain's rule (AGENTS 835), and the same meeting test.

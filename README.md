@@ -311,6 +311,15 @@ chat, which act as you in Helm), kept in Credential Manager. Nothing is copied b
   **work pass** (Helm, 3 Nov) sends its topic's words with the site (`pass`): a
   window title carrying one (case and Polish letters aside, `on_pass`) is work,
   and isn't covered.
+- **Gabi** (Helm, 4 Nov): what she sends, read every 10 seconds (`/api/notch/gabi`)
+  and sized by what it is. A reaction pours out of the notch across the monitor
+  (click-through) and borrows the pill; a tap sends a heart back. The fund or her
+  lock borrows the pill with one pulse. A note or a photo opens the island with
+  one-tap answers or a typed reply, and folds after 12 s to a heart beside the
+  notch, which stays until you answer. Nothing shows during a call, a shared screen,
+  a meeting or full screen, or with nobody at the PC: it plays when that ends.
+  Photos stay in memory, never on disk. Settings → Peeks → Gabi switches the
+  reactions and the fund off.
 - **The cockpit** (`/api/notch`, read with the queue every minute and after
   anything you do). codenotch is where the work is RUN; Helm's web is where it
   is managed. Today's header carries **your time and the agents'** for the day

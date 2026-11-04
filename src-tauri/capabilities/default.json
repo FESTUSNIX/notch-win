@@ -8,7 +8,8 @@
     "tasks",
     "task-editor",
     "ambient",
-    "curtain"
+    "curtain",
+    "fun"
   ],
   "permissions": [
     "core:default",

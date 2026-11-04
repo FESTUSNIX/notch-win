@@ -105,6 +105,8 @@ export class MomentFeed {
       open: moment => this.open(moment),
       dismiss: moment => this.dismiss(moment),
       measured: depth => deps.surface.setMomentDepth(depth),
+      mayGrow: on => deps.surface.setMomentTall(on),
+      input: active => deps.surface.glanceInput(active),
     });
     deps.surface.onMomentHover = on => { this.hovering = on; };
     host.addEventListener("pointerenter", () => { this.hovering = true; });
@@ -182,7 +184,9 @@ export class MomentFeed {
      * off never asks `voice_quiet`). */
     if (this.queue.size && now - this.quietAt > QUIET_MS) {
       this.quietAt = now;
-      void call<string | null>("voice_quiet").then(why => { this.quietWhy = why ?? null; this.quietAnswered = Date.now(); })
+      /* ⚠️ `island_quiet`, not `voice_quiet`: that answers "off" first when spoken
+       * replies are off, and a moment would then show over a shared screen. */
+      void call<string | null>("island_quiet").then(why => { this.quietWhy = why ?? null; this.quietAnswered = Date.now(); })
         .catch(() => { this.quietWhy = null; this.quietAnswered = Date.now(); });
     }
     this.sync();
@@ -389,7 +393,7 @@ export class MomentFeed {
     // The panel opened over a moment only up to be read: it has been seen.
     const up = this.queue.current;
     if (up && !up.sticky && this.deps.surface.open) this.queue.drop(up.key);
-    const next = this.queue.step(Date.now(), { blocked: this.blocked(), hovering: this.hovering });
+    const next = this.queue.step(Date.now(), { blocked: this.blocked(), hovering: this.hovering || this.glance.typing });
     if (next) this.glance.paint(next);
     // A Helm moment that only informs has been said once it is up.
     if (next && next !== this.up && next.helm && !next.sticky) this.seeHelm(next.helm.id);
@@ -407,8 +411,41 @@ export class MomentFeed {
     this.sync();
   }
 
+  /* ── Hers (gabi-feed.ts) ─────────────────────────────────────────────── */
+
+  /** Set by the feed: her buttons and her ×. */
+  gabiHooks: { act: (moment: Moment, button: MomentButton) => void; dismiss: (moment: Moment) => void } | null = null;
+
+  /** One of hers up, again if it was before (the heart). ⚠️ Past `said`: that's for what must say a thing once. */
+  gabi(moment: Moment) {
+    this.said.delete(moment.key);
+    this.push(moment);
+  }
+
+  /** Hers that are open or waiting to. */
+  gabiKeys(): string[] {
+    const up = this.queue.current;
+    return [...(up?.kind === "gabi" ? [up.key] : []), ...this.queue.queued().filter(m => m.kind === "gabi").map(m => m.key)];
+  }
+
+  dropGabi(key: string) {
+    this.queue.drop(key);
+    this.sync();
+  }
+
+  /** Hers no longer there (answered on the phone or in Helm). */
+  dropGabiWhere(gone: (id: number) => boolean) {
+    this.queue.dropWhere(m => m.kind === "gabi" && gone(Number(m.key.slice(5))));
+    this.sync();
+  }
+
+  writeGabi(moment: Moment, send: (text: string) => void) {
+    this.glance.write(moment, send);
+  }
+
   private dismiss(moment: Moment) {
     if (moment.helm) return this.dismissHelm(moment);
+    if (moment.kind === "gabi" && this.gabiHooks) return this.gabiHooks.dismiss(moment);
     this.done(moment);
   }
 
@@ -423,6 +460,8 @@ export class MomentFeed {
   }
 
   private open(moment: Moment) {
+    // Hers open nothing: everything about them is here already, and he's rarely in Helm.
+    if (moment.kind === "gabi") return;
     if (moment.kind === "finished") return this.openFinished(moment);
     if (moment.helm?.kind === "close") { this.done(moment); this.deps.helm.close(); return; }
     this.done(moment);
@@ -433,6 +472,7 @@ export class MomentFeed {
 
   private act(moment: Moment, button: MomentButton) {
     const id = button.id;
+    if (moment.kind === "gabi") return this.gabiHooks?.act(moment, button);
     if (moment.helm && id.startsWith("h:")) return this.helmAct(moment, Number(id.slice(2)));
     if (id === "jump" && moment.kind === "finished") return this.openFinished(moment);
     if (id === "jump") return void (this.done(moment), this.jump(moment));

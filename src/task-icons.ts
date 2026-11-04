@@ -1,5 +1,5 @@
 import {
-  Alert02Icon, Key01Icon,
+  Alert02Icon, FavouriteIcon, Key01Icon,
   PauseIcon, PlayIcon, StopIcon, Tick02Icon, ListViewIcon, PinIcon, Settings01Icon,
   Cancel01Icon, ArrowDown01Icon, PlusSignIcon, FocusIcon,
   PreviousIcon, NextIcon, MusicNote01Icon, Calendar01Icon, CheckListIcon, Video01Icon,
@@ -163,6 +163,7 @@ const icons = {
   words: SubtitleIcon, shuffle: ShuffleIcon,
   // Helm: the Guardian, the same shield Helm itself uses for it.
   guardian: Shield01Icon,
+  heart: FavouriteIcon,
   /* The cockpit (28 Oct). `you` is his own time beside the agents' mark;
      `later` is Not today — Helm's own arrow for it, where the old `next` was
      a media glyph that read as "skip track"; `money` and `request` are what a

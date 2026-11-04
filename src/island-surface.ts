@@ -19,6 +19,7 @@ import { face } from "./face";
 import { FRAME, cpx, isVertical, notchCorner, notchPath, notchTransform, type Edge } from "./layout";
 import { IslandArc, type ArcAction } from "./island-arc";
 import { IslandBubble, type BubbleReading } from "./island-bubble";
+import { IslandHeart } from "./island-heart";
 import { IslandRail, type RailPrefs, type RailStop } from "./island-rail";
 import { Spring } from "./motion";
 import { still, onSystemMotionChange } from "./motion-pref";
@@ -179,6 +180,11 @@ export class IslandSurface {
   );
   private onCountdownOpen?: () => void;
   private onCountdownToggle?: () => void;
+  /* Gabi's heart: a note of hers waiting for an answer, a circle like the countdown's. */
+  private heart = new IslandHeart(() => this.onHeartOpen?.());
+  private onHeartOpen?: () => void;
+  /** A photo opened a size up: the moment may be deeper than a note ever is. */
+  private momentTall = false;
   /* ── The line left behind when the chrome is away ──────────────
    * Full screen slides the whole island off the edge, which is right for
    * everything except the one thing you started BECAUSE you were about to
@@ -209,6 +215,7 @@ export class IslandSurface {
     this.global.mount(this.shell);
     this.rail.mount(this.shell);
     this.bubble.mount(this.shell);
+    this.heart.mount(this.shell);
     // The parked height, for the transform in the stylesheet. One number.
     document.documentElement.style.setProperty("--line-show", `${cpx(FRAME.islandLineShow)}px`);
     document.documentElement.style.setProperty("--task-indent", `${cpx(FRAME.taskIndent)}px`);
@@ -710,8 +717,23 @@ export class IslandSurface {
   }
 
   /** How deep the moment layer's content wants the glance, in CSS px. */
+  /** A photo a size up (false once it's back): answers whether this edge has room. */
+  setMomentTall(on: boolean): boolean {
+    if (on && isVertical(this.edge)) return false;
+    this.momentTall = on;
+    return true;
+  }
+
+  /** Typing an answer in the glance: the keyboard, and nothing else. ⚠️ Not
+   *  `input`: that opens the panel, and `editing` counts as busy, either of
+   *  which puts the moment away from under the field being typed in. */
+  async glanceInput(active: boolean) {
+    await call("set_task_input", { active });
+  }
+
   setMomentDepth(px: number) {
-    const next = Math.max(cpx(FRAME.islandMomentThinMin), Math.min(cpx(FRAME.islandMomentThinMax), Math.ceil(px)));
+    const most = this.momentTall ? FRAME.islandMomentTallMax : FRAME.islandMomentThinMax;
+    const next = Math.max(cpx(FRAME.islandMomentThinMin), Math.min(cpx(most), Math.ceil(px)));
     if (Math.abs(next - this.momentDepth) < 0.5) return;
     this.momentDepth = next;
     if (this.glanceKind === "moment") this.sizeMoment();
@@ -1117,6 +1139,14 @@ export class IslandSurface {
       fold: Math.max(0, this.fold.value),
       gone: this.hidden || this.searching,
     });
+    // ⚠️ Not over her own note: while it's open, it IS the note.
+    this.heart.paint({
+      x, y, width: g.width, height: g.height,
+      edge: this.edge,
+      curl: g.curl,
+      fold: Math.max(0, this.fold.value),
+      gone: this.hidden || this.searching || this.momentOn,
+    });
   }
 
   /** What the line on the bezel says while the chrome is away, or null.
@@ -1135,6 +1165,17 @@ export class IslandSurface {
   /** Is the island parked with only its line showing? */
   private lining(): boolean {
     return !!this.peeked && this.hidden && !this.peeking && !this.searching;
+  }
+
+  /** How many of her notes wait for an answer: the heart beside the notch. */
+  setHeart(count: number) {
+    this.heart.setCount(count);
+    this.paint();
+  }
+
+  /** Told when the heart is pressed or pointed at. */
+  onHeart(open: () => void) {
+    this.onHeartOpen = open;
   }
 
   /** What the countdown beside the notch says, or null for no countdown. */
@@ -1261,7 +1302,10 @@ export class IslandSurface {
     if (!this.rail.hidden) this.masks.push(box(this.rail.element));
     // ⚠️ PASSIVE, for the reason written beside that field: clickable, and
     // not a thing you open the island by pointing at.
-    this.passive = this.bubble.hidden ? [] : [box(this.bubble.element)];
+    this.passive = [
+      ...(this.bubble.hidden ? [] : [box(this.bubble.element)]),
+      ...(this.heart.hidden ? [] : [box(this.heart.element)]),
+    ];
     const origin = box(this.shell);
     if (native) {
       void call("set_interactive_rects", {

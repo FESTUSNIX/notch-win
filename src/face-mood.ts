@@ -103,6 +103,8 @@ export interface PeekFace { flash?: "happy" | "love" | "oops"; react?: "phones" 
 export function peekFace(p: { kind: string; id: string; level?: number; tone?: string }): PeekFace | null {
   switch (p.kind) {
     case "paid": return { flash: "love" };
+    // Hers: his eyes go soft for a reaction or a bonus; a penalty or a lock keeps its glyph.
+    case "gabi": return p.tone === "gabi" ? { flash: "love" } : null;
     case "logged": return { flash: "happy" };
     case "pc": return { flash: "oops" };
     case "mail": case "timer": return { glance: true };

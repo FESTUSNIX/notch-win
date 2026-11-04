@@ -19,6 +19,7 @@ mod fixtures;
 mod hover;
 mod media;
 mod dragout;
+mod gabi;
 mod guard;
 mod helm;
 mod jarvis;
@@ -626,6 +627,13 @@ pub fn run() {
             voice::voice_say,
             voice::voice_hush,
             voice::voice_quiet,
+            voice::island_quiet,
+            gabi::gabi_hold,
+            gabi::gabi_photo,
+            gabi::gabi_answer,
+            gabi::gabi_fun,
+            gabi::gabi_fun_ready,
+            gabi::gabi_fun_done,
             voice::voice_keys,
             wake::wake_mics,
             wake::wake_key,
@@ -803,6 +811,7 @@ pub fn run() {
             calendar::spawn(app.handle().clone());
             apptime::spawn(app.handle().clone());
             helm::spawn(app.handle().clone());
+            gabi::spawn(app.handle().clone());
             // The curtain watches the window in front; Helm's reading reaches it from helm.rs.
             curtain::spawn(app.handle().clone());
             system::spawn(app.handle().clone());

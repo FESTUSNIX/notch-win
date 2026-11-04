@@ -485,6 +485,38 @@ fn poke() -> &'static tokio::sync::Notify {
     POKE.get_or_init(tokio::sync::Notify::new)
 }
 
+/* ── For Gabi's feed (gabi.rs) ───────────────────────────────────────── */
+
+/// Connected and signed in as him, so a read has a chance.
+pub(crate) fn signed_in() -> bool {
+    connected().is_some_and(|config| config.refresh.is_some())
+}
+
+/// An image Helm serves: its type and its bytes, `None` when it isn't there
+/// (a photo that expired). In memory only.
+pub(crate) async fn read_image(path: &str) -> Result<Option<(String, Vec<u8>)>, String> {
+    let response = as_him(http(), reqwest::Method::GET, path, None).await?;
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    let kind = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    if !kind.starts_with("image/") {
+        return Ok(None);
+    }
+    let bytes = response.bytes().await.map_err(|_| "Helm sent something unexpected.".to_string())?;
+    Ok(Some((kind, bytes.to_vec())))
+}
+
+/// POST without waking the whole poll: Helm's `{ok, error}` as a result.
+pub(crate) async fn post_quietly(path: &str, body: serde_json::Value) -> Result<(), String> {
+    let response = as_him(http(), reqwest::Method::POST, path, Some(body)).await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(refusal(response, "Helm didn't take it.").await)
+    }
+}
+
 /* ── His session ─────────────────────────────────────────────────────── */
 
 /// The access token and when it runs out (Unix seconds). In memory only.
@@ -1089,7 +1121,7 @@ fn segment(id: &str) -> Result<String, String> {
 
 /// A GET that answers `None` for a Helm without the endpoint (404) or with it
 /// switched off (503), the body otherwise.
-async fn optional(path: &str) -> Result<Option<serde_json::Value>, String> {
+pub(crate) async fn optional(path: &str) -> Result<Option<serde_json::Value>, String> {
     let response = as_him(http(), reqwest::Method::GET, path, None).await?;
     match response.status().as_u16() {
         404 | 503 => Ok(None),

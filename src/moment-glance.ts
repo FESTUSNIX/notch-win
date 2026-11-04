@@ -28,6 +28,10 @@ export interface MomentHooks {
   dismiss: (moment: Moment) => void;
   /** The content's natural depth changed, in CSS px. */
   measured: (depth: number) => void;
+  /** A photo may take more depth than a note (not on a side edge, whose glance is a fixed depth). */
+  mayGrow: (on: boolean) => boolean;
+  /** Typing an answer: the island takes the keyboard, or gives it back. */
+  input: (active: boolean) => Promise<unknown>;
 }
 
 /** The badge on the tile: what happened, by kind. */
@@ -39,10 +43,14 @@ const BADGE: Record<Moment["kind"], TaskIcon | null> = {
   block: null,
   meeting: null,
   helm: null,
+  gabi: null,
 };
 
 export class MomentGlance {
   private inner = element("div", "m-inner");
+  private text = element("div", "m-text");
+  /** Typing an answer right now: the moment holds, and a repaint leaves the field alone. */
+  private writing = false;
   private tile = element("span", "m-tile");
   private badge = element("span", "m-badge");
   private kicker = element("span", "m-kicker");
@@ -62,10 +70,9 @@ export class MomentGlance {
   constructor(private host: HTMLElement, private hooks: MomentHooks) {
     host.setAttribute("role", "status");
     host.setAttribute("aria-live", "polite");
-    const text = element("div", "m-text");
     const head = element("div", "m-head");
     head.append(this.kicker, this.title);
-    text.append(head, this.line, this.detail);
+    this.text.append(head, this.line, this.detail);
     this.close.type = "button";
     paintIcon(this.close, "close");
     this.close.setAttribute("aria-label", "Dismiss");
@@ -74,7 +81,7 @@ export class MomentGlance {
       event.stopPropagation();
       if (this.shown) this.hooks.dismiss(this.shown);
     });
-    this.top.append(this.tile, text, this.close);
+    this.top.append(this.tile, this.text, this.close);
     this.acts.append(this.chips, this.buttons);
     this.inner.append(this.top, this.acts);
     host.append(this.inner);
@@ -82,11 +89,62 @@ export class MomentGlance {
   }
 
   get moment(): Moment | null { return this.shown; }
+  get typing(): boolean { return this.writing; }
+
+  /** Typing an answer in place (hers): the buttons make way for a field. Enter
+   *  sends, Escape puts the buttons back. ⚠️ The island refuses the keyboard by
+   *  default, so it has to ask for it, and always give it back. */
+  write(moment: Moment, send: (text: string) => void) {
+    if (this.writing || this.shown?.key !== moment.key) return;
+    this.writing = true;
+    const field = element("input", "m-reply") as HTMLInputElement;
+    field.type = "text";
+    field.maxLength = 200;
+    field.placeholder = "Odpisz…";
+    field.setAttribute("aria-label", "Odpowiedź");
+    const go = element("button", "m-btn is-primary") as HTMLButtonElement;
+    go.type = "button";
+    go.append(element("span", "m-btn-label", "Wyślij"));
+    const before = [...this.acts.childNodes];
+    const stop = () => {
+      if (!this.writing) return;
+      this.writing = false;
+      void this.hooks.input(false).catch(() => {});
+      if (this.shown?.key === moment.key) this.acts.replaceChildren(...before);
+      this.remeasure();
+    };
+    const submit = () => {
+      const value = field.value.trim();
+      if (!value) return;
+      stop();
+      send(value);
+    };
+    field.addEventListener("click", event => event.stopPropagation());
+    field.addEventListener("keydown", event => {
+      event.stopPropagation();
+      if (event.key === "Enter") submit();
+      else if (event.key === "Escape") stop();
+    });
+    field.addEventListener("blur", () => { window.setTimeout(() => { if (document.activeElement !== go) stop(); }, 120); });
+    go.addEventListener("click", event => { event.stopPropagation(); submit(); });
+    this.acts.replaceChildren(field, go);
+    this.remeasure();
+    void this.hooks.input(true).then(() => field.focus()).catch(() => stop());
+  }
+
+  /** The picture, a size up or back (hers). */
+  private enlarge() {
+    const big = this.host.dataset.big !== "true";
+    if (!this.hooks.mayGrow(big)) return;
+    this.host.dataset.big = String(big);
+    this.remeasure();
+  }
 
   /** Draw one moment (or keep the last one while the island folds it away). */
   paint(moment: Moment | null) {
     if (!moment) return;
     const same = this.shown?.key === moment.key && this.shown.line === moment.line && this.shown.title === moment.title
+      && this.shown.photo === moment.photo
       && this.shown.kicker === moment.kicker && JSON.stringify(this.shown.detail) === JSON.stringify(moment.detail)
       && JSON.stringify(this.shown.buttons) === JSON.stringify(moment.buttons);
     this.shown = moment;
@@ -97,6 +155,9 @@ export class MomentGlance {
     host.dataset.key = moment.key;
     host.dataset.agent = moment.agent ?? "";
     host.dataset.tone = moment.tone ?? "";
+    host.dataset.photo = String(!!moment.photo);
+    delete host.dataset.big;
+    this.hooks.mayGrow(false);
     if (moment.accent) host.style.setProperty("--m", moment.accent);
     else host.style.removeProperty("--m");
 
@@ -111,7 +172,13 @@ export class MomentGlance {
     if (his) face.mount(this.tile, "moment", { px: 40, zoom: 1.35, mood: () => moment.tone === "warn" ? "alert" : moment.tone === "good" ? "happy" : null });
     else {
       face.unmount("moment");
-      paintIcon(this.tile, moment.icon);
+      if (moment.photo) {
+        const image = element("img", "m-photo") as HTMLImageElement;
+        image.alt = "";
+        image.src = moment.photo;
+        image.addEventListener("click", event => { event.stopPropagation(); this.enlarge(); });
+        this.tile.append(image);
+      } else paintIcon(this.tile, moment.icon);
     }
     const badge = moment.helm ? helmBadge(moment.helm.kind) : BADGE[moment.kind];
     if (badge) {
@@ -131,7 +198,7 @@ export class MomentGlance {
       return row;
     }));
     this.detail.hidden = !detail.length;
-    this.close.hidden = !moment.sticky;
+    this.close.hidden = !moment.sticky && moment.kind !== "gabi";
 
     const chips = moment.buttons.filter(b => b.chip);
     const buttons = moment.buttons.filter(b => !b.chip);
@@ -143,6 +210,8 @@ export class MomentGlance {
     const inline = !chips.length && !detail.length && (moment.kind !== "helm" || buttons.length <= 1);
     host.dataset.inline = String(inline);
     if (inline) this.top.insertBefore(this.acts, this.close);
+    // A picture takes the height: its answers go beside it, under the words.
+    else if (moment.photo) this.text.append(this.acts);
     else this.inner.append(this.acts);
     // A row arriving eases in, like the voice glance's rows.
     this.inner.classList.remove("is-new");

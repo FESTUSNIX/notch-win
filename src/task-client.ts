@@ -765,6 +765,8 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "wake_snooze") return 0 as T;
   /* ── Moments (30 Oct) ── the jumps and links a moment's buttons make, read back by moments.spec.ts. */
   if (command === "focus_session" || command === "open_external") helmCalls.push({ command, args: structuredClone(args) });
+  /* Gabi: what the feed asked for (the reaction, the answer, the keyboard), read back by gabi.spec.ts. */
+  if (command === "gabi_fun" || command === "gabi_answer" || command === "gabi_photo" || command === "set_task_input") helmCalls.push({ command, args: structuredClone(args) });
   if (command === "get_tasks") return structuredClone(demo) as T;
   if (command === "get_task_placement") return {
     /* ⚠️ Staged from the query string. The island lost its own edge and clock
@@ -1246,6 +1248,12 @@ export async function call<T = void>(command: string, args: Record<string, unkno
   if (command === "voice_say") return (await demoSay(String(args.text ?? ""))) as T;
   if (command === "voice_hush") { demoHushes++; return undefined as T; }
   if (command === "voice_quiet") return demoQuiet() as T;
+  // The island's own answer: a share or a call, whether or not replies are spoken.
+  if (command === "island_quiet") { const why = demoQuiet(); return (why === "off" ? null : why) as T; }
+  /* Gabi: `&gabi=reaction,note,photo,penalty,lock` stages them through the real path. */
+  if (command === "gabi_hold") { const why = demoQuiet(); return (why === "off" ? null : why) as T; }
+  if (command === "gabi_photo") return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='a' cx='30%25' cy='20%25'%3E%3Cstop stop-color='%23ffd28a'/%3E%3Cstop offset='.55' stop-color='%23e8734f'/%3E%3Cstop offset='1' stop-color='%236d2748'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23a)'/%3E%3Ctext x='50' y='66' font-size='44' text-anchor='middle'%3E🍝%3C/text%3E%3C/svg%3E" as T;
+  if (command === "gabi_fun" || command === "gabi_answer") return undefined as T;
   if (command === "voice_keys") return undefined as T;
   /* Cofnij: the change is marked taken back in the thread, as Helm does. */
   if (command === "helm_undo") {

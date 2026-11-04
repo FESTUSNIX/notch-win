@@ -908,6 +908,68 @@ html[data-open='click'] .pill-act:active {
 	box-shadow: 0 0 0 1.5px rgba(255, 90, 70, 0.55);
 }
 
+/* ── Gabi's heart, beside the notch (island-heart.ts) ───────
+   Where the countdown sits, on the other side: a note of hers that folded
+   without an answer. The same black circle, so it reads as the same object. */
+.island-heart {
+	position: absolute;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	color: #ff5c8a;
+	background: #000;
+	cursor: pointer;
+}
+.island-heart[hidden] {
+	display: none;
+}
+.heart-icon {
+	display: grid;
+	place-items: center;
+	width: 56%;
+	height: 56%;
+	animation: heart-beat 2.6s ease-in-out infinite;
+}
+.heart-icon svg {
+	width: 100%;
+	height: 100%;
+	fill: currentColor;
+}
+.island-heart:hover .heart-icon {
+	scale: 1.12;
+}
+.heart-count {
+	position: absolute;
+	top: -2px;
+	right: -2px;
+	min-width: 14px;
+	height: 14px;
+	padding: 0 3px;
+	border-radius: 7px;
+	font: 700 9.5px/14px var(--font-sans, inherit);
+	font-style: normal;
+	text-align: center;
+	color: #22070f;
+	background: #ff5c8a;
+}
+@keyframes heart-beat {
+	0%, 100% { scale: 1; }
+	8% { scale: 1.18; }
+	16% { scale: 1; }
+	24% { scale: 1.1; }
+	32% { scale: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+	html:not([data-motion='always']) .heart-icon {
+		animation: none;
+	}
+}
+html[data-motion='never'] .heart-icon {
+	animation: none;
+}
+
 /* ── The countdown, beside the notch ───────────────────────
    A plain timer is a circle parked at the end of the notch rather than a
    claim that takes the strip — see island-bubble.ts for why. As tall as the
@@ -18675,6 +18737,25 @@ input.k-field.cal-tasks-field:focus {
 #island-collapsed[data-kind='peek'][data-tone='warn'] .pill-lead {
 	color: var(--warn);
 }
+#island-collapsed[data-kind='peek'][data-tone='gabi'] {
+	--peek-pulse: #ff5c8a;
+}
+#island-collapsed[data-kind='peek'][data-tone='gabi'] .pill-lead {
+	color: #ff5c8a;
+}
+#island-collapsed[data-kind='peek'][data-tone='gabi'] .pill-peek-act {
+	color: #ff5c8a;
+	background: color-mix(in srgb, #ff5c8a 18%, #141414);
+}
+#island-collapsed[data-kind='peek'][data-tone='gabi'] .pill-peek-act svg {
+	fill: currentColor;
+}
+#island-collapsed[data-kind='peek'][data-tone='hot'] {
+	--peek-pulse: var(--hot);
+}
+#island-collapsed[data-kind='peek'][data-tone='hot'] .pill-lead {
+	color: var(--hot);
+}
 /* The glyph sits in a soft recessed well tinted by the tone: depth, and
    the colour reads before the words do. */
 #island-collapsed[data-kind='peek'] .pill-lead:not(:has(.pill-art)) {
@@ -18747,7 +18828,7 @@ input.k-field.cal-tasks-field:focus {
 	position: absolute;
 	inset: -2px;
 	border-radius: 9px;
-	box-shadow: 0 0 0 2px var(--warn);
+	box-shadow: 0 0 0 2px var(--peek-pulse, var(--warn));
 	opacity: 0;
 	animation: peek-pulse 1100ms var(--ease-smooth-out) 120ms 1;
 }

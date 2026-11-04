@@ -154,6 +154,8 @@ export const FRAME = {
   islandMomentLong: 1260,
   islandMomentThinMin: 180,
   islandMomentThinMax: 400,
+  /** A photo of hers a size up (moment-glance.ts). */
+  islandMomentTallMax: 640,
   /** Wider than it is tall, on purpose: the island is read at a glance across,
    *  and a tall narrow panel wastes the one dimension a top edge has to give. */
   islandBodyLong: 1900,

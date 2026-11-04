@@ -567,7 +567,7 @@ export function renderPeek(host: HTMLElement, peek: Peek) {
       host.append(act);
     } else if (peek.action) {
       const act = element("span", "pill-peek-act");
-      paintIcon(act, peek.action.label.toLowerCase() === "join" ? "join" : "open");
+      paintIcon(act, peek.action.icon ?? (peek.action.label.toLowerCase() === "join" ? "join" : "open"));
       host.append(act);
     }
     host.dataset.kind = "peek";

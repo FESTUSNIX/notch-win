@@ -29,6 +29,8 @@ export default defineConfig({
         ambient: resolve(__dirname, "ambient.html"),
         // The dim over a locked site in front — see curtain.rs.
         curtain: resolve(__dirname, "curtain.html"),
+        // Her reactions, over the whole screen — see gabi.rs.
+        fun: resolve(__dirname, "fun.html"),
       },
     },
   },

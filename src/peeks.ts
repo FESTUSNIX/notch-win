@@ -24,7 +24,8 @@ export type PeekKind =
   | "buds" | "mic" | "power" | "download" | "screenshot"        // S's (devices, files)
   | "paid" | "logged" | "focus"                                 // S's (Helm, focus)
   | "mail"                                                        // Helm (2 Nov): mail that matters, just in
-  | "timer" | "pc";                                             // JARVIS (2 Nov): a timer up, a thing it couldn't do
+  | "timer" | "pc"                                              // JARVIS (2 Nov): a timer up, a thing it couldn't do
+  | "gabi";                                                       // Hers (4 Nov): a reaction, the fund, her lock, a photo coming
 
 export interface Peek {
   /** Stable per event: "music:<track id>", "download:<path>", "paid:<payment id>". */
@@ -40,9 +41,9 @@ export interface Peek {
   line?: string;
   /** 0–1 for a level/progress peek (volume, battery). */
   level?: number;
-  tone?: "neutral" | "good" | "warn" | "accent";
+  tone?: "neutral" | "good" | "warn" | "accent" | "gabi" | "hot";
   /** What a click on the peek does. */
-  action?: { label: string; run: () => void };
+  action?: { label: string; run: () => void; icon?: TaskIcon };
   /** The one small icon beside the click: Pokaż w folderze on a download, Otwórz on a
    *  screenshot (builder S). Pressing it runs this instead of the click's action. */
   secondary?: { label: string; icon: string; run: () => void };
@@ -52,6 +53,8 @@ export interface Peek {
   urgent?: boolean;
   /** One amber pulse when it comes up (a block running over). P's addition. */
   pulse?: boolean;
+  /** Not kept for the wheel's replay: a picture that expires. */
+  once?: boolean;
 }
 
 export const PEEK_TTL = 4000;
@@ -120,6 +123,7 @@ export class PeekQueue {
   }
 
   private remember(peek: Peek) {
+    if (peek.once) return;
     this.recent = [peek, ...this.recent.filter(one => one.id !== peek.id && one.kind !== peek.kind)].slice(0, REPLAY);
   }
 }

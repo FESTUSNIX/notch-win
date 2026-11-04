@@ -6299,3 +6299,38 @@ Helm; these are answers it asks for mid-reply.
       (`on_pass`: anywhere in the title, case and Polish letters folded by
       hand, no crate). The home page ("YouTube - Brave") never carries a topic,
       so it's still covered. Test: `a_work_pass_lets_its_topic_through`.
+
+ 931. **Gabi in the notch (4 Nov).** His ask: "I rarely am in the Helm itself and
+      the nudges, text and even the surprise emojis/reactions make sense if I see
+      them quick." The bigger the thing she sends, the more of the island it takes:
+      a REACTION plays over the monitor plus a peek (seen once played), the FUND or
+      her LOCK is a peek with one pulse and no buttons (seen once shown), a NOTE or
+      a PHOTO is a moment that folds after 12 s to a heart beside the notch (seen
+      only on an answer or ×, so a note he never looked at can't read as seen).
+      Rules in `gabi-logic.ts`, wiring in `gabi-feed.ts`, the heart in
+      `island-heart.ts` (his call: placed like the countdown, on the other side so
+      both fit), the overlay in `gabi.rs` + `fun.ts`.
+      - ⚠️ Her notes are NOT Helm moments any more. `/api/notch/gabi` is its own
+        small read on a 10 s beat (`gabi.rs`); `/api/notch` is a heavy read on a
+        60 s beat, and a heart a minute late is a heart nobody connects to anything.
+        Helm decides what each note IS (`notchNote`); nothing here reads her text.
+      - ⚠️ HELD, NOT LOST: `gabi_hold` is a share, a call, a meeting, or 2 min with
+        no input (or she'd "see it read" while he's at lunch). Plus full screen and
+        ambient. They wait in `GabiDesk`, not in the peek queue, because a peek that
+        waits 90 s is dropped, and a moment of kind `gabi` doesn't go stale.
+      - ⚠️ `voice_quiet` answers "off" FIRST when spoken replies are off, which hid
+        a share and a call from moments and peeks for anyone with them off. Both now
+        ask `island_quiet`; `voice_quiet` is for speech only.
+      - ⚠️ A photo is never on disk: `gabi_photo` gives a data URL to the page's
+        memory, dropped on an answer, and `once` keeps it out of the wheel's replay.
+        He said it must not be stored for eternity.
+      - ⚠️ Typing an answer: `surface.glanceInput`, not `input`. `input` opens the
+        panel and `editing` counts as `busy`, either of which puts the moment away
+        from under the field (it did). The field gives the keyboard back on Escape,
+        on send and on blur.
+      - ⚠️ A tap on a reaction's peek sends a heart back. It works in click mode
+        (his); hover mode opens the panel first, as with every peek's click.
+      - Her `companion_photos` seen mark goes with the note's (`photo` in the POST).
+      Tests: gabi.test.mjs, gabi.rs, tests/browser/gabi.spec.ts (`&gabi=…` stages
+      them; `fun.html` in the preview exposes `__fun`). The overlay itself, the 10 s
+      read and the real keyboard need the installed app to check.
