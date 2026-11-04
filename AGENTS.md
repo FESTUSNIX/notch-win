@@ -6397,3 +6397,35 @@ Helm; these are answers it asks for mid-reply.
         drag so it never gets that far.
       `&helmcal`, `&helmcal=expired`, `&helmcal=refuse` stage it, with writes in
       `window.__helmActs`. Test: calendar-helm.spec.ts, calendar-helm.test.mjs.
+
+936.  The calendar's views, after Helm's (his words: "I love the Helm's calendar,
+      especially the weekly and monthly views"). `month` is now a true month
+      (`renderMonthGrid`): each day lists what's on it, as many lines as fit, with
+      `+n` in the date's row so the count doesn't cost a line, blocks for one project
+      folded, timed things draggable to another day, a press on a day opening its card
+      and the date opening the day. The old grid-and-list is `agenda`. Week and day
+      came closer too: one bar (title, pager, quick add, views), one-line day headings
+      with free time and a load bar, ranges on blocks, the working day a little lighter,
+      now as a time in the gutter.
+      - ⚠️ Every time on this screen is 24-hour whatever the Windows locale says, and
+        the panel's time fields are text (`parseClock`): `type=time` follows the locale
+        and drew 03:00 PM on his en-US Windows.
+
+937.  ⚠️ Polish letters: `polish-keys.ts` types them itself on Right Alt, in every page
+      with a field. Windows keeps a keyboard layout per thread, and the island's text
+      goes through the webview's own process, so it can sit on another layout than the
+      app in front (read off his machine, 4 Nov: US on the app, Polish on the webview's
+      UI thread, Polish in Notepad and Titan, US in the rest). Not a shortcut eating the
+      letter: his Ctrl+Alt ones are H and J (165). Left Alt stays the shortcuts'.
+
+938.  Gabi's screen (`screen-gabi.ts`, the pure half `gabi-desk.ts`,
+      `/api/notch/gabi/thread`, `gabi_thread`, `gabi_send`): their conversation to read
+      back and answer, the fund, her lock, the day's photos and the surprises. On the
+      rail once Helm says she exists. A press on anything of hers lands here now.
+      - The skeleton is built once and the thread redrawn only when it changed, or the
+        shell's redraws would take the caret and the scroll.
+      - Opening it is what tells her it was seen, and only what's on screen counts.
+      - ⚠️ Photos stay in memory only, as in gabi-feed.ts.
+      - While he's on it a new note doesn't open a moment (`watching`); it appears.
+      `&gabithread`, `&gabisend=fail` stage it, with what's sent in `window.__gabiSent`.
+      Test: gabi-screen.spec.ts, gabi-desk.test.mjs.

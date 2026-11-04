@@ -28,6 +28,10 @@ export interface GabiDeps {
   /** The pill is taken or out of sight (peeks.ts's hold-backs). */
   peekHeld: () => boolean;
   say: (what: string, why: string) => void;
+  /** He's on her screen, where a note simply appears: no need to open anything. */
+  watching: () => boolean;
+  /** Something of hers came in. */
+  arrived: () => void;
 }
 
 const TICK_MS = 500;
@@ -88,6 +92,7 @@ export class GabiFeed {
     this.deps.moments.dropGabiWhere(id => !this.desk.has(id));
     for (const id of this.photos.keys()) if (!this.desk.has(id)) this.photos.delete(id);
     this.paintHeart();
+    if (this.desk.hasWork()) this.deps.arrived();
   }
 
   /* ── Every half second ───────────────────────────────────────────────── */
@@ -138,6 +143,7 @@ export class GabiFeed {
     if (!note) return;
     this.desk.markShown(note.id);
     if (note.fun) this.burst(note.fun, 1);
+    if (this.deps.watching()) return;
     if (note.style !== "photo" || !note.photoId) return this.deps.moments.gabi(noteMoment(note, Date.now()));
     this.opening = note.id;
     try {

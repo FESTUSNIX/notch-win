@@ -623,6 +623,8 @@ pub fn run() {
             helm::helm_renewal,
             helm::helm_blocker,
             helm::helm_calendar,
+            gabi::gabi_thread,
+            gabi::gabi_send,
             helm::helm_calendar_act,
             helm::helm_notch_post,
             helm::helm_close_day,

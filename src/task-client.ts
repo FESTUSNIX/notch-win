@@ -302,6 +302,33 @@ function peekStageHelm<T>(helm: T): T {
 if (params.has("calwrite")) (window as unknown as { __calRefresh?: () => void }).__calRefresh = () => {
   previewBus.dispatchEvent(new CustomEvent("calendar:changed", { detail: structuredClone(calWritable(demoCalendar)) }));
 };
+/* What Helm's `/api/notch/gabi/thread` answers. */
+const gabiAt = (dayOffset: number, hour: number, minute = 0) => {
+  const at = new Date();
+  at.setDate(at.getDate() + dayOffset);
+  at.setHours(hour, minute, 0, 0);
+  return at.toISOString();
+};
+const gabiHers = (id: number, at: string, text: string, seen = true, extra = {}) =>
+  ({ id, direction: "to_him", text, fun: null as string | null, replyTo: null, photoId: null as number | null, at, seen, read: { style: "note", title: "Gabi", line: text, icon: "heart", tone: "gabi" }, ...extra });
+const demoGabiDesk = {
+  name: "Gabi",
+  notes: [
+    gabiHers(30, gabiAt(-1, 18), "Dasz radę! 💪"),
+    { id: 31, direction: "to_her", text: "Dzięki 😘", fun: null as string | null, replyTo: 30, photoId: null as number | null, at: gabiAt(-1, 18, 4), seen: true, read: null as unknown },
+    gabiHers(32, gabiAt(0, 0, 1), "−50 zł: YouTube", true, { read: { style: "event", title: "−50 zł · Gabi", line: "74 minuty YouTube", icon: "money", tone: "hot" } }),
+    gabiHers(34, gabiAt(0, 0, 2), "📷 Obiad czeka", true, { photoId: 77, read: { style: "photo", title: "Gabi", line: "Obiad czeka", icon: "heart", tone: "gabi" } }),
+    gabiHers(33, gabiAt(0, 0, 3), "Obiad gotowy 🍝", false),
+  ] as { id: number; direction: string; text: string | null; fun: string | null; replyTo: number | null; photoId: number | null; at: string; seen: boolean; read: unknown }[],
+  photos: [{ id: 77, caption: "Obiad czeka", at: gabiAt(0, 0, 2), expiresAt: new Date(Date.now() + 5 * 3600_000).toISOString(), seen: true }],
+  fund: 1240,
+  lock: { endsAt: new Date(Date.now() + 2 * 3600_000).toISOString() },
+};
+if (params.has("gabithread")) (window as unknown as { __gabiNew?: () => void }).__gabiNew = () => {
+  demoGabiDesk.notes.push(gabiHers(90, new Date().toISOString(), "Jeszcze jedno", false));
+  previewBus.dispatchEvent(new CustomEvent("gabi:notes", { detail: { notes: [{ id: 90, style: "note", title: "Gabi", line: "Jeszcze jedno", fun: null, photoId: null, icon: "heart", tone: "gabi", at: "" }] } }));
+};
+
 /* What Helm's `/api/notch/calendar` answers, staged at fixed hours today. */
 const helmDay = (offset = 0) => {
   const at = new Date();
@@ -344,6 +371,13 @@ const demoHelmCalendar = () => {
   };
   return helmDemo;
 };
+/* `&calmonthsolo`: only one meeting today, so the month shows it without folding it away. */
+if (params.has("calmonthsolo")) {
+  const reading = demoHelmCalendar() as { events: { id: string }[]; blocks: unknown[]; markers: unknown[] };
+  reading.events = reading.events.filter(one => one.id === "prim:g1");
+  reading.blocks = [];
+  reading.markers = [];
+}
 const applyDemoHelm = (action: Record<string, unknown>) => {
   const reading = demoHelmCalendar() as { events: Record<string, unknown>[]; blocks: Record<string, unknown>[]; items: Record<string, unknown>[]; preps: Record<string, unknown> };
   const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -952,6 +986,20 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     return structuredClone(demoCall) as T;
   }
   if (command === "get_calendar") return structuredClone(params.has("calsignedout") && !demoSignedIn ? { ...demoCalendar, needsSignIn: true, error: "Google rejected the sign-in: Token has been expired or revoked." } : calWritable(demoCalendar)) as T;
+  /* `&gabithread`: her screen's reading. `&gabisend=fail`: what's sent doesn't arrive. */
+  if (command === "gabi_thread") return (params.has("gabithread") ? { ...structuredClone(demoGabiDesk) } : null) as T;
+  if (command === "gabi_send") {
+    const body = (args as { body: Record<string, unknown> }).body;
+    if (params.get("gabisend") === "fail") throw new Error("Helm didn't take it.");
+    const seen = window as unknown as { __gabiSent?: unknown[] };
+    seen.__gabiSent = [...(seen.__gabiSent ?? []), body];
+    if ("seen" in body) {
+      for (const note of demoGabiDesk.notes) if ((body.seen as number[]).includes(note.id)) note.seen = true;
+    } else {
+      demoGabiDesk.notes.push({ id: 100 + demoGabiDesk.notes.length, direction: "to_her", text: (body.text as string | null) ?? null, fun: (body.fun as string | null) ?? null, replyTo: null, photoId: null, at: new Date().toISOString(), seen: false, read: null });
+    }
+    return undefined as T;
+  }
   /* `&helmcal`: Helm's reading. `&helmcal=expired`: Helm has lost Google. */
   if (command === "helm_calendar") return (params.has("helmcal") ? structuredClone(demoHelmCalendar()) : null) as T;
   if (command === "helm_calendar_act") {

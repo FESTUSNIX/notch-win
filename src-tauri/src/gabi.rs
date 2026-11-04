@@ -103,6 +103,22 @@ pub async fn gabi_photo(id: i64) -> Result<Option<String>, String> {
     Ok(Some(format!("data:{kind};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
 }
 
+/// The screen's reading: their thread, the day's photos, the fund, her lock. `None`
+/// while Helm isn't connected or is too old to have it.
+#[tauri::command]
+pub async fn gabi_thread() -> Result<Option<serde_json::Value>, String> {
+    if !crate::helm::signed_in() {
+        return Ok(None);
+    }
+    crate::helm::optional("/api/notch/gabi/thread").await
+}
+
+/// From the screen: a note or a surprise to her, or what he has now seen. Helm checks it.
+#[tauri::command]
+pub async fn gabi_send(body: serde_json::Value) -> Result<(), String> {
+    crate::helm::post_quietly("/api/notch/gabi/thread", body).await
+}
+
 /// A note seen or answered. `reply` goes back to her phone; `photo` is the
 /// picture it came with. ⚠️ Not `helm_notch_post`: that wakes the whole poll,
 /// and five hearts in a row don't need the queue read five times.

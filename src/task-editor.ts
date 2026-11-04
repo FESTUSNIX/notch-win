@@ -40,6 +40,9 @@ import "./tasks.css";
 import { mountPeeks, PEEKS_PANE_HTML, type PeekQuiet } from "./settings-peeks";
 import { mountWake, WAKE_PANE_HTML } from "./settings-wake";
 import { CHARACTER_PANE_HTML, mountCharacter } from "./settings-character";
+import { installPolishKeys } from "./polish-keys";
+
+installPolishKeys();
 
 /* ── What the window is made of ──────────────────────────────────────── */
 

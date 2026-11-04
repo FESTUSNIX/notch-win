@@ -84,7 +84,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
 
   await goTo(page, "calendar");
   await expect(tools).toBeVisible();
-  await expect(tools.locator(".arc-act")).toHaveCount(2);
+  await expect(tools.locator(".arc-act")).toHaveCount(3);
 
   /* ⚠️ A GAP, not a join. The shape before this was welded to the island's
    * underside and read as a lump on the corner; the whole point of the arc is
@@ -168,7 +168,7 @@ test("the tool arc is struck off the island's corner and holds the screen's acti
 
   const grab = await onArc(page, 0.125);
   await page.mouse.move(grab.x, grab.y);
-  await expect.poll(seen).toBe(2);
+  await expect.poll(seen).toBe(3);
 
   /* ⚠️ And it stays open under a pointer that has not moved. */
   for (let i = 0; i < 6; i++) {

@@ -3278,23 +3278,36 @@ html[data-motion='never'] .bub-ring .arc {
 	letter-spacing: 0.04em;
 }
 .cal-wkday {
+	position: relative;
 	display: flex;
-	flex-direction: column;
 	align-items: center;
-	gap: 1px;
-	padding: 4px 0;
-	border-radius: 9px;
+	justify-content: space-between;
+	gap: 4px;
+	min-height: 26px;
+	padding: 2px 6px 6px;
+	border-radius: 7px;
+}
+.cal-wklabel {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
 }
 .cal-wkname {
-	font-size: 9.5px;
-	font-weight: 600;
-	color: #7c7c7c;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
+	font-size: 11.5px;
+	font-weight: 500;
+	color: #a8a8a8;
 }
 .cal-wknum {
-	font-size: 14px;
+	display: grid;
+	place-items: center;
+	min-width: 20px;
+	height: 20px;
+	padding-inline: 3px;
+	border-radius: 999px;
+	font-size: 12px;
 	font-weight: 600;
+	font-variant-numeric: tabular-nums;
 }
 .cal-wkday {
 	cursor: pointer;
@@ -3303,27 +3316,42 @@ html[data-motion='never'] .bub-ring .arc {
 	background: rgba(255, 255, 255, 0.05);
 }
 .cal-wkfree {
-	font-size: 9.5px;
+	font-size: 11px;
 	font-weight: 600;
-	color: #9a9a9a;
+	color: var(--good);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
-.cal-wkday.is-today .cal-wkfree {
-	color: color-mix(in srgb, var(--on-accent) 80%, transparent);
+.cal-wkfree.is-full {
+	color: var(--warn, #ffb340);
 }
 .cal-wkday.is-past {
 	opacity: 0.5;
 }
 .cal-wkday.is-today .cal-wknum {
 	color: var(--on-accent);
-}
-.cal-wkday.is-today {
 	background-color: var(--accent);
 	box-shadow: var(--glow-accent);
 }
 .cal-wkday.is-today .cal-wkname {
-	color: color-mix(in srgb, var(--on-accent) 75%, transparent);
+	color: var(--accent);
+	font-weight: 600;
+}
+.cal-wkload {
+	position: absolute;
+	left: 6px;
+	right: 6px;
+	bottom: 1px;
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.09);
+	overflow: hidden;
+}
+.cal-wkload b {
+	display: block;
+	height: 100%;
+	border-radius: 2px;
+	background: var(--good);
 }
 
 .cal-wkall {
@@ -3385,6 +3413,14 @@ html[data-motion='never'] .bub-ring .arc {
 }
 .cal-wkall-cell .cal-chip.is-marker.is-late .cal-chip-title {
 	color: var(--hot);
+}
+.cal-wkall-cell .cal-chip.is-more {
+	padding-left: 6px;
+	background: transparent;
+	box-shadow: none;
+	color: #a8a8a8;
+	font-size: 10.5px;
+	font-weight: 600;
 }
 .cal-wkall-cell .cal-chip.is-open {
 	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cal, var(--cool)) 75%, transparent);
@@ -3461,6 +3497,22 @@ html[data-motion='never'] .bub-ring .arc {
 	position: relative;
 	padding-right: 5px;
 }
+/* Now, as a time in the gutter over its line. */
+.cal-wknowpill {
+	position: absolute;
+	right: 1px;
+	z-index: 3;
+	transform: translateY(-50%);
+	padding: 1px 4px;
+	border-radius: 999px;
+	background: var(--hot);
+	color: #fff;
+	font-size: 9.5px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.35;
+	pointer-events: none;
+}
 .cal-wkhour {
 	position: absolute;
 	right: 5px;
@@ -3480,7 +3532,7 @@ html[data-motion='never'] .bub-ring .arc {
 	flex-direction: column;
 	min-width: 0;
 	border-radius: 9px;
-	background: rgba(255, 255, 255, 0.022);
+	background: rgba(255, 255, 255, 0.008);
 	box-shadow: inset 0 0 0 1px var(--hair);
 	overflow: hidden;
 }
@@ -3502,6 +3554,10 @@ html[data-motion='never'] .bub-ring .arc {
 /* A collapsed hour draws no line of its own — the band over it is the edge. */
 .cal-wkline.is-shut {
 	box-shadow: none;
+}
+/* The working day, a little lighter: the part worth planning. */
+.cal-wkline.is-work {
+	background: rgba(255, 255, 255, 0.026);
 }
 
 /* ── A run of collapsed hours ────────────────────────────────────────────
@@ -3898,8 +3954,8 @@ html[data-motion='never'] .cal-worktop {
 	padding: 3px 5px;
 	border-radius: 6px;
 	text-align: left;
-	background-color: color-mix(in srgb, var(--cal, var(--cool)) 24%, #101010);
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 45%, transparent);
+	background-color: color-mix(in srgb, var(--cal, var(--cool)) 36%, #101010);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal, var(--cool)) 55%, transparent);
 }
 /* ⚠️ Only in work mode, and only where Google would take the write — see
    `Event::writable`. A grab cursor on a block that cannot move is a promise
@@ -3980,7 +4036,7 @@ body[data-cal-gesture='create'] * {
 	cursor: not-allowed;
 }
 .cal-block:hover {
-	background-color: color-mix(in srgb, var(--cal, var(--cool)) 34%, #101010);
+	background-color: color-mix(in srgb, var(--cal, var(--cool)) 46%, #101010);
 }
 .cal-block:active {
 	scale: 0.98;
@@ -4088,8 +4144,490 @@ body[data-cal-gesture='create'] * {
 	white-space: nowrap;
 }
 .cal-block-time {
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: color-mix(in srgb, var(--cal, var(--cool)) 40%, #fff);
+}
+
+/* ── Gabi: the conversation, and what else is theirs today ──────────────── */
+.gabi-body {
+	--gabi: #ff7eb3;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 186px;
+	gap: 14px;
+	height: 430px;
+	overflow: hidden;
+}
+.gabi-main {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	gap: 8px;
+}
+.gabi-thread {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	overflow-y: auto;
+	padding-right: 6px;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.gabi-none {
+	margin: auto;
+	font-size: 13px;
+	color: #a8a8a8;
+}
+.gabi-day {
+	align-self: center;
+	margin: 10px 0 6px;
+	font-size: 11px;
+	font-weight: 600;
+	color: #9a9a9a;
+}
+.gabi-note {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-width: 72%;
+	padding: 6px 10px;
+	border-radius: 13px;
+	font-size: 13px;
+	line-height: 1.38;
+	overflow-wrap: anywhere;
+}
+.gabi-note.is-first {
+	margin-top: 8px;
+}
+.gabi-note.is-hers {
+	align-self: flex-start;
+	background: color-mix(in srgb, var(--gabi) 20%, #141414);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gabi) 28%, transparent);
+}
+.gabi-note.is-mine {
+	align-self: flex-end;
+	background: var(--tile-hi);
+	box-shadow: var(--hairline);
+}
+.gabi-note.is-sending {
+	opacity: 0.6;
+}
+.gabi-note.is-reaction {
+	background: transparent;
+	box-shadow: none;
+	padding-inline: 2px;
+}
+.gabi-note.is-reaction .gabi-note-text {
+	font-size: 28px;
+	line-height: 1.1;
+}
+.gabi-note.is-photo {
+	padding: 4px;
+}
+.gabi-note.is-photo .gabi-note-text {
+	padding-inline: 6px;
+}
+.gabi-note.is-photo .gabi-note-time {
+	padding-inline: 6px;
+}
+.gabi-note-text {
+	margin: 0;
+	color: #f2f2f2;
+	white-space: pre-wrap;
+}
+.gabi-note-time {
+	align-self: flex-end;
+	font-size: 10px;
+	color: #a8a8a8;
+	font-variant-numeric: tabular-nums;
+}
+.gabi-note-photo {
+	display: block;
+	padding: 0;
+	border: 0;
+	border-radius: 10px;
+	overflow: hidden;
+	background: #1a1a1a;
+	cursor: zoom-in;
+}
+.gabi-note-photo img {
+	display: block;
+	width: 210px;
+	height: 150px;
+	object-fit: cover;
+}
+.gabi-event {
+	align-self: center;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-block: 8px;
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: #181818;
+	box-shadow: inset 0 0 0 1px var(--hair);
+	font-size: 11.5px;
+	color: #c9c9c9;
+}
+.gabi-event b {
+	color: #f2f2f2;
+}
+.gabi-event time {
+	font-size: 10px;
+	color: #9a9a9a;
+	font-variant-numeric: tabular-nums;
+}
+.gabi-event.is-hot b {
+	color: var(--hot);
+}
+.gabi-event.is-gabi b {
+	color: var(--gabi);
+}
+.gabi-event.is-good b {
+	color: var(--good);
+}
+.gabi-event.is-warn b {
+	color: var(--warn, #ffb340);
+}
+.gabi-event-mark {
+	display: grid;
+	place-items: center;
+	color: #a8a8a8;
+}
+.gabi-event-mark svg {
+	width: 13px;
+	height: 13px;
+}
+.gabi-quick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+}
+.gabi-quick[hidden] {
+	display: none;
+}
+.gabi-reply {
+	padding: 4px 11px;
+	border: 0;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--gabi) 16%, #141414);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gabi) 30%, transparent);
+	color: #f2f2f2;
+	font-size: 12px;
+	cursor: pointer;
+}
+.gabi-reply:hover {
+	background: color-mix(in srgb, var(--gabi) 28%, #141414);
+}
+.gabi-side {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.gabi-fact {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.gabi-fact-label {
+	font-size: 11px;
+	color: #a8a8a8;
+}
+.gabi-fact b {
+	font-size: 14px;
+	font-weight: 600;
+	color: #f2f2f2;
+}
+.gabi-fact .gabi-fund {
+	font-size: 22px;
+	letter-spacing: -0.3px;
+	color: var(--gabi);
+	font-variant-numeric: tabular-nums;
+}
+.gabi-photos {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 5px;
+}
+.gabi-photo {
+	position: relative;
+	display: block;
+	aspect-ratio: 1;
+	padding: 0;
+	border: 0;
+	border-radius: 9px;
+	overflow: hidden;
+	background: #1a1a1a;
+	cursor: zoom-in;
+}
+.gabi-photo.is-new {
+	box-shadow: 0 0 0 2px var(--gabi);
+}
+.gabi-photo img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.gabi-photo-left {
+	position: absolute;
+	right: 4px;
+	bottom: 3px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.62);
+	color: #f2f2f2;
 	font-size: 9.5px;
-	color: color-mix(in srgb, var(--cal, var(--cool)) 55%, #fff);
+	font-weight: 600;
+}
+.gabi-surprises {
+	display: flex;
+	justify-content: space-between;
+	margin-top: auto;
+}
+.gabi-surprise {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 0;
+	border-radius: 10px;
+	background: var(--tile);
+	box-shadow: var(--hairline), var(--gloss);
+	font-size: 15px;
+	cursor: pointer;
+	transition: transform 120ms var(--ease-smooth-out, ease-out);
+}
+.gabi-surprise:hover {
+	background: var(--tile-hi);
+	transform: translateY(-1px);
+}
+.gabi-surprise:active {
+	transform: scale(0.92);
+}
+.gabi-viewer {
+	position: absolute;
+	inset: 0;
+	z-index: 20;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 14px;
+	background: rgba(0, 0, 0, 0.88);
+}
+.gabi-viewer[hidden] {
+	display: none;
+}
+.gabi-viewer img {
+	min-height: 0;
+	max-width: 100%;
+	max-height: 100%;
+	flex: 1;
+	object-fit: contain;
+	border-radius: 12px;
+}
+.gabi-viewer-close {
+	position: absolute;
+	top: 10px;
+	right: 12px;
+}
+.gabi-viewer-caption {
+	margin: 0;
+	font-size: 13px;
+	color: #f2f2f2;
+}
+
+/* ── The month: every day with what's on it ─────────────────────────────── */
+.cal-mhead {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	padding-bottom: 5px;
+}
+.cal-mhead span {
+	padding-inline: 7px;
+	font-size: 11.5px;
+	font-weight: 500;
+	color: #a8a8a8;
+}
+.cal-mhead span.is-weekend {
+	color: #7c7c7c;
+}
+.cal-mgrid {
+	position: relative;
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	border-radius: 10px;
+	box-shadow: inset 0 0 0 1px var(--hair);
+}
+.cal-mcell {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	padding: 3px 4px;
+	background: rgba(255, 255, 255, 0.024);
+	box-shadow: inset -1px -1px 0 var(--hair);
+	cursor: pointer;
+	transition: background-color var(--duration-fast, 120ms) var(--ease-smooth-out, ease-out);
+}
+.cal-mcell:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+.cal-mcell.is-weekend {
+	background: rgba(255, 255, 255, 0.01);
+}
+.cal-mcell.is-other {
+	background: transparent;
+}
+.cal-mcell.is-other .cal-mnum {
+	color: #6d6d6d;
+}
+.cal-mcell.is-open,
+.cal-mcell.is-drop {
+	background: color-mix(in srgb, var(--accent) 9%, transparent);
+	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.cal-mtop {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-shrink: 0;
+	height: 20px;
+	margin-bottom: 1px;
+}
+.cal-mnum {
+	display: grid;
+	place-items: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0 3px;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: #f2f2f2;
+	font-size: 11.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+.cal-mnum:hover {
+	background: rgba(255, 255, 255, 0.12);
+}
+.cal-mcell.is-today .cal-mnum {
+	color: var(--on-accent);
+	background: var(--accent);
+	box-shadow: var(--glow-accent);
+}
+.cal-mfree {
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--good);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.cal-mfree.is-full {
+	color: var(--warn, #ffb340);
+}
+.cal-mchip {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+	width: 100%;
+	min-width: 0;
+	height: 18px;
+	border: 0;
+	padding: 0 4px;
+	border-radius: 5px;
+	background: transparent;
+	color: #e8e8e8;
+	font-size: 10.5px;
+	text-align: left;
+	cursor: pointer;
+}
+.cal-mchip:hover {
+	background: rgba(255, 255, 255, 0.09);
+}
+.cal-mchip.is-live {
+	cursor: grab;
+}
+.cal-mchip.is-lifted {
+	opacity: 0.35;
+}
+.cal-mchip.is-allday {
+	background: color-mix(in srgb, var(--cal, var(--cool)) 34%, #101010);
+	font-weight: 600;
+}
+.cal-mchip.is-focus .cal-mchip-title {
+	font-weight: 600;
+}
+.cal-mchip.is-past {
+	opacity: 0.55;
+}
+.cal-mchip.is-done .cal-mchip-title {
+	text-decoration: line-through;
+}
+.cal-mchip.is-fold {
+	cursor: inherit;
+}
+.cal-mchip.is-marker {
+	background: #1a1a1a;
+	box-shadow: inset 0 0 0 1px var(--hair);
+}
+.cal-mchip.is-marker.is-late .cal-mchip-title {
+	color: var(--hot);
+}
+.cal-mchip-dot {
+	flex-shrink: 0;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--cal, var(--cool));
+}
+.cal-mchip-time {
+	flex-shrink: 0;
+	color: #a8a8a8;
+	font-variant-numeric: tabular-nums;
+}
+.cal-mchip-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.cal-mchip-sum {
+	flex-shrink: 0;
+	margin-left: auto;
+	color: #c9c9c9;
+	font-variant-numeric: tabular-nums;
+}
+.cal-mmore {
+	flex-shrink: 0;
+	margin-right: auto;
+	padding-left: 3px;
+	font-size: 10.5px;
+	font-weight: 600;
+	color: #a8a8a8;
+}
+.cal-daycard .cal-mchip {
+	height: 22px;
+	font-size: 11.5px;
+}
+.cal-daycard-none {
+	margin: 0;
+	font-size: 12px;
+	color: #a8a8a8;
 }
 
 /* Now, across today only. ⚠️ Drawn only while it is inside the axis: at seven
@@ -8481,15 +9019,12 @@ html[data-motion='never'] *::after {
 	color: #c9c9c9;
 }
 .cal-panel-time {
-	width: 82px;
+	width: 52px;
 	margin: 0;
 	font-size: 12px;
 	font-variant-numeric: tabular-nums;
 	color: #e4e4e4;
 	color-scheme: dark;
-}
-.cal-panel-time::-webkit-calendar-picker-indicator {
-	display: none;
 }
 /* A meeting's prep note, in the panel; the panel scrolls if it's a long one. */
 .cal-prep {
@@ -10736,26 +11271,56 @@ html[data-motion='never'] *::after {
 /* ── Calendar views ──────────────────────────────────────────────────────
    Both read the same seven-day fetch: agenda answers "what is next", the
    week grid answers "how is the week shaped". */
+.cal-bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 10px;
+}
 .cal-views {
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	margin-bottom: 10px;
+	gap: 2px;
+	margin-left: auto;
+	flex-shrink: 0;
 }
 .cal-nav {
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	margin-left: auto;
+	gap: 10px;
+	flex-shrink: 0;
+}
+.cal-pages {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.cal-today {
+	padding: 4px 10px;
+	border: 0;
+	border-radius: 8px;
+	background: var(--tile);
+	color: #e4e4e4;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.cal-today:hover:not(:disabled) {
+	background: var(--tile-hi);
+}
+.cal-today:disabled {
+	color: #8f8f8f;
+	background: transparent;
+	cursor: default;
 }
 /* One line in plain words, added through Helm. */
 .cal-quick {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	flex: 0 1 300px;
+	flex: 1 1 260px;
+	max-width: 420px;
 	min-width: 120px;
-	margin-left: 6px;
 	padding: 3px 10px;
 	border-radius: 8px;
 	background: #101010;
@@ -10790,11 +11355,11 @@ html[data-motion='never'] *::after {
 	color: #8f8f8f;
 }
 .cal-nav-label {
-	padding-inline: 8px;
-	font-size: 12px;
+	font-size: 15px;
 	font-weight: 600;
-	color: #d6d6d6;
-	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.2px;
+	color: #f2f2f2;
+	white-space: nowrap;
 }
 .cal-nav .cal-page:disabled {
 	opacity: 0.3;

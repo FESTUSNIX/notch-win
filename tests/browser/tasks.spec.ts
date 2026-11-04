@@ -138,7 +138,7 @@ test("the island morphs from one pill into one panel, and the tabs switch screen
   await expect(page.locator('.home-cal .w-lead')).toBeVisible();
   await goTo(page, "calendar");
   // The month grid and the agenda beside it — one view, not two.
-  await expect(page.locator(".cal-grid")).toBeVisible();
+  await expect(page.locator(".cal-weekgrid")).toBeVisible();
   await goTo(page, "today");
   await expect(day(page).getByText("Get outside for a walk", {exact: true})).toBeVisible();
   expect(errors).toEqual([]);
@@ -305,6 +305,7 @@ test("the agenda groups by day and offers a link only where there is one", async
   await page.goto("/tasks.html");
   await open(page);
   await goTo(page, "calendar");
+  await page.locator(".cal-view", {hasText: "Agenda"}).click();
   /* ⚠️ No "next up" banner any more. It named the event that is already the
      first row of the agenda underneath it, and the pill says the same thing
      again when it is close — three places for one fact. */
@@ -2182,6 +2183,7 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
   await goTo(page, "calendar");
+  await page.locator(".cal-view", {hasText: "Agenda"}).click();
   await expect(page.locator(".cal-row").first()).toBeVisible();
   await page.getByRole("button", {name: "Week"}).click();
   await expect(page.locator(".cal-wkcol")).toHaveCount(7);
@@ -2201,7 +2203,7 @@ test("the calendar has a week grid as well as an agenda", async ({page}) => {
   await expect(page.locator(".cal-wknow")).toHaveCount(1);
   await expect(page.locator(".cal-row")).toHaveCount(0);
 
-  await page.getByRole("button", {name: "Month"}).click();
+  await page.getByRole("button", {name: "Agenda"}).click();
   await expect(page.locator(".cal-row").first()).toBeVisible();
   // 42 cells: six weeks, always, so paging cannot change the panel's height.
   await expect(page.locator(".cal-cell")).toHaveCount(42);
@@ -2314,6 +2316,7 @@ test("an event opens into a panel, and nothing is striped", async ({page}) => {
   await page.goto("/tasks.html");
   await open(page);
   await goTo(page, "calendar");
+  await page.locator(".cal-view", {hasText: "Agenda"}).click();
 
   /* ⚠️ No left rails anywhere. A 3px coloured bar down the edge of a dark card
    * is the shape every generated calendar has, and it says nothing the card's
@@ -2416,7 +2419,8 @@ test("a screen opens at its own height, not already scrolled", async ({page}) =>
   /* ⚠️ No "system" in this walk any more: it came off the rail and is
    * reached from its chip in the header. The screen itself is covered by the
    * test that opens it that way. */
-  for (const tab of ["home", "agents", "shelf", "calendar", "review"]) {
+  /* Not the calendar: its week opens scrolled to the morning, on purpose. */
+  for (const tab of ["home", "agents", "shelf", "review"]) {
     await page.locator(`[data-tab="${tab}"]`).click();
     await expect.poll(() => page.evaluate(() => {
       const body = document.querySelector(".screen.active .screen-body") as HTMLElement | null;

@@ -37,7 +37,7 @@ export type BoardName = `board:${string}`;
 /** The screens that ship with the app. */
 export type FixedScreen =
   | "home" | "today" | "agents" | "shelf"
-  | "calendar" | "system" | "review"
+  | "calendar" | "system" | "review" | "gabi"
   /** ⚠️ Real, and like the player its stop is only on the rail while there
    *  IS one — the difference being that a call also puts the island on this
    *  screen when it starts, because during a call this is the screen. */

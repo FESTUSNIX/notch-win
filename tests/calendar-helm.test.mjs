@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { atMinutes, blockStart, calEventFrom, dayAfter, freeOn, helmNeedsGoogle, markerLabel, newEventCalendar, railItems, shortLength } from '../src/calendar-helm.ts';
+import { atMinutes, blockStart, calEventFrom, dayAfter, freeOn, helmNeedsGoogle, linesThatFit, markerLabel, monthCells, monthLines, newEventCalendar, parseClock, railItems, shortLength } from '../src/calendar-helm.ts';
 
 const reading = {
   status: 'ok', canWrite: true,
@@ -93,4 +93,52 @@ test('a payment says how much, and for whom', () => {
   const money = n => `${n} zł`;
   assert.equal(markerLabel({ kind: 'payment', title: 'Rata', context: 'Esono', amount: 1200 }, money), '1200 zł Esono');
   assert.equal(markerLabel({ kind: 'delivery', title: 'Repricer', context: 'Esono', amount: null }, money), 'Repricer');
+});
+
+test('a time as he types it', () => {
+  assert.equal(parseClock('15:30'), 15.5);
+  assert.equal(parseClock('15.30'), 15.5);
+  assert.equal(parseClock('1530'), 15.5);
+  assert.equal(parseClock('9'), 9);
+  assert.equal(parseClock('24:00'), 24);
+  assert.equal(parseClock('24:30'), null);
+  assert.equal(parseClock('25'), null);
+  assert.equal(parseClock('3pm'), null);
+  assert.equal(parseClock(''), null);
+});
+
+test('a month draws as many weeks as it needs', () => {
+  // November 2026 starts on a Sunday: six rows from Monday 26 Oct.
+  const nov = monthCells(2026, 10, true);
+  assert.equal(nov.length, 42);
+  assert.equal(nov[0].getDate(), 26);
+  assert.equal(nov[0].getDay(), 1);
+  // February 2027 starts on a Monday and has exactly four weeks.
+  const feb = monthCells(2027, 1, true);
+  assert.equal(feb.length, 28);
+  assert.equal(feb[0].getDate(), 1);
+  // And on a Sunday-first calendar it starts on a Sunday.
+  assert.equal(monthCells(2026, 10, false)[0].getDay(), 0);
+});
+
+test('blocks for one project fold where the first starts, and all-day comes first', () => {
+  const line = (id, start, end, project = null, isBlock = false) =>
+    ({ id, title: id, start, end, color: '', project, isBlock, done: false });
+  const esono = { id: 1, name: 'Esono' };
+  const lines = monthLines([
+    line('late', 16, 17),
+    line('b1', 9, 10.5, esono, true),
+    line('allday', null, null),
+    line('b2', 13, 14, esono, true),
+    line('solo', 11, 12, { id: 2, name: 'Atelier' }, true),
+  ]);
+  assert.deepEqual(lines.map(one => one.id ?? `fold:${one.project.name}`), ['allday', 'fold:Esono', 'solo', 'late']);
+  assert.equal(lines[1].minutes, 150);
+  assert.deepEqual(lines[1].ids, ['b1', 'b2']);
+});
+
+test('a taller day holds more lines, and at least one', () => {
+  assert.equal(linesThatFit(66), 2);
+  assert.equal(linesThatFit(79), 2);
+  assert.equal(linesThatFit(20), 1);
 });

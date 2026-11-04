@@ -73,6 +73,8 @@ import "./tasks.css";
 import { MomentFeed } from "./moment-feed";
 import { bootPeekSources } from "./peek-sources";
 import { GabiFeed } from "./gabi-feed";
+import { GabiScreen } from "./screen-gabi";
+import { installPolishKeys } from "./polish-keys";
 import { nudgeAction } from "./screen-helm";
 import { agentName } from "./screen-agents";
 import "./moments.css";
@@ -185,6 +187,8 @@ const WIDTH: Record<FixedScreen, number> = {
    * the Guardian is a conversation, read at the same measure. */
   helm: 1420,
   guardian: 1420,
+  /* The conversation at a reading measure, and a narrow column of what else is theirs. */
+  gabi: 1800,
   today: 1420,     // one column of rows, and the composer under it
   /* ⚠️ The player has TWO widths — see `widthOf` — and both are DERIVED from
    * the grid in tasks.css rather than picked. `.media-body` is a 500px player
@@ -212,7 +216,7 @@ const WIDTH: Record<FixedScreen, number> = {
 function widthOf(name: ScreenName): number {
   if (name === "media" && player.open) return PLAYER_AND_QUEUE;
   if (name === "timer" && timerScreen.listOpen) return TIMER_AND_LIST;
-  if (name === "calendar" && calendar.view !== "month") {
+  if (name === "calendar" && calendar.view !== "agenda") {
     return calendar.tasksOpen ? CALENDAR_WORK_TASKS : CALENDAR_WORK;
   }
   /* ⚠️ A board is measured from its WIDGETS, not from a table. It has no entry
@@ -290,6 +294,7 @@ app.innerHTML = `<div id="notch-shell">
         <section class="screen" data-screen="notices" role="tabpanel" aria-label="Notices" hidden><div class="screen-body scrolls" id="notices-body"></div></section>
         <section class="screen" data-screen="helm" role="tabpanel" aria-label="Today" hidden></section>
         <section class="screen" data-screen="guardian" role="tabpanel" aria-label="Guardian" hidden></section>
+        <section class="screen" data-screen="gabi" role="tabpanel" aria-label="Gabi" hidden><div class="screen-body" id="gabi-body"></div></section>
         <section class="screen" data-screen="call" role="tabpanel" aria-label="Call" hidden><div class="screen-body call-body spans" id="call-body"></div></section>
         <section class="screen" data-screen="media" role="tabpanel" aria-label="Playing" hidden><div class="screen-body media-body spans" id="media-body"></div></section>
         <section class="screen" data-screen="calendar" role="tabpanel" aria-label="Calendar" hidden><div class="screen-body scrolls" id="calendar-body"></div></section>
@@ -507,6 +512,15 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
   lists: () => today.lists(),
   focus: active => surface.input(active),
   hold: on => surface.holdForDrag(on),
+});
+installPolishKeys();
+const gabiScreen = new GabiScreen(get("gabi-body"), {
+  lift: on => surface.input(on),
+  editing: () => surface.editing,
+  measure: () => surface.measure(),
+  say: (what, why) => say(what, why),
+  showing: () => surface.open && screen === "gabi",
+  changed: () => render(),
 });
 const callSource = new CallSource(() => render(), (what, why) => say(what, why));
 const noticeSource = new NoticeSource(() => render(), (what, why) => say(what, why));
@@ -1000,6 +1014,7 @@ function stops(): RailStop[] {
       || (tab.name === "helm" && !helmSource.connected)
       || (tab.name === "today" && helmSource.connected)
       || (tab.name === "guardian" && !helmSource.connected)
+      || (tab.name === "gabi" && (!helmSource.connected || !gabiScreen.available))
       /* ⚠️ Off the rail unless you put it there. The bell in the header is
        * how you reach this, and the rail is for places you go on purpose —
        * see the note on TABS. It is still reorderable and switchable in
@@ -1025,6 +1040,7 @@ const SCREEN_EXIT_MS = 150;
  */
 function show(name: ScreenName, live = false) {
   if (name === "calendar") calendar.cameBack();
+  if (name === "gabi") gabiScreen.cameBack();
   /* ⚠️ "Today" means Helm's day while Helm is connected — wherever it was asked
    * for: the rail, the ring, the palette, a claim. One redirect here rather
    * than one at each of those. */
@@ -1806,10 +1822,11 @@ function render() {
   notices.render();
   helmScreen.render();
   guardianScreen.render();
+  gabiScreen.render();
   timerScreen.render();
   paintHead();
   // Helm disconnected while you were looking at it: same rule as the call.
-  if (!helmSource.connected && (screen === "helm" || screen === "guardian")) show("home");
+  if (!helmSource.connected && (screen === "helm" || screen === "guardian" || screen === "gabi")) show("home");
   /* ⚠️ The rail works out for itself that the stop has gone; what it cannot
    * handle is the call ending while you are LOOKING at it, which would leave
    * the island on a screen that says nothing with no way to tell what
@@ -2966,6 +2983,7 @@ document.addEventListener("keydown", event => {
     if (today.escape()) return;
     if (helmScreen.escape()) return;
     if (screen === "calendar" && calendar.escape()) return;
+    if (screen === "gabi" && gabiScreen.escape()) return;
     if (guardianScreen.escape()) return;
     // A moment up over the pill: Escape is its ×, sticky or not (AGENTS 879).
     if (moments.escape()) return;
@@ -3349,7 +3367,12 @@ async function boot() {
   await voiceTalk.boot();
   await moments.boot();
   /* Gabi (4 Nov): what she sends, every ten seconds, by how much of the island it takes. */
-  await new GabiFeed({ surface, moments, peekHeld, say }).boot();
+  await new GabiFeed({
+    surface, moments, peekHeld, say,
+    watching: () => surface.open && screen === "gabi",
+    arrived: () => gabiScreen.poke(),
+  }).boot();
+  await gabiScreen.boot();
   /* Batch 13 (builder S): devices, files, Helm's paid/logged and the focus peek. */
   await bootPeekSources({
     runningBlock: () => helmSource.blocks.find(b => b.status === "running")?.id ?? null,

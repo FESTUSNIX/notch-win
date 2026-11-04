@@ -31,6 +31,7 @@ export function peekTarget(peek: Pick<Peek, "kind" | "id">): Target | null {
     case "meeting": case "leave": return { screen: "calendar", event: afterKind(peek.id) };
     case "timer": return { screen: "timer" };
     case "pc": return { screen: "guardian" };
+    case "gabi": return { screen: "gabi" };
     default: return null;
   }
 }
@@ -50,6 +51,7 @@ export function momentTarget(moment: Pick<Moment, "kind" | "key" | "helm">): Tar
     case "usage": return { screen: "agents" };
     case "nudge": return { screen: "guardian" };
     case "block": return { screen: "helm" };
+    case "gabi": return { screen: "gabi" };
     default: return null;
   }
 }

@@ -34,14 +34,6 @@ test("pressing the pill opens what it is showing", async ({ page }) => {
   await expect(screen(page, "helm")).toHaveClass(/active/);
 });
 
-test("her fund note has no screen yet, so a press opens nothing", async ({ page }) => {
-  await page.goto("/tasks.html?click&noagents&nocal&gabi=penalty");
-  await expect(pill(page)).toContainText("−50 zł", { timeout: 6000 });
-  await pill(page).click();
-  await page.waitForTimeout(400);
-  await expect(panel(page)).toBeHidden();
-});
-
 test("a payment's moment stays up with its buttons when its body is pressed", async ({ page }) => {
   await page.goto("/tasks.html?click&helm&noagents&nocal&hmoment=remind");
   await expect(moment(page)).toBeVisible({ timeout: 8000 });

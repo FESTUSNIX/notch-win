@@ -56,6 +56,8 @@ export const SCREENS: ScreenDef[] = [
   { name: "helm", icon: "today", label: "Today" },
   /* The Guardian's nudges and the chat. On the rail while Helm is connected. */
   { name: "guardian", icon: "guardian", label: "Guardian" },
+  /* Her notes, to read back and answer. On the rail once she's set up in Helm. */
+  { name: "gabi", icon: "heart", label: "Gabi" },
   /* ⚠️ The player's stop exists only while something is playing. */
   { name: "media", icon: "media", label: "Playing" },
   { name: "agents", icon: "agent", label: "Agents" },

@@ -21,6 +21,9 @@ import { barOf, offerOf, readReading, type Reading, type Showing, type Site } fr
 import { paintIcon, type TaskIcon } from "./task-icons";
 import { setMotion, still } from "./motion-pref";
 import "./curtain.css";
+import { installPolishKeys } from "./polish-keys";
+
+installPolishKeys();
 
 const native = isTauri();
 /** The plain way out appears after this. Escape and "back to work" work at once. */

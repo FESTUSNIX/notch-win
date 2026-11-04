@@ -31,6 +31,9 @@ import { notchPath, notchTransform } from "./layout";
 import { editable, markersOf } from "./note-live";
 import { noteTitle, noteWhen, tintOf, type Note } from "./notes";
 import "./tasks.css";
+import { installPolishKeys } from "./polish-keys";
+
+installPolishKeys();
 
 document.body.className = "drawer-page";
 

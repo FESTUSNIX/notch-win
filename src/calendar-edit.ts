@@ -370,6 +370,102 @@ export function wireWeekEditing(
   });
 }
 
+export interface MonthHooks {
+  /** Dropped on another day, keeping its time. */
+  move: (ref: unknown, start: Date, end: Date) => void;
+  busy: (on: boolean) => void;
+  started: () => void;
+  repaint: () => void;
+  escapeDown?: () => Promise<boolean>;
+}
+
+/** Timed things on the month grid can be dragged to another day. */
+export function wireMonthDrag(scroller: HTMLElement, grid: HTMLElement, hooks: MonthHooks) {
+  for (const chip of grid.querySelectorAll<HTMLElement>(".cal-mchip[data-cal-id]")) {
+    const source = blocks.get(chip.dataset.calId!);
+    if (source && !source.locked) chip.classList.add("is-live");
+    else if (source) chip.dataset.tip = source.locked;
+  }
+  grid.addEventListener("pointerdown", press => {
+    if (press.button !== 0) return;
+    const chip = (press.target as HTMLElement).closest<HTMLElement>(".cal-mchip[data-cal-id]");
+    const source = chip ? blocks.get(chip.dataset.calId!) : null;
+    if (!chip || !source || source.locked) return;
+    press.preventDefault();
+    hooks.busy(true);
+    const from = chip.closest<HTMLElement>(".cal-mcell")?.dataset.day ?? "";
+    let armed = false;
+    let over: HTMLElement | null = null;
+    let ghost: HTMLElement | null = null;
+    let escapeTimer = 0;
+    const mark = (cell: HTMLElement | null) => {
+      if (cell === over) return;
+      over?.classList.remove("is-drop");
+      cell?.classList.add("is-drop");
+      over = cell;
+    };
+    function finish(commit: boolean) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey, true);
+      scroller.removeEventListener("lostpointercapture", onLost);
+      clearInterval(escapeTimer);
+      delete document.body.dataset.calGesture;
+      ghost?.remove();
+      chip!.classList.remove("is-lifted");
+      const day = over?.dataset.day;
+      mark(null);
+      try { scroller.releasePointerCapture(press.pointerId); } catch { /* not held */ }
+      hooks.busy(false);
+      if (!armed) return;
+      swallowNextClick();
+      if (!commit || !day || day === from) { hooks.repaint(); return; }
+      hooks.move(source!.ref, atHour(day, source!.start), atHour(day, source!.end));
+    }
+    function onMove(step: PointerEvent) {
+      if (step.pointerId !== press.pointerId) return;
+      if (step.pointerType === "mouse" && step.buttons === 0) { finish(false); return; }
+      if (!armed) {
+        if (Math.hypot(step.clientX - press.clientX, step.clientY - press.clientY) < SLOP) return;
+        armed = true;
+        try { scroller.setPointerCapture(press.pointerId); } catch { /* already gone */ }
+        scroller.addEventListener("lostpointercapture", onLost);
+        document.body.dataset.calGesture = "move";
+        chip!.classList.add("is-lifted");
+        hooks.started();
+        ghost = element("div", "cal-tdrag is-over");
+        ghost.append(element("span", "", chip!.querySelector(".cal-mchip-title")?.textContent ?? ""));
+        document.body.append(ghost);
+        if (hooks.escapeDown) {
+          const ask = hooks.escapeDown;
+          escapeTimer = window.setInterval(() => {
+            void ask().then(down => { if (down) finish(false); }).catch(() => {});
+          }, ESCAPE_POLL_MS);
+        }
+      }
+      step.preventDefault();
+      ghost!.style.left = `${step.clientX + 12}px`;
+      ghost!.style.top = `${step.clientY + 10}px`;
+      const under = document.elementFromPoint(step.clientX, step.clientY);
+      mark(under ? under.closest<HTMLElement>(".cal-mcell") : null);
+    }
+    function onUp(step: PointerEvent) { if (step.pointerId === press.pointerId) finish(true); }
+    function onCancel(step: PointerEvent) { if (step.pointerId === press.pointerId) finish(false); }
+    function onLost() { finish(false); }
+    function onKey(key: KeyboardEvent) {
+      if (key.key !== "Escape" || !armed) return;
+      key.preventDefault();
+      key.stopPropagation();
+      finish(false);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey, true);
+  });
+}
+
 /** Where each rendered block came from: filled by the screen as it draws, so a
  *  gesture has the event itself rather than what survives a data attribute. */
 const blocks = new Map<string, Placed>();

@@ -11,12 +11,12 @@ import { call, native, previewBus } from "./task-client";
 import { isQuiet } from "./snooze";
 import { isoWeek, localDay, weekStart } from "./task-model";
 import { still } from "./motion-pref";
-import { atHour, hoursWithin, layoutLanes, pointOver, rememberBlocks, wireTaskDrag, wireWeekEditing, type Placed } from "./calendar-edit";
+import { atHour, hoursWithin, layoutLanes, pointOver, rememberBlocks, wireMonthDrag, wireTaskDrag, wireWeekEditing, type Placed } from "./calendar-edit";
 import type { Task } from "./task-model";
 import { buildAxis, busyHours, quietHours, QUIET_BEFORE } from "./calendar-axis.ts";
 import {
-  atMinutes, blockStart, calEventFrom, freeOn, helmNeedsGoogle, markerLabel, newEventCalendar, railItems, shortLength,
-  type HelmBlock, type HelmCalendar, type HelmMarker, type HelmPlanItem, type MinuteSpan,
+  WORK_END, WORK_START, atMinutes, blockStart, calEventFrom, freeOn, helmNeedsGoogle, linesThatFit, markerLabel, monthCells, monthLines, newEventCalendar, parseClock, railItems, shortLength,
+  type HelmBlock, type HelmCalendar, type HelmMarker, type HelmPlanItem, type MinuteSpan, type MonthEntry, type MonthFold,
 } from "./calendar-helm";
 import { hueOf, zloty } from "./helm-link";
 import { cpx } from "./layout";
@@ -113,7 +113,7 @@ function hhmm(hour: number): string {
 export function timeLabel(event: CalEvent): string {
   if (event.allDay) return "All day";
   const start = startOf(event);
-  return start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 /** "in 5 min", "in 2 h", "now" — the only thing the pill has room to say. */
@@ -147,7 +147,7 @@ export function nextEvent(events: CalEvent[], now = new Date()): CalEvent | null
 /** ⚠️ No standalone `agenda` any more — the month view IS the agenda, with a
  *  grid beside it saying which days are worth scrolling to. Two views that
  *  differ only in whether there is a grid is one view and a toggle. */
-export type CalendarView = "month" | "week" | "day";
+export type CalendarView = "month" | "week" | "day" | "agenda";
 
 /** How tall an hour the week grid actually shows is.
  *
@@ -225,6 +225,12 @@ const HELM_FRESH_MS = 45_000;
 /** Helm refuses a focus block over three hours. */
 const BLOCK_MAX_HOURS = 3;
 
+/** How tall the month's days are altogether, so five or six weeks fill the same room. */
+const MONTH_GRID_PX = 396;
+
+/** Lines on a day's all-day row before the rest go behind a press: it sits over the hours. */
+const BAND_LINES = 3;
+
 /** What a block on the grid stands for.
  *
  * ⚠️ A UNION, because the week now carries two completely unrelated things
@@ -237,9 +243,8 @@ type GridRef = { kind: "event"; event: CalEvent } | { kind: "task"; task: Task }
 export class CalendarScreen {
   feed: CalendarFeed = emptyCalendar();
   error = "";
-  /** Agenda answers "what is next"; week answers "how is the week shaped".
-   *  Both off the same seven-day fetch — no second request, no second model. */
-  view: CalendarView = "month";
+  /** Month and week are the two he reads most; the agenda answers "what is next". */
+  view: CalendarView = "week";
   /** Whether the week runs Monday to Sunday. ⚠️ A preference, pushed in by
    *  the shell rather than read here: `prefs` lives in tasks.ts, and a screen
    *  that fetched its own would need the event listener as well. */
@@ -586,7 +591,7 @@ export class CalendarScreen {
     if (!found) return;
     this.chosen = found.id;
     // In the week or day view, go to where it is.
-    if (this.view !== "month") this.anchorDay = found.allDay ? found.start.slice(0, 10) : localDay(startOf(found));
+    if (this.view !== "agenda") this.anchorDay = found.allDay ? found.start.slice(0, 10) : localDay(startOf(found));
   }
 
   /** Escape: the open thing on this screen closes first, and the island after. */
@@ -615,7 +620,7 @@ export class CalendarScreen {
     field.type = type;
     field.className = `cal-panel-field ${className}`;
     field.value = value;
-    if (type === "text") field.maxLength = 300;
+    field.maxLength = 300;
     field.setAttribute("aria-label", label);
     let kept = value;
     field.onfocus = () => { void this.deps.focus(true).catch(() => {}); };
@@ -646,6 +651,17 @@ export class CalendarScreen {
   private sheetFor = "";
 
   private panelFor(id: string): HTMLElement | null {
+    if (id.startsWith("day:")) {
+      const day = id.slice(4);
+      const key = JSON.stringify(["day", day, this.lineSignature(day)]);
+      if (!this.sheet || this.sheetKey !== key) {
+        this.sheet = this.dayPanel(day);
+        this.sheetKey = key;
+      }
+      this.sheet.classList.toggle("is-entering", this.sheetFor !== id);
+      this.sheetFor = id;
+      return this.sheet;
+    }
     const block = this.blockOf(id);
     const event = block ? null : this.feed.events.find(one => one.id === id);
     if (!block && !event) return null;
@@ -710,22 +726,18 @@ export class CalendarScreen {
       row.append(dot, element("span", "", text));
       facts.append(row);
     };
-    const asHour = (value: string) => {
-      const [h, m] = value.split(":").map(Number);
-      return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : null;
-    };
     if (open && block.status !== "running") {
       const row = element("div", "cal-fact cal-fact-times");
       const dot = element("span", "cal-fact-mark");
       paintIcon(dot, "clock");
-      const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "time", next => {
-        const hour = asHour(next);
+      const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "text", next => {
+        const hour = parseClock(next);
         if (hour === null) return false;
         const end = Math.min(24, hour + (span.end - span.start));
         this.commitBlock(block, atHour(day, hour), atHour(day, end));
       });
-      const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "time", next => {
-        const hour = asHour(next);
+      const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "text", next => {
+        const hour = parseClock(next);
         if (hour === null || hour <= span.start || hour - span.start > BLOCK_MAX_HOURS) return false;
         this.commitBlock(block, atHour(day, span.start), atHour(day, hour));
       });
@@ -784,13 +796,14 @@ export class CalendarScreen {
   /** In the week or day view the panel sits beside its event, in the grid, so the
    *  week stays visible and it scrolls along. */
   private placeBeside(sheet: HTMLElement, id: string) {
-    const body = this.host.querySelector<HTMLElement>(".cal-wkbody");
+    const body = this.host.querySelector<HTMLElement>(".cal-wkbody, .cal-mgrid");
     if (!body) { this.host.append(sheet); return; }
     sheet.classList.add("is-beside");
     body.append(sheet);
     const name = CSS.escape(id);
-    const anchor = body.querySelector<HTMLElement>(`.cal-block[data-cal-id="${name}"]`)
-      ?? this.host.querySelector<HTMLElement>(`.cal-chip[data-chip-id="${name}"]`);
+    const anchor = body.querySelector<HTMLElement>(`.cal-block[data-cal-id="${name}"], .cal-mchip[data-cal-id="${name}"]`)
+      ?? this.host.querySelector<HTMLElement>(`.cal-chip[data-chip-id="${name}"]`)
+      ?? (id.startsWith("day:") ? this.host.querySelector<HTMLElement>(`[data-day="${CSS.escape(id.slice(4))}"]`) : null);
     const home = body.getBoundingClientRect();
     const view = this.host.getBoundingClientRect();
     const stuck = this.host.querySelector(".cal-wkstick")?.getBoundingClientRect().bottom ?? view.top;
@@ -854,23 +867,19 @@ export class CalendarScreen {
       const span = hoursWithin(from, to);
       if (event.writable && !span.crosses) {
         const day = localDay(from);
-        const asHour = (value: string) => {
-          const [h, m] = value.split(":").map(Number);
-          return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : null;
-        };
         const row = element("div", "cal-fact cal-fact-times");
         const mark = element("span", "cal-fact-mark");
         paintIcon(mark, "clock");
-        const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "time", next => {
-          const hour = asHour(next);
+        const begins = this.panelField(sheet, hhmm(span.start), "Starts at", "cal-panel-time", "text", next => {
+          const hour = parseClock(next);
           if (hour === null) return false;
           // A new start moves the event; its length stays.
           const length = span.end - span.start;
           const end = Math.min(24, hour + length);
           this.commitMove(event, atHour(day, hour), atHour(day, end));
         });
-        const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "time", next => {
-          const typed = asHour(next);
+        const ends = this.panelField(sheet, hhmm(span.end), "Ends at", "cal-panel-time", "text", next => {
+          const typed = parseClock(next);
           if (typed === null) return false;
           const hour = typed === 0 ? 24 : typed;
           if (hour <= span.start) return false;
@@ -918,7 +927,7 @@ export class CalendarScreen {
     /* ⚠️ Only in work mode, and only where Google would accept it. A Delete
      * that is always on the panel is one press away from removing a meeting
      * somebody is reading the details of. */
-    if (this.view !== "month" && event.writable && !event.allDay) {
+    if (this.view !== "agenda" && event.writable && !event.allDay) {
       const drop = element("button", "cal-panel-drop");
       (drop as HTMLButtonElement).type = "button";
       paintIcon(drop, "close");
@@ -998,7 +1007,7 @@ export class CalendarScreen {
            * drag that can only ever fail. */
           run: () => {
             this.tasksOpen = !this.tasksOpen;
-            if (this.tasksOpen && this.view === "month") this.view = "week";
+            if (this.tasksOpen && (this.view === "month" || this.view === "agenda")) this.view = "week";
             this.deps.width();
             this.changed();
           } },
@@ -1376,28 +1385,86 @@ export class CalendarScreen {
   }
 
   private setView(name: CalendarView) {
-    /* The width changes with the view, and leaving the grid shuts the list. */
-    if (name === "month") this.leaveWeek();
+    /* The list only sits beside a time grid. */
+    if (name === "month" || name === "agenda") this.leaveWeek();
     /* The views scroll different things, so a position carried over means nothing. */
-    if ((name === "month") !== (this.view === "month")) this.scrollAt = 0;
+    const grid = (one: CalendarView) => one === "week" || one === "day";
+    if (grid(name) !== grid(this.view)) this.scrollAt = 0;
+    if (name !== this.view) this.chosen = null;
     this.view = name;
     this.deps.width();
     this.changed();
   }
 
+  /** The bar over every view: where you are and how to page, adding, and the views. */
   private viewSwitch(now: Date): HTMLElement {
-    const bar = element("div", "cal-views");
-    for (const [name, icon, label] of [["month", "calendar", "Month"], ["week", "grid", "Week"], ["day", "clock", "Day"]] as const) {
+    const bar = element("div", "cal-bar");
+    if (this.view !== "agenda") bar.append(this.pager(now));
+    if (this.viaHelm) bar.append(this.quickAdd(now));
+    const views = element("div", "cal-views");
+    for (const [name, icon, label] of [["month", "grid", "Month"], ["week", "calendar", "Week"], ["day", "clock", "Day"], ["agenda", "list", "Agenda"]] as const) {
       const button = element("button", "cal-view", label);
       (button as HTMLButtonElement).type = "button";
       button.setAttribute("aria-pressed", String(this.view === name));
       button.prepend(taskIcon(icon));
       button.onclick = () => this.setView(name);
-      bar.append(button);
+      views.append(button);
     }
-    if (this.viaHelm) bar.append(this.quickAdd(now));
-    if (this.view !== "month") bar.append(this.pager(now));
+    bar.append(views);
     return bar;
+  }
+
+  /** What's on screen, back and forward, and back to today. */
+  private pager(now: Date): HTMLElement {
+    const nav = element("div", "cal-nav");
+    const anchor = this.anchorDate(now);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayMs = 86_400_000;
+    const stepped = (direction: -1 | 1) => {
+      if (this.view === "month") return new Date(anchor.getFullYear(), anchor.getMonth() + direction, 1);
+      const to = new Date(anchor);
+      to.setDate(to.getDate() + direction * (this.view === "day" ? 1 : 7));
+      return to;
+    };
+    const noun = this.view === "month" ? "month" : this.view === "day" ? "day" : "week";
+    const page = (direction: -1 | 1, label: string, glyph: string) => {
+      const button = element("button", "cal-page", glyph) as HTMLButtonElement;
+      button.type = "button";
+      button.setAttribute("aria-label", label);
+      const to = stepped(direction);
+      // Helm can read any weeks; the app's own feed holds a fixed window.
+      const away = (to.getTime() - today.getTime()) / dayMs;
+      button.disabled = !this.viaHelm && (away > FEED_AHEAD_DAYS || away < -FEED_BACK_DAYS);
+      button.onclick = () => {
+        this.anchorDay = localDay(to);
+        this.chosen = null;
+        this.changed();
+        const held = this.helm;
+        if (held && (localDay(new Date(to.getTime() - 7 * dayMs)) < held.from || localDay(new Date(to.getTime() + 42 * dayMs)) > held.to)) void this.readHelm();
+      };
+      return button;
+    };
+    const shown = this.view === "month" ? [anchor] : this.shownDays(now);
+    const first = shown[0];
+    const last = shown[shown.length - 1];
+    const monthYear = (date: Date) => date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const title = this.view === "day"
+      ? first.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
+      : first.getMonth() === last.getMonth()
+        ? monthYear(first)
+        : `${first.toLocaleDateString(undefined, { month: "short" })} – ${last.toLocaleDateString(undefined, { month: "short", year: "numeric" })}`;
+    nav.append(element("b", "cal-nav-label", title));
+    const onToday = this.view === "month"
+      ? anchor.getFullYear() === now.getFullYear() && anchor.getMonth() === now.getMonth()
+      : shown.some(date => localDay(date) === localDay(now));
+    const back = element("button", "cal-today", "Today") as HTMLButtonElement;
+    back.type = "button";
+    back.disabled = onToday;
+    back.onclick = () => { this.anchorDay = ""; this.chosen = null; this.changed(); };
+    const pages = element("div", "cal-pages");
+    pages.append(page(-1, `Previous ${noun}`, "‹"), back, page(1, `Next ${noun}`, "›"));
+    nav.append(pages);
+    return nav;
   }
 
   /** One line in plain words ("gym at 18", "call z Esono czw 15"), read by Claude in
@@ -1434,59 +1501,13 @@ export class CalendarScreen {
         if (answer.ok && typeof answer.title === "string" && typeof answer.day === "string") {
           const at = typeof answer.start === "number" ? ` · ${hhmm(answer.start / 60)}` : "";
           this.quickSaid = `Added ${answer.title} · ${dayHeading(answer.day)}${at}`;
-          if (this.view !== "month") this.anchorDay = answer.day;
+          if (this.view !== "agenda") this.anchorDay = answer.day;
         }
         this.changed();
       });
     };
     box.append(mark, field);
     return box;
-  }
-
-  /** Back and forward through what the feed holds. */
-  private pager(now: Date): HTMLElement {
-    const nav = element("div", "cal-nav");
-    const shown = this.shownDays(now);
-    const first = shown[0];
-    const last = shown[shown.length - 1];
-    const step = this.view === "day" ? 1 : 7;
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const dayMs = 86_400_000;
-    const page = (direction: -1 | 1, label: string, glyph: string) => {
-      const button = element("button", "cal-page", glyph) as HTMLButtonElement;
-      button.type = "button";
-      button.setAttribute("aria-label", label);
-      const to = new Date(this.anchorDate(now));
-      to.setDate(to.getDate() + direction * step);
-      const beyond = direction > 0
-        ? (first.getTime() + step * dayMs - today.getTime()) / dayMs > FEED_AHEAD_DAYS
-        : (today.getTime() - (last.getTime() - step * dayMs)) / dayMs > FEED_BACK_DAYS;
-      // Helm can read any weeks; the app's own feed holds a fixed window.
-      button.disabled = beyond && !this.viaHelm;
-      button.onclick = () => {
-        this.anchorDay = localDay(to);
-        this.changed();
-        const held = this.helm;
-        if (held && (this.anchorDay < held.from || this.anchorDay > held.to)) void this.readHelm();
-      };
-      return button;
-    };
-    const month = (date: Date) => date.toLocaleDateString(undefined, { month: "short" });
-    const label = this.view === "day"
-      ? first.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })
-      : first.getMonth() === last.getMonth()
-        ? `${first.getDate()} – ${last.getDate()} ${month(last)}`
-        : `${first.getDate()} ${month(first)} – ${last.getDate()} ${month(last)}`;
-    const onToday = shown.some(date => localDay(date) === localDay(now));
-    if (!onToday) {
-      const back = element("button", "cal-view", "Today") as HTMLButtonElement;
-      back.type = "button";
-      back.onclick = () => { this.anchorDay = ""; this.changed(); };
-      nav.append(back);
-    }
-    nav.append(element("span", "cal-nav-label", label), page(-1, this.view === "day" ? "Previous day" : "Previous week", "‹"),
-      page(1, this.view === "day" ? "Next day" : "Next week", "›"));
-    return nav;
   }
 
   /* ── The month ─────────────────────────────────────────────────────────
@@ -1854,31 +1875,20 @@ export class CalendarScreen {
    * you cannot read the middle of. A floor and a ceiling keep it honest when
    * the week is empty.
    */
-  private renderWeek(now: Date) {
-    const today = localDay(now);
-    const shownDays = this.shownDays(now);
-    const first = shownDays[0];
-
-    /* ⚠️ Every event resolved through `timesOf` ONCE, here, and the rest of
-     * this method reads the result. An optimistic move can change which DAY an
-     * event is on, so bucketing off `startOf` while drawing off the pending
-     * time would leave a dragged block in Tuesday's column showing Wednesday's
-     * hour. */
+  private dayData() {
+    /* Every event resolved through `timesOf` once: an optimistic move can change
+     * which day it is on. */
     const placed = this.feed.events
       .filter(e => !this.removing.has(e.id))
       .map(e => ({ event: this.edited(e), ...this.timesOf(e) }));
 
-    /* ⚠️ Tasks with a real TIME, laid on the same axis as the events. A task
-     * that is merely due today has 00:00 in its `startDate`, and putting those
-     * here would stack the whole list at midnight and call it a schedule —
-     * they stay in the list beside the grid until somebody drops one. */
+    /* Tasks with a real time, on the same axis. One merely due today has 00:00 in
+     * its `startDate`, and stays in the list until somebody drops it. */
     const { placed: timedTasks, waiting } = this.splitTasks();
     const tasks = timedTasks.map(task => {
       const begin = new Date(task.startDate!);
       const due = task.dueDate ? new Date(task.dueDate) : begin;
-      /* ⚠️ A floor of half an hour on a task's length. TickTick is happy with
-       * a task whose start and due are the same instant — that is what "at
-       * 3pm" means there — and a zero-length block is nothing to see or grab. */
+      /* At least half an hour: TickTick's "at 3pm" has no length, and that's nothing to grab. */
       const finish = due.getTime() > begin.getTime() + 60_000
         ? due : new Date(begin.getTime() + 30 * 60_000);
       return { task, begin, finish };
@@ -1896,22 +1906,249 @@ export class CalendarScreen {
     });
     const markers = this.helm?.markers ?? [];
 
+    const on = (key: string) => ({
+      blocks: blocks.filter(one => localDay(one.begin) === key),
+      markers: markers.filter(one => one.day === key),
+      events: placed.filter(one => {
+        if (!one.event.allDay) return localDay(one.begin) === key;
+        // An all-day event shows on every day it covers; Google's end is exclusive.
+        const from = one.event.start.slice(0, 10);
+        const to = one.event.end ? one.event.end.slice(0, 10) : from;
+        return key === from || (key > from && key < to);
+      }),
+      tasks: tasks.filter(one => localDay(one.begin) === key),
+    });
+    return { waiting, on };
+  }
+
+  /** What's left of a working day, in minutes; null when that isn't worth saying. */
+  private freeOf(day: ReturnType<ReturnType<CalendarScreen["dayData"]>["on"]>, key: string, now: Date): number | null {
+    const busy: MinuteSpan[] = [
+      ...day.events.filter(one => !one.event.allDay).map(one => hoursWithin(one.begin, one.finish)),
+      ...day.blocks.map(one => hoursWithin(one.begin, one.finish)),
+    ].map(one => ({ start: Math.round(one.start * 60), end: Math.round(one.end * 60) }));
+    return freeOn(busy, key, localDay(now), now.getHours() * 60 + now.getMinutes());
+  }
+
+  /** One day's things as the month and a day's card list them. */
+  private entriesOf(day: ReturnType<ReturnType<CalendarScreen["dayData"]>["on"]>): MonthEntry[] {
+    return [
+      ...day.events.map(({ event, begin, finish }): MonthEntry => {
+        const span = event.allDay ? null : hoursWithin(begin, finish);
+        return { id: event.id, title: event.title, start: span?.start ?? null, end: span?.end ?? null, color: event.color || "var(--cool)", project: null, isBlock: false, done: false };
+      }),
+      ...day.blocks.map(({ block, begin, finish }): MonthEntry => {
+        const span = hoursWithin(begin, finish);
+        const mark = this.helm?.marks.find(one => one.id === block.projectId);
+        return {
+          id: `block:${block.id}`, title: block.title, start: span.start, end: span.end,
+          color: hueOf(mark?.hue, mark?.name ?? block.title),
+          project: mark ? { id: mark.id, name: mark.name } : null, isBlock: true, done: block.status === "done",
+        };
+      }),
+      ...day.tasks.map(({ task, begin, finish }): MonthEntry => {
+        const span = hoursWithin(begin, finish);
+        return { id: `task:${task.id}`, title: task.title, start: span.start, end: span.end, color: this.deps.taskColor(task) || "var(--good)", project: null, isBlock: false, done: task.status === 2 };
+      }),
+    ];
+  }
+
+  private lineSignature(key: string): string {
+    const data = this.dayData().on(key);
+    return JSON.stringify([this.entriesOf(data), data.markers.map(one => one.key)]);
+  }
+
+  /** The dot, time and title of one thing on a day. */
+  private monthLine(entry: MonthEntry, past: boolean): HTMLElement {
+    const chip = element("button", `cal-mchip${entry.start === null ? " is-allday" : ""}${entry.isBlock ? " is-focus" : ""}${entry.done ? " is-done" : ""}${past ? " is-past" : ""}`);
+    (chip as HTMLButtonElement).type = "button";
+    chip.style.setProperty("--cal", entry.color);
+    chip.dataset.calId = entry.id;
+    if (entry.start !== null) {
+      chip.append(element("span", "cal-mchip-dot"), element("span", "cal-mchip-time", hhmm(entry.start)));
+    }
+    chip.append(element("span", "cal-mchip-title", entry.title));
+    chip.dataset.tip = entry.start === null ? entry.title : `${hhmm(entry.start)} – ${hhmm(entry.end!)} · ${entry.title}`;
+    chip.onclick = click => {
+      click.stopPropagation();
+      if (entry.id.startsWith("task:")) return;
+      this.chosen = this.chosen === entry.id ? null : entry.id;
+      this.changed();
+    };
+    return chip;
+  }
+
+  /** A true month: every day with what's on it, as many lines as fit. */
+  private renderMonthGrid(now: Date) {
+    const anchor = this.anchorDate(now);
+    const today = localDay(now);
+    const cells = monthCells(anchor.getFullYear(), anchor.getMonth(), this.mondayFirst);
+    const rows = cells.length / 7;
+    const rowPx = Math.floor(MONTH_GRID_PX / rows);
+    const fits = linesThatFit(rowPx);
+    const data = this.dayData();
+
+    const month = element("div", "cal-mv");
+    const head = element("div", "cal-mhead");
+    for (let i = 0; i < 7; i++) {
+      head.append(element("span", i >= 5 ? "is-weekend" : "", cells[i].toLocaleDateString(undefined, { weekday: "short" })));
+    }
+    const grid = element("div", "cal-mgrid");
+    grid.style.gridTemplateRows = `repeat(${rows}, ${rowPx}px)`;
+    const drawn: Placed[] = [];
+    for (const [index, date] of cells.entries()) {
+      const key = localDay(date);
+      const inMonth = date.getMonth() === anchor.getMonth();
+      const day = data.on(key);
+      const weekend = date.getDay() === 0 || date.getDay() === 6;
+      const cell = element("div", "cal-mcell"
+        + (inMonth ? "" : " is-other")
+        + (key === today ? " is-today" : "")
+        + (weekend ? " is-weekend" : "")
+        + (this.chosen === `day:${key}` ? " is-open" : ""));
+      cell.dataset.day = key;
+
+      const top = element("div", "cal-mtop");
+      const number = element("button", "cal-mnum", String(date.getDate())) as HTMLButtonElement;
+      number.type = "button";
+      number.setAttribute("aria-label", `Open ${date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}`);
+      number.onclick = click => {
+        click.stopPropagation();
+        this.anchorDay = key;
+        this.setView("day");
+      };
+      top.append(number);
+      const free = inMonth ? this.freeOf(day, key, now) : null;
+      if (free !== null) top.append(element("span", `cal-mfree${free === 0 ? " is-full" : ""}`, free === 0 ? "Full" : shortLength(free)));
+      cell.append(top);
+
+      const entries = this.entriesOf(day);
+      for (const { event, begin, finish } of day.events.filter(one => !one.event.allDay)) {
+        const span = hoursWithin(begin, finish);
+        drawn.push({
+          id: event.id, ref: { kind: "event", event } as GridRef,
+          locked: !event.writable ? `${event.title} · ${event.calendar} can't be changed here` : span.crosses ? `${event.title} runs past midnight` : "",
+          start: span.start, end: span.end, column: index,
+        });
+      }
+      for (const { block, begin, finish } of day.blocks) {
+        const span = hoursWithin(begin, finish);
+        drawn.push({
+          id: `block:${block.id}`, ref: { kind: "block", block } as GridRef,
+          locked: block.status === "done" ? `${block.title} · already done` : block.status === "running" ? `${block.title} · running now` : "",
+          start: span.start, end: span.end, column: index,
+        });
+      }
+      for (const { task, begin, finish } of day.tasks) {
+        const span = hoursWithin(begin, finish);
+        drawn.push({ id: `task:${task.id}`, ref: { kind: "task", task } as GridRef, locked: task.status === 2 ? `${task.title} · already done` : "", start: span.start, end: span.end, column: index });
+      }
+
+      const lines: HTMLElement[] = [];
+      for (const marker of day.markers) lines.push(this.monthMarker(marker));
+      const isPast = (entry: MonthEntry) => key < today || (key === today && entry.end !== null && entry.end * 60 <= now.getHours() * 60 + now.getMinutes());
+      for (const line of monthLines(entries)) {
+        if ("ids" in line) lines.push(this.monthFold(line, key < today));
+        else lines.push(this.monthLine(line, isPast(line)));
+      }
+      const shown = lines.slice(0, fits);
+      cell.append(...shown);
+      // In the date's row, so it doesn't cost a line of the day.
+      if (shown.length < lines.length) top.insertBefore(element("span", "cal-mmore", `+${lines.length - shown.length}`), number.nextSibling);
+      // Anywhere else on the day: everything on it, in a card.
+      cell.onclick = () => {
+        const id = `day:${key}`;
+        this.chosen = this.chosen === id ? null : id;
+        this.changed();
+      };
+      grid.append(cell);
+    }
+    month.append(head, grid);
+    this.host.append(month);
+
+    rememberBlocks(drawn);
+    wireMonthDrag(this.host, grid, {
+      move: (ref, start, end) => {
+        const what = ref as GridRef;
+        if (what.kind === "event") this.commitMove(what.event, start, end);
+        else if (what.kind === "block") this.commitBlock(what.block, start, end);
+        else this.scheduleTask(what.task, start, end);
+      },
+      busy: on => this.hold(on),
+      started: () => {
+        this.actionError = "";
+        if (this.chosen) {
+          this.chosen = null;
+          this.host.querySelector(".cal-panel")?.remove();
+        }
+      },
+      repaint: () => this.changed(),
+      escapeDown: native ? () => call<boolean>("escape_down") : undefined,
+    });
+  }
+
+  private monthMarker(marker: HelmMarker): HTMLElement {
+    const chip = element("button", `cal-mchip is-marker${marker.late ? " is-late" : ""}`);
+    (chip as HTMLButtonElement).type = "button";
+    chip.style.setProperty("--cal", hueOf(marker.hue, marker.context));
+    chip.append(element("span", "cal-mchip-dot"), element("span", "cal-mchip-title", markerLabel(marker, zloty)));
+    chip.dataset.tip = marker.context && marker.context !== marker.title ? `${marker.title} · ${marker.context}` : marker.title;
+    chip.onclick = click => {
+      click.stopPropagation();
+      void call("helm_open", { path: marker.href }).catch(() => {});
+    };
+    return chip;
+  }
+
+  /** Several blocks for a project: one line, and the day's card lists them. */
+  private monthFold(fold: MonthFold, past: boolean): HTMLElement {
+    const line = element("div", `cal-mchip is-fold is-focus${fold.allDone ? " is-done" : ""}${past ? " is-past" : ""}`);
+    line.style.setProperty("--cal", fold.color);
+    line.append(element("span", "cal-mchip-dot"), element("span", "cal-mchip-title", fold.project.name), element("span", "cal-mchip-sum", shortLength(fold.minutes)));
+    line.dataset.tip = `${fold.project.name} · ${fold.ids.length} blocks · ${shortLength(fold.minutes)}`;
+    return line;
+  }
+
+  /** Everything on one day, as Helm's card: each opens, and the date opens the day. */
+  private dayPanel(key: string): HTMLElement {
+    const data = this.dayData().on(key);
+    const sheet = element("div", "cal-panel cal-daycard");
+    const head = element("div", "cal-panel-head");
+    head.append(element("span", "cal-panel-when", dayHeading(key)));
+    const close = element("button", "cal-panel-close small-icon");
+    (close as HTMLButtonElement).type = "button";
+    close.setAttribute("aria-label", "Close day");
+    paintIcon(close, "close");
+    close.onclick = () => { this.chosen = null; this.changed(); };
+    head.append(close);
+    sheet.append(head);
+
+    const entries = [...this.entriesOf(data)].sort((a, b) => (a.start ?? -1) - (b.start ?? -1));
+    if (!entries.length && !data.markers.length) sheet.append(element("p", "cal-daycard-none", "Nothing on this day."));
+    for (const marker of data.markers) sheet.append(this.monthMarker(marker));
+    for (const entry of entries) sheet.append(this.monthLine(entry, false));
+
+    const actions = element("div", "cal-panel-actions");
+    const open = element("button", "cal-panel-open");
+    (open as HTMLButtonElement).type = "button";
+    open.append(element("span", "", "Open the day"));
+    open.onclick = () => {
+      this.anchorDay = key;
+      this.setView("day");
+    };
+    actions.append(open);
+    sheet.append(actions);
+    return sheet;
+  }
+
+  private renderWeek(now: Date) {
+    const today = localDay(now);
+    const shownDays = this.shownDays(now);
+    const first = shownDays[0];
+    const { waiting, on } = this.dayData();
     const days = shownDays.map(date => {
       const key = localDay(date);
-      return {
-        key,
-        date,
-        blocks: blocks.filter(one => localDay(one.begin) === key),
-        markers: markers.filter(one => one.day === key),
-        events: placed.filter(one => {
-          if (!one.event.allDay) return localDay(one.begin) === key;
-          // An all-day event shows on every day it covers; Google's end is exclusive.
-          const from = one.event.start.slice(0, 10);
-          const to = one.event.end ? one.event.end.slice(0, 10) : from;
-          return key === from || (key > from && key < to);
-        }),
-        tasks: tasks.filter(one => localDay(one.begin) === key),
-      };
+      return { key, date, ...on(key) };
     });
 
     /* ── The axis ──────────────────────────────────────────────────────────
@@ -1948,17 +2185,22 @@ export class CalendarScreen {
       const cell = element("div", "cal-wkday"
         + (day.key === today ? " is-today" : "")
         + (day.key < today ? " is-past" : ""));
-      cell.append(
+      const label = element("span", "cal-wklabel");
+      label.append(
         element("span", "cal-wkname", day.date.toLocaleDateString(undefined, { weekday: "short" })),
         element("span", "cal-wknum", String(day.date.getDate())),
       );
-      /* What's left of the working day. */
-      const busy: MinuteSpan[] = [
-        ...day.events.filter(one => !one.event.allDay).map(hoursOf),
-        ...day.blocks.map(hoursOf),
-      ].map(one => ({ start: Math.round(one.start * 60), end: Math.round(one.end * 60) }));
-      const free = freeOn(busy, day.key, today, now.getHours() * 60 + now.getMinutes());
-      if (free) cell.append(element("span", "cal-wkfree", `${shortLength(free)} free`));
+      cell.append(label);
+      /* What's left of the working day: a number, and a bar that empties as it fills. */
+      const free = this.freeOf(day, day.key, now);
+      if (free !== null) {
+        cell.append(element("span", `cal-wkfree${free === 0 ? " is-full" : ""}`, free === 0 ? "Full" : shortLength(free)));
+        const load = element("i", "cal-wkload");
+        const fill = element("b");
+        fill.style.width = `${Math.round((free / (WORK_END - WORK_START)) * 100)}%`;
+        load.append(fill);
+        cell.append(load);
+      }
       // A day's heading opens that day, and back.
       cell.onclick = () => {
         this.anchorDay = day.key;
@@ -1977,7 +2219,9 @@ export class CalendarScreen {
       band.append(element("span", "cal-wkall-label", "All day"));
       for (const day of days) {
         const cell = element("div", "cal-wkall-cell");
-        for (const { event } of day.events.filter(one => one.event.allDay)) {
+        const allDay = day.events.filter(one => one.event.allDay);
+        const extra = allDay.length + day.markers.length - BAND_LINES;
+        for (const { event } of extra > 0 ? allDay.slice(0, BAND_LINES - 1) : allDay) {
           const chip = element("button", "cal-chip" + (this.chosen === event.id ? " is-open" : ""));
           (chip as HTMLButtonElement).type = "button";
           chip.style.setProperty("--cal", event.color || "var(--cool)");
@@ -1990,7 +2234,18 @@ export class CalendarScreen {
           };
           cell.append(chip);
         }
-        for (const marker of day.markers) cell.append(this.markerChip(marker));
+        const room = extra > 0 ? Math.max(0, BAND_LINES - 1 - allDay.length) : day.markers.length;
+        for (const marker of day.markers.slice(0, room)) cell.append(this.markerChip(marker));
+        if (extra > 0) {
+          const more = element("button", "cal-chip is-more", `${extra + 1} more`) as HTMLButtonElement;
+          more.type = "button";
+          more.dataset.day = day.key;
+          more.onclick = () => {
+            this.chosen = `day:${day.key}`;
+            this.changed();
+          };
+          cell.append(more);
+        }
         band.append(cell);
       }
       allDayBand = band;
@@ -2007,12 +2262,18 @@ export class CalendarScreen {
     const gutter = element("div", "cal-wkaxis");
     for (const row of axis.rows) {
       const mark = element("span", "cal-wkhour" + (row.open ? "" : " is-shut"),
-        String(row.hour).padStart(2, "0"));
+        `${String(row.hour).padStart(2, "0")}:00`);
       mark.style.top = `${row.top}px`;
       /* A collapsed hour has no room for its own number; the band says the
        * range instead. */
       if (!row.open) mark.textContent = "";
       gutter.append(mark);
+    }
+    if (days.some(day => day.key === today)) {
+      const at = now.getHours() + now.getMinutes() / 60;
+      const pill = element("span", "cal-wknowpill", hhmm(at));
+      pill.style.top = `${axis.yOf(at)}px`;
+      gutter.append(pill);
     }
     body.append(gutter);
 
@@ -2024,7 +2285,9 @@ export class CalendarScreen {
         + (day.key < today ? " is-past" : ""));
       columns.push(column);
       for (const row of axis.rows) {
-        const line = element("i", "cal-wkline" + (row.open ? "" : " is-shut"));
+        const working = row.hour * 60 >= WORK_START && row.hour * 60 < WORK_END
+          && day.date.getDay() !== 0 && day.date.getDay() !== 6;
+        const line = element("i", "cal-wkline" + (row.open ? "" : " is-shut") + (working ? " is-work" : ""));
         line.style.top = `${row.top}px`;
         line.style.height = `${row.px}px`;
         column.append(line);
@@ -2057,13 +2320,13 @@ export class CalendarScreen {
          * by querying the body it was handed — it never sees this loop. */
         block.dataset.calId = event.id;
         if (this.settling.has(event.id)) block.classList.add("is-settling");
-        block.dataset.tip = `${timeLabel(event)} · ${event.title}`;
+        block.dataset.tip = `${hhmm(startHour)}–${hhmm(endHour)} · ${event.title}`;
         block.append(element("span", "cal-block-title", event.title));
         /* ⚠️ Gated on the block's REAL height in pixels. Two lines of type need
          * about 34 — so "an hour is long enough for a time" put a second line
          * into a block that could not hold the first, and the title was
          * clipped away leaving a block labelled only with its start time. */
-        if (tall >= 34) block.append(element("span", "cal-block-time", timeLabel(event)));
+        if (tall >= 34) block.append(element("span", "cal-block-time", `${hhmm(startHour)}–${hhmm(endHour)}`));
         block.onclick = () => {
           this.chosen = this.chosen === event.id ? null : event.id;
           this.changed();
@@ -2113,8 +2376,7 @@ export class CalendarScreen {
         const line = element("span", "cal-block-title", task.title);
         block.append(tick, line);
         if (tall >= 34) {
-          block.append(element("span", "cal-block-time",
-            begin.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+          block.append(element("span", "cal-block-time", `${hhmm(startHour)}–${hhmm(endHour)}`));
         }
         block.dataset.tip = task.title;
         column.append(block);
@@ -2139,7 +2401,7 @@ export class CalendarScreen {
         block.dataset.calId = id;
         block.dataset.tip = mark ? `${focus.title} · ${mark.name}` : focus.title;
         block.append(element("span", "cal-block-title", focus.title));
-        if (tall >= 34) block.append(element("span", "cal-block-time", mark?.name ?? hhmm(startHour)));
+        if (tall >= 34) block.append(element("span", "cal-block-time", `${hhmm(startHour)}–${hhmm(endHour)}`));
         drawn.push({
           id,
           ref: { kind: "block", block: focus } as GridRef,
@@ -2174,6 +2436,8 @@ export class CalendarScreen {
         block.style.left = `calc(${(lane / count) * 100}% + 1px)`;
         block.style.width = `calc(${100 / count}% - 2px)`;
         block.style.right = "auto";
+        // Three across is too narrow for a time under the title.
+        if (count > 2) block.querySelector(".cal-block-time")?.remove();
       }
 
       /* Now, as a line across today's column. */
@@ -2473,10 +2737,11 @@ export class CalendarScreen {
 
     if (helmNeedsGoogle(this.helm) || (!this.viaHelm && this.feed.needsSignIn)) this.host.append(this.signInBar());
     const now = new Date();
-    if (this.view !== "month") this.renderWeek(now);
+    if (this.view === "week" || this.view === "day") this.renderWeek(now);
     else {
       this.host.append(this.viewSwitch(now));
-      this.renderMonth(now);
+      if (this.view === "month") this.renderMonthGrid(now);
+      else this.renderMonth(now);
     }
 
     // The bar already says what the feed's error would.
@@ -2488,7 +2753,7 @@ export class CalendarScreen {
     if (this.chosen) {
       const sheet = this.panelFor(this.chosen);
       if (!sheet) this.chosen = null;
-      else if (this.view === "month") this.host.append(sheet);
+      else if (this.view === "agenda") this.host.append(sheet);
       else this.placeBeside(sheet, this.chosen);
     }
     if (!this.chosen) this.sheetFor = "";

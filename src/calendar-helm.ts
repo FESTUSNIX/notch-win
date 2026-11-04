@@ -190,6 +190,79 @@ export function shortLength(minutes: number): string {
   return minutes % 60 ? `${h}h ${pad(minutes % 60)}` : `${h}h`;
 }
 
+/** A time as he types it: 15:30, 15.30, 1530, 15. Null when it isn't one. */
+export function parseClock(text: string): number | null {
+  const clean = text.trim();
+  const parts = /^(\d{1,2})(?:[:.](\d{1,2}))?$/.exec(clean) ?? /^(\d{2})(\d{2})$/.exec(clean);
+  if (!parts) return null;
+  const hour = Number(parts[1]);
+  const minute = Number(parts[2] ?? 0);
+  if (hour > 24 || minute > 59 || (hour === 24 && minute > 0)) return null;
+  return hour + minute / 60;
+}
+
+/** A month's grid: from the start of the week holding the 1st to the end of the week
+ *  holding the last, so five rows or six as the month needs. */
+export function monthCells(year: number, month: number, mondayFirst: boolean): Date[] {
+  const first = new Date(year, month, 1);
+  const back = (first.getDay() - (mondayFirst ? 1 : 0) + 7) % 7;
+  const last = new Date(year, month + 1, 0).getDate();
+  const count = Math.ceil((back + last) / 7) * 7;
+  return Array.from({ length: count }, (_, at) => new Date(year, month, 1 - back + at));
+}
+
+/** One line in a month's day. */
+export interface MonthEntry {
+  id: string;
+  title: string;
+  /** Hours of the day; null on an all-day thing. */
+  start: number | null;
+  end: number | null;
+  color: string;
+  /** Which project a block is for, so several fold into one line. */
+  project: { id: number; name: string } | null;
+  isBlock: boolean;
+  done: boolean;
+}
+
+/** Several blocks for one project, as one line with their time. */
+export interface MonthFold {
+  project: { id: number; name: string };
+  color: string;
+  minutes: number;
+  ids: string[];
+  allDone: boolean;
+}
+
+/** All-day first, then by time, with two or more blocks for a project folded where the first starts. */
+export function monthLines(entries: MonthEntry[]): (MonthEntry | MonthFold)[] {
+  const sorted = [...entries].sort((a, b) => (a.start ?? -1) - (b.start ?? -1));
+  const counts = new Map<number, MonthEntry[]>();
+  for (const one of sorted) {
+    if (!one.isBlock || !one.project) continue;
+    counts.set(one.project.id, [...(counts.get(one.project.id) ?? []), one]);
+  }
+  const placed = new Set<number>();
+  return sorted.flatMap((one): (MonthEntry | MonthFold)[] => {
+    const group = one.isBlock && one.project ? counts.get(one.project.id) : undefined;
+    if (!group || group.length < 2) return [one];
+    if (placed.has(one.project!.id)) return [];
+    placed.add(one.project!.id);
+    return [{
+      project: one.project!,
+      color: one.color,
+      minutes: group.reduce((total, block) => total + Math.round(((block.end ?? 0) - (block.start ?? 0)) * 60), 0),
+      ids: group.map(block => block.id),
+      allDone: group.every(block => block.done),
+    }];
+  });
+}
+
+/** How many lines fit in a day of this height: the date takes a row of its own. */
+export function linesThatFit(rowPx: number): number {
+  return Math.max(1, Math.floor((rowPx - 26) / 19));
+}
+
 /** What a marker says on its chip. */
 export function markerLabel(marker: Pick<HelmMarker, "kind" | "title" | "context" | "amount">, money: (n: number) => string): string {
   if (marker.kind === "payment" && marker.amount !== null) return `${money(marker.amount)} ${marker.context}`.trim();
