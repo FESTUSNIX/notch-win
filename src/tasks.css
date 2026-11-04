@@ -4084,6 +4084,29 @@ body[data-cal-gesture='create'] * {
 .cal-block.is-focus.is-running {
 	box-shadow: inset 0 0 0 1.5px var(--accent), var(--glow-accent);
 }
+.helm-project-menu {
+	position: fixed;
+	z-index: 60;
+	width: 270px;
+	max-height: 280px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: #303030 transparent;
+}
+.helm-rename {
+	flex: 1;
+	min-width: 0;
+	width: 100%;
+	border: 0;
+	padding: 1px 6px;
+	margin-left: -6px;
+	border-radius: 6px;
+	background: rgba(0, 0, 0, 0.35);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+	color: #f2f2f2;
+	font: inherit;
+	outline: none;
+}
 /* The time it would land on, readable even on a short block. */
 .cal-block.is-dragging .cal-block-time,
 .cal-ghost .cal-block-time {
@@ -4251,6 +4274,10 @@ body[data-cal-gesture='create'] * {
 	overflow: hidden;
 	background: #1a1a1a;
 	cursor: zoom-in;
+}
+/* Until the picture arrives: an empty frame, not a browser's broken-image outline. */
+.gabi-body img:not([src]) {
+	visibility: hidden;
 }
 .gabi-note-photo img {
 	display: block;
@@ -9182,6 +9209,11 @@ html[data-motion='never'] *::after {
 	background: color-mix(in srgb, var(--hot) 16%, transparent);
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hot) 42%, transparent);
 	color: #f2dede;
+}
+.cal-panel-drop.is-asking {
+	background: color-mix(in srgb, var(--hot) 22%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hot) 55%, transparent);
+	color: #f8e4e4;
 }
 .cal-panel-drop svg {
 	width: 11px;

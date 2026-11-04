@@ -184,6 +184,8 @@ export const FRAME = {
    *  off rather than as long. This is ~470 CSS px, which fits every screen's
    *  natural content while still being a fraction of a 1080p display. */
   islandBodyDepth: 1060,
+  /** The calendar's grids, which are the one screen that spends all the height it gets. */
+  islandBodyDepthTall: 1340,
   /* ── The tool tab ──────────────────────────────────────────────
    * What the open screen can DO, hanging off the island rather than sitting in
    * its header.

@@ -514,6 +514,7 @@ const calendar = new CalendarScreen(get("calendar-body"), () => render(), {
   hold: on => surface.holdForDrag(on),
 });
 installPolishKeys();
+surface.wantsTall = () => screen === "calendar" && calendar.view !== "agenda";
 const gabiScreen = new GabiScreen(get("gabi-body"), {
   lift: on => surface.input(on),
   editing: () => surface.editing,

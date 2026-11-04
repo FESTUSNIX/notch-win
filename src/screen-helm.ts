@@ -54,7 +54,7 @@ import { sortable } from "./helm-drag";
 import { parseQuick } from "./helm-quick";
 import { endOf, startOf, type CalEvent } from "./screen-calendar";
 import { Composer, type Sent, type Voice } from "./kit/composer";
-import { Dropdown } from "./kit/menu";
+import { Dropdown, Menu, type MenuItem } from "./kit/menu";
 import { Block, SidePanel } from "./kit/parts";
 import { projectPanel } from "./project-panel";
 import { AGENT_PANEL_W } from "./screen-agents";
@@ -287,6 +287,11 @@ export interface Ask {
 /** How long the pill carries a finished run's question. The card keeps it until
  *  it is answered or the session runs again; the strip is for the moment. */
 const ASK_ON_PILL_MS = 20 * 60_000;
+
+/** What has a title of its own to change, as Helm's `rename`. */
+const renames = (item: { kind: string }) => ["request", "task", "todo", "block"].includes(item.kind);
+/** What can be given to a project or taken off one, as Helm's `project`. */
+const hasOwnProject = (item: { kind: string }) => item.kind === "todo" || item.kind === "block";
 
 export class HelmSource {
   helm: Helm = emptyHelm();
@@ -1959,6 +1964,11 @@ export class HelmTodayScreen {
       acts.append(claude);
     }
     if (hasSession(entry)) acts.append(this.button("play", "Start", entry.title, busy, () => this.source.startEntry(entry)));
+    if (single && renames(single)) acts.append(this.button("text", "Rename", entry.title, busy, () => this.rename(single, row)));
+    if (single && hasOwnProject(single)) {
+      const pick = this.button("folder", "Project", entry.title, busy, () => this.pickProject(single, pick));
+      acts.append(pick);
+    }
     acts.append(this.button("later", "Not today", entry.title, busy, () => this.source.later(entry)));
     if (!suggested) acts.append(this.button("undo", "Back to suggestions", entry.title, busy, () => this.source.toSuggested(entry)));
     end.append(meta, acts);
@@ -1985,6 +1995,86 @@ export class HelmTodayScreen {
     }
   }
 
+  /** The row's title becomes a field: Enter keeps it, Escape puts it back. Redraws wait, or
+   *  they would empty it. Only what has a title of its own: not money, a log or a follow-up. */
+  private rename(item: HelmQueueItem, row: HTMLElement) {
+    const title = row.querySelector<HTMLElement>(".task-title");
+    if (!title) return;
+    const field = element("input", "helm-rename") as HTMLInputElement;
+    field.value = item.title;
+    field.maxLength = 280;
+    field.setAttribute("aria-label", `New name for ${item.title}`);
+    title.replaceWith(field);
+    this.dragging = true;
+    let over = false;
+    const finish = (save: boolean) => {
+      if (over) return;
+      over = true;
+      this.dragging = false;
+      void this.surface.input(false).catch(() => {});
+      const next = field.value.trim();
+      /* The title goes back by hand: rows are keyed and redraw only when their data does. */
+      if (save && next && next !== item.title) {
+        const before = item.title;
+        item.title = next;
+        title.textContent = next;
+        void this.source.queueAct({ act: "rename", key: item.key, title: next }).catch(() => {
+          item.title = before;
+          title.textContent = before;
+        });
+      }
+      field.replaceWith(title);
+    };
+    field.onkeydown = key => {
+      key.stopPropagation();
+      if (key.key === "Enter") finish(true);
+      if (key.key === "Escape") finish(false);
+    };
+    field.onblur = () => finish(true);
+    void this.surface.input(true).then(() => { field.focus(); field.select(); }).catch(() => finish(false));
+  }
+
+  private closeProjectMenu: (() => void) | null = null;
+
+  /** Which project a to-do or block is for, or none, in a list that floats by its button. */
+  private pickProject(item: HelmQueueItem, from: HTMLElement) {
+    this.closeProjectMenu?.();
+    const menu = new Menu({
+      label: "Project",
+      className: "helm-project-menu",
+      pick: one => {
+        close();
+        const projectId = one.id === "none" ? null : Number(one.id);
+        void this.source.queueAct({ act: "project", key: item.key, projectId }).catch(() => {});
+      },
+    });
+    document.body.append(menu.el);
+    const away = (press: PointerEvent) => { if (!menu.el.contains(press.target as Node)) close(); };
+    const keys = (key: KeyboardEvent) => {
+      if (key.key === "Escape") { key.preventDefault(); key.stopPropagation(); close(); return; }
+      if (menu.key(key)) key.stopPropagation();
+    };
+    const close = () => {
+      document.removeEventListener("pointerdown", away, true);
+      document.removeEventListener("keydown", keys, true);
+      menu.el.remove();
+      this.closeProjectMenu = null;
+    };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("keydown", keys, true);
+    this.closeProjectMenu = close;
+    const items: MenuItem[] = this.source.projects.map(one => ({
+      id: String(one.id), label: one.name, detail: one.client ?? undefined,
+      face: { name: one.name, hue: one.hue ?? null }, checked: one.id === item.projectId,
+    }));
+    if (item.projectId) items.unshift({ id: "none", label: "No project", icon: "close" });
+    menu.show(items);
+    const box = from.getBoundingClientRect();
+    const room = menu.el.getBoundingClientRect();
+    menu.el.style.left = `${Math.max(8, box.right - room.width)}px`;
+    menu.el.style.top = `${Math.min(window.innerHeight - room.height - 8, box.bottom + 4)}px`;
+  }
+
   /** One of a group's or the small things' items: its own tick, and Not today on hover. */
   private itemRow(item: HelmQueueItem, sorts = false): HTMLElement {
     const slot = element("div", "slot");
@@ -2005,6 +2095,11 @@ export class HelmTodayScreen {
     if (due?.late) meta.append(chip("late", due.label));
     else if (item.context) meta.append(element("span", "helm-row-due", item.context));
     const acts = element("div", "helm-row-acts");
+    if (renames(item)) acts.append(this.button("text", "Rename", item.title, busy, () => this.rename(item, row)));
+    if (hasOwnProject(item)) {
+      const pick = this.button("folder", "Project", item.title, busy, () => this.pickProject(item, pick));
+      acts.append(pick);
+    }
     acts.append(this.button("later", "Not today", item.title, busy, () => this.source.laterItem(item)));
     end.append(meta, acts);
     row.append(end);

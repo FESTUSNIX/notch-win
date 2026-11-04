@@ -1014,6 +1014,7 @@ export async function call<T = void>(command: string, args: Record<string, unkno
     (window as unknown as { __calWrites?: unknown[] }).__calWrites = [...((window as unknown as { __calWrites?: unknown[] }).__calWrites ?? []), { command, ...args }];
     const one = demoCalendar.events.find(e => e.id === args.eventId);
     if (command === "move_event" && one) { one.start = String(args.start); one.end = String(args.end); }
+    if (command === "delete_event") demoCalendar.events = demoCalendar.events.filter(e => e !== one);
     if (command === "update_event" && one) Object.assign(one, args.title === undefined ? {} : { title: args.title }, args.location === undefined ? {} : { location: args.location });
     if (params.has("calslow")) return undefined as T;
     previewBus.dispatchEvent(new CustomEvent("calendar:changed", { detail: structuredClone(calWritable(demoCalendar)) }));

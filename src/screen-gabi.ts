@@ -40,7 +40,7 @@ export class GabiScreen {
   /** Sent, not yet in a reading. */
   private sending: DeskNote[] = [];
   private sendingKey = -1;
-  private pictures = new Map<number, string | null>();
+  private pictures = new Map<number, string>();
   private asking = new Set<number>();
   private viewing: DeskPhoto | null = null;
   private drawnThread = "";
@@ -224,11 +224,12 @@ export class GabiScreen {
   private picture(id: number, into: HTMLImageElement) {
     const have = this.pictures.get(id);
     if (have) { into.src = have; return; }
-    if (this.asking.has(id) || have === null) return;
+    if (this.asking.has(id)) return;
     this.asking.add(id);
     void call<string | null>("gabi_photo", { id }).catch(() => null).then(art => {
       this.asking.delete(id);
-      this.pictures.set(id, art ?? null);
+      // Not found is asked again on the next draw: it may have been the network.
+      if (art) this.pictures.set(id, art);
       this.host.querySelectorAll<HTMLImageElement>(`img[data-photo="${id}"]`).forEach(one => { if (art) one.src = art; });
     });
   }

@@ -6429,3 +6429,14 @@ Helm; these are answers it asks for mid-reply.
       - While he's on it a new note doesn't open a moment (`watching`); it appears.
       `&gabithread`, `&gabisend=fail` stage it, with what's sent in `window.__gabiSent`.
       Test: gabi-screen.spec.ts, gabi-desk.test.mjs.
+
+939.  Today's rows act on the item itself: Rename (`rename` on `helm_queue`) and, for a to-do
+      or block, Project (`project`, or none). A request's and a task's project is what they
+      are, so it isn't offered. The menu hangs off `document.body`, because `.slot-inner`
+      clips, and closes on a press elsewhere or Escape.
+      - Delete on the calendar's panel takes two presses (`pressTwice`): a Google event has
+        no undo from here. Helm's grid has its own undo toast.
+      - The week opens on the now line, a third of the way down, and keeps that hour open
+        (`aimHour`, `aimUntil`: the island is still growing when it first aims). The
+        calendar's grids get a taller cap than other screens (`wantsTall`).
+      Test: helm-rename.spec.ts, helm-project.spec.ts, calendar-open.spec.ts.

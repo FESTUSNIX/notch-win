@@ -217,6 +217,9 @@ const START_AT_HOUR = 8;
 const FEED_AHEAD_DAYS = 45;
 const FEED_BACK_DAYS = 30;
 
+/** How long opening keeps aiming the grid, while the island grows to its height. */
+const OPENING_MS = 700;
+
 /** How often the calendar is read from Helm, and how old a reading may be on opening it.
  *  Each read asks Google for every calendar, so not every minute like the cockpit. */
 const HELM_POLL_MS = 180_000;
@@ -225,8 +228,11 @@ const HELM_FRESH_MS = 45_000;
 /** Helm refuses a focus block over three hours. */
 const BLOCK_MAX_HOURS = 3;
 
+/** How long Delete waits for its second press. */
+const DELETE_ASKS_MS = 3000;
+
 /** How tall the month's days are altogether, so five or six weeks fill the same room. */
-const MONTH_GRID_PX = 396;
+const MONTH_GRID_PX = 528;
 
 /** Lines on a day's all-day row before the rest go behind a press: it sits over the hours. */
 const BAND_LINES = 3;
@@ -311,7 +317,11 @@ export class CalendarScreen {
    * redraw builds a fresh scroller, which starts at the top. Without this the
    * grid snapped back to midnight every few seconds whatever anybody was
    * doing. */
-  private scrollAt = 0;
+  private scrollAt: number | null = null;
+  /** The hour to open on, when something sent us to it. */
+  private aimHour: number | null = null;
+  /** Until when opening keeps aiming: the island is still growing, so the first aim can fall short. */
+  private aimUntil = 0;
 
   /** Whether the host's scroll listener is on. ⚠️ The host element survives
    *  every render — only its children are replaced — so the listener must be
@@ -421,6 +431,13 @@ export class CalendarScreen {
   /** Back on the calendar: what it shows may be a few minutes behind. */
   cameBack() {
     if (Date.now() - this.helmReadAt > HELM_FRESH_MS) void this.readHelm();
+    // Back on today and on now, unless something sent us to a particular event.
+    if (!this.chosen) {
+      this.anchorDay = "";
+      this.aimHour = null;
+    }
+    this.scrollAt = null;
+    this.aimUntil = Date.now() + OPENING_MS;
   }
 
   private async readHelm() {
@@ -591,7 +608,13 @@ export class CalendarScreen {
     if (!found) return;
     this.chosen = found.id;
     // In the week or day view, go to where it is.
-    if (this.view !== "agenda") this.anchorDay = found.allDay ? found.start.slice(0, 10) : localDay(startOf(found));
+    if (this.view !== "agenda") {
+      this.anchorDay = found.allDay ? found.start.slice(0, 10) : localDay(startOf(found));
+      if (!found.allDay) {
+        const at = startOf(found);
+        this.aimHour = at.getHours() + at.getMinutes() / 60;
+      }
+    }
   }
 
   /** Escape: the open thing on this screen closes first, and the island after. */
@@ -781,12 +804,12 @@ export class CalendarScreen {
       (drop as HTMLButtonElement).type = "button";
       paintIcon(drop, "close");
       drop.append(element("span", "", "Delete"));
-      drop.onclick = () => {
+      this.pressTwice(drop, () => {
         this.chosen = null;
         this.removing.add(id);
         this.changed();
         void this.act({ action: "deleteBlock", blockId: block.id }, () => this.removing.delete(id));
-      };
+      });
       actions.append(drop);
     }
     if (actions.childElementCount) sheet.append(actions);
@@ -932,7 +955,7 @@ export class CalendarScreen {
       (drop as HTMLButtonElement).type = "button";
       paintIcon(drop, "close");
       drop.append(element("span", "", "Delete"));
-      drop.onclick = () => this.commitDelete(event);
+      this.pressTwice(drop, () => this.commitDelete(event));
       actions.append(drop);
     }
     const eventDay = event.allDay ? event.start.slice(0, 10) : localDay(startOf(event));
@@ -970,6 +993,26 @@ export class CalendarScreen {
     actions.append(inGoogle);
     sheet.append(actions);
     return sheet;
+  }
+
+  /** A delete has no undo here, so the first press only asks. It goes back by itself. */
+  private pressTwice(button: HTMLElement, run: () => void) {
+    const words = button.querySelector("span");
+    const was = words?.textContent ?? "";
+    let timer = 0;
+    button.onclick = () => {
+      if (button.classList.contains("is-asking")) {
+        clearTimeout(timer);
+        run();
+        return;
+      }
+      button.classList.add("is-asking");
+      if (words) words.textContent = "Press again to delete";
+      timer = window.setTimeout(() => {
+        button.classList.remove("is-asking");
+        if (words) words.textContent = was;
+      }, DELETE_ASKS_MS);
+    };
   }
 
   /** Claude's note for a meeting: where things stand, what to raise, what to ask. */
@@ -1389,7 +1432,7 @@ export class CalendarScreen {
     if (name === "month" || name === "agenda") this.leaveWeek();
     /* The views scroll different things, so a position carried over means nothing. */
     const grid = (one: CalendarView) => one === "week" || one === "day";
-    if (grid(name) !== grid(this.view)) this.scrollAt = 0;
+    if (grid(name) !== grid(this.view)) this.scrollAt = null;
     if (name !== this.view) this.chosen = null;
     this.view = name;
     this.deps.width();
@@ -1438,6 +1481,8 @@ export class CalendarScreen {
       button.onclick = () => {
         this.anchorDay = localDay(to);
         this.chosen = null;
+        this.aimHour = null;
+        this.scrollAt = null;
         this.changed();
         const held = this.helm;
         if (held && (localDay(new Date(to.getTime() - 7 * dayMs)) < held.from || localDay(new Date(to.getTime() + 42 * dayMs)) > held.to)) void this.readHelm();
@@ -1460,7 +1505,7 @@ export class CalendarScreen {
     const back = element("button", "cal-today", "Today") as HTMLButtonElement;
     back.type = "button";
     back.disabled = onToday;
-    back.onclick = () => { this.anchorDay = ""; this.chosen = null; this.changed(); };
+    back.onclick = () => { this.anchorDay = ""; this.chosen = null; this.aimHour = null; this.scrollAt = null; this.changed(); };
     const pages = element("div", "cal-pages");
     pages.append(page(-1, `Previous ${noun}`, "‹"), back, page(1, `Next ${noun}`, "›"));
     nav.append(pages);
@@ -2166,12 +2211,16 @@ export class CalendarScreen {
     /* ⚠️ Tasks count as busy too. A task dropped at 21:00 has to hold its hour
      * open exactly as a meeting does, or the drop would fold the thing that
      * was just dropped into a collapsed band. */
-    const spans = [
+    const spans: MinuteSpan[] = [
       ...days.flatMap(d => d.events.filter(one => !one.event.allDay).map(hoursOf)),
       ...days.flatMap(d => d.tasks.map(hoursOf)),
       ...days.flatMap(d => d.blocks.map(hoursOf)),
       ...this.creating.filter(one => days.some(d => d.key === one.day)),
     ];
+    /* The hour holding the now line stays open, so opening on it shows it. */
+    const showsToday = days.some(day => day.key === today);
+    const nowHour = now.getHours() + now.getMinutes() / 60;
+    if (showsToday) spans.push({ start: nowHour, end: nowHour + 0.25 });
     const axis = buildAxis(quietHours(busyHours(spans), this.opened), WEEK_HOUR_PX, SHUT_HOUR_PX);
 
     const week = element("div", "cal-weekgrid is-work");
@@ -2595,7 +2644,15 @@ export class CalendarScreen {
      * ⚠️ Set SYNCHRONOUSLY, not in a frame callback. The content is in the
      * document and has its height from the axis, so the host is already
      * scrollable — and a restore a frame later is itself a visible jump. */
-    this.host.scrollTop = this.scrollAt || Math.max(0, axis.yOf(START_AT_HOUR) - 8);
+    if (this.scrollAt === null || Date.now() < this.aimUntil) {
+      /* On the line, a third of the way down what the sticky head leaves, so most of
+       * what's left of the day is below it. */
+      const aim = this.aimHour ?? (showsToday ? nowHour : START_AT_HOUR);
+      const room = this.host.clientHeight - stuck.offsetHeight;
+      this.host.scrollTop = Math.max(0, axis.yOf(aim) - room / 3);
+    } else {
+      this.host.scrollTop = this.scrollAt;
+    }
     /* ⚠️ Attached ONCE, because the host outlives every render. Wiring it here
      * each time would stack a listener per redraw — dozens a minute. */
     if (!this.watchingScroll) {

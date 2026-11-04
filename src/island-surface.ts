@@ -308,7 +308,7 @@ export class IslandSurface {
      * rather than a layout one. It costs nothing: the window is click-through
      * everywhere outside the masks this reports. */
      const length = cpx(FRAME.islandBodyMax) + 2 * cpx(FRAME.islandCurl) + 2 * reach;
-    const depth = cpx(FRAME.islandBodyDepth) + reach;
+    const depth = cpx(FRAME.islandBodyDepthTall) + reach;
     return isVertical(this.edge)
       ? { width: depth, height: length }
       : { width: length, height: depth };
@@ -452,7 +452,7 @@ export class IslandSurface {
     const available = isVertical(this.edge) ? this.shell.clientWidth : this.shell.clientHeight;
     this.depth = Math.min(
       available,
-      cpx(FRAME.islandBodyDepth),
+      cpx(this.wantsTall() ? FRAME.islandBodyDepthTall : FRAME.islandBodyDepth),
       /* ⚠️ No `cardPadding` any more. `natural()` counts the scroller's own
        * padding now, so adding a card's worth on top of it spent that gap
        * twice — ~30px under the last row of every screen, which is what made
@@ -821,6 +821,9 @@ export class IslandSurface {
     if (this.open) void this.collapse();
     else { this.suppressed = false; this.show(true); }
   }
+
+  /** Whether the screen showing is one of the tall ones (the calendar's grids). */
+  wantsTall: () => boolean = () => false;
 
   /** A drag on a screen is running, and may leave the island: it stays up until
    *  the drag ends, then folds as usual if the pointer is gone. */
